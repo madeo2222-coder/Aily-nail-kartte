@@ -1,599 +1,336 @@
-"use client";
+'use client'
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 
-type VisitRow = Record<string, unknown>;
-type CustomerRow = Record<string, unknown>;
+type PaymentRow = {
+  id: string
+  visit_id: string | null
+  amount: number
+  payment_method: string | null
+  payment_date: string | null
+  visit_date: string | null
+  menu: string | null
+  customer_name: string | null
+}
 
-function pickFirstString(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key];
-    if (value !== null && value !== undefined && value !== "") {
-      return String(value);
+function formatDisplayDate(value?: string | null) {
+  if (!value) return '-'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return value
+  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatYen(value?: number | string | null) {
+  const n = Number(value ?? 0)
+  if (Number.isNaN(n)) return '¥0'
+  return `¥${n.toLocaleString('ja-JP')}`
+}
+
+function getPaymentMethodLabel(value?: string | null) {
+  if (!value) return '-'
+  if (value === 'cash') return '現金'
+  if (value === 'card') return 'クレカ'
+  if (value === 'other') return 'その他'
+  return value
+}
+
+function normalizePaymentRows(rows: any[]): PaymentRow[] {
+  return (rows || []).map((row) => {
+    const visit = Array.isArray(row.visits) ? row.visits[0] : row.visits
+    const customer = Array.isArray(visit?.customers) ? visit?.customers[0] : visit?.customers
+
+    return {
+      id: String(row.id),
+      visit_id: row.visit_id ? String(row.visit_id) : null,
+      amount: Number(row.amount ?? 0),
+      payment_method: row.payment_method ?? null,
+      payment_date: row.payment_date ?? null,
+      visit_date: visit?.visit_date ?? null,
+      menu: visit?.menu ?? null,
+      customer_name: customer?.name ?? null,
     }
-  }
-  return "";
-}
-
-function pickFirstNumber(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key];
-    if (value !== null && value !== undefined && value !== "") {
-      const num = Number(value);
-      if (!Number.isNaN(num)) return num;
-    }
-  }
-  return 0;
-}
-
-function getVisitDate(row: VisitRow) {
-  return pickFirstString(row, [
-    "visit_date",
-    "date",
-    "visited_at",
-    "reservation_date",
-    "created_at",
-  ]);
-}
-
-function getVisitAmount(row: VisitRow) {
-  return pickFirstNumber(row, [
-    "amount",
-    "price",
-    "sales_amount",
-    "total_amount",
-  ]);
-}
-
-function getVisitMenu(row: VisitRow) {
-  return pickFirstString(row, [
-    "menu_name",
-    "menu",
-    "treatment_name",
-    "service_name",
-  ]);
-}
-
-function getVisitMemo(row: VisitRow) {
-  return pickFirstString(row, [
-    "memo",
-    "note",
-    "notes",
-    "remark",
-    "remarks",
-  ]);
-}
-
-function getVisitCustomerId(row: VisitRow) {
-  return pickFirstString(row, ["customer_id"]);
-}
-
-function getCustomerName(row: CustomerRow) {
-  return (
-    pickFirstString(row, ["name", "full_name", "customer_name"]) || "名称未設定"
-  );
-}
-
-function formatYen(value: number) {
-  return `¥${value.toLocaleString("ja-JP")}`;
-}
-
-function formatDateLabel(value: string) {
-  if (!value) return "日時未設定";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  const yyyy = date.getFullYear();
-  const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-  const dd = `${date.getDate()}`.padStart(2, "0");
-  const hh = `${date.getHours()}`.padStart(2, "0");
-  const mi = `${date.getMinutes()}`.padStart(2, "0");
-
-  return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
-}
-
-function toMonthValue(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-  return `${yyyy}-${mm}`;
-}
-
-function isInMonth(dateText: string, monthValue: string) {
-  if (!dateText) return false;
-
-  const date = new Date(dateText);
-  if (!Number.isNaN(date.getTime())) {
-    const yyyy = date.getFullYear();
-    const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-    return `${yyyy}-${mm}` === monthValue;
-  }
-
-  return dateText.slice(0, 7) === monthValue;
+  })
 }
 
 export default function SalesPaymentsPage() {
-  const [visits, setVisits] = useState<VisitRow[]>([]);
-  const [customersMap, setCustomersMap] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [errorText, setErrorText] = useState("");
-  const [monthValue, setMonthValue] = useState(toMonthValue(new Date()));
+  const [payments, setPayments] = useState<PaymentRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [pageError, setPageError] = useState('')
+  const [usingTable, setUsingTable] = useState<'sales_payments' | 'payments' | ''>('')
 
   useEffect(() => {
-    let isMounted = true;
+    const fetchPayments = async () => {
+      setLoading(true)
+      setPageError('')
 
-    async function load() {
-      setLoading(true);
-      setErrorText("");
+      const salesPaymentsQuery = await supabase
+        .from('sales_payments')
+        .select(
+          `
+            id,
+            visit_id,
+            amount,
+            payment_method,
+            payment_date,
+            visits (
+              id,
+              visit_date,
+              menu,
+              customer_id,
+              customers (
+                name
+              )
+            )
+          `
+        )
+        .order('payment_date', { ascending: false })
 
-      try {
-        const [visitsRes, customersRes] = await Promise.all([
-          supabase.from("visits").select("*"),
-          supabase.from("customers").select("*"),
-        ]);
-
-        if (!isMounted) return;
-
-        if (visitsRes.error) {
-          throw new Error(`visits取得失敗: ${visitsRes.error.message}`);
-        }
-
-        if (customersRes.error) {
-          throw new Error(`customers取得失敗: ${customersRes.error.message}`);
-        }
-
-        const visitsData = (visitsRes.data || []) as VisitRow[];
-        const customersData = (customersRes.data || []) as CustomerRow[];
-
-        const map: Record<string, string> = {};
-        for (const row of customersData) {
-          const id = row.id ? String(row.id) : "";
-          if (id) {
-            map[id] = getCustomerName(row);
-          }
-        }
-
-        setVisits(visitsData);
-        setCustomersMap(map);
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "売上データの取得に失敗しました";
-        console.error("sales-payments fetch error:", message);
-        setErrorText(`データ取得でエラーが発生しました：${message}`);
-        setVisits([]);
-        setCustomersMap({});
-      } finally {
-        if (isMounted) setLoading(false);
+      if (!salesPaymentsQuery.error) {
+        setPayments(normalizePaymentRows(salesPaymentsQuery.data || []))
+        setUsingTable('sales_payments')
+        setLoading(false)
+        return
       }
+
+      const paymentsQuery = await supabase
+        .from('payments')
+        .select(
+          `
+            id,
+            visit_id,
+            amount,
+            payment_method,
+            payment_date,
+            visits (
+              id,
+              visit_date,
+              menu,
+              customer_id,
+              customers (
+                name
+              )
+            )
+          `
+        )
+        .order('payment_date', { ascending: false })
+
+      if (!paymentsQuery.error) {
+        setPayments(normalizePaymentRows(paymentsQuery.data || []))
+        setUsingTable('payments')
+        setLoading(false)
+        return
+      }
+
+      setPageError(
+        `売上データの取得に失敗しました：sales_payments → ${salesPaymentsQuery.error.message} / payments → ${paymentsQuery.error.message}`
+      )
+      setPayments([])
+      setUsingTable('')
+      setLoading(false)
     }
 
-    load();
+    fetchPayments()
+  }, [])
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const totalAmount = useMemo(() => {
+    return payments.reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
+  }, [payments])
 
-  const sortedVisits = useMemo(() => {
-    return [...visits].sort((a, b) => {
-      const aTime = new Date(getVisitDate(a) || 0).getTime();
-      const bTime = new Date(getVisitDate(b) || 0).getTime();
-      return bTime - aTime;
-    });
-  }, [visits]);
+  const currentMonthTotal = useMemo(() => {
+    const now = new Date()
+    const currentYear = now.getFullYear()
+    const currentMonth = now.getMonth()
 
-  const monthlyVisits = useMemo(() => {
-    return sortedVisits.filter((row) => isInMonth(getVisitDate(row), monthValue));
-  }, [sortedVisits, monthValue]);
-
-  const monthlySales = useMemo(() => {
-    return monthlyVisits.reduce((sum, row) => sum + getVisitAmount(row), 0);
-  }, [monthlyVisits]);
-
-  const totalSales = useMemo(() => {
-    return sortedVisits.reduce((sum, row) => sum + getVisitAmount(row), 0);
-  }, [sortedVisits]);
-
-  const averageUnitPrice = useMemo(() => {
-    if (monthlyVisits.length === 0) return 0;
-    return Math.round(monthlySales / monthlyVisits.length);
-  }, [monthlySales, monthlyVisits]);
+    return payments.reduce((sum, row) => {
+      if (!row.payment_date) return sum
+      const d = new Date(row.payment_date)
+      if (Number.isNaN(d.getTime())) return sum
+      if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
+        return sum + Number(row.amount ?? 0)
+      }
+      return sum
+    }, 0)
+  }, [payments])
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#fff7f3",
-        padding: "16px 16px 112px",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 720,
-          margin: "0 auto",
-        }}
-      >
-        <div style={{ marginBottom: 16 }}>
-          <div
-            style={{
-              fontSize: 14,
-              color: "#6b7280",
-              marginBottom: 8,
-            }}
-          >
-            Naily AiDOL / 売上管理
+    <div className="min-h-screen bg-neutral-50">
+      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-neutral-900">売上一覧</h1>
+            <p className="mt-1 text-sm text-neutral-600">入金情報の一覧・合計を確認できます</p>
           </div>
 
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 24,
-              lineHeight: 1.4,
-              fontWeight: 800,
-              color: "#111827",
-            }}
-          >
-            売上一覧と月次集計を確認
-          </h1>
-
-          <p
-            style={{
-              marginTop: 8,
-              marginBottom: 0,
-              color: "#6b7280",
-              fontSize: 14,
-              lineHeight: 1.7,
-            }}
-          >
-            まずは visits ベースで安全に売上を集計します。入金テーブル未整備でも使える構成です。
-          </p>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/sales-payments/new"
+              className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              売上登録
+            </Link>
+            <Link
+              href="/dashboard"
+              className="inline-flex items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+            >
+              ダッシュボード
+            </Link>
+          </div>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            flexWrap: "wrap",
-            marginBottom: 16,
-          }}
-        >
-          <Link
-            href="/reports/monthly"
-            style={{
-              textDecoration: "none",
-              border: "1px solid #d1d5db",
-              background: "#fff",
-              color: "#111827",
-              padding: "12px 16px",
-              borderRadius: 14,
-              fontWeight: 700,
-              fontSize: 14,
-            }}
-          >
-            月次レポートへ
-          </Link>
-
-          <Link
-            href="/dashboard"
-            style={{
-              textDecoration: "none",
-              background: "#111827",
-              color: "#fff",
-              padding: "12px 16px",
-              borderRadius: 14,
-              fontWeight: 700,
-              fontSize: 14,
-            }}
-          >
-            ダッシュボードへ
-          </Link>
-        </div>
-
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: 18,
-            border: "1px solid #f3e8e2",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-            padding: 16,
-            marginBottom: 16,
-          }}
-        >
-          <label
-            htmlFor="month"
-            style={{
-              display: "block",
-              fontSize: 14,
-              fontWeight: 700,
-              color: "#111827",
-              marginBottom: 8,
-            }}
-          >
-            対象月
-          </label>
-
-          <input
-            id="month"
-            type="month"
-            value={monthValue}
-            onChange={(e) => setMonthValue(e.target.value)}
-            style={{
-              width: "100%",
-              height: 48,
-              borderRadius: 12,
-              border: "1px solid #d1d5db",
-              padding: "0 12px",
-              fontSize: 16,
-              background: "#fff",
-              color: "#111827",
-              boxSizing: "border-box",
-            }}
-          />
-        </div>
-
-        {errorText ? (
-          <div
-            style={{
-              marginBottom: 16,
-              background: "#fff1f2",
-              color: "#be123c",
-              border: "1px solid #fecdd3",
-              borderRadius: 14,
-              padding: 12,
-              fontSize: 14,
-              lineHeight: 1.6,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {errorText}
+        {pageError ? (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {pageError}
           </div>
         ) : null}
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 12,
-            marginBottom: 16,
-          }}
-        >
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 18,
-              border: "1px solid #f3e8e2",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-              padding: 16,
-            }}
-          >
-            <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8 }}>
-              当月売上
-            </div>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-                color: "#111827",
-                marginBottom: 6,
-              }}
-            >
-              {loading ? "..." : formatYen(monthlySales)}
-            </div>
-            <div style={{ fontSize: 13, color: "#9ca3af" }}>{monthValue}</div>
+        {usingTable ? (
+          <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            使用テーブル：{usingTable}
+          </div>
+        ) : null}
+
+        <div className="mb-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-neutral-500">総売上合計</div>
+            <div className="mt-2 text-2xl font-bold text-neutral-900">{formatYen(totalAmount)}</div>
           </div>
 
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 18,
-              border: "1px solid #f3e8e2",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-              padding: 16,
-            }}
-          >
-            <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8 }}>
-              累計売上
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-neutral-500">今月売上</div>
+            <div className="mt-2 text-2xl font-bold text-neutral-900">
+              {formatYen(currentMonthTotal)}
             </div>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-                color: "#111827",
-                marginBottom: 6,
-              }}
-            >
-              {loading ? "..." : formatYen(totalSales)}
-            </div>
-            <div style={{ fontSize: 13, color: "#9ca3af" }}>全期間</div>
           </div>
 
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 18,
-              border: "1px solid #f3e8e2",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-              padding: 16,
-            }}
-          >
-            <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8 }}>
-              来店件数
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
+            <div className="text-sm text-neutral-500">登録件数</div>
+            <div className="mt-2 text-2xl font-bold text-neutral-900">
+              {payments.length.toLocaleString('ja-JP')}件
             </div>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-                color: "#111827",
-                marginBottom: 6,
-              }}
-            >
-              {loading ? "..." : `${monthlyVisits.length}件`}
-            </div>
-            <div style={{ fontSize: 13, color: "#9ca3af" }}>対象月</div>
-          </div>
-
-          <div
-            style={{
-              background: "#fff",
-              borderRadius: 18,
-              border: "1px solid #f3e8e2",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-              padding: 16,
-            }}
-          >
-            <div style={{ fontSize: 14, color: "#6b7280", marginBottom: 8 }}>
-              客単価
-            </div>
-            <div
-              style={{
-                fontSize: 24,
-                fontWeight: 800,
-                color: "#111827",
-                marginBottom: 6,
-              }}
-            >
-              {loading ? "..." : formatYen(averageUnitPrice)}
-            </div>
-            <div style={{ fontSize: 13, color: "#9ca3af" }}>対象月平均</div>
           </div>
         </div>
 
-        <div
-          style={{
-            background: "#fff",
-            borderRadius: 18,
-            border: "1px solid #f3e8e2",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.06)",
-            padding: 16,
-          }}
-        >
-          <h2
-            style={{
-              margin: 0,
-              fontSize: 18,
-              fontWeight: 800,
-              color: "#111827",
-            }}
-          >
-            対象月の来店売上
-          </h2>
-
-          <p
-            style={{
-              marginTop: 8,
-              marginBottom: 16,
-              fontSize: 14,
-              color: "#6b7280",
-              lineHeight: 1.7,
-            }}
-          >
-            実在カラムだけをフォールバックで読むので、`visit_date` 固定参照のエラーを回避します。
-          </p>
-
+        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
           {loading ? (
-            <div style={{ fontSize: 14, color: "#6b7280" }}>読み込み中...</div>
-          ) : monthlyVisits.length === 0 ? (
-            <div style={{ fontSize: 14, color: "#6b7280" }}>
-              この月の来店売上データはありません。
+            <div className="py-12 text-center text-sm text-neutral-500">売上データを読み込み中...</div>
+          ) : payments.length === 0 ? (
+            <div className="py-12 text-center">
+              <p className="text-sm text-neutral-600">売上データはまだありません。</p>
+              <div className="mt-4">
+                <Link
+                  href="/sales-payments/new"
+                  className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+                >
+                  最初の売上を登録する
+                </Link>
+              </div>
             </div>
           ) : (
-            <div style={{ display: "grid", gap: 12 }}>
-              {monthlyVisits.map((row, index) => {
-                const customerId = getVisitCustomerId(row);
-                const customerName = customersMap[customerId] || "顧客不明";
-                const visitDate = getVisitDate(row);
-                const menu = getVisitMenu(row) || "未入力";
-                const memo = getVisitMemo(row);
-                const amount = getVisitAmount(row);
-
-                return (
-                  <div
-                    key={`${customerId}-${visitDate}-${index}`}
-                    style={{
-                      background: "#fff7f3",
-                      borderRadius: 14,
-                      padding: 14,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 17,
-                        fontWeight: 800,
-                        color: "#111827",
-                        marginBottom: 6,
-                      }}
-                    >
-                      {customerName}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: "#6b7280",
-                        marginBottom: 10,
-                      }}
-                    >
-                      {formatDateLabel(visitDate)}
-                    </div>
-
-                    <div style={{ display: "grid", gap: 8 }}>
-                      <div style={{ fontSize: 14, color: "#9a3412", fontWeight: 700 }}>
+            <>
+              <div className="hidden md:block">
+                <table className="min-w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-neutral-200 bg-neutral-50">
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
+                        入金日
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
+                        来店日
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
+                        顧客名
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
                         メニュー
-                      </div>
-                      <div style={{ fontSize: 16, color: "#111827", fontWeight: 700 }}>
-                        {menu}
-                      </div>
-
-                      <div
-                        style={{
-                          fontSize: 14,
-                          color: "#9a3412",
-                          fontWeight: 700,
-                          marginTop: 6,
-                        }}
-                      >
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
+                        支払い方法
+                      </th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-600">
                         金額
-                      </div>
-                      <div style={{ fontSize: 16, color: "#111827", fontWeight: 700 }}>
-                        {formatYen(amount)}
-                      </div>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payments.map((row) => (
+                      <tr key={row.id} className="border-b border-neutral-100 last:border-b-0">
+                        <td className="px-4 py-4 text-sm text-neutral-700">
+                          {formatDisplayDate(row.payment_date)}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-neutral-700">
+                          {formatDisplayDate(row.visit_date)}
+                        </td>
+                        <td className="px-4 py-4 text-sm font-medium text-neutral-900">
+                          {row.customer_name || '顧客名未設定'}
+                        </td>
+                        <td className="px-4 py-4 text-sm text-neutral-700">{row.menu || '-'}</td>
+                        <td className="px-4 py-4 text-sm text-neutral-700">
+                          {getPaymentMethodLabel(row.payment_method)}
+                        </td>
+                        <td className="px-4 py-4 text-right text-sm font-semibold text-neutral-900">
+                          {formatYen(row.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-neutral-50">
+                      <td
+                        colSpan={5}
+                        className="px-4 py-4 text-right text-sm font-semibold text-neutral-700"
+                      >
+                        合計
+                      </td>
+                      <td className="px-4 py-4 text-right text-base font-bold text-neutral-900">
+                        {formatYen(totalAmount)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
 
-                      {memo ? (
-                        <>
-                          <div
-                            style={{
-                              fontSize: 14,
-                              color: "#9a3412",
-                              fontWeight: 700,
-                              marginTop: 6,
-                            }}
-                          >
-                            メモ
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 14,
-                              color: "#374151",
-                              lineHeight: 1.7,
-                              whiteSpace: "pre-wrap",
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            {memo}
-                          </div>
-                        </>
-                      ) : null}
+              <div className="space-y-3 p-4 md:hidden">
+                {payments.map((row) => (
+                  <div key={row.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold text-neutral-900">
+                          {row.customer_name || '顧客名未設定'}
+                        </div>
+                        <div className="mt-1 text-xs text-neutral-500">
+                          来店日：{formatDisplayDate(row.visit_date)}
+                        </div>
+                        <div className="mt-1 text-xs text-neutral-500">
+                          入金日：{formatDisplayDate(row.payment_date)}
+                        </div>
+                      </div>
+                      <div className="text-right text-sm font-bold text-neutral-900">
+                        {formatYen(row.amount)}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="rounded-lg bg-neutral-50 px-3 py-2 text-neutral-700">
+                        メニュー：{row.menu || '-'}
+                      </div>
+                      <div className="rounded-lg bg-neutral-50 px-3 py-2 text-neutral-700">
+                        支払方法：{getPaymentMethodLabel(row.payment_method)}
+                      </div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                ))}
+
+                <div className="rounded-xl bg-neutral-900 p-4 text-white">
+                  <div className="text-sm text-neutral-300">合計</div>
+                  <div className="mt-1 text-xl font-bold">{formatYen(totalAmount)}</div>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
-    </main>
-  );
+    </div>
+  )
 }
