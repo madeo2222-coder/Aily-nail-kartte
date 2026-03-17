@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 
 const PUBLIC_PATHS = ["/login", "/customer-intake"];
 
+const PROTECTED_EXACT_PATHS = ["/"];
+
 const PROTECTED_PREFIXES = [
   "/dashboard",
   "/customers",
@@ -25,6 +27,8 @@ function isPublicPath(pathname: string) {
 }
 
 function isProtectedPath(pathname: string) {
+  if (PROTECTED_EXACT_PATHS.includes(pathname)) return true;
+
   return PROTECTED_PREFIXES.some((prefix) => {
     return pathname === prefix || pathname.startsWith(`${prefix}/`);
   });
@@ -35,7 +39,13 @@ function hasSupabaseAuthCookie(req: NextRequest) {
 
   return cookies.some((cookie) => {
     const name = cookie.name || "";
-    return name.includes("sb-") && name.includes("auth-token");
+    const value = cookie.value || "";
+
+    return (
+      name.includes("sb-") &&
+      name.includes("auth-token") &&
+      value.trim().length > 0
+    );
   });
 }
 
