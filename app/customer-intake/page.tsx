@@ -65,6 +65,11 @@ const initialFormState: FormState = {
 };
 
 export default function CustomerIntakePage() {
+    const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [form, setForm] = useState<FormState>(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -79,7 +84,9 @@ export default function CustomerIntakePage() {
     return NOTICE_ITEMS.every((item) => form.agreed[item.key]);
   }, [form.agreed]);
 
-  useEffect(() => {
+    useEffect(() => {
+    if (!mounted) return;
+
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -89,22 +96,26 @@ export default function CustomerIntakePage() {
     } catch {
       // no-op
     }
-  }, []);
+  }, [mounted]);
 
-  useEffect(() => {
+    useEffect(() => {
+    if (!mounted) return;
+
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(form));
     } catch {
       // no-op
     }
-  }, [form]);
+  }, [form, mounted]);
 
-  useEffect(() => {
+    useEffect(() => {
+    if (!mounted) return;
+
     setupCanvas();
     const onResize = () => setupCanvas();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, []);
+  }, [mounted]);
 
   const setupCanvas = () => {
     const canvas = canvasRef.current;
@@ -393,6 +404,10 @@ export default function CustomerIntakePage() {
       // no-op
     }
   };
+
+    if (!mounted) {
+    return null;
+  }
 
   return (
     <main className="min-h-screen bg-neutral-50">

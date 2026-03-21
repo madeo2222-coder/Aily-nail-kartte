@@ -1,66 +1,83 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
 type Customer = {
   id: string;
-  name: string | null;
-  phone: string | null;
+  name?: string | null;
+  phone?: string | null;
+  created_at?: string | null;
 };
+
+function isIgnorableDeleteError(error: any) {
+  const message = error?.message || "";
+  const code = error?.code || "";
+
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes("Could not find the table") ||
+    message.includes("relation") ||
+    message.includes("does not exist") ||
+    message.includes("invalid input syntax for type bigint")
+  );
+}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [keyword, setKeyword] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const fetchCustomers = async () => {
-    try {
-      setLoading(true);
-      setErrorMessage("");
-
-      const { data, error } = await supabase
-        .from("customers")
-        .select("id, name, phone");
-
-      if (error) {
-        throw error;
-      }
-
-      setCustomers((data as Customer[]) ?? []);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "顧客一覧の取得に失敗しました。"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
 
   useEffect(() => {
     fetchCustomers();
   }, []);
 
-  const filteredCustomers = useMemo(() => {
-    const q = keyword.trim().toLowerCase();
+  async function fetchCustomers() {
+    setLoading(true);
 
-    if (!q) return customers;
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id, name, phone, created_at")
+      .order("created_at", { ascending: false });
 
-    return customers.filter((customer) => {
-      const name = (customer.name ?? "").toLowerCase();
-      const phone = (customer.phone ?? "").toLowerCase();
-      return name.includes(q) || phone.includes(q);
-    });
-  }, [customers, keyword]);
+    if (error) {
+      console.error("customers fetch error:", error);
+      setCustomers([]);
+      setLoading(false);
+      return;
+    }
 
-  const handleDelete = async (customer: Customer) => {
+    setCustomers((data as Customer[]) || []);
+    setLoading(false);
+  }
+
+  async function safeDeleteByCustomerId(tableName: string, customerId: string) {
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq("customer_id", customerId);
+
+    if (error && !isIgnorableDeleteError(error)) {
+      throw error;
+    }
+  }
+
+  async function safeDeleteByPhone(tableName: string, phone: string) {
+    const { error } = await supabase
+      .from(tableName)
+      .delete()
+      .eq("phone", phone);
+
+    if (error && !isIgnorableDeleteError(error)) {
+      throw error;
+    }
+  }
+
+  async function handleDelete(customer: Customer) {
     const confirmed = window.confirm(
-      `「${customer.name ?? "名称未設定"}」を削除しますか？\nこの操作は元に戻せません。`
+      `「${customer.name || "名称未設定"}」を削除しますか？\nこの操作は元に戻せません。`
     );
 
     if (!confirmed) return;
@@ -68,125 +85,95 @@ export default function CustomersPage() {
     try {
       setDeletingId(customer.id);
 
-      const { error } = await supabase
+      // まず phone 紐付けの旧導線を先に削除
+      if (customer.phone) {
+        await safeDeleteByPhone("customer_intakes", customer.phone);
+        await safeDeleteByPhone("customer_intake", customer.phone);
+      }
+
+      // UUIDで消せる関連データを削除
+      await safeDeleteByCustomerId("visits", customer.id);
+      await safeDeleteByCustomerId("reservations", customer.id);
+      await safeDeleteByCustomerId("customer_intakes", customer.id);
+      await safeDeleteByCustomerId("customer_intake", customer.id);
+
+      // 最後に顧客本体を必ず削除
+      const { error: customerDeleteError } = await supabase
         .from("customers")
         .delete()
         .eq("id", customer.id);
 
-      if (error) {
-        throw error;
+      if (customerDeleteError) {
+        console.error("customer delete error:", customerDeleteError);
+        alert(`削除に失敗しました。\n${customerDeleteError.message}`);
+        return;
       }
 
-      setCustomers((prev) => prev.filter((item) => item.id !== customer.id));
-      window.alert("削除しました。");
-    } catch (error) {
-      window.alert(
-        error instanceof Error ? error.message : "削除に失敗しました。"
-      );
+      // 画面上から即消す
+      setCustomers((prev) => prev.filter((c) => c.id !== customer.id));
+      alert("削除しました。");
+    } catch (error: any) {
+      console.error("delete failed:", error);
+      alert(`削除に失敗しました。\n${error?.message || "不明なエラー"}`);
     } finally {
       setDeletingId(null);
     }
-  };
+  }
 
   return (
-    <main className="min-h-screen bg-[#fcf8f7] px-4 py-6">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-[#111827]">顧客一覧</h1>
-          <p className="mt-2 text-base text-gray-600">
-            登録済みの顧客を確認できます
-          </p>
-        </div>
+    <div className="p-4 pb-24">
+      <h1 className="text-3xl font-bold mb-6">顧客一覧</h1>
 
-        <div className="mb-6 flex flex-wrap gap-3">
-          <button
-            type="button"
-            onClick={fetchCustomers}
-            className="rounded-2xl border border-gray-300 bg-white px-6 py-4 text-lg font-semibold text-[#111827]"
-          >
-            再読み込み
-          </button>
-
-          <Link
-            href="/customer-intake"
-            className="rounded-2xl bg-black px-6 py-4 text-lg font-semibold text-white"
-          >
-            新規顧客登録
-          </Link>
-        </div>
-
-        <div className="mb-8 rounded-3xl border border-[#e5e7eb] bg-white p-6">
-          <label className="mb-3 block text-xl font-semibold text-[#111827]">
-            顧客検索
-          </label>
-          <input
-            type="text"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="名前 または 電話番号で検索"
-            className="w-full rounded-2xl border border-gray-300 px-5 py-4 text-lg outline-none focus:border-black"
-          />
-        </div>
-
-        {errorMessage ? (
-          <div className="mb-6 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
-            {errorMessage}
-          </div>
-        ) : null}
-
-        {loading ? (
-          <div className="rounded-3xl border border-[#e5e7eb] bg-white p-6 text-gray-600">
-            読み込み中...
-          </div>
-        ) : filteredCustomers.length === 0 ? (
-          <div className="rounded-3xl border border-[#e5e7eb] bg-white p-6 text-gray-600">
-            顧客が見つかりません。
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {filteredCustomers.map((customer) => (
-              <div
-                key={customer.id}
-                className="rounded-3xl border border-[#e5e7eb] bg-white p-6"
-              >
-                <div className="mb-6 grid gap-4 md:grid-cols-2">
-                  <div>
-                    <div className="mb-2 text-lg text-gray-500">名前</div>
-                    <div className="text-2xl font-bold text-[#111827]">
-                      {customer.name || "未登録"}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="mb-2 text-lg text-gray-500">電話番号</div>
-                    <div className="text-2xl font-medium text-[#111827]">
-                      {customer.phone || "未登録"}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <Link
-                    href={`/customers/${customer.id}`}
-                    className="rounded-2xl border border-gray-300 bg-white px-6 py-4 text-lg font-semibold text-[#111827]"
-                  >
-                    詳細を見る
-                  </Link>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDelete(customer)}
-                    disabled={deletingId === customer.id}
-                    className="rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-lg font-semibold text-red-600 disabled:opacity-50"
-                  >
-                    {deletingId === customer.id ? "削除中..." : "削除"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="mb-6">
+        <Link
+          href="/customers/new"
+          className="block w-full rounded-xl bg-black px-4 py-4 text-center text-white text-xl font-bold"
+        >
+          ＋ 顧客登録
+        </Link>
       </div>
-    </main>
+
+      {loading ? (
+        <p>読み込み中...</p>
+      ) : customers.length === 0 ? (
+        <div className="rounded-xl border bg-white p-4">
+          <p>顧客データがまだありません。</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {customers.map((customer) => (
+            <div key={customer.id} className="rounded-2xl border bg-white p-5">
+              <p className="mb-2 text-sm text-gray-500">名前</p>
+              <p className="mb-6 break-words text-2xl font-bold">
+                {customer.name || "未入力"}
+              </p>
+
+              <p className="mb-2 text-sm text-gray-500">電話番号</p>
+              <p className="mb-6 break-all text-2xl font-bold">
+                {customer.phone || "未入力"}
+              </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Link
+                  href={`/customers/${customer.id}`}
+                  className="rounded-xl border px-4 py-4 text-center text-xl font-bold"
+                >
+                  詳細を見る
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => handleDelete(customer)}
+                  disabled={deletingId === customer.id}
+                  className="rounded-xl border border-red-300 px-4 py-4 text-center text-xl font-bold text-red-600 disabled:opacity-50"
+                >
+                  {deletingId === customer.id ? "削除中..." : "削除"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
