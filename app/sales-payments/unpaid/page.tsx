@@ -1,200 +1,192 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-type UnpaidRow = {
-  visit_id: string
-  customer_name: string | null
-  visit_date: string | null
-  menu: string | null
-  price: number
-  days_passed: number
+type SaleRow = {
+  id: number
+  customer_id: number
+  amount: number | null
+  memo: string | null
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(
-    d.getDate()
-  ).padStart(2, '0')}`
+type CustomerRow = {
+  id: number
+  name: string
 }
 
-function formatYen(value?: number | string | null) {
-  const n = Number(value ?? 0)
-  if (Number.isNaN(n)) return '¥0'
-  return `¥${n.toLocaleString('ja-JP')}`
+type Sale = {
+  id: number
+  customer_id: number
+  amount: number
+  memo: string | null
+  customer_name: string
 }
 
-function calcDaysPassed(dateStr?: string | null) {
-  if (!dateStr) return 0
-  const visit = new Date(dateStr)
-  const today = new Date()
-  const diff = today.getTime() - visit.getTime()
-  return Math.floor(diff / (1000 * 60 * 60 * 24))
+type MemoData = {
+  status?: string
+  paid_amount?: number
+  unpaid_amount?: number
+  due_date?: string
 }
 
 export default function UnpaidPage() {
-  const [rows, setRows] = useState<UnpaidRow[]>([])
+  const [sales, setSales] = useState<Sale[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
 
   useEffect(() => {
-    const fetchUnpaid = async () => {
-      setLoading(true)
-      setError('')
-
-      // ① visits取得
-      const visitsRes = await supabase
-        .from('visits')
-        .select(
-          `
-          id,
-          visit_date,
-          menu,
-          price,
-          customer_id,
-          customers (
-            name
-          )
-        `
-        )
-        .order('visit_date', { ascending: false })
-
-      if (visitsRes.error) {
-        setError('来店データ取得エラー: ' + visitsRes.error.message)
-        setLoading(false)
-        return
-      }
-
-      const visits = visitsRes.data || []
-
-      // ② payments取得（sales_payments優先）
-      let payments: any[] = []
-
-      const salesPaymentsRes = await supabase
-        .from('sales_payments')
-        .select('visit_id')
-
-      if (!salesPaymentsRes.error) {
-        payments = salesPaymentsRes.data || []
-      } else {
-        const paymentsRes = await supabase.from('payments').select('visit_id')
-        if (!paymentsRes.error) {
-          payments = paymentsRes.data || []
-        }
-      }
-
-      const paidVisitIds = new Set(
-        payments.map((p) => String(p.visit_id))
-      )
-
-      // ③ 未入金抽出
-      const unpaid: UnpaidRow[] = visits
-        .filter((v: any) => !paidVisitIds.has(String(v.id)))
-        .map((v: any) => {
-          const visit = Array.isArray(v) ? v[0] : v
-          const customer = Array.isArray(visit.customers)
-            ? visit.customers[0]
-            : visit.customers
-
-          return {
-            visit_id: String(visit.id),
-            customer_name: customer?.name || null,
-            visit_date: visit.visit_date,
-            menu: visit.menu || null,
-            price: Number(visit.price ?? 0),
-            days_passed: calcDaysPassed(visit.visit_date),
-          }
-        })
-
-      setRows(unpaid)
-      setLoading(false)
-    }
-
-    fetchUnpaid()
+    fetchSales()
   }, [])
 
-  const totalUnpaid = useMemo(() => {
-    return rows.reduce((sum, r) => sum + r.price, 0)
-  }, [rows])
+  const fetchSales = async () => {
+    setLoading(true)
+
+    const { data, error } = await supabase
+      .from('sales')
+      .select('id, customer_id, amount, memo')
+      .order('id', { ascending: false })
+
+    if (error) {
+      console.error('未収一覧取得エラー:', error.message || error)
+      setSales([])
+      setLoading(false)
+      return
+    }
+
+    const saleRows = ((data || []) as SaleRow[]).filter((sale) => {
+      if (!sale.memo) return false
+
+      try {
+        const memoData: MemoData = JSON.parse(sale.memo)
+        return memoData.status === '未収' || memoData.status === '一部'
+      } catch {
+        return sale.memo.includes('未収')
+      }
+    })
+
+    if (saleRows.length === 0) {
+      setSales([])
+      setLoading(false)
+      return
+    }
+
+    const customerIds = Array.from(
+      new Set(saleRows.map((sale) => sale.customer_id).filter(Boolean))
+    )
+
+    const { data: customersData, error: customersError } = await supabase
+      .from('customers')
+      .select('id, name')
+      .in('id', customerIds)
+
+    if (customersError) {
+      console.error('顧客取得エラー:', customersError.message || customersError)
+    }
+
+    const customersMap = new Map<number, string>()
+    ;((customersData || []) as CustomerRow[]).forEach((customer) => {
+      customersMap.set(customer.id, customer.name)
+    })
+
+    const normalized: Sale[] = saleRows.map((sale) => ({
+      id: sale.id,
+      customer_id: sale.customer_id,
+      amount: Number(sale.amount || 0),
+      memo: sale.memo,
+      customer_name: customersMap.get(sale.customer_id) || '不明な顧客',
+    }))
+
+    setSales(normalized)
+    setLoading(false)
+  }
+
+  const parseMemo = (memo: string | null): MemoData => {
+    if (!memo) return {}
+
+    try {
+      return JSON.parse(memo)
+    } catch {
+      return {}
+    }
+  }
+
+  const totalUnpaid = sales.reduce((sum, sale) => {
+    const memoData = parseMemo(sale.memo)
+    return sum + Number(memoData.unpaid_amount || 0)
+  }, 0)
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <div className="mx-auto max-w-6xl px-4 py-6">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold">未入金一覧</h1>
-            <p className="text-sm text-neutral-600">
-              売上登録されていない来店を表示します
-            </p>
-          </div>
-
-          <div className="flex gap-2">
-            <Link href="/sales-payments" className="btn">
-              売上一覧
-            </Link>
-            <Link href="/dashboard" className="btn">
-              ダッシュボード
-            </Link>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mb-4 rounded bg-red-100 p-3 text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        <div className="mb-4 grid grid-cols-2 gap-4">
-          <div className="bg-white p-4 rounded border">
-            <div className="text-sm text-gray-500">未入金件数</div>
-            <div className="text-xl font-bold">{rows.length}件</div>
-          </div>
-
-          <div className="bg-white p-4 rounded border">
-            <div className="text-sm text-gray-500">未入金合計</div>
-            <div className="text-xl font-bold">{formatYen(totalUnpaid)}</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded border overflow-hidden">
-          {loading ? (
-            <div className="p-6 text-center text-sm">読み込み中...</div>
-          ) : rows.length === 0 ? (
-            <div className="p-6 text-center text-sm">
-              未入金はありません
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="p-3 text-left">来店日</th>
-                  <th className="p-3 text-left">顧客</th>
-                  <th className="p-3 text-left">メニュー</th>
-                  <th className="p-3 text-left">経過日数</th>
-                  <th className="p-3 text-right">金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr key={r.visit_id} className="border-t">
-                    <td className="p-3">{formatDate(r.visit_date)}</td>
-                    <td className="p-3">{r.customer_name || '-'}</td>
-                    <td className="p-3">{r.menu || '-'}</td>
-                    <td className="p-3">{r.days_passed}日</td>
-                    <td className="p-3 text-right font-semibold">
-                      {formatYen(r.price)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+    <main className="p-4 max-w-3xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">未収一覧</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          未収・一部入金の売上一覧です
+        </p>
       </div>
-    </div>
+
+      {loading ? (
+        <div className="text-sm text-gray-500">読み込み中...</div>
+      ) : sales.length === 0 ? (
+        <div className="rounded-lg border bg-white p-4">
+          未収データはありません
+        </div>
+      ) : (
+        <>
+          <div className="mb-4 rounded-lg border bg-red-50 p-4">
+            <div className="text-sm text-gray-600">未収合計</div>
+            <div className="text-2xl font-bold text-red-600">
+              ¥{totalUnpaid.toLocaleString()}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {sales.map((sale) => {
+              const memoData = parseMemo(sale.memo)
+              const unpaidAmount = Number(memoData.unpaid_amount || 0)
+              const dueDate = memoData.due_date || '-'
+              const status = memoData.status || '-'
+
+              return (
+                <div
+                  key={sale.id}
+                  className="rounded-lg border bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-lg">
+                        {sale.customer_name}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        売上ID: {sale.id}
+                      </div>
+                    </div>
+
+                    <div className="text-sm px-2 py-1 rounded bg-yellow-100 text-yellow-800">
+                      {status}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-1 text-sm">
+                    <div>売上金額：¥{sale.amount.toLocaleString()}</div>
+                    <div>未収額：¥{unpaidAmount.toLocaleString()}</div>
+                    <div>入金予定日：{dueDate}</div>
+                  </div>
+
+                  <div className="mt-4">
+                    <Link
+                      href={`/customers/${sale.customer_id}`}
+                      className="text-blue-600 text-sm underline"
+                    >
+                      顧客詳細を見る
+                    </Link>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </main>
   )
 }

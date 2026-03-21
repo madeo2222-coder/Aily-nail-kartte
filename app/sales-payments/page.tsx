@@ -1,336 +1,354 @@
-'use client'
+"use client";
 
-import { useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
-type PaymentRow = {
-  id: string
-  visit_id: string | null
-  amount: number
-  payment_method: string | null
-  payment_date: string | null
-  visit_date: string | null
-  menu: string | null
-  customer_name: string | null
-}
+type Customer = {
+  id: string;
+  name: string | null;
+  phone: string | null;
+};
 
-function formatDisplayDate(value?: string | null) {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
-}
+type Visit = {
+  id: string;
+  customer_id: string | null;
+  visit_date?: string | null;
+  menu_name?: string | null;
+  staff_name?: string | null;
+  memo?: string | null;
+};
 
-function formatYen(value?: number | string | null) {
-  const n = Number(value ?? 0)
-  if (Number.isNaN(n)) return '¥0'
-  return `¥${n.toLocaleString('ja-JP')}`
-}
+export default function SalesPaymentPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-function getPaymentMethodLabel(value?: string | null) {
-  if (!value) return '-'
-  if (value === 'cash') return '現金'
-  if (value === 'card') return 'クレカ'
-  if (value === 'other') return 'その他'
-  return value
-}
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-function normalizePaymentRows(rows: any[]): PaymentRow[] {
-  return (rows || []).map((row) => {
-    const visit = Array.isArray(row.visits) ? row.visits[0] : row.visits
-    const customer = Array.isArray(visit?.customers) ? visit?.customers[0] : visit?.customers
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [visit, setVisit] = useState<Visit | null>(null);
 
-    return {
-      id: String(row.id),
-      visit_id: row.visit_id ? String(row.visit_id) : null,
-      amount: Number(row.amount ?? 0),
-      payment_method: row.payment_method ?? null,
-      payment_date: row.payment_date ?? null,
-      visit_date: visit?.visit_date ?? null,
-      menu: visit?.menu ?? null,
-      customer_name: customer?.name ?? null,
-    }
-  })
-}
+  const [customerId, setCustomerId] = useState("");
+  const [visitId, setVisitId] = useState("");
+  const [saleDate, setSaleDate] = useState(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  });
+  const [menuName, setMenuName] = useState("");
+  const [staffName, setStaffName] = useState("");
+  const [amount, setAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [memo, setMemo] = useState("");
 
-export default function SalesPaymentsPage() {
-  const [payments, setPayments] = useState<PaymentRow[]>([])
-  const [loading, setLoading] = useState(true)
-  const [pageError, setPageError] = useState('')
-  const [usingTable, setUsingTable] = useState<'sales_payments' | 'payments' | ''>('')
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
-    const fetchPayments = async () => {
-      setLoading(true)
-      setPageError('')
+    fetchInitialData();
+  }, []);
 
-      const salesPaymentsQuery = await supabase
-        .from('sales_payments')
-        .select(
-          `
-            id,
-            visit_id,
-            amount,
-            payment_method,
-            payment_date,
-            visits (
-              id,
-              visit_date,
-              menu,
-              customer_id,
-              customers (
-                name
-              )
-            )
-          `
-        )
-        .order('payment_date', { ascending: false })
+  async function fetchInitialData() {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+      setSuccessMessage("");
 
-      if (!salesPaymentsQuery.error) {
-        setPayments(normalizePaymentRows(salesPaymentsQuery.data || []))
-        setUsingTable('sales_payments')
-        setLoading(false)
-        return
+      const queryCustomerId = searchParams.get("customer_id") || "";
+      const queryVisitId = searchParams.get("visit_id") || "";
+      const queryVisitDate = searchParams.get("visit_date") || "";
+      const queryMenuName = searchParams.get("menu_name") || "";
+      const queryStaffName = searchParams.get("staff_name") || "";
+
+      const { data: customersData, error: customersError } = await supabase
+        .from("customers")
+        .select("id,name,phone")
+        .order("name", { ascending: true });
+
+      if (customersError) throw customersError;
+
+      setCustomers((customersData as Customer[]) || []);
+      setCustomerId(queryCustomerId);
+      setVisitId(queryVisitId);
+      setSaleDate(queryVisitDate || todayString());
+      setMenuName(queryMenuName);
+      setStaffName(queryStaffName);
+
+      if (queryVisitId) {
+        const { data: visitData, error: visitError } = await supabase
+          .from("visits")
+          .select("id,customer_id,visit_date,menu_name,staff_name,memo")
+          .eq("id", queryVisitId)
+          .single();
+
+        if (!visitError && visitData) {
+          const visitRow = visitData as Visit;
+          setVisit(visitRow);
+          setCustomerId(visitRow.customer_id || queryCustomerId || "");
+          setSaleDate(extractDateOnly(visitRow.visit_date) || queryVisitDate || todayString());
+          setMenuName(visitRow.menu_name || queryMenuName || "");
+          setStaffName(visitRow.staff_name || queryStaffName || "");
+          setMemo(visitRow.memo || "");
+        }
       }
+    } catch (error: any) {
+      setErrorMessage(error?.message || "初期データの取得に失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      const paymentsQuery = await supabase
-        .from('payments')
-        .select(
-          `
-            id,
-            visit_id,
-            amount,
-            payment_method,
-            payment_date,
-            visits (
-              id,
-              visit_date,
-              menu,
-              customer_id,
-              customers (
-                name
-              )
-            )
-          `
-        )
-        .order('payment_date', { ascending: false })
+  const selectedCustomer = useMemo(() => {
+    return customers.find((customer) => customer.id === customerId) || null;
+  }, [customers, customerId]);
 
-      if (!paymentsQuery.error) {
-        setPayments(normalizePaymentRows(paymentsQuery.data || []))
-        setUsingTable('payments')
-        setLoading(false)
-        return
-      }
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
 
-      setPageError(
-        `売上データの取得に失敗しました：sales_payments → ${salesPaymentsQuery.error.message} / payments → ${paymentsQuery.error.message}`
-      )
-      setPayments([])
-      setUsingTable('')
-      setLoading(false)
+    if (!customerId) {
+      setErrorMessage("顧客を選択してください。");
+      return;
     }
 
-    fetchPayments()
-  }, [])
+    if (!saleDate) {
+      setErrorMessage("売上日を入力してください。");
+      return;
+    }
 
-  const totalAmount = useMemo(() => {
-    return payments.reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
-  }, [payments])
+    if (!amount || Number(amount) <= 0) {
+      setErrorMessage("売上金額を正しく入力してください。");
+      return;
+    }
 
-  const currentMonthTotal = useMemo(() => {
-    const now = new Date()
-    const currentYear = now.getFullYear()
-    const currentMonth = now.getMonth()
+    try {
+      setSaving(true);
+      setErrorMessage("");
+      setSuccessMessage("");
 
-    return payments.reduce((sum, row) => {
-      if (!row.payment_date) return sum
-      const d = new Date(row.payment_date)
-      if (Number.isNaN(d.getTime())) return sum
-      if (d.getFullYear() === currentYear && d.getMonth() === currentMonth) {
-        return sum + Number(row.amount ?? 0)
+      const numericAmount = Number(amount);
+
+      const insertPayload = {
+        customer_id: customerId,
+        visit_id: visitId || null,
+        sale_date: saleDate,
+        menu_name: menuName || null,
+        staff_name: staffName || null,
+        amount: numericAmount,
+        payment_method: paymentMethod || null,
+        memo: memo || null,
+      };
+
+      const { error } = await supabase.from("sales").insert([insertPayload]);
+
+      if (error) {
+        throw error;
       }
-      return sum
-    }, 0)
-  }, [payments])
+
+      setSuccessMessage("売上登録が完了しました。");
+      setTimeout(() => {
+        router.push("/sales-payments");
+      }, 700);
+    } catch (error: any) {
+      setErrorMessage(
+        error?.message ||
+          "売上登録に失敗しました。sales テーブルの列名が違う場合は insertPayload の列名だけ合わせてください。"
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-neutral-900">売上一覧</h1>
-            <p className="mt-1 text-sm text-neutral-600">入金情報の一覧・合計を確認できます</p>
-          </div>
+    <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">売上登録</h1>
+        <p className="mt-1 text-sm text-gray-600">
+          来店登録から来た場合は、顧客・来店日・メニュー・担当者を自動反映します。
+        </p>
+      </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/sales-payments/new"
-              className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
-              売上登録
-            </Link>
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
-            >
-              ダッシュボード
-            </Link>
-          </div>
+      {loading ? (
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-600">
+          読み込み中...
         </div>
-
-        {pageError ? (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {pageError}
-          </div>
-        ) : null}
-
-        {usingTable ? (
-          <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
-            使用テーブル：{usingTable}
-          </div>
-        ) : null}
-
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-            <div className="text-sm text-neutral-500">総売上合計</div>
-            <div className="mt-2 text-2xl font-bold text-neutral-900">{formatYen(totalAmount)}</div>
-          </div>
-
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-            <div className="text-sm text-neutral-500">今月売上</div>
-            <div className="mt-2 text-2xl font-bold text-neutral-900">
-              {formatYen(currentMonthTotal)}
+      ) : (
+        <>
+          {errorMessage ? (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {errorMessage}
             </div>
-          </div>
+          ) : null}
 
-          <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-            <div className="text-sm text-neutral-500">登録件数</div>
-            <div className="mt-2 text-2xl font-bold text-neutral-900">
-              {payments.length.toLocaleString('ja-JP')}件
+          {successMessage ? (
+            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+              {successMessage}
             </div>
-          </div>
-        </div>
+          ) : null}
 
-        <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-          {loading ? (
-            <div className="py-12 text-center text-sm text-neutral-500">売上データを読み込み中...</div>
-          ) : payments.length === 0 ? (
-            <div className="py-12 text-center">
-              <p className="text-sm text-neutral-600">売上データはまだありません。</p>
-              <div className="mt-4">
-                <Link
-                  href="/sales-payments/new"
-                  className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-                >
-                  最初の売上を登録する
-                </Link>
+          {visit ? (
+            <section className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <h2 className="mb-3 text-base font-semibold text-amber-900">
+                来店情報から自動反映
+              </h2>
+              <div className="space-y-1 text-sm text-amber-900">
+                <p>
+                  <span className="font-medium">来店ID：</span>
+                  {visit.id}
+                </p>
+                <p>
+                  <span className="font-medium">来店日：</span>
+                  {extractDateOnly(visit.visit_date) || "未設定"}
+                </p>
+                <p>
+                  <span className="font-medium">メニュー：</span>
+                  {visit.menu_name || "未設定"}
+                </p>
+                <p>
+                  <span className="font-medium">担当：</span>
+                  {visit.staff_name || "未設定"}
+                </p>
               </div>
-            </div>
-          ) : (
-            <>
-              <div className="hidden md:block">
-                <table className="min-w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-neutral-200 bg-neutral-50">
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
-                        入金日
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
-                        来店日
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
-                        顧客名
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
-                        メニュー
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-neutral-600">
-                        支払い方法
-                      </th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-neutral-600">
-                        金額
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {payments.map((row) => (
-                      <tr key={row.id} className="border-b border-neutral-100 last:border-b-0">
-                        <td className="px-4 py-4 text-sm text-neutral-700">
-                          {formatDisplayDate(row.payment_date)}
-                        </td>
-                        <td className="px-4 py-4 text-sm text-neutral-700">
-                          {formatDisplayDate(row.visit_date)}
-                        </td>
-                        <td className="px-4 py-4 text-sm font-medium text-neutral-900">
-                          {row.customer_name || '顧客名未設定'}
-                        </td>
-                        <td className="px-4 py-4 text-sm text-neutral-700">{row.menu || '-'}</td>
-                        <td className="px-4 py-4 text-sm text-neutral-700">
-                          {getPaymentMethodLabel(row.payment_method)}
-                        </td>
-                        <td className="px-4 py-4 text-right text-sm font-semibold text-neutral-900">
-                          {formatYen(row.amount)}
-                        </td>
-                      </tr>
+            </section>
+          ) : null}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <section className="rounded-2xl border bg-white p-4 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold">売上情報</h2>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium">顧客</label>
+                  <select
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  >
+                    <option value="">顧客を選択してください</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.name || "名称未設定"}
+                        {customer.phone ? ` / ${customer.phone}` : ""}
+                      </option>
                     ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-neutral-50">
-                      <td
-                        colSpan={5}
-                        className="px-4 py-4 text-right text-sm font-semibold text-neutral-700"
-                      >
-                        合計
-                      </td>
-                      <td className="px-4 py-4 text-right text-base font-bold text-neutral-900">
-                        {formatYen(totalAmount)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                  </select>
+                  {selectedCustomer ? (
+                    <p className="mt-2 text-xs text-green-700">
+                      選択中: {selectedCustomer.name || "名称未設定"}
+                      {selectedCustomer.phone ? ` / ${selectedCustomer.phone}` : ""}
+                    </p>
+                  ) : null}
+                </div>
 
-              <div className="space-y-3 p-4 md:hidden">
-                {payments.map((row) => (
-                  <div key={row.id} className="rounded-xl border border-neutral-200 bg-white p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-neutral-900">
-                          {row.customer_name || '顧客名未設定'}
-                        </div>
-                        <div className="mt-1 text-xs text-neutral-500">
-                          来店日：{formatDisplayDate(row.visit_date)}
-                        </div>
-                        <div className="mt-1 text-xs text-neutral-500">
-                          入金日：{formatDisplayDate(row.payment_date)}
-                        </div>
-                      </div>
-                      <div className="text-right text-sm font-bold text-neutral-900">
-                        {formatYen(row.amount)}
-                      </div>
-                    </div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium">売上日</label>
+                  <input
+                    type="date"
+                    value={saleDate}
+                    onChange={(e) => setSaleDate(e.target.value)}
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  />
+                </div>
 
-                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                      <div className="rounded-lg bg-neutral-50 px-3 py-2 text-neutral-700">
-                        メニュー：{row.menu || '-'}
-                      </div>
-                      <div className="rounded-lg bg-neutral-50 px-3 py-2 text-neutral-700">
-                        支払方法：{getPaymentMethodLabel(row.payment_method)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                <div>
+                  <label className="mb-2 block text-sm font-medium">メニュー名</label>
+                  <input
+                    type="text"
+                    value={menuName}
+                    onChange={(e) => setMenuName(e.target.value)}
+                    placeholder="例：ワンカラー / 定額デザイン"
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  />
+                </div>
 
-                <div className="rounded-xl bg-neutral-900 p-4 text-white">
-                  <div className="text-sm text-neutral-300">合計</div>
-                  <div className="mt-1 text-xl font-bold">{formatYen(totalAmount)}</div>
+                <div>
+                  <label className="mb-2 block text-sm font-medium">担当スタッフ名</label>
+                  <input
+                    type="text"
+                    value={staffName}
+                    onChange={(e) => setStaffName(e.target.value)}
+                    placeholder="例：Akane"
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">売上金額</label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    step="1"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="例：8000"
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">支払方法</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                  >
+                    <option value="cash">現金</option>
+                    <option value="card">カード</option>
+                    <option value="transfer">振込</option>
+                    <option value="other">その他</option>
+                  </select>
                 </div>
               </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  )
+            </section>
+
+            <section className="rounded-2xl border bg-white p-4 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold">メモ</h2>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                rows={5}
+                placeholder="備考、支払状況、施術メモなど"
+                className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+              />
+            </section>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => router.back()}
+                className="flex-1 rounded-xl border px-4 py-3 text-sm font-medium"
+              >
+                戻る
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {saving ? "登録中..." : "売上登録する"}
+              </button>
+            </div>
+          </form>
+        </>
+      )}
+    </main>
+  );
+}
+
+function extractDateOnly(value?: string | null) {
+  if (!value) return "";
+  const text = String(value);
+  if (text.includes("T")) return text.split("T")[0];
+  return text.slice(0, 10);
+}
+
+function todayString() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }

@@ -1,626 +1,404 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Customer = {
   id: string;
-  name?: string | null;
-  full_name?: string | null;
-  customer_name?: string | null;
-  kana?: string | null;
-  phone?: string | null;
-  salon_id?: string | null;
+  name: string | null;
+  phone: string | null;
 };
 
-type VisitRow = Record<string, unknown>;
-
-type FormState = {
-  customerId: string;
-  visitDate: string;
-  menu: string;
-  amount: string;
-  memo: string;
+type CustomerIntake = {
+  id: string;
+  customer_id: string | null;
+  name: string | null;
+  phone: string | null;
+  allergy: string | null;
+  ng_items: string | null;
+  agreed: boolean | null;
+  signature_name: string | null;
+  signature_data_url: string | null;
+  created_at?: string | null;
 };
-
-const DATE_ALIASES = ["visit_date", "date", "visited_at", "reservation_date"];
-const MENU_ALIASES = ["menu_name", "menu", "treatment_name", "service_name"];
-const AMOUNT_ALIASES = ["amount", "price", "sales_amount", "total_amount"];
-const MEMO_ALIASES = ["memo", "note", "notes", "remark", "remarks"];
-const CUSTOMER_ID_ALIASES = ["customer_id"];
-const SALON_ID_ALIASES = ["salon_id"];
-const CREATED_AT_ALIASES = ["created_at"];
-const UPDATED_AT_ALIASES = ["updated_at"];
-
-function getCustomerLabel(customer: Customer) {
-  return (
-    customer.name ||
-    customer.full_name ||
-    customer.customer_name ||
-    "名称未設定"
-  );
-}
-
-function toDatetimeLocalString(date: Date) {
-  const yyyy = date.getFullYear();
-  const mm = `${date.getMonth() + 1}`.padStart(2, "0");
-  const dd = `${date.getDate()}`.padStart(2, "0");
-  const hh = `${date.getHours()}`.padStart(2, "0");
-  const mi = `${date.getMinutes()}`.padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-}
-
-function pickExistingKey(keys: string[], aliases: string[]) {
-  return aliases.find((alias) => keys.includes(alias)) || null;
-}
-
-function buildStrictPayloadFromExistingRow(params: {
-  existingKeys: string[];
-  form: FormState;
-  selectedCustomer: Customer | null;
-}) {
-  const { existingKeys, form, selectedCustomer } = params;
-
-  const payload: Record<string, unknown> = {};
-
-  const customerIdKey = pickExistingKey(existingKeys, CUSTOMER_ID_ALIASES);
-  if (customerIdKey) payload[customerIdKey] = form.customerId;
-
-  const dateKey = pickExistingKey(existingKeys, DATE_ALIASES);
-  if (dateKey) payload[dateKey] = form.visitDate;
-
-  const menuKey = pickExistingKey(existingKeys, MENU_ALIASES);
-  if (menuKey) payload[menuKey] = form.menu;
-
-  const amountKey = pickExistingKey(existingKeys, AMOUNT_ALIASES);
-  if (amountKey) {
-    const num = form.amount === "" ? 0 : Number(form.amount);
-    payload[amountKey] = Number.isNaN(num) ? 0 : num;
-  }
-
-  const memoKey = pickExistingKey(existingKeys, MEMO_ALIASES);
-  if (memoKey) payload[memoKey] = form.memo;
-
-  const salonIdKey = pickExistingKey(existingKeys, SALON_ID_ALIASES);
-  if (salonIdKey && selectedCustomer?.salon_id) {
-    payload[salonIdKey] = selectedCustomer.salon_id;
-  }
-
-  const createdAtKey = pickExistingKey(existingKeys, CREATED_AT_ALIASES);
-  if (createdAtKey && !payload[createdAtKey]) {
-    payload[createdAtKey] = new Date().toISOString();
-  }
-
-  const updatedAtKey = pickExistingKey(existingKeys, UPDATED_AT_ALIASES);
-  if (updatedAtKey && !payload[updatedAtKey]) {
-    payload[updatedAtKey] = new Date().toISOString();
-  }
-
-  return payload;
-}
-
-function buildFallbackPayloadCandidates(params: {
-  form: FormState;
-  selectedCustomer: Customer | null;
-}) {
-  const { form, selectedCustomer } = params;
-  const amount = form.amount === "" ? 0 : Number(form.amount);
-  const safeAmount = Number.isNaN(amount) ? 0 : amount;
-
-  const baseList: Record<string, unknown>[] = [
-    {
-      customer_id: form.customerId,
-      visit_date: form.visitDate,
-      menu_name: form.menu,
-      amount: safeAmount,
-      memo: form.memo,
-      ...(selectedCustomer?.salon_id ? { salon_id: selectedCustomer.salon_id } : {}),
-    },
-    {
-      customer_id: form.customerId,
-      date: form.visitDate,
-      menu_name: form.menu,
-      amount: safeAmount,
-      memo: form.memo,
-      ...(selectedCustomer?.salon_id ? { salon_id: selectedCustomer.salon_id } : {}),
-    },
-    {
-      customer_id: form.customerId,
-      visit_date: form.visitDate,
-      menu: form.menu,
-      price: safeAmount,
-      memo: form.memo,
-      ...(selectedCustomer?.salon_id ? { salon_id: selectedCustomer.salon_id } : {}),
-    },
-    {
-      customer_id: form.customerId,
-      date: form.visitDate,
-      menu: form.menu,
-      price: safeAmount,
-      note: form.memo,
-      ...(selectedCustomer?.salon_id ? { salon_id: selectedCustomer.salon_id } : {}),
-    },
-    {
-      customer_id: form.customerId,
-      visited_at: form.visitDate,
-      treatment_name: form.menu,
-      sales_amount: safeAmount,
-      notes: form.memo,
-      ...(selectedCustomer?.salon_id ? { salon_id: selectedCustomer.salon_id } : {}),
-    },
-  ];
-
-  return baseList;
-}
 
 export default function NewVisitPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [visitsSampleKeys, setVisitsSampleKeys] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [pageError, setPageError] = useState("");
-  const [submitError, setSubmitError] = useState("");
+  const [intakes, setIntakes] = useState<CustomerIntake[]>([]);
 
-  const [form, setForm] = useState<FormState>({
-    customerId: "",
-    visitDate: toDatetimeLocalString(new Date()),
-    menu: "",
-    amount: "",
-    memo: "",
+  const [customerId, setCustomerId] = useState("");
+  const [visitDate, setVisitDate] = useState(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
   });
+  const [menuName, setMenuName] = useState("");
+  const [staffName, setStaffName] = useState("");
+  const [memo, setMemo] = useState("");
+
+  const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const [createdVisitId, setCreatedVisitId] = useState("");
 
   useEffect(() => {
-    let isMounted = true;
-
-    async function load() {
-      setLoading(true);
-      setPageError("");
-
-      try {
-        const [customersRes, visitsRes] = await Promise.all([
-          supabase.from("customers").select("*").order("created_at", { ascending: false }),
-          supabase.from("visits").select("*").limit(1),
-        ]);
-
-        if (!isMounted) return;
-
-        if (customersRes.error) {
-          throw new Error(`customers 読み込み失敗: ${customersRes.error.message}`);
-        }
-
-        const customersData = (customersRes.data || []) as Customer[];
-        setCustomers(customersData);
-
-        if (customersData.length > 0) {
-          setForm((prev) => ({
-            ...prev,
-            customerId: prev.customerId || String(customersData[0].id),
-          }));
-        }
-
-        if (!visitsRes.error && visitsRes.data && visitsRes.data.length > 0) {
-          const sample = visitsRes.data[0] as VisitRow;
-          setVisitsSampleKeys(Object.keys(sample));
-        } else {
-          setVisitsSampleKeys([]);
-        }
-      } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "初期データの読み込みに失敗しました";
-        setPageError(message);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-
-    load();
-
-    return () => {
-      isMounted = false;
-    };
+    fetchInitialData();
   }, []);
 
-  const selectedCustomer = useMemo(() => {
-    return customers.find((customer) => String(customer.id) === form.customerId) || null;
-  }, [customers, form.customerId]);
+  useEffect(() => {
+    const queryCustomerId = searchParams.get("customer_id") || "";
+    if (!queryCustomerId || customers.length === 0) return;
 
-  function updateForm<K extends keyof FormState>(key: K, value: FormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+    const exists = customers.some((customer) => customer.id === queryCustomerId);
+    if (exists) {
+      setCustomerId(queryCustomerId);
+    }
+  }, [searchParams, customers]);
+
+  async function fetchInitialData() {
+    try {
+      setLoading(true);
+      setErrorMessage("");
+
+      const [{ data: customersData, error: customersError }, { data: intakesData, error: intakesError }] =
+        await Promise.all([
+          supabase.from("customers").select("id,name,phone").order("name", { ascending: true }),
+          supabase
+            .from("customer_intakes")
+            .select(
+              "id,customer_id,name,phone,allergy,ng_items,agreed,signature_name,signature_data_url,created_at"
+            )
+            .order("created_at", { ascending: false }),
+        ]);
+
+      if (customersError) throw customersError;
+      if (intakesError) throw intakesError;
+
+      setCustomers((customersData as Customer[]) || []);
+      setIntakes((intakesData as CustomerIntake[]) || []);
+    } catch (error: any) {
+      setErrorMessage(error?.message || "初期データの取得に失敗しました。");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const selectedCustomer = useMemo(() => {
+    return customers.find((customer) => customer.id === customerId) || null;
+  }, [customers, customerId]);
+
+  const matchedIntake = useMemo(() => {
+    if (!selectedCustomer) return null;
+
+    const normalizedCustomerPhone = normalizePhone(selectedCustomer.phone);
+    const normalizedCustomerName = normalizeText(selectedCustomer.name);
+
+    const linkedByCustomerId = intakes.find(
+      (intake) => intake.customer_id && intake.customer_id === selectedCustomer.id
+    );
+    if (linkedByCustomerId) return linkedByCustomerId;
+
+    const linkedByPhone = intakes.find((intake) => {
+      const normalizedIntakePhone = normalizePhone(intake.phone);
+      return !!normalizedCustomerPhone && !!normalizedIntakePhone && normalizedCustomerPhone === normalizedIntakePhone;
+    });
+    if (linkedByPhone) return linkedByPhone;
+
+    const linkedByNameAndPhone = intakes.find((intake) => {
+      const normalizedIntakePhone = normalizePhone(intake.phone);
+      const normalizedIntakeName = normalizeText(intake.name);
+      return (
+        !!normalizedCustomerPhone &&
+        !!normalizedIntakePhone &&
+        normalizedCustomerPhone === normalizedIntakePhone &&
+        !!normalizedCustomerName &&
+        !!normalizedIntakeName &&
+        normalizedCustomerName === normalizedIntakeName
+      );
+    });
+
+    return linkedByNameAndPhone || null;
+  }, [selectedCustomer, intakes]);
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setSubmitting(true);
-    setSubmitError("");
 
-    if (!form.customerId) {
-      setSubmitting(false);
-      setSubmitError("顧客を選択してください。");
-      return;
-    }
-
-    if (!form.visitDate) {
-      setSubmitting(false);
-      setSubmitError("来店日時を入力してください。");
-      return;
-    }
-
-    if (!form.menu.trim()) {
-      setSubmitting(false);
-      setSubmitError("メニュー名を入力してください。");
-      return;
-    }
-
-    if (form.amount !== "" && Number.isNaN(Number(form.amount))) {
-      setSubmitting(false);
-      setSubmitError("金額は数字で入力してください。");
+    if (!customerId) {
+      setErrorMessage("顧客を選択してください。");
       return;
     }
 
     try {
-      if (visitsSampleKeys.length > 0) {
-        const strictPayload = buildStrictPayloadFromExistingRow({
-          existingKeys: visitsSampleKeys,
-          form,
-          selectedCustomer,
-        });
+      setSaving(true);
+      setErrorMessage("");
+      setSuccessMessage("");
+      setCreatedVisitId("");
 
-        const { error } = await supabase.from("visits").insert([strictPayload]);
+      const insertPayload = {
+        customer_id: customerId,
+        visit_date: visitDate,
+        menu_name: menuName || null,
+        staff_name: staffName || null,
+        memo: buildVisitMemo(memo, matchedIntake),
+      };
 
-        if (!error) {
-          router.push("/visits");
-          router.refresh();
-          return;
-        }
+      const { data, error } = await supabase
+        .from("visits")
+        .insert([insertPayload])
+        .select("id")
+        .single();
 
-        throw new Error(error.message);
-      }
+      if (error) throw error;
 
-      const candidates = buildFallbackPayloadCandidates({
-        form,
-        selectedCustomer,
-      });
-
-      let lastErrorMessage = "来店登録に失敗しました。";
-
-      for (const payload of candidates) {
-        const { error } = await supabase.from("visits").insert([payload]);
-        if (!error) {
-          router.push("/visits");
-          router.refresh();
-          return;
-        }
-        lastErrorMessage = error.message;
-      }
-
-      throw new Error(lastErrorMessage);
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "来店登録に失敗しました。";
-      setSubmitError(`保存エラー: ${message}`);
+      setCreatedVisitId(data?.id || "");
+      setSuccessMessage("来店登録が完了しました。続けて売上登録に進めます。");
+    } catch (error: any) {
+      setErrorMessage(error?.message || "来店登録に失敗しました。");
     } finally {
-      setSubmitting(false);
+      setSaving(false);
     }
   }
 
+  function goToSalesPayment() {
+    const params = new URLSearchParams();
+
+    if (customerId) params.set("customer_id", customerId);
+    if (createdVisitId) params.set("visit_id", createdVisitId);
+    if (visitDate) params.set("visit_date", visitDate);
+    if (menuName) params.set("menu_name", menuName);
+    if (staffName) params.set("staff_name", staffName);
+
+    router.push(`/sales-payments?${params.toString()}`);
+  }
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#fff7f3",
-        padding: "16px 16px 112px",
-      }}
-    >
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 720,
-          margin: "0 auto",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            marginBottom: 16,
-          }}
-        >
-          <Link
-            href="/visits"
-            style={{
-              textDecoration: "none",
-              color: "#111827",
-              fontSize: 14,
-              fontWeight: 700,
-            }}
-          >
-            ← 来店一覧へ戻る
-          </Link>
-        </div>
+    <main className="mx-auto w-full max-w-3xl px-4 py-6">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">来店登録</h1>
+        <p className="mt-1 text-sm text-gray-600">
+          顧客選択時に、初回入力情報があれば自動で表示します。
+        </p>
+      </div>
 
-        <div
-          style={{
-            background: "#ffffff",
-            borderRadius: 20,
-            padding: 20,
-            boxShadow: "0 8px 24px rgba(0,0,0,0.08)",
-            border: "1px solid #f3e8e2",
-          }}
-        >
-          <h1
-            style={{
-              margin: 0,
-              fontSize: 24,
-              lineHeight: 1.4,
-              fontWeight: 800,
-              color: "#111827",
-            }}
-          >
-            来店登録
-          </h1>
-
-          <p
-            style={{
-              marginTop: 8,
-              marginBottom: 0,
-              fontSize: 14,
-              color: "#6b7280",
-              lineHeight: 1.7,
-            }}
-          >
-            顧客を選んで、来店内容を登録します。
-          </p>
-
-          {pageError ? (
-            <div
-              style={{
-                marginTop: 16,
-                background: "#fff1f2",
-                color: "#be123c",
-                border: "1px solid #fecdd3",
-                borderRadius: 14,
-                padding: 12,
-                fontSize: 14,
-                lineHeight: 1.6,
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {pageError}
+      {loading ? (
+        <div className="rounded-xl border bg-white p-4 text-sm text-gray-600">読み込み中...</div>
+      ) : (
+        <>
+          {errorMessage ? (
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {errorMessage}
             </div>
           ) : null}
 
-          {loading ? (
-            <div
-              style={{
-                marginTop: 20,
-                fontSize: 14,
-                color: "#6b7280",
-              }}
-            >
-              読み込み中...
+          {successMessage ? (
+            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+              <div className="font-medium">{successMessage}</div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={goToSalesPayment}
+                  className="rounded-xl bg-black px-4 py-3 text-sm font-medium text-white"
+                >
+                  売上登録へ進む
+                </button>
+                <button
+                  type="button"
+                  onClick={() => router.push("/visits")}
+                  className="rounded-xl border px-4 py-3 text-sm font-medium"
+                >
+                  来店一覧へ戻る
+                </button>
+              </div>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} style={{ marginTop: 20 }}>
-              <div style={{ display: "grid", gap: 16 }}>
+          ) : null}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <section className="rounded-2xl border bg-white p-4 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold">基本情報</h2>
+
+              <div className="space-y-4">
                 <div>
-                  <label
-                    htmlFor="customerId"
-                    style={{
-                      display: "block",
-                      marginBottom: 8,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#111827",
-                    }}
-                  >
-                    顧客
-                  </label>
+                  <label className="mb-2 block text-sm font-medium">顧客</label>
                   <select
-                    id="customerId"
-                    value={form.customerId}
-                    onChange={(e) => updateForm("customerId", e.target.value)}
-                    style={{
-                      width: "100%",
-                      height: 48,
-                      borderRadius: 12,
-                      border: "1px solid #d1d5db",
-                      padding: "0 12px",
-                      fontSize: 16,
-                      background: "#fff",
-                      color: "#111827",
-                    }}
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                    disabled={!!createdVisitId}
                   >
-                    {customers.length === 0 ? (
-                      <option value="">顧客がいません</option>
-                    ) : (
-                      customers.map((customer) => (
-                        <option key={customer.id} value={customer.id}>
-                          {getCustomerLabel(customer)}
-                          {customer.phone ? ` / ${customer.phone}` : ""}
-                        </option>
-                      ))
-                    )}
+                    <option value="">顧客を選択してください</option>
+                    {customers.map((customer) => (
+                      <option key={customer.id} value={customer.id}>
+                        {customer.name || "名称未設定"}
+                        {customer.phone ? ` / ${customer.phone}` : ""}
+                      </option>
+                    ))}
                   </select>
+                  {selectedCustomer ? (
+                    <p className="mt-2 text-xs text-green-700">
+                      選択中: {selectedCustomer.name || "名称未設定"}
+                      {selectedCustomer.phone ? ` / ${selectedCustomer.phone}` : ""}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="visitDate"
-                    style={{
-                      display: "block",
-                      marginBottom: 8,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#111827",
-                    }}
-                  >
-                    来店日時
-                  </label>
+                  <label className="mb-2 block text-sm font-medium">来店日</label>
                   <input
-                    id="visitDate"
-                    type="datetime-local"
-                    value={form.visitDate}
-                    onChange={(e) => updateForm("visitDate", e.target.value)}
-                    style={{
-                      width: "100%",
-                      height: 48,
-                      borderRadius: 12,
-                      border: "1px solid #d1d5db",
-                      padding: "0 12px",
-                      fontSize: 16,
-                      background: "#fff",
-                      color: "#111827",
-                      boxSizing: "border-box",
-                    }}
+                    type="date"
+                    value={visitDate}
+                    onChange={(e) => setVisitDate(e.target.value)}
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                    disabled={!!createdVisitId}
                   />
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="menu"
-                    style={{
-                      display: "block",
-                      marginBottom: 8,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#111827",
-                    }}
-                  >
-                    メニュー
-                  </label>
+                  <label className="mb-2 block text-sm font-medium">メニュー名</label>
                   <input
-                    id="menu"
                     type="text"
+                    value={menuName}
+                    onChange={(e) => setMenuName(e.target.value)}
                     placeholder="例：ワンカラー / 定額デザイン"
-                    value={form.menu}
-                    onChange={(e) => updateForm("menu", e.target.value)}
-                    style={{
-                      width: "100%",
-                      height: 48,
-                      borderRadius: 12,
-                      border: "1px solid #d1d5db",
-                      padding: "0 12px",
-                      fontSize: 16,
-                      background: "#fff",
-                      color: "#111827",
-                      boxSizing: "border-box",
-                    }}
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                    disabled={!!createdVisitId}
                   />
                 </div>
 
                 <div>
-                  <label
-                    htmlFor="amount"
-                    style={{
-                      display: "block",
-                      marginBottom: 8,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#111827",
-                    }}
-                  >
-                    金額
-                  </label>
+                  <label className="mb-2 block text-sm font-medium">担当スタッフ名</label>
                   <input
-                    id="amount"
-                    type="number"
-                    inputMode="numeric"
-                    placeholder="例：6500"
-                    value={form.amount}
-                    onChange={(e) => updateForm("amount", e.target.value)}
-                    style={{
-                      width: "100%",
-                      height: 48,
-                      borderRadius: 12,
-                      border: "1px solid #d1d5db",
-                      padding: "0 12px",
-                      fontSize: 16,
-                      background: "#fff",
-                      color: "#111827",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="memo"
-                    style={{
-                      display: "block",
-                      marginBottom: 8,
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "#111827",
-                    }}
-                  >
-                    メモ
-                  </label>
-                  <textarea
-                    id="memo"
-                    placeholder="施術メモ、次回提案、注意点など"
-                    value={form.memo}
-                    onChange={(e) => updateForm("memo", e.target.value)}
-                    rows={5}
-                    style={{
-                      width: "100%",
-                      borderRadius: 12,
-                      border: "1px solid #d1d5db",
-                      padding: 12,
-                      fontSize: 16,
-                      background: "#fff",
-                      color: "#111827",
-                      resize: "vertical",
-                      boxSizing: "border-box",
-                    }}
+                    type="text"
+                    value={staffName}
+                    onChange={(e) => setStaffName(e.target.value)}
+                    placeholder="例：Akane"
+                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                    disabled={!!createdVisitId}
                   />
                 </div>
               </div>
+            </section>
 
-              {submitError ? (
-                <div
-                  style={{
-                    marginTop: 16,
-                    background: "#fff1f2",
-                    color: "#be123c",
-                    border: "1px solid #fecdd3",
-                    borderRadius: 14,
-                    padding: 12,
-                    fontSize: 14,
-                    lineHeight: 1.6,
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {submitError}
+            <section className="rounded-2xl border bg-white p-4 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold">初回入力情報</h2>
+
+              {!customerId ? (
+                <div className="rounded-xl border bg-gray-50 p-3 text-sm text-gray-600">
+                  先に顧客を選択してください。
                 </div>
-              ) : null}
+              ) : matchedIntake ? (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <div className="mb-2 text-sm font-semibold text-amber-900">施術前チェック</div>
+                    <div className="space-y-2 text-sm text-amber-900">
+                      <p>
+                        <span className="font-medium">アレルギー：</span>
+                        {matchedIntake.allergy?.trim() ? matchedIntake.allergy : "なし"}
+                      </p>
+                      <p>
+                        <span className="font-medium">NG項目：</span>
+                        {matchedIntake.ng_items?.trim() ? matchedIntake.ng_items : "なし"}
+                      </p>
+                      <p>
+                        <span className="font-medium">注意事項同意：</span>
+                        {matchedIntake.agreed ? "済み" : "未確認"}
+                      </p>
+                      <p>
+                        <span className="font-medium">署名名：</span>
+                        {matchedIntake.signature_name?.trim() ? matchedIntake.signature_name : "未入力"}
+                      </p>
+                    </div>
+                  </div>
 
-              <button
-                type="submit"
-                disabled={submitting || customers.length === 0}
-                style={{
-                  width: "100%",
-                  height: 52,
-                  marginTop: 20,
-                  border: "none",
-                  borderRadius: 14,
-                  background: submitting || customers.length === 0 ? "#cbd5e1" : "#fb923c",
-                  color: "#ffffff",
-                  fontSize: 16,
-                  fontWeight: 800,
-                  cursor: submitting || customers.length === 0 ? "not-allowed" : "pointer",
-                }}
-              >
-                {submitting ? "登録中..." : "来店登録する"}
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
+                  {matchedIntake.signature_data_url ? (
+                    <div>
+                      <div className="mb-2 text-sm font-medium">署名</div>
+                      <div className="overflow-hidden rounded-xl border bg-white p-2">
+                        <img
+                          src={matchedIntake.signature_data_url}
+                          alt="署名"
+                          className="max-h-40 w-auto"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  この顧客に紐づく初回入力情報は見つかりませんでした。
+                </div>
+              )}
+            </section>
+
+            <section className="rounded-2xl border bg-white p-4 shadow-sm">
+              <h2 className="mb-4 text-base font-semibold">来店メモ</h2>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                rows={6}
+                placeholder="施術内容、注意点、次回提案など"
+                className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
+                disabled={!!createdVisitId}
+              />
+              <p className="mt-2 text-xs text-gray-500">
+                初回情報がある場合は、登録時にメモ末尾へ自動追記されます。
+              </p>
+            </section>
+
+            {!createdVisitId ? (
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => router.push("/visits")}
+                  className="flex-1 rounded-xl border px-4 py-3 text-sm font-medium"
+                >
+                  戻る
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {saving ? "登録中..." : "来店登録する"}
+                </button>
+              </div>
+            ) : null}
+          </form>
+        </>
+      )}
     </main>
   );
+}
+
+function normalizePhone(value: string | null | undefined) {
+  return (value || "").replace(/\D/g, "");
+}
+
+function normalizeText(value: string | null | undefined) {
+  return (value || "").trim().toLowerCase();
+}
+
+function buildVisitMemo(baseMemo: string, intake: CustomerIntake | null) {
+  const trimmedBase = (baseMemo || "").trim();
+
+  if (!intake) return trimmedBase || null;
+
+  const autoLines = [
+    "",
+    "【初回入力情報】",
+    `アレルギー: ${intake.allergy?.trim() ? intake.allergy : "なし"}`,
+    `NG項目: ${intake.ng_items?.trim() ? intake.ng_items : "なし"}`,
+    `注意事項同意: ${intake.agreed ? "済み" : "未確認"}`,
+    `署名名: ${intake.signature_name?.trim() ? intake.signature_name : "未入力"}`,
+  ].join("\n");
+
+  const merged = `${trimmedBase}${autoLines}`.trim();
+  return merged || null;
 }

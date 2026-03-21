@@ -84,7 +84,7 @@ export default function RootLayout({
             <NavItem href="/customers" label="顧客" />
             <NavItem href="/visits" label="来店" />
             <NavItem href="/reservations" label="予約" />
-            <NavItem href="/customers/intake" label="初回" />
+            <NavItem href="/customer-intake" label="初回" />
           </div>
         </nav>
       </body>
