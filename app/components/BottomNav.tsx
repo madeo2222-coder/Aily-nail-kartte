@@ -3,13 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type NavItem = {
-  href: string;
-  label: string;
-};
-
-const navItems: NavItem[] = [
-  { href: "/", label: "ホーム" },
+const navItems = [
+  { href: "/dashboard", label: "ホーム" },
   { href: "/customers", label: "顧客" },
   { href: "/visits", label: "来店" },
   { href: "/receivables", label: "未収" },
@@ -19,33 +14,36 @@ const navItems: NavItem[] = [
 export default function BottomNav() {
   const pathname = usePathname();
 
-  const isActive = (href: string) => {
-    if (href === "/") {
-      return pathname === "/" || pathname === "/dashboard";
-    }
-    return pathname === href || pathname.startsWith(`${href}/`);
-  };
+  // お客様が開く公開ページでは下部ナビを出さない
+  const hiddenPaths = ["/customer-intake"];
+
+  const shouldHide = hiddenPaths.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`)
+  );
+
+  if (shouldHide) return null;
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-[9999] border-t border-gray-200 bg-white"
+      className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto grid max-w-md grid-cols-5 gap-2 px-2 py-2">
+      <div className="mx-auto grid max-w-md grid-cols-5">
         {navItems.map((item) => {
-          const active = isActive(item.href);
+          const isActive =
+            pathname === item.href || pathname.startsWith(`${item.href}/`);
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex h-14 items-center justify-center rounded-xl text-xs font-semibold transition ${
-                active
-                  ? "bg-orange-100 text-orange-600"
-                  : "text-gray-500 hover:bg-gray-100"
+              className={`flex min-h-[64px] flex-col items-center justify-center text-sm font-medium transition ${
+                isActive
+                  ? "text-orange-500 bg-orange-50"
+                  : "text-gray-500 hover:text-gray-800"
               }`}
             >
-              {item.label}
+              <span>{item.label}</span>
             </Link>
           );
         })}
