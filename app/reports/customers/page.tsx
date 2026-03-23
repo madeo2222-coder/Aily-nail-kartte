@@ -64,18 +64,18 @@ export default function CustomerReportPage() {
   }
 
   if (loading) {
-    return <div className="p-4">読み込み中...</div>;
+    return <div className="p-4 pb-24">読み込み中...</div>;
   }
 
   return (
     <div className="p-4 pb-24">
-      <h1 className="text-2xl font-bold mb-4">顧客別売上</h1>
+      <h1 className="mb-4 text-2xl font-bold">顧客別売上</h1>
 
       <div className="space-y-3">
         {data.map((row, index) => (
           <div
             key={index}
-            className="rounded-xl border p-4 flex justify-between items-center"
+            className="flex items-center justify-between rounded-xl border p-4"
           >
             <div>
               <p className="font-bold">{row.customer_name}</p>
@@ -84,9 +84,7 @@ export default function CustomerReportPage() {
               </p>
             </div>
 
-            <p className="text-lg font-bold">
-              {formatYen(row.total_sales)}
-            </p>
+            <p className="text-lg font-bold">{formatYen(row.total_sales)}</p>
           </div>
         ))}
       </div>
