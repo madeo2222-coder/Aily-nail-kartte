@@ -8,11 +8,9 @@ type Visit = {
   id: string;
   visit_date: string | null;
   price: number | string | null;
-  menu_name?: string | null;
-  staff_name?: string | null;
-  customers?: {
-    name: string | null;
-  } | null;
+  menu_name: string | null;
+  staff_name: string | null;
+  customer_name: string | null;
 };
 
 export default function DashboardPage() {
@@ -41,14 +39,16 @@ export default function DashboardPage() {
 
     const { data, error } = await supabase
       .from("visits")
-      .select(`
+      .select(
+        `
         id,
         visit_date,
         price,
         menu_name,
         staff_name,
         customers(name)
-      `)
+      `
+      )
       .order("visit_date", { ascending: false });
 
     if (error) {
@@ -58,7 +58,16 @@ export default function DashboardPage() {
       return;
     }
 
-    setVisits(data || []);
+    const formatted: Visit[] = ((data as any[]) || []).map((item) => ({
+      id: item.id,
+      visit_date: item.visit_date ?? null,
+      price: item.price ?? null,
+      menu_name: item.menu_name ?? null,
+      staff_name: item.staff_name ?? null,
+      customer_name: item.customers?.name ?? null,
+    }));
+
+    setVisits(formatted);
     setLoading(false);
   }
 
@@ -137,7 +146,6 @@ export default function DashboardPage() {
           <div className="rounded-xl bg-white p-6 shadow">読み込み中...</div>
         ) : (
           <>
-            {/* KPI */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="rounded-2xl bg-white p-5 shadow">
                 <p className="text-sm text-gray-500">今日の売上</p>
@@ -170,34 +178,53 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* 最近の来店 */}
             <div className="mt-6 rounded-2xl bg-white p-5 shadow">
               <h2 className="mb-4 text-lg font-bold">最近の来店</h2>
 
-              <div className="space-y-3">
-                {visits.slice(0, 10).map((visit) => (
-                  <div
-                    key={visit.id}
-                    className="rounded-xl border p-4 flex justify-between items-center"
-                  >
-                    <div>
-                      <p className="text-sm text-gray-500">
-                        {visit.visit_date}
-                      </p>
-                      <p className="font-bold text-lg">
-                        {visit.customers?.name || "不明"}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {visit.menu_name || "-"} / {visit.staff_name || "-"}
+              {visits.length === 0 ? (
+                <p className="text-sm text-gray-500">来店データがありません</p>
+              ) : (
+                <div className="space-y-3">
+                  {visits.slice(0, 10).map((visit) => (
+                    <div
+                      key={visit.id}
+                      className="flex items-center justify-between rounded-xl border p-4"
+                    >
+                      <div>
+                        <p className="text-sm text-gray-500">
+                          {visit.visit_date || "-"}
+                        </p>
+                        <p className="text-lg font-bold">
+                          {visit.customer_name || "不明"}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {visit.menu_name || "-"} / {visit.staff_name || "-"}
+                        </p>
+                      </div>
+
+                      <p className="text-lg font-bold">
+                        {formatYen(toNumber(visit.price))}
                       </p>
                     </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
-                    <p className="text-lg font-bold">
-                      {formatYen(toNumber(visit.price))}
-                    </p>
-                  </div>
-                ))}
-              </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href="/visits"
+                className="rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm"
+              >
+                来店一覧へ
+              </Link>
+
+              <Link
+                href="/visits/new"
+                className="rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm"
+              >
+                来店登録へ
+              </Link>
             </div>
           </>
         )}
