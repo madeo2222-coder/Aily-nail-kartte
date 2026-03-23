@@ -1,97 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
-type VisitRow = {
-  id: string;
-  customer_id?: string | null;
-  visit_date?: string | null;
-  created_at?: string | null;
-  menu_name?: string | null;
-  memo?: string | null;
-  amount?: number | string | null;
-  price?: number | string | null;
-  total_amount?: number | string | null;
-  menu_price?: number | string | null;
-  sales_amount?: number | string | null;
-  payment_status?: string | null;
-  paid_amount?: number | string | null;
-  unpaid_amount?: number | string | null;
-  payment_method?: string | null;
-  customers?: {
-    name?: string | null;
-  } | null;
-  [key: string]: any;
-};
-
-function toDateString(value?: string | null) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-function toNumber(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isNaN(n) ? null : n;
-}
-
-function formatYen(value: number) {
-  return `${value.toLocaleString("ja-JP")}円`;
-}
-
-function getVisitAmount(v: VisitRow): number | null {
-  const candidates = [
-    v.amount,
-    v.price,
-    v.total_amount,
-    v.menu_price,
-    v.sales_amount,
-  ];
-
-  for (const candidate of candidates) {
-    const num = toNumber(candidate);
-    if (num !== null) return num;
-  }
-
-  return null;
-}
-
-function getPaidAmount(v: VisitRow, resolvedAmount: number | null): number {
-  const paid = toNumber(v.paid_amount);
-  if (paid !== null) return paid;
-
-  if (v.payment_status === "paid") return resolvedAmount ?? 0;
-  if (v.payment_status === "unpaid") return 0;
-
-  return resolvedAmount ?? 0;
-}
-
-function getUnpaidAmount(v: VisitRow, resolvedAmount: number | null): number {
-  const unpaid = toNumber(v.unpaid_amount);
-  if (unpaid !== null) return unpaid;
-
-  if (v.payment_status === "unpaid") return resolvedAmount ?? 0;
-  if (v.payment_status === "paid") return 0;
-
-  return 0;
-}
-
-function paymentStatusLabel(status?: string | null) {
-  if (status === "unpaid") return "未収";
-  if (status === "partial") return "一部入金";
-  return "支払い済み";
-}
-
 export default function VisitsPage() {
-  const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [visits, setVisits] = useState<any[]>([]);
+  const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchVisits();
@@ -100,136 +17,145 @@ export default function VisitsPage() {
   async function fetchVisits() {
     setLoading(true);
 
-    const { data, error } = await supabase
+    const { data: visitsData, error: visitsError } = await supabase
       .from("visits")
-      .select(`
-        *,
-        customers (
-          name
-        )
-      `)
-      .order("created_at", { ascending: false });
+      .select("*")
+      .order("id", { ascending: false });
 
-    if (error) {
-      console.error("visits fetch error:", error);
-      setVisits([]);
+    if (visitsError) {
+      console.error("来店一覧取得エラー:", visitsError);
+      alert("来店一覧の取得に失敗しました");
       setLoading(false);
       return;
     }
 
-    setVisits((data as VisitRow[]) || []);
+    const visitRows = visitsData || [];
+    setVisits(visitRows);
+
+    const customerIds = Array.from(
+      new Set(
+        visitRows
+          .map((visit: any) => visit.customer_id)
+          .filter((id: any) => !!id)
+      )
+    );
+
+    if (customerIds.length > 0) {
+      const { data: customersData, error: customersError } = await supabase
+        .from("customers")
+        .select("id, name")
+        .in("id", customerIds);
+
+      if (customersError) {
+        console.error("顧客取得エラー:", customersError);
+        setCustomerMap({});
+      } else {
+        const map: Record<string, string> = {};
+        (customersData || []).forEach((customer: any) => {
+          map[customer.id] = customer.name || "未登録";
+        });
+        setCustomerMap(map);
+      }
+    } else {
+      setCustomerMap({});
+    }
+
     setLoading(false);
   }
 
-  const normalizedVisits = useMemo(() => {
-    return visits
-      .map((visit) => {
-        const resolvedAmount = getVisitAmount(visit);
-        const resolvedPaidAmount = getPaidAmount(visit, resolvedAmount);
-        const resolvedUnpaidAmount = getUnpaidAmount(visit, resolvedAmount);
-        const effectiveDate = visit.visit_date || visit.created_at || null;
-        const effectiveDateStr = toDateString(effectiveDate);
+  async function handleDeleteVisit(id: string) {
+    const ok = window.confirm("この来店データを削除しますか？");
+    if (!ok) return;
 
-        const isLegacyLike =
-          !visit.visit_date || !visit.menu_name || resolvedAmount === null;
+    setDeletingId(id);
 
-        return {
-          ...visit,
-          resolvedAmount,
-          resolvedPaidAmount,
-          resolvedUnpaidAmount,
-          effectiveDate,
-          effectiveDateStr,
-          isLegacyLike,
-        };
-      })
-      .sort((a, b) => {
-        const aTime = a.effectiveDate ? new Date(a.effectiveDate).getTime() : 0;
-        const bTime = b.effectiveDate ? new Date(b.effectiveDate).getTime() : 0;
-        return bTime - aTime;
-      });
-  }, [visits]);
+    const { error } = await supabase.from("visits").delete().eq("id", id);
+
+    if (error) {
+      console.error("来店削除エラー:", error);
+      alert("来店データの削除に失敗しました");
+      setDeletingId(null);
+      return;
+    }
+
+    alert("削除しました");
+    setDeletingId(null);
+    fetchVisits();
+  }
+
+  function formatDate(value: string | null | undefined) {
+    if (!value) return "-";
+    return String(value).includes("T") ? String(value).split("T")[0] : String(value);
+  }
+
+  function formatYen(value: number | string | null | undefined) {
+    if (value === null || value === undefined || value === "") return "0";
+    return Number(value).toLocaleString();
+  }
+
+  function getCustomerName(customerId: string | null | undefined) {
+    if (!customerId) return "未登録";
+    return customerMap[customerId] || "未登録";
+  }
 
   return (
-    <div className="p-4 pb-24">
-      <h1 className="text-3xl font-bold mb-6">来店一覧</h1>
+    <div className="p-4 pb-24 max-w-3xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">来店一覧</h1>
 
       <Link
         href="/visits/new"
-        className="block w-full bg-black text-white text-center rounded-lg py-4 text-2xl mb-6"
+        className="block bg-black text-white text-center py-4 rounded-2xl mb-4 text-xl font-semibold"
       >
         ＋ 来店登録
       </Link>
 
       {loading ? (
-        <p>読み込み中...</p>
-      ) : normalizedVisits.length === 0 ? (
-        <div className="border rounded-lg p-4 bg-white">
-          <p>来店データがまだありません。</p>
+        <p className="text-center text-gray-500 py-8">読み込み中...</p>
+      ) : visits.length === 0 ? (
+        <div className="border rounded-2xl p-6 text-center text-gray-500 bg-white">
+          データなし
         </div>
       ) : (
         <div className="space-y-4">
-          {normalizedVisits.map((visit) => (
-            <div key={visit.id} className="border-2 border-black rounded-lg p-4 bg-white">
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <p className="font-bold text-xl">
-                  顧客名：{visit.customers?.name || "未登録"}
-                </p>
+          {visits.map((visit) => (
+            <div
+              key={visit.id}
+              className="border-[3px] border-black rounded-2xl p-5 bg-white"
+            >
+              <p className="text-2xl font-bold mb-3">
+                顧客名：{getCustomerName(visit.customer_id)}
+              </p>
 
-                <div className="flex flex-wrap gap-2 justify-end">
-                  {visit.isLegacyLike && (
-                    <span className="text-xs border rounded-full px-2 py-1">
-                      旧データ
-                    </span>
-                  )}
-
-                  {visit.resolvedUnpaidAmount > 0 && (
-                    <span className="text-xs border border-red-400 text-red-600 rounded-full px-2 py-1 font-bold">
-                      未収あり
-                    </span>
-                  )}
-
-                  {visit.payment_status === "partial" && (
-                    <span className="text-xs border border-orange-400 text-orange-600 rounded-full px-2 py-1 font-bold">
-                      一部入金
-                    </span>
-                  )}
-
-                  {visit.payment_status === "paid" && visit.resolvedUnpaidAmount === 0 && (
-                    <span className="text-xs border border-green-400 text-green-600 rounded-full px-2 py-1 font-bold">
-                      支払い済み
-                    </span>
-                  )}
-                </div>
+              <div className="space-y-2 text-2xl leading-tight">
+                <p>日付：{formatDate(visit.visit_date)}</p>
+                <p>メニュー：{visit.menu_name || "-"}</p>
+                <p>担当：{visit.staff_name || "-"}</p>
+                <p>金額：¥{formatYen(visit.price)}</p>
+                <p>メモ：{visit.memo || "-"}</p>
               </div>
 
-              <p className="text-2xl">日付：{visit.effectiveDateStr || "未入力"}</p>
-              <p className="text-2xl">メニュー：{visit.menu_name || "未入力"}</p>
-              <p className="text-2xl">
-                売上金額：
-                {visit.resolvedAmount !== null
-                  ? formatYen(visit.resolvedAmount)
-                  : "未入力"}
-              </p>
-              <p className="text-2xl">入金額：{formatYen(visit.resolvedPaidAmount)}</p>
-              <p className="text-2xl">未収額：{formatYen(visit.resolvedUnpaidAmount)}</p>
-              <p className="text-2xl">支払い状況：{paymentStatusLabel(visit.payment_status)}</p>
-              <p className="text-2xl break-words mb-4">メモ：{visit.memo || "-"}</p>
-
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex gap-3 mt-5 flex-wrap">
                 <Link
-                  href={`/visits/${visit.id}`}
-                  className="rounded-xl border-2 border-black px-4 py-3 text-center text-lg font-bold"
+                  href={`/sales-payments?visit_id=${visit.id}`}
+                  className="border-[3px] border-black rounded-2xl px-4 py-3 text-lg font-bold text-center"
                 >
-                  入金更新
+                  会計へ
                 </Link>
 
                 <Link
-                  href="/receivables"
-                  className="rounded-xl border px-4 py-3 text-center text-lg font-bold"
+                  href={`/visits/${visit.id}/edit`}
+                  className="border-[3px] border-black rounded-2xl px-4 py-3 text-lg font-bold text-center"
                 >
-                  未収一覧へ
+                  編集
                 </Link>
+
+                <button
+                  onClick={() => handleDeleteVisit(visit.id)}
+                  disabled={deletingId === visit.id}
+                  className="bg-red-500 text-white px-4 py-3 rounded-2xl text-lg font-bold disabled:opacity-50"
+                >
+                  {deletingId === visit.id ? "削除中..." : "削除"}
+                </button>
               </div>
             </div>
           ))}

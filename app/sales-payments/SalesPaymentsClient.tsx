@@ -1,356 +1,285 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export const dynamic = "force-dynamic";
-
-type Customer = {
-  id: string;
-  name: string | null;
-  phone: string | null;
-};
-
-type Visit = {
-  id: string;
-  customer_id: string | null;
-  visit_date?: string | null;
-  menu_name?: string | null;
-  staff_name?: string | null;
-  memo?: string | null;
-};
-
-export default function SalesPaymentPage() {
+export default function SalesPaymentsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [visit, setVisit] = useState<Visit | null>(null);
-
-  const [customerId, setCustomerId] = useState("");
-  const [visitId, setVisitId] = useState("");
-  const [saleDate, setSaleDate] = useState(() => {
-    const now = new Date();
-    const yyyy = now.getFullYear();
-    const mm = String(now.getMonth() + 1).padStart(2, "0");
-    const dd = String(now.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  });
-  const [menuName, setMenuName] = useState("");
-  const [staffName, setStaffName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-  const [memo, setMemo] = useState("");
-
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [customerId, setCustomerId] = useState<string>("");
+  const [saleDate, setSaleDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [menuName, setMenuName] = useState<string>("");
+  const [staffName, setStaffName] = useState<string>("");
+  const [amount, setAmount] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("現金");
+  const [paymentStatus, setPaymentStatus] = useState<string>("paid");
+  const [paidAmount, setPaidAmount] = useState<string>("");
+  const [unpaidAmount, setUnpaidAmount] = useState<string>("0");
+  const [memo, setMemo] = useState<string>("");
+  const [visitId, setVisitId] = useState<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
-    fetchInitialData();
+    fetchCustomers();
   }, []);
 
-  async function fetchInitialData() {
-    try {
-      setLoading(true);
-      setErrorMessage("");
-      setSuccessMessage("");
+  useEffect(() => {
+    const id = searchParams.get("visit_id");
+    if (id) {
+      setVisitId(id);
+      fetchVisitData(id);
+    }
+  }, [searchParams]);
 
-      const queryCustomerId = searchParams.get("customer_id") || "";
-      const queryVisitId = searchParams.get("visit_id") || "";
-      const queryVisitDate = searchParams.get("visit_date") || "";
-      const queryMenuName = searchParams.get("menu_name") || "";
-      const queryStaffName = searchParams.get("staff_name") || "";
+  useEffect(() => {
+    const total = Number(amount || 0);
+    const paid = Number(paidAmount || 0);
+    const unpaid = total - paid;
 
-      const { data: customersData, error: customersError } = await supabase
-        .from("customers")
-        .select("id,name,phone")
-        .order("name", { ascending: true });
+    if (paymentStatus === "paid") {
+      setPaidAmount(String(total));
+      setUnpaidAmount("0");
+    } else {
+      setUnpaidAmount(String(unpaid > 0 ? unpaid : 0));
+    }
+  }, [amount, paymentStatus]);
 
-      if (customersError) throw customersError;
+  async function fetchCustomers() {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id,name")
+      .order("name", { ascending: true });
 
-      setCustomers((customersData as Customer[]) || []);
-      setCustomerId(queryCustomerId);
-      setVisitId(queryVisitId);
-      setSaleDate(queryVisitDate || todayString());
-      setMenuName(queryMenuName);
-      setStaffName(queryStaffName);
+    if (error) {
+      console.error("顧客取得エラー:", error);
+      return;
+    }
 
-      if (queryVisitId) {
-        const { data: visitData, error: visitError } = await supabase
-          .from("visits")
-          .select("id,customer_id,visit_date,menu_name,staff_name,memo")
-          .eq("id", queryVisitId)
-          .single();
+    setCustomers(data || []);
+  }
 
-        if (!visitError && visitData) {
-          const visitRow = visitData as Visit;
-          setVisit(visitRow);
-          setCustomerId(visitRow.customer_id || queryCustomerId || "");
-          setSaleDate(extractDateOnly(visitRow.visit_date) || queryVisitDate || todayString());
-          setMenuName(visitRow.menu_name || queryMenuName || "");
-          setStaffName(visitRow.staff_name || queryStaffName || "");
-          setMemo(visitRow.memo || "");
-        }
-      }
-    } catch (error: any) {
-      setErrorMessage(error?.message || "初期データの取得に失敗しました。");
-    } finally {
-      setLoading(false);
+  async function fetchVisitData(id: string) {
+    const { data: visitData, error } = await supabase
+      .from("visits")
+      .select("id,customer_id,visit_date,menu_name,staff_name,memo,price")
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      console.error("来店データ取得エラー:", error);
+      return;
+    }
+
+    if (visitData) {
+      const total = Number((visitData as any).price ?? 0);
+
+      setCustomerId(String((visitData as any).customer_id ?? ""));
+      setSaleDate(
+        (visitData as any).visit_date
+          ? String((visitData as any).visit_date).split("T")[0]
+          : ""
+      );
+      setMenuName((visitData as any).menu_name ?? "");
+      setStaffName((visitData as any).staff_name ?? "");
+      setMemo((visitData as any).memo ?? "");
+      setAmount(String(total));
+      setPaymentStatus("paid");
+      setPaidAmount(String(total));
+      setUnpaidAmount("0");
     }
   }
 
-  const selectedCustomer = useMemo(() => {
-    return customers.find((customer) => customer.id === customerId) || null;
-  }, [customers, customerId]);
-
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!customerId) {
-      setErrorMessage("顧客を選択してください。");
-      return;
-    }
+    setLoading(true);
 
-    if (!saleDate) {
-      setErrorMessage("売上日を入力してください。");
-      return;
-    }
+    const total = Number(amount || 0);
+    const paid = paymentStatus === "paid" ? total : Number(paidAmount || 0);
+    const unpaid = paymentStatus === "paid" ? 0 : Math.max(total - paid, 0);
 
-    if (!amount || Number(amount) <= 0) {
-      setErrorMessage("売上金額を正しく入力してください。");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      setErrorMessage("");
-      setSuccessMessage("");
-
-      const numericAmount = Number(amount);
-
-      const insertPayload = {
-        customer_id: customerId,
-        visit_id: visitId || null,
+    const { error } = await supabase.from("sales").insert([
+      {
+        customer_id: customerId || null,
+        visit_id: visitId,
         sale_date: saleDate,
-        menu_name: menuName || null,
-        staff_name: staffName || null,
-        amount: numericAmount,
-        payment_method: paymentMethod || null,
-        memo: memo || null,
-      };
+        menu_name: menuName,
+        staff_name: staffName,
+        amount: total,
+        payment_method: paymentMethod,
+        payment_status: paymentStatus,
+        paid_amount: paid,
+        unpaid_amount: unpaid,
+        memo,
+      },
+    ]);
 
-      const { error } = await supabase.from("sales").insert([insertPayload]);
+    setLoading(false);
 
-      if (error) {
-        throw error;
-      }
-
-      setSuccessMessage("売上登録が完了しました。");
-      setTimeout(() => {
-        router.push("/sales-payments");
-      }, 700);
-    } catch (error: any) {
-      setErrorMessage(
-        error?.message ||
-          "売上登録に失敗しました。sales テーブルの列名が違う場合は insertPayload の列名だけ合わせてください。"
-      );
-    } finally {
-      setSaving(false);
+    if (error) {
+      console.error("売上登録エラー:", error);
+      alert("売上登録に失敗しました");
+      return;
     }
+
+    alert("売上登録が完了しました");
+    router.push("/receivables");
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">売上登録</h1>
-        <p className="mt-1 text-sm text-gray-600">
-          来店登録から来た場合は、顧客・来店日・メニュー・担当者を自動反映します。
-        </p>
-      </div>
+    <div className="p-4 max-w-xl mx-auto">
+      <h1 className="text-xl font-bold mb-4">会計登録</h1>
 
-      {loading ? (
-        <div className="rounded-xl border bg-white p-4 text-sm text-gray-600">
-          読み込み中...
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block mb-1 font-medium">顧客</label>
+          <select
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          >
+            <option value="">選択してください</option>
+            {customers.map((customer) => (
+              <option key={customer.id} value={customer.id}>
+                {customer.name}
+              </option>
+            ))}
+          </select>
         </div>
-      ) : (
-        <>
-          {errorMessage ? (
-            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {errorMessage}
-            </div>
-          ) : null}
 
-          {successMessage ? (
-            <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-              {successMessage}
-            </div>
-          ) : null}
+        <div>
+          <label className="block mb-1 font-medium">売上日</label>
+          <input
+            type="date"
+            value={saleDate}
+            onChange={(e) => setSaleDate(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          />
+        </div>
 
-          {visit ? (
-            <section className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <h2 className="mb-3 text-base font-semibold text-amber-900">
-                来店情報から自動反映
-              </h2>
-              <div className="space-y-1 text-sm text-amber-900">
-                <p>
-                  <span className="font-medium">来店ID：</span>
-                  {visit.id}
-                </p>
-                <p>
-                  <span className="font-medium">来店日：</span>
-                  {extractDateOnly(visit.visit_date) || "未設定"}
-                </p>
-                <p>
-                  <span className="font-medium">メニュー：</span>
-                  {visit.menu_name || "未設定"}
-                </p>
-                <p>
-                  <span className="font-medium">担当：</span>
-                  {visit.staff_name || "未設定"}
-                </p>
-              </div>
-            </section>
-          ) : null}
+        <div>
+          <label className="block mb-1 font-medium">メニュー名</label>
+          <input
+            type="text"
+            value={menuName}
+            onChange={(e) => setMenuName(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            placeholder="メニュー名を入力"
+          />
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <section className="rounded-2xl border bg-white p-4 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold">売上情報</h2>
+        <div>
+          <label className="block mb-1 font-medium">担当スタッフ</label>
+          <input
+            type="text"
+            value={staffName}
+            onChange={(e) => setStaffName(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            placeholder="担当スタッフ名を入力"
+          />
+        </div>
 
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-2 block text-sm font-medium">顧客</label>
-                  <select
-                    value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
-                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                  >
-                    <option value="">顧客を選択してください</option>
-                    {customers.map((customer) => (
-                      <option key={customer.id} value={customer.id}>
-                        {customer.name || "名称未設定"}
-                        {customer.phone ? ` / ${customer.phone}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  {selectedCustomer ? (
-                    <p className="mt-2 text-xs text-green-700">
-                      選択中: {selectedCustomer.name || "名称未設定"}
-                      {selectedCustomer.phone ? ` / ${selectedCustomer.phone}` : ""}
-                    </p>
-                  ) : null}
-                </div>
+        <div>
+          <label className="block mb-1 font-medium">売上金額</label>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            placeholder="金額を入力"
+          />
+        </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium">売上日</label>
-                  <input
-                    type="date"
-                    value={saleDate}
-                    onChange={(e) => setSaleDate(e.target.value)}
-                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                  />
-                </div>
+        <div>
+          <label className="block mb-1 font-medium">支払方法</label>
+          <select
+            value={paymentMethod}
+            onChange={(e) => setPaymentMethod(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+          >
+            <option value="現金">現金</option>
+            <option value="クレジット">クレジット</option>
+            <option value="QR決済">QR決済</option>
+            <option value="振込">振込</option>
+          </select>
+        </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium">メニュー名</label>
-                  <input
-                    type="text"
-                    value={menuName}
-                    onChange={(e) => setMenuName(e.target.value)}
-                    placeholder="例：ワンカラー / 定額デザイン"
-                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                  />
-                </div>
+        <div>
+          <label className="block mb-1 font-medium">支払い状況</label>
+          <select
+            value={paymentStatus}
+            onChange={(e) => {
+              const value = e.target.value;
+              setPaymentStatus(value);
+              if (value === "paid") {
+                setPaidAmount(String(Number(amount || 0)));
+                setUnpaidAmount("0");
+              } else {
+                setPaidAmount("0");
+                setUnpaidAmount(String(Number(amount || 0)));
+              }
+            }}
+            className="w-full border rounded px-3 py-2"
+          >
+            <option value="paid">支払い済み</option>
+            <option value="unpaid">未収</option>
+          </select>
+        </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium">担当スタッフ名</label>
-                  <input
-                    type="text"
-                    value={staffName}
-                    onChange={(e) => setStaffName(e.target.value)}
-                    placeholder="例：Akane"
-                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                  />
-                </div>
+        {paymentStatus === "unpaid" && (
+          <div>
+            <label className="block mb-1 font-medium">入金額</label>
+            <input
+              type="number"
+              value={paidAmount}
+              onChange={(e) => {
+                const paid = Number(e.target.value || 0);
+                const total = Number(amount || 0);
+                const unpaid = total - paid;
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium">売上金額</label>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min="0"
-                    step="1"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="例：8000"
-                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                  />
-                </div>
+                setPaidAmount(String(paid));
+                setUnpaidAmount(String(unpaid > 0 ? unpaid : 0));
+              }}
+              className="w-full border rounded px-3 py-2"
+              placeholder="今回入金額を入力"
+            />
+          </div>
+        )}
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium">支払方法</label>
-                  <select
-                    value={paymentMethod}
-                    onChange={(e) => setPaymentMethod(e.target.value)}
-                    className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-                  >
-                    <option value="cash">現金</option>
-                    <option value="card">カード</option>
-                    <option value="transfer">振込</option>
-                    <option value="other">その他</option>
-                  </select>
-                </div>
-              </div>
-            </section>
+        <div>
+          <label className="block mb-1 font-medium">未収額</label>
+          <input
+            type="number"
+            value={unpaidAmount}
+            readOnly
+            className="w-full border rounded px-3 py-2 bg-gray-100"
+          />
+        </div>
 
-            <section className="rounded-2xl border bg-white p-4 shadow-sm">
-              <h2 className="mb-4 text-base font-semibold">メモ</h2>
-              <textarea
-                value={memo}
-                onChange={(e) => setMemo(e.target.value)}
-                rows={5}
-                placeholder="備考、支払状況、施術メモなど"
-                className="w-full rounded-xl border px-3 py-3 text-sm outline-none"
-              />
-            </section>
+        <div>
+          <label className="block mb-1 font-medium">メモ</label>
+          <textarea
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            className="w-full border rounded px-3 py-2"
+            rows={4}
+            placeholder="メモを入力"
+          />
+        </div>
 
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => router.back()}
-                className="flex-1 rounded-xl border px-4 py-3 text-sm font-medium"
-              >
-                戻る
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {saving ? "登録中..." : "売上登録する"}
-              </button>
-            </div>
-          </form>
-        </>
-      )}
-    </main>
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-black text-white rounded px-4 py-3 disabled:opacity-50"
+        >
+          {loading ? "登録中..." : "登録する"}
+        </button>
+      </form>
+    </div>
   );
-}
-
-function extractDateOnly(value?: string | null) {
-  if (!value) return "";
-  const text = String(value);
-  if (text.includes("T")) return text.split("T")[0];
-  return text.slice(0, 10);
-}
-
-function todayString() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const dd = String(now.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 }
