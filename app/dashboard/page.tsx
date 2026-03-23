@@ -8,6 +8,11 @@ type Visit = {
   id: string;
   visit_date: string | null;
   price: number | string | null;
+  menu_name?: string | null;
+  staff_name?: string | null;
+  customers?: {
+    name: string | null;
+  } | null;
 };
 
 export default function DashboardPage() {
@@ -36,7 +41,14 @@ export default function DashboardPage() {
 
     const { data, error } = await supabase
       .from("visits")
-      .select("id, visit_date, price")
+      .select(`
+        id,
+        visit_date,
+        price,
+        menu_name,
+        staff_name,
+        customers(name)
+      `)
       .order("visit_date", { ascending: false });
 
     if (error) {
@@ -125,6 +137,7 @@ export default function DashboardPage() {
           <div className="rounded-xl bg-white p-6 shadow">読み込み中...</div>
         ) : (
           <>
+            {/* KPI */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="rounded-2xl bg-white p-5 shadow">
                 <p className="text-sm text-gray-500">今日の売上</p>
@@ -157,59 +170,34 @@ export default function DashboardPage() {
               </div>
             </div>
 
+            {/* 最近の来店 */}
             <div className="mt-6 rounded-2xl bg-white p-5 shadow">
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-gray-900">最近の来店</h2>
-                <Link
-                  href="/visits"
-                  className="text-sm font-medium text-blue-600"
-                >
-                  一覧を見る
-                </Link>
+              <h2 className="mb-4 text-lg font-bold">最近の来店</h2>
+
+              <div className="space-y-3">
+                {visits.slice(0, 10).map((visit) => (
+                  <div
+                    key={visit.id}
+                    className="rounded-xl border p-4 flex justify-between items-center"
+                  >
+                    <div>
+                      <p className="text-sm text-gray-500">
+                        {visit.visit_date}
+                      </p>
+                      <p className="font-bold text-lg">
+                        {visit.customers?.name || "不明"}
+                      </p>
+                      <p className="text-sm text-gray-600">
+                        {visit.menu_name || "-"} / {visit.staff_name || "-"}
+                      </p>
+                    </div>
+
+                    <p className="text-lg font-bold">
+                      {formatYen(toNumber(visit.price))}
+                    </p>
+                  </div>
+                ))}
               </div>
-
-              {visits.length === 0 ? (
-                <p className="text-sm text-gray-500">来店データがありません</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b text-left text-gray-500">
-                        <th className="px-3 py-2">日付</th>
-                        <th className="px-3 py-2">売上</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visits.slice(0, 10).map((visit) => (
-                        <tr key={visit.id} className="border-b last:border-b-0">
-                          <td className="px-3 py-3">
-                            {visit.visit_date || "-"}
-                          </td>
-                          <td className="px-3 py-3">
-                            {formatYen(toNumber(visit.price))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/visits"
-                className="rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm"
-              >
-                来店一覧へ
-              </Link>
-
-              <Link
-                href="/visits/new"
-                className="rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm"
-              >
-                来店登録へ
-              </Link>
             </div>
           </>
         )}
