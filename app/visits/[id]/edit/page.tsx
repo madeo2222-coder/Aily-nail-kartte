@@ -15,17 +15,22 @@ export default function EditVisitPage() {
   const [price, setPrice] = useState("");
   const [memo, setMemo] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
     fetchVisit();
   }, []);
 
   async function fetchVisit() {
+    setFetching(true);
+
     const { data, error } = await supabase
       .from("visits")
       .select("*")
       .eq("id", visitId)
       .single();
+
+    setFetching(false);
 
     if (error) {
       console.error("来店取得エラー:", error);
@@ -42,19 +47,20 @@ export default function EditVisitPage() {
     setMemo(data?.memo || "");
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleUpdate() {
     setLoading(true);
+
+    const payload = {
+      visit_date: visitDate || null,
+      menu_name: menuName || null,
+      staff_name: staffName || null,
+      price: price === "" ? null : Number(price),
+      memo: memo || null,
+    };
 
     const { error } = await supabase
       .from("visits")
-      .update({
-        visit_date: visitDate || null,
-        menu_name: menuName || null,
-        staff_name: staffName || null,
-        price: price === "" ? null : Number(price),
-        memo: memo || null,
-      })
+      .update(payload)
       .eq("id", visitId);
 
     setLoading(false);
@@ -66,14 +72,24 @@ export default function EditVisitPage() {
     }
 
     alert("更新しました");
-    router.push("/visits");
+    router.push(`/visits?updated=${Date.now()}`);
+    router.refresh();
+  }
+
+  if (fetching) {
+    return (
+      <div className="p-4 pb-24 max-w-xl mx-auto">
+        <h1 className="text-2xl font-bold mb-4">来店編集</h1>
+        <p className="text-gray-500">読み込み中...</p>
+      </div>
+    );
   }
 
   return (
     <div className="p-4 pb-24 max-w-xl mx-auto">
       <h1 className="text-2xl font-bold mb-4">来店編集</h1>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-4">
         <div>
           <label className="block mb-1 font-medium">来店日</label>
           <input
@@ -91,6 +107,7 @@ export default function EditVisitPage() {
             value={menuName}
             onChange={(e) => setMenuName(e.target.value)}
             className="w-full border rounded px-3 py-3"
+            placeholder="例：ワンカラー"
           />
         </div>
 
@@ -101,6 +118,7 @@ export default function EditVisitPage() {
             value={staffName}
             onChange={(e) => setStaffName(e.target.value)}
             className="w-full border rounded px-3 py-3"
+            placeholder="例：あかね"
           />
         </div>
 
@@ -111,6 +129,7 @@ export default function EditVisitPage() {
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             className="w-full border rounded px-3 py-3"
+            placeholder="例：6500"
           />
         </div>
 
@@ -121,17 +140,19 @@ export default function EditVisitPage() {
             onChange={(e) => setMemo(e.target.value)}
             className="w-full border rounded px-3 py-3"
             rows={4}
+            placeholder="メモを入力"
           />
         </div>
 
         <button
-          type="submit"
+          type="button"
+          onClick={handleUpdate}
           disabled={loading}
           className="w-full bg-black text-white rounded px-4 py-4 text-lg font-bold disabled:opacity-50"
         >
           {loading ? "更新中..." : "更新する"}
         </button>
-      </form>
+      </div>
     </div>
   );
 }

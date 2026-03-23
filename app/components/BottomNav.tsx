@@ -4,17 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navItems = [
-  { href: "/dashboard", label: "ホーム" },
-  { href: "/customers", label: "顧客" },
-  { href: "/visits", label: "来店" },
-  { href: "/receivables", label: "未収" },
-  { href: "/customer-intake", label: "初回" },
+  { href: "/dashboard", label: "ホーム", icon: "🏠" },
+  { href: "/customers", label: "顧客", icon: "👤" },
+  { href: "/visits", label: "来店", icon: "💅" },
+  { href: "/receivables", label: "未収", icon: "💰" },
+  { href: "/customer-intake", label: "初回", icon: "📝" },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
 
-  // お客様が開く公開ページでは下部ナビを出さない
   const hiddenPaths = ["/customer-intake"];
 
   const shouldHide = hiddenPaths.some(
@@ -37,13 +36,14 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex min-h-[64px] flex-col items-center justify-center text-sm font-medium transition ${
+              className={`flex min-h-[64px] flex-col items-center justify-center text-xs font-medium transition ${
                 isActive
                   ? "text-orange-500 bg-orange-50"
                   : "text-gray-500 hover:text-gray-800"
               }`}
             >
-              <span>{item.label}</span>
+              <span className="text-lg">{item.icon}</span>
+              <span className="mt-1">{item.label}</span>
             </Link>
           );
         })}

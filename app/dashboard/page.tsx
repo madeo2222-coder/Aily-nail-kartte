@@ -4,227 +4,216 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
-type Visit = Record<string, any>;
+type Visit = {
+  id: string;
+  visit_date: string | null;
+  price: number | string | null;
+};
 
 export default function DashboardPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
-  const [customersCount, setCustomersCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  const [todayStr, setTodayStr] = useState("");
+  const [thisMonthStr, setThisMonthStr] = useState("");
 
   useEffect(() => {
-    fetchDashboardData();
+    setMounted(true);
+
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+
+    setTodayStr(`${yyyy}-${mm}-${dd}`);
+    setThisMonthStr(`${yyyy}-${mm}`);
+
+    fetchVisits();
   }, []);
 
-  async function fetchDashboardData() {
+  async function fetchVisits() {
     setLoading(true);
 
-    const [visitsRes, customersRes] = await Promise.all([
-      supabase.from("visits").select("*").order("visit_date", { ascending: false }),
-      supabase.from("customers").select("id", { count: "exact", head: true }),
-    ]);
+    const { data, error } = await supabase
+      .from("visits")
+      .select("id, visit_date, price")
+      .order("visit_date", { ascending: false });
 
-    if (visitsRes.error) {
-      console.error("visits fetch error:", visitsRes.error);
+    if (error) {
+      console.error("dashboard fetch error:", error);
+      setVisits([]);
+      setLoading(false);
+      return;
     }
 
-    if (customersRes.error) {
-      console.error("customers fetch error:", customersRes.error);
-    }
-
-    setVisits(visitsRes.data || []);
-    setCustomersCount(customersRes.count || 0);
+    setVisits(data || []);
     setLoading(false);
   }
 
-  const todayString = useMemo(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, "0");
-    const d = String(now.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }, []);
+  function toNumber(value: number | string | null | undefined) {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
 
-  function toNumber(value: any) {
-    const num = Number(value ?? 0);
+    const cleaned = String(value).replace(/[^\d.-]/g, "");
+    const num = Number(cleaned);
     return Number.isFinite(num) ? num : 0;
   }
 
-  function getVisitDate(visit: Visit) {
-    const raw =
-      visit.visit_date ??
-      visit.date ??
-      visit.visited_at ??
-      visit.created_at ??
-      null;
-
-    if (!raw) return "";
-    return String(raw).slice(0, 10);
+  function isToday(dateString: string | null) {
+    if (!dateString || !todayStr) return false;
+    return dateString.slice(0, 10) === todayStr;
   }
 
-  function getSaleAmount(visit: Visit) {
+  function isThisMonth(dateString: string | null) {
+    if (!dateString || !thisMonthStr) return false;
+    return dateString.slice(0, 7) === thisMonthStr;
+  }
+
+  const todaySales = useMemo(() => {
+    return visits
+      .filter((visit) => isToday(visit.visit_date))
+      .reduce((sum, visit) => sum + toNumber(visit.price), 0);
+  }, [visits, todayStr]);
+
+  const monthSales = useMemo(() => {
+    return visits
+      .filter((visit) => isThisMonth(visit.visit_date))
+      .reduce((sum, visit) => sum + toNumber(visit.price), 0);
+  }, [visits, thisMonthStr]);
+
+  const totalSales = useMemo(() => {
+    return visits.reduce((sum, visit) => sum + toNumber(visit.price), 0);
+  }, [visits]);
+
+  const todayCount = useMemo(() => {
+    return visits.filter((visit) => isToday(visit.visit_date)).length;
+  }, [visits, todayStr]);
+
+  const monthCount = useMemo(() => {
+    return visits.filter((visit) => isThisMonth(visit.visit_date)).length;
+  }, [visits, thisMonthStr]);
+
+  function formatYen(value: number) {
+    return `¥${value.toLocaleString("ja-JP")}`;
+  }
+
+  if (!mounted) {
     return (
-      toNumber(visit.total_amount) ||
-      toNumber(visit.amount) ||
-      toNumber(visit.sales_amount) ||
-      toNumber(visit.sale_amount) ||
-      toNumber(visit.price) ||
-      toNumber(visit.menu_price) ||
-      toNumber(visit.total) ||
-      0
+      <div className="min-h-screen bg-gray-50 p-4 pb-24">
+        <div className="mx-auto max-w-5xl">
+          <div className="rounded-xl bg-white p-6 shadow">読み込み中...</div>
+        </div>
+      </div>
     );
   }
 
-  function getPaymentStatus(visit: Visit) {
-    return String(
-      visit.payment_status ??
-        visit.status ??
-        visit.payment ??
-        ""
-    ).toLowerCase();
-  }
-
-  function getUnpaidAmount(visit: Visit) {
-    const status = getPaymentStatus(visit);
-
-    if (status === "paid") {
-      return 0;
-    }
-
-    const explicit =
-      toNumber(visit.unpaid_amount) ||
-      toNumber(visit.receivable_amount) ||
-      toNumber(visit.remaining_amount) ||
-      toNumber(visit.balance_due) ||
-      0;
-
-    if (status === "unpaid" || status === "partial") {
-      if (explicit > 0) return explicit;
-
-      const sale = getSaleAmount(visit);
-      const paid =
-        toNumber(visit.paid_amount) ||
-        toNumber(visit.deposit_amount) ||
-        toNumber(visit.received_amount) ||
-        0;
-
-      const diff = sale - paid;
-      return diff > 0 ? diff : 0;
-    }
-
-    return explicit > 0 ? explicit : 0;
-  }
-
-  const stats = useMemo(() => {
-    const totalVisits = visits.length;
-
-    const totalSales = visits.reduce((sum, visit) => {
-      return sum + getSaleAmount(visit);
-    }, 0);
-
-    const unpaidVisits = visits.filter((visit) => getUnpaidAmount(visit) > 0);
-
-    const totalReceivables = unpaidVisits.reduce((sum, visit) => {
-      return sum + getUnpaidAmount(visit);
-    }, 0);
-
-    const todayVisits = visits.filter((visit) => getVisitDate(visit) === todayString);
-
-    const todaySales = todayVisits.reduce((sum, visit) => {
-      return sum + getSaleAmount(visit);
-    }, 0);
-
-    return {
-      totalVisits,
-      totalSales,
-      unpaidCount: unpaidVisits.length,
-      totalReceivables,
-      todaySales,
-    };
-  }, [visits, todayString]);
-
   return (
-    <main className="min-h-screen bg-gray-50 px-4 py-6">
-      <div className="mx-auto max-w-md">
-        <h1 className="mb-6 text-3xl font-bold text-gray-900">ダッシュボード</h1>
+    <div className="min-h-screen bg-gray-50 p-4 pb-24">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <h1 className="text-2xl font-bold text-gray-900">ダッシュボード</h1>
+
+          <Link
+            href="/visits/new"
+            className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
+          >
+            来店登録
+          </Link>
+        </div>
 
         {loading ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm text-gray-500">
-            読み込み中...
-          </div>
+          <div className="rounded-xl bg-white p-6 shadow">読み込み中...</div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">顧客数</p>
-                <p className="mt-2 text-2xl font-bold text-gray-900">{customersCount}人</p>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">来店数</p>
-                <p className="mt-2 text-2xl font-bold text-gray-900">{stats.totalVisits}件</p>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">総売上</p>
-                <p className="mt-2 text-2xl font-bold text-gray-900">
-                  {stats.totalSales.toLocaleString()}円
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="rounded-2xl bg-white p-5 shadow">
+                <p className="text-sm text-gray-500">今日の売上</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">
+                  {formatYen(todaySales)}
+                </p>
+                <p className="mt-2 text-sm text-gray-500">
+                  来店数: {todayCount}件
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                <p className="text-sm text-gray-500">今日の売上</p>
-                <p className="mt-2 text-2xl font-bold text-gray-900">
-                  {stats.todaySales.toLocaleString()}円
+              <div className="rounded-2xl bg-white p-5 shadow">
+                <p className="text-sm text-gray-500">今月の売上</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">
+                  {formatYen(monthSales)}
+                </p>
+                <p className="mt-2 text-sm text-gray-500">
+                  来店数: {monthCount}件
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-white p-5 shadow">
+                <p className="text-sm text-gray-500">累計売上</p>
+                <p className="mt-2 text-3xl font-bold text-gray-900">
+                  {formatYen(totalSales)}
+                </p>
+                <p className="mt-2 text-sm text-gray-500">
+                  総来店数: {visits.length}件
                 </p>
               </div>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm text-orange-700">未収管理</p>
-                  <p className="mt-2 text-2xl font-bold text-orange-600">
-                    {stats.totalReceivables.toLocaleString()}円
-                  </p>
-                  <p className="mt-1 text-sm text-gray-600">
-                    未収件数：{stats.unpaidCount}件
-                  </p>
-                </div>
-
+            <div className="mt-6 rounded-2xl bg-white p-5 shadow">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-900">最近の来店</h2>
                 <Link
-                  href="/receivables"
-                  className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white"
+                  href="/visits"
+                  className="text-sm font-medium text-blue-600"
                 >
-                  一覧へ
+                  一覧を見る
                 </Link>
               </div>
+
+              {visits.length === 0 ? (
+                <p className="text-sm text-gray-500">来店データがありません</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-gray-500">
+                        <th className="px-3 py-2">日付</th>
+                        <th className="px-3 py-2">売上</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visits.slice(0, 10).map((visit) => (
+                        <tr key={visit.id} className="border-b last:border-b-0">
+                          <td className="px-3 py-3">
+                            {visit.visit_date || "-"}
+                          </td>
+                          <td className="px-3 py-3">
+                            {formatYen(toNumber(visit.price))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
 
-            <div className="mt-6 space-y-3">
+            <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="/visits"
-                className="block rounded-2xl border border-gray-200 bg-white p-4 text-center text-sm font-semibold text-gray-900 shadow-sm"
+                className="rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm"
               >
-                来店一覧を見る
+                来店一覧へ
               </Link>
 
               <Link
-                href="/customers"
-                className="block rounded-2xl border border-gray-200 bg-white p-4 text-center text-sm font-semibold text-gray-900 shadow-sm"
+                href="/visits/new"
+                className="rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm"
               >
-                顧客一覧を見る
-              </Link>
-
-              <Link
-                href="/receivables"
-                className="block rounded-2xl border border-gray-200 bg-white p-4 text-center text-sm font-semibold text-gray-900 shadow-sm"
-              >
-                未収一覧を見る
+                来店登録へ
               </Link>
             </div>
           </>
         )}
       </div>
-    </main>
+    </div>
   );
 }

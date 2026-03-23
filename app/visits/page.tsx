@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { useSearchParams } from "next/navigation";
 
 export default function VisitsPage() {
+  const searchParams = useSearchParams();
+
   const [visits, setVisits] = useState<any[]>([]);
   const [customerMap, setCustomerMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -12,7 +15,7 @@ export default function VisitsPage() {
 
   useEffect(() => {
     fetchVisits();
-  }, []);
+  }, [searchParams]);
 
   async function fetchVisits() {
     setLoading(true);
