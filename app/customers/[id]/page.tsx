@@ -1,34 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useParams } from "next/navigation";
 
 type Customer = {
   id: string;
-  name?: string | null;
-  kana?: string | null;
-  phone?: string | null;
-  email?: string | null;
+  name: string;
+  phone: string | null;
+  created_at: string | null;
 };
 
 type Visit = {
   id: string;
-  customer_id: string;
   visit_date: string | null;
-  menu_name: string | null;
-  staff_name: string | null;
-  price: number | string | null;
+  price: number | null;
   memo: string | null;
+  next_visit_date: string | null;
+  next_suggestion: string | null;
+  next_proposal: string | null;
+};
+
+type LineFollowLog = {
+  id: string;
+  log_type: string;
+  filter_type: string | null;
+  message_pattern: string | null;
+  signature_type: string | null;
+  message_body: string | null;
+  created_at: string;
 };
 
 export default function CustomerDetailPage() {
   const params = useParams();
-  const customerId = params?.id as string;
+  const customerId = params.id as string;
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [logs, setLogs] = useState<LineFollowLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -47,7 +57,6 @@ export default function CustomerDetailPage() {
 
     if (customerError) {
       console.error("customer fetch error:", customerError);
-      setCustomer(null);
     } else {
       setCustomer(customerData);
     }
@@ -60,180 +69,161 @@ export default function CustomerDetailPage() {
 
     if (visitError) {
       console.error("visits fetch error:", visitError);
-      setVisits([]);
     } else {
       setVisits(visitData || []);
+    }
+
+    const { data: logData, error: logError } = await supabase
+      .from("line_follow_logs")
+      .select("*")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false });
+
+    if (logError) {
+      console.error("line_follow_logs fetch error:", logError);
+    } else {
+      setLogs(logData || []);
     }
 
     setLoading(false);
   }
 
-  function toNumber(value: number | string | null | undefined) {
-    if (value === null || value === undefined) return 0;
-    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  function formatDate(date: string | null) {
+    if (!date) return "-";
+    return new Date(date).toLocaleDateString("ja-JP");
+    }
 
-    const cleaned = String(value).replace(/[^\d.-]/g, "");
-    const num = Number(cleaned);
-    return Number.isFinite(num) ? num : 0;
+  function formatDateTime(date: string | null) {
+    if (!date) return "-";
+    return new Date(date).toLocaleString("ja-JP");
   }
 
-  function formatYen(value: number) {
-    return `¥${value.toLocaleString("ja-JP")}`;
+  function getLogTypeLabel(type: string) {
+    if (type === "copy") return "コピー";
+    if (type === "open_line") return "LINEで開く";
+    return type;
   }
 
-  const totalVisits = useMemo(() => visits.length, [visits]);
-
-  const totalSales = useMemo(() => {
-    return visits.reduce((sum, visit) => sum + toNumber(visit.price), 0);
-  }, [visits]);
-
-  const lastVisitDate = useMemo(() => {
-    if (visits.length === 0) return "-";
-    return visits[0]?.visit_date || "-";
-  }, [visits]);
+  function getProposalText(visit: Visit) {
+    return visit.next_proposal || visit.next_suggestion || "-";
+  }
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-4 pb-24">
-        <div className="mx-auto max-w-4xl">
-          <div className="rounded-2xl bg-white p-6 shadow">読み込み中...</div>
-        </div>
-      </div>
-    );
+    return <div className="p-4 pb-24">読み込み中...</div>;
   }
 
   if (!customer) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-4 pb-24">
-        <div className="mx-auto max-w-4xl">
-          <div className="rounded-2xl bg-white p-6 shadow">
-            <p className="text-lg font-bold text-gray-900">
-              顧客データが見つかりません
-            </p>
-
-            <div className="mt-4">
-              <Link
-                href="/customers"
-                className="inline-flex rounded-lg border bg-white px-4 py-2 text-sm font-medium text-gray-700"
-              >
-                顧客一覧へ戻る
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <div className="p-4 pb-24">顧客情報が見つかりません</div>;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 pb-24">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-4">
+    <div className="p-4 pb-24 space-y-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">{customer.name}</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            電話番号：{customer.phone || "-"}
+          </p>
+          <p className="text-sm text-gray-500">
+            登録日：{formatDate(customer.created_at)}
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
           <Link
-            href="/customers"
-            className="text-sm font-medium text-blue-600"
+            href={`/customers/${customer.id}/edit`}
+            className="px-4 py-2 rounded-lg bg-black text-white text-sm text-center"
           >
-            ← 顧客一覧へ戻る
+            顧客編集
+          </Link>
+
+          <Link
+            href={`/visits/new?customer_id=${customer.id}`}
+            className="px-4 py-2 rounded-lg border text-sm text-center"
+          >
+            来店履歴を追加
           </Link>
         </div>
-
-        <div className="rounded-2xl bg-white p-6 shadow">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {customer.name || "名前未入力"}
-              </h1>
-
-              <div className="mt-4 space-y-2 text-sm text-gray-600">
-                <p>かな: {customer.kana || "-"}</p>
-                <p>電話番号: {customer.phone || "-"}</p>
-                <p>メール: {customer.email || "-"}</p>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Link
-                href="/visits/new"
-                className="rounded-lg bg-black px-4 py-2 text-sm font-medium text-white"
-              >
-                来店登録
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="rounded-2xl bg-white p-5 shadow">
-            <p className="text-sm text-gray-500">来店回数</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {totalVisits}回
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow">
-            <p className="text-sm text-gray-500">累計売上（LTV）</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {formatYen(totalSales)}
-            </p>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5 shadow">
-            <p className="text-sm text-gray-500">最終来店日</p>
-            <p className="mt-2 text-3xl font-bold text-gray-900">
-              {lastVisitDate}
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6 rounded-2xl bg-white p-5 shadow">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-900">来店履歴</h2>
-            <Link href="/visits" className="text-sm font-medium text-blue-600">
-              来店一覧を見る
-            </Link>
-          </div>
-
-          {visits.length === 0 ? (
-            <p className="text-sm text-gray-500">来店履歴はありません</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="border-b text-left text-gray-500">
-                    <th className="px-3 py-2">日付</th>
-                    <th className="px-3 py-2">メニュー</th>
-                    <th className="px-3 py-2">担当</th>
-                    <th className="px-3 py-2">売上</th>
-                    <th className="px-3 py-2">メモ</th>
-                    <th className="px-3 py-2">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visits.map((visit) => (
-                    <tr key={visit.id} className="border-b last:border-b-0">
-                      <td className="px-3 py-3">{visit.visit_date || "-"}</td>
-                      <td className="px-3 py-3">{visit.menu_name || "-"}</td>
-                      <td className="px-3 py-3">{visit.staff_name || "-"}</td>
-                      <td className="px-3 py-3">
-                        {formatYen(toNumber(visit.price))}
-                      </td>
-                      <td className="px-3 py-3">{visit.memo || "-"}</td>
-                      <td className="px-3 py-3">
-                        <Link
-                          href={`/visits/${visit.id}/edit`}
-                          className="text-sm font-medium text-blue-600"
-                        >
-                          編集
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
       </div>
+
+      <section>
+        <h2 className="text-lg font-bold mb-3">来店履歴</h2>
+
+        {visits.length === 0 ? (
+          <div className="border rounded-xl p-4 bg-white text-sm text-gray-500">
+            来店履歴はまだありません
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {visits.map((visit) => (
+              <div
+                key={visit.id}
+                className="border rounded-xl p-4 bg-white shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">
+                      来店日：{formatDate(visit.visit_date)}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      売上：¥{visit.price?.toLocaleString() || 0}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      次回来店予定：{formatDate(visit.next_visit_date)}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">
+                      次回提案：{getProposalText(visit)}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">
+                      メモ：{visit.memo || "-"}
+                    </p>
+                  </div>
+
+                  <Link
+                    href={`/visits/${visit.id}/edit`}
+                    className="px-3 py-2 rounded-lg border text-sm shrink-0"
+                  >
+                    編集
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-lg font-bold mb-3">LINEフォロー履歴</h2>
+
+        {logs.length === 0 ? (
+          <div className="border rounded-xl p-4 bg-white text-sm text-gray-500">
+            送信履歴はまだありません
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {logs.map((log) => (
+              <div
+                key={log.id}
+                className="border rounded-xl p-4 bg-white shadow-sm"
+              >
+                <p className="text-sm text-gray-500">
+                  実行日時：{formatDateTime(log.created_at)}
+                </p>
+                <p className="text-sm mt-2">
+                  操作：{getLogTypeLabel(log.log_type)}
+                </p>
+                <p className="text-sm">対象：{log.filter_type || "-"}</p>
+                <p className="text-sm">文面：{log.message_pattern || "-"}</p>
+                <p className="text-sm">署名：{log.signature_type || "-"}</p>
+
+                <div className="mt-3 p-3 bg-gray-100 rounded-lg text-sm whitespace-pre-wrap">
+                  {log.message_body || "-"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
