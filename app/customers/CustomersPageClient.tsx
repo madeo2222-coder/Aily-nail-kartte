@@ -31,18 +31,26 @@ type CustomerRow = {
   nextVisitDate: string | null;
 };
 
+type FilterType = "all" | "upcoming" | "follow" | "lost";
+type MessagePattern = "simple" | "slot" | "coupon";
+type SignatureType = "shop" | "akane" | "marina";
+
 export default function CustomersPageClient() {
   const searchParams = useSearchParams();
-  const initialFilter = searchParams.get("filter") || "all";
+  const initialFilter = (searchParams.get("filter") || "all") as FilterType;
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState(initialFilter);
+
+  const [filter, setFilter] = useState<FilterType>(initialFilter);
+  const [messagePattern, setMessagePattern] = useState<MessagePattern>("simple");
+  const [signatureType, setSignatureType] = useState<SignatureType>("shop");
 
   useEffect(() => {
-    setFilter(initialFilter);
-  }, [initialFilter]);
+    const nextFilter = (searchParams.get("filter") || "all") as FilterType;
+    setFilter(nextFilter);
+  }, [searchParams]);
 
   useEffect(() => {
     fetchData();
@@ -108,6 +116,208 @@ export default function CustomersPageClient() {
     if (Number.isNaN(d.getTime())) return "-";
 
     return d.toLocaleDateString("ja-JP");
+  }
+
+  function normalizePhone(phone: string) {
+    const raw = (phone || "").trim();
+    if (!raw) return "";
+
+    if (raw.startsWith("+81")) return raw;
+
+    const digits = raw.replace(/[^\d]/g, "");
+    if (digits.startsWith("0")) {
+      return `+81${digits.slice(1)}`;
+    }
+
+    return raw;
+  }
+
+  function getSignatureLabel(type: SignatureType) {
+    if (type === "shop") return "店舗名";
+    if (type === "akane") return "Akane";
+    if (type === "marina") return "Marina";
+    return type;
+  }
+
+  function getSignatureText(type: SignatureType) {
+    if (type === "shop") {
+      return "Aily Nail Studio";
+    }
+    if (type === "akane") {
+      return "Akane";
+    }
+    if (type === "marina") {
+      return "Marina";
+    }
+    return "Aily Nail Studio";
+  }
+
+  function getPatternLabel(pattern: MessagePattern) {
+    if (pattern === "simple") return "シンプル";
+    if (pattern === "slot") return "空き枠案内";
+    if (pattern === "coupon") return "クーポン訴求";
+    return pattern;
+  }
+
+  function buildMessage(
+    customerName: string,
+    currentFilter: FilterType,
+    pattern: MessagePattern,
+    signature: SignatureType
+  ) {
+    const name = customerName || "お客様";
+    const sign = getSignatureText(signature);
+
+    if (currentFilter === "follow") {
+      if (pattern === "simple") {
+        return `${name}様
+
+こんにちは、${sign}です。
+その後お爪の状態はいかがでしょうか？
+
+前回ご来店から少しお時間が経ちましたので、
+そろそろメンテナンス時期かなと思いご連絡しました。
+
+ご都合よいタイミングがあれば、
+ぜひご予約お待ちしております。`;
+      }
+
+      if (pattern === "slot") {
+        return `${name}様
+
+こんにちは、${sign}です。
+今週〜来週でご案内しやすいお時間がございます。
+
+メンテナンスご希望でしたら
+ご希望日時をいくつか送っていただければ調整いたします。
+
+お気軽にご連絡ください。`;
+      }
+
+      return `${name}様
+
+こんにちは、${sign}です。
+ご来店のお礼を込めて、
+次回ご利用しやすいご案内をしております。
+
+そろそろ付け替え・メンテナンスの時期でしたら
+ぜひお気軽にご予約ください。`;
+    }
+
+    if (currentFilter === "lost") {
+      if (pattern === "simple") {
+        return `${name}様
+
+ご無沙汰しております、${sign}です。
+以前はご来店いただきありがとうございました。
+
+またネイルをされるタイミングがありましたら、
+ぜひお任せいただけると嬉しいです。
+
+いつでもご予約お待ちしております。`;
+      }
+
+      if (pattern === "slot") {
+        return `${name}様
+
+ご無沙汰しております、${sign}です。
+最近ご案内しやすいお時間帯が出ております。
+
+もしまたネイルをされる機会がありましたら、
+ご希望日時だけでもお気軽にご連絡ください。`;
+      }
+
+      return `${name}様
+
+ご無沙汰しております、${sign}です。
+感謝の気持ちを込めて、
+久しぶりのご来店でもご利用しやすいご案内をしております。
+
+またお会いできるのを楽しみにしております。`;
+    }
+
+    return `${name}様
+
+こんにちは、${sign}です。
+ご予約・ご来店お待ちしております。`;
+  }
+
+  async function saveLineFollowLog(params: {
+    customerId: string;
+    logType: "copy" | "open_line";
+    filterType: FilterType;
+    messageBody: string;
+  }) {
+    const { customerId, logType, filterType, messageBody } = params;
+
+    const { error } = await supabase.from("line_follow_logs").insert([
+      {
+        customer_id: customerId,
+        log_type: logType,
+        filter_type: filterType,
+        message_pattern: messagePattern,
+        signature_type: signatureType,
+        message_body: messageBody,
+      },
+    ]);
+
+    if (error) {
+      console.error("line_follow_logs insert error:", error);
+    }
+  }
+
+  async function handleCopy(customer: CustomerRow) {
+    try {
+      const message = buildMessage(
+        customer.name,
+        filter,
+        messagePattern,
+        signatureType
+      );
+
+      await navigator.clipboard.writeText(message);
+
+      if (filter === "follow" || filter === "lost") {
+        await saveLineFollowLog({
+          customerId: customer.id,
+          logType: "copy",
+          filterType: filter,
+          messageBody: message,
+        });
+      }
+
+      alert("文面をコピーしました");
+    } catch (error) {
+      console.error(error);
+      alert("コピーに失敗しました");
+    }
+  }
+
+  async function handleOpenLine(customer: CustomerRow) {
+    try {
+      const message = buildMessage(
+        customer.name,
+        filter,
+        messagePattern,
+        signatureType
+      );
+
+      if (filter === "follow" || filter === "lost") {
+        await saveLineFollowLog({
+          customerId: customer.id,
+          logType: "open_line",
+          filterType: filter,
+          messageBody: message,
+        });
+      }
+
+      const encoded = encodeURIComponent(message);
+      const url = `https://line.me/R/msg/text/?${encoded}`;
+      window.open(url, "_blank");
+    } catch (error) {
+      console.error(error);
+      alert("LINEを開けませんでした");
+    }
   }
 
   const customerRows = useMemo<CustomerRow[]>(() => {
@@ -179,6 +389,8 @@ export default function CustomersPageClient() {
     return <div className="p-4 pb-24">読み込み中...</div>;
   }
 
+  const showFollowActions = filter === "follow" || filter === "lost";
+
   return (
     <div className="p-4 pb-24">
       <div className="flex items-center justify-between mb-4 gap-3">
@@ -230,6 +442,72 @@ export default function CustomersPageClient() {
         </button>
       </div>
 
+      {showFollowActions && (
+        <div className="mb-4 space-y-3">
+          <div className="flex gap-2 overflow-x-auto">
+            <button
+              onClick={() => setMessagePattern("simple")}
+              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+                messagePattern === "simple" ? "bg-black text-white" : "bg-white"
+              }`}
+            >
+              シンプル
+            </button>
+
+            <button
+              onClick={() => setMessagePattern("slot")}
+              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+                messagePattern === "slot" ? "bg-black text-white" : "bg-white"
+              }`}
+            >
+              空き枠案内
+            </button>
+
+            <button
+              onClick={() => setMessagePattern("coupon")}
+              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+                messagePattern === "coupon" ? "bg-black text-white" : "bg-white"
+              }`}
+            >
+              クーポン訴求
+            </button>
+          </div>
+
+          <div className="flex gap-2 overflow-x-auto">
+            <button
+              onClick={() => setSignatureType("shop")}
+              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+                signatureType === "shop" ? "bg-black text-white" : "bg-white"
+              }`}
+            >
+              店舗名
+            </button>
+
+            <button
+              onClick={() => setSignatureType("akane")}
+              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+                signatureType === "akane" ? "bg-black text-white" : "bg-white"
+              }`}
+            >
+              Akane
+            </button>
+
+            <button
+              onClick={() => setSignatureType("marina")}
+              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+                signatureType === "marina" ? "bg-black text-white" : "bg-white"
+              }`}
+            >
+              Marina
+            </button>
+          </div>
+
+          <div className="text-sm text-gray-500">
+            文面：{getPatternLabel(messagePattern)} / 署名：{getSignatureLabel(signatureType)}
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4">
         {filteredRows.length === 0 ? (
           <div className="border rounded-xl p-4 bg-white text-sm text-gray-500">
@@ -237,29 +515,54 @@ export default function CustomersPageClient() {
           </div>
         ) : (
           filteredRows.map((row) => (
-            <Link
+            <div
               key={row.id}
-              href={`/customers/${row.id}`}
-              className="block border rounded-2xl p-4 bg-white shadow-sm"
+              className="border rounded-2xl p-4 bg-white shadow-sm"
             >
-              <div className="font-bold text-2xl mb-3">{row.name}</div>
+              <Link href={`/customers/${row.id}`} className="block">
+                <div className="font-bold text-2xl mb-3">{row.name}</div>
 
-              <div className="text-gray-500 text-base mb-1">
-                電話番号：{row.phone}
-              </div>
-              <div className="text-gray-500 text-base mb-1">
-                来店回数：{row.visitCount}回
-              </div>
-              <div className="text-gray-500 text-base mb-1">
-                LTV：¥{Number(row.ltv || 0).toLocaleString()}
-              </div>
-              <div className="text-gray-500 text-base mb-1">
-                最終来店日：{formatDate(row.lastVisitDate)}
-              </div>
-              <div className="text-gray-500 text-base">
-                次回来店日：{formatDate(row.nextVisitDate)}
-              </div>
-            </Link>
+                <div className="text-gray-500 text-base mb-1">
+                  電話番号：{row.phone}
+                </div>
+                <div className="text-gray-500 text-base mb-1">
+                  来店回数：{row.visitCount}回
+                </div>
+                <div className="text-gray-500 text-base mb-1">
+                  LTV：¥{Number(row.ltv || 0).toLocaleString()}
+                </div>
+                <div className="text-gray-500 text-base mb-1">
+                  最終来店日：{formatDate(row.lastVisitDate)}
+                </div>
+                <div className="text-gray-500 text-base">
+                  次回来店日：{formatDate(row.nextVisitDate)}
+                </div>
+              </Link>
+
+              {showFollowActions && (
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => handleCopy(row)}
+                    className="px-4 py-3 rounded-xl border text-sm bg-white"
+                  >
+                    文面コピー
+                  </button>
+
+                  <button
+                    onClick={() => handleOpenLine(row)}
+                    className="px-4 py-3 rounded-xl bg-black text-white text-sm"
+                  >
+                    LINEで開く
+                  </button>
+                </div>
+              )}
+
+              {showFollowActions && (
+                <div className="mt-3 text-xs text-gray-500 break-all">
+                  宛先目安：{normalizePhone(row.phone) || "電話番号未設定"}
+                </div>
+              )}
+            </div>
           ))
         )}
       </div>
