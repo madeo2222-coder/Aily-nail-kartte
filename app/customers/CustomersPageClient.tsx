@@ -20,6 +20,13 @@ type Visit = {
   next_visit_date: string | null;
 };
 
+type CustomerIntake = {
+  id: string | number;
+  customer_id: string | null;
+  allergy: string | null;
+  created_at?: string | null;
+};
+
 type CustomerRow = {
   id: string;
   name: string;
@@ -29,18 +36,30 @@ type CustomerRow = {
   ltv: number;
   lastVisitDate: string | null;
   nextVisitDate: string | null;
+  allergy: string;
 };
 
-type FilterType = "all" | "upcoming" | "follow" | "lost";
+type FilterType = "all" | "next" | "follow" | "lost";
 type MessagePattern = "simple" | "slot" | "coupon";
 type SignatureType = "shop" | "akane" | "marina";
 
+function normalizeFilterValue(value: string | null): FilterType {
+  if (value === "next" || value === "upcoming") return "next";
+  if (value === "follow") return "follow";
+  if (value === "lost") return "lost";
+  return "all";
+}
+
 export default function CustomersPageClient() {
   const searchParams = useSearchParams();
-  const initialFilter = (searchParams.get("filter") || "all") as FilterType;
+
+  const initialFilter = normalizeFilterValue(
+    searchParams.get("type") || searchParams.get("filter")
+  );
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [customerIntakes, setCustomerIntakes] = useState<CustomerIntake[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [filter, setFilter] = useState<FilterType>(initialFilter);
@@ -48,7 +67,9 @@ export default function CustomersPageClient() {
   const [signatureType, setSignatureType] = useState<SignatureType>("shop");
 
   useEffect(() => {
-    const nextFilter = (searchParams.get("filter") || "all") as FilterType;
+    const nextFilter = normalizeFilterValue(
+      searchParams.get("type") || searchParams.get("filter")
+    );
     setFilter(nextFilter);
   }, [searchParams]);
 
@@ -59,30 +80,63 @@ export default function CustomersPageClient() {
   async function fetchData() {
     setLoading(true);
 
-    const { data: customerData, error: customerError } = await supabase
-      .from("customers")
-      .select("id, name, phone, created_at")
-      .order("created_at", { ascending: false });
+    const [customerRes, visitRes] = await Promise.all([
+      supabase
+        .from("customers")
+        .select("id, name, phone, created_at")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("visits")
+        .select("id, customer_id, visit_date, price, next_visit_date")
+        .order("visit_date", { ascending: false }),
+    ]);
 
-    if (customerError) {
-      console.error("customers fetch error:", customerError);
+    if (customerRes.error) {
+      console.error("customers fetch error:", customerRes.error);
       setLoading(false);
       return;
     }
 
-    const { data: visitData, error: visitError } = await supabase
-      .from("visits")
-      .select("id, customer_id, visit_date, price, next_visit_date")
-      .order("visit_date", { ascending: false });
-
-    if (visitError) {
-      console.error("visits fetch error:", visitError);
+    if (visitRes.error) {
+      console.error("visits fetch error:", visitRes.error);
       setLoading(false);
       return;
     }
 
-    setCustomers(customerData || []);
-    setVisits(visitData || []);
+    setCustomers((customerRes.data || []) as Customer[]);
+    setVisits((visitRes.data || []) as Visit[]);
+
+    try {
+      const intakeRes = await supabase
+        .from("customer_intakes")
+        .select("*");
+
+      if (intakeRes.error) {
+        console.error("customer_intakes fetch error:", intakeRes.error);
+        console.error(
+          "customer_intakes fetch error detail:",
+          JSON.stringify(intakeRes.error, null, 2)
+        );
+        setCustomerIntakes([]);
+      } else {
+        const safeIntakes = ((intakeRes.data || []) as any[])
+          .filter((item) => item && item.customer_id)
+          .map((item) => ({
+            id: item.id,
+            customer_id: item.customer_id,
+            allergy:
+              typeof item.allergy === "string" ? item.allergy : null,
+            created_at:
+              typeof item.created_at === "string" ? item.created_at : null,
+          })) as CustomerIntake[];
+
+        setCustomerIntakes(safeIntakes);
+      }
+    } catch (error) {
+      console.error("customer_intakes unexpected error:", error);
+      setCustomerIntakes([]);
+    }
+
     setLoading(false);
   }
 
@@ -140,15 +194,9 @@ export default function CustomersPageClient() {
   }
 
   function getSignatureText(type: SignatureType) {
-    if (type === "shop") {
-      return "Aily Nail Studio";
-    }
-    if (type === "akane") {
-      return "Akane";
-    }
-    if (type === "marina") {
-      return "Marina";
-    }
+    if (type === "shop") return "Aily Nail Studio";
+    if (type === "akane") return "Akane";
+    if (type === "marina") return "Marina";
     return "Aily Nail Studio";
   }
 
@@ -320,6 +368,25 @@ export default function CustomersPageClient() {
     }
   }
 
+  const latestIntakeMap = useMemo(() => {
+    const map = new Map<string, CustomerIntake>();
+
+    const sorted = [...customerIntakes].sort((a, b) => {
+      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return bTime - aTime;
+    });
+
+    for (const intake of sorted) {
+      if (!intake.customer_id) continue;
+      if (!map.has(intake.customer_id)) {
+        map.set(intake.customer_id, intake);
+      }
+    }
+
+    return map;
+  }, [customerIntakes]);
+
   const customerRows = useMemo<CustomerRow[]>(() => {
     return customers.map((customer) => {
       const customerVisits = visits.filter((v) => v.customer_id === customer.id);
@@ -348,6 +415,12 @@ export default function CustomersPageClient() {
       const nextVisitDate =
         futureNextVisitDates.length > 0 ? futureNextVisitDates[0] : null;
 
+      const latestIntake = latestIntakeMap.get(customer.id);
+      const allergy =
+        latestIntake?.allergy && latestIntake.allergy.trim() !== ""
+          ? latestIntake.allergy
+          : "なし";
+
       return {
         id: customer.id,
         name: customer.name || "名前未設定",
@@ -357,14 +430,15 @@ export default function CustomersPageClient() {
         ltv,
         lastVisitDate,
         nextVisitDate,
+        allergy,
       };
     });
-  }, [customers, visits]);
+  }, [customers, visits, latestIntakeMap]);
 
   const filteredRows = useMemo(() => {
     if (filter === "all") return customerRows;
 
-    if (filter === "upcoming") {
+    if (filter === "next") {
       return customerRows.filter((row) => !!row.nextVisitDate);
     }
 
@@ -393,21 +467,21 @@ export default function CustomersPageClient() {
 
   return (
     <div className="p-4 pb-24">
-      <div className="flex items-center justify-between mb-4 gap-3">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold">顧客一覧</h1>
 
         <Link
           href="/customers/new"
-          className="px-4 py-2 rounded-lg bg-black text-white text-sm whitespace-nowrap"
+          className="rounded-lg bg-black px-4 py-2 text-sm text-white whitespace-nowrap"
         >
           新規顧客追加
         </Link>
       </div>
 
-      <div className="flex gap-2 overflow-x-auto mb-4">
+      <div className="mb-4 flex gap-2 overflow-x-auto">
         <button
           onClick={() => setFilter("all")}
-          className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+          className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
             filter === "all" ? "bg-black text-white" : "bg-white"
           }`}
         >
@@ -415,9 +489,9 @@ export default function CustomersPageClient() {
         </button>
 
         <button
-          onClick={() => setFilter("upcoming")}
-          className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
-            filter === "upcoming" ? "bg-black text-white" : "bg-white"
+          onClick={() => setFilter("next")}
+          className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
+            filter === "next" ? "bg-black text-white" : "bg-white"
           }`}
         >
           次回来店予定
@@ -425,7 +499,7 @@ export default function CustomersPageClient() {
 
         <button
           onClick={() => setFilter("follow")}
-          className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+          className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
             filter === "follow" ? "bg-black text-white" : "bg-white"
           }`}
         >
@@ -434,7 +508,7 @@ export default function CustomersPageClient() {
 
         <button
           onClick={() => setFilter("lost")}
-          className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+          className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
             filter === "lost" ? "bg-black text-white" : "bg-white"
           }`}
         >
@@ -447,7 +521,7 @@ export default function CustomersPageClient() {
           <div className="flex gap-2 overflow-x-auto">
             <button
               onClick={() => setMessagePattern("simple")}
-              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+              className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
                 messagePattern === "simple" ? "bg-black text-white" : "bg-white"
               }`}
             >
@@ -456,7 +530,7 @@ export default function CustomersPageClient() {
 
             <button
               onClick={() => setMessagePattern("slot")}
-              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+              className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
                 messagePattern === "slot" ? "bg-black text-white" : "bg-white"
               }`}
             >
@@ -465,7 +539,7 @@ export default function CustomersPageClient() {
 
             <button
               onClick={() => setMessagePattern("coupon")}
-              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+              className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
                 messagePattern === "coupon" ? "bg-black text-white" : "bg-white"
               }`}
             >
@@ -476,7 +550,7 @@ export default function CustomersPageClient() {
           <div className="flex gap-2 overflow-x-auto">
             <button
               onClick={() => setSignatureType("shop")}
-              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+              className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
                 signatureType === "shop" ? "bg-black text-white" : "bg-white"
               }`}
             >
@@ -485,7 +559,7 @@ export default function CustomersPageClient() {
 
             <button
               onClick={() => setSignatureType("akane")}
-              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+              className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
                 signatureType === "akane" ? "bg-black text-white" : "bg-white"
               }`}
             >
@@ -494,7 +568,7 @@ export default function CustomersPageClient() {
 
             <button
               onClick={() => setSignatureType("marina")}
-              className={`px-4 py-2 rounded-full border text-sm whitespace-nowrap ${
+              className={`rounded-full border px-4 py-2 text-sm whitespace-nowrap ${
                 signatureType === "marina" ? "bg-black text-white" : "bg-white"
               }`}
             >
@@ -503,38 +577,42 @@ export default function CustomersPageClient() {
           </div>
 
           <div className="text-sm text-gray-500">
-            文面：{getPatternLabel(messagePattern)} / 署名：{getSignatureLabel(signatureType)}
+            文面：{getPatternLabel(messagePattern)} / 署名：
+            {getSignatureLabel(signatureType)}
           </div>
         </div>
       )}
 
       <div className="space-y-4">
         {filteredRows.length === 0 ? (
-          <div className="border rounded-xl p-4 bg-white text-sm text-gray-500">
+          <div className="rounded-xl border bg-white p-4 text-sm text-gray-500">
             顧客がいません
           </div>
         ) : (
           filteredRows.map((row) => (
             <div
               key={row.id}
-              className="border rounded-2xl p-4 bg-white shadow-sm"
+              className="rounded-2xl border bg-white p-4 shadow-sm"
             >
               <Link href={`/customers/${row.id}`} className="block">
-                <div className="font-bold text-2xl mb-3">{row.name}</div>
+                <div className="mb-3 text-2xl font-bold">{row.name}</div>
 
-                <div className="text-gray-500 text-base mb-1">
+                <div className="mb-1 text-base text-gray-500">
                   電話番号：{row.phone}
                 </div>
-                <div className="text-gray-500 text-base mb-1">
+                <div className="mb-1 text-base text-gray-500">
+                  アレルギー：{row.allergy}
+                </div>
+                <div className="mb-1 text-base text-gray-500">
                   来店回数：{row.visitCount}回
                 </div>
-                <div className="text-gray-500 text-base mb-1">
+                <div className="mb-1 text-base text-gray-500">
                   LTV：¥{Number(row.ltv || 0).toLocaleString()}
                 </div>
-                <div className="text-gray-500 text-base mb-1">
+                <div className="mb-1 text-base text-gray-500">
                   最終来店日：{formatDate(row.lastVisitDate)}
                 </div>
-                <div className="text-gray-500 text-base">
+                <div className="text-base text-gray-500">
                   次回来店日：{formatDate(row.nextVisitDate)}
                 </div>
               </Link>
@@ -543,14 +621,14 @@ export default function CustomersPageClient() {
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <button
                     onClick={() => handleCopy(row)}
-                    className="px-4 py-3 rounded-xl border text-sm bg-white"
+                    className="rounded-xl border bg-white px-4 py-3 text-sm"
                   >
                     文面コピー
                   </button>
 
                   <button
                     onClick={() => handleOpenLine(row)}
-                    className="px-4 py-3 rounded-xl bg-black text-white text-sm"
+                    className="rounded-xl bg-black px-4 py-3 text-sm text-white"
                   >
                     LINEで開く
                   </button>
@@ -558,7 +636,7 @@ export default function CustomersPageClient() {
               )}
 
               {showFollowActions && (
-                <div className="mt-3 text-xs text-gray-500 break-all">
+                <div className="mt-3 break-all text-xs text-gray-500">
                   宛先目安：{normalizePhone(row.phone) || "電話番号未設定"}
                 </div>
               )}
