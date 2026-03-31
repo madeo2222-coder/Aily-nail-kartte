@@ -20,6 +20,10 @@ function formatYen(value: number) {
   return `¥${Math.round(value).toLocaleString("ja-JP")}`;
 }
 
+function formatPercent(value: number) {
+  return `${Math.round(value)}%`;
+}
+
 function diffDaysFromToday(dateStr: string | null) {
   if (!dateStr) return null;
 
@@ -48,6 +52,7 @@ export default function DashboardPageClient() {
   const [visitsCount, setVisitsCount] = useState(0);
   const [monthSales, setMonthSales] = useState(0);
   const [totalSales, setTotalSales] = useState(0);
+  const [monthExpenses, setMonthExpenses] = useState(0);
 
   const [nextCustomers, setNextCustomers] = useState<CustomerSummary[]>([]);
   const [followCustomers, setFollowCustomers] = useState<CustomerSummary[]>([]);
@@ -66,22 +71,14 @@ export default function DashboardPageClient() {
       .from("visits")
       .select("*", { count: "exact", head: true });
 
-    const { data: visitRows, error: visitRowsError } = await supabase
+    const { data: visitRows } = await supabase
       .from("visits")
       .select("price, visit_date, customer_id, next_visit_date")
       .order("visit_date", { ascending: false });
 
-    if (visitRowsError) {
-      console.error("dashboard visits fetch error:", visitRowsError);
-      setCustomersCount(customers || 0);
-      setVisitsCount(visits || 0);
-      setMonthSales(0);
-      setTotalSales(0);
-      setNextCustomers([]);
-      setFollowCustomers([]);
-      setLostCustomers([]);
-      return;
-    }
+    const { data: expenseRows } = await supabase
+      .from("expenses")
+      .select("amount, expense_date");
 
     const now = new Date();
     const monthPrefix = `${now.getFullYear()}-${String(
@@ -90,6 +87,7 @@ export default function DashboardPageClient() {
 
     let monthlyTotal = 0;
     let allTimeTotal = 0;
+    let monthlyExpenseTotal = 0;
 
     const customerVisitMap: Record<
       string,
@@ -139,6 +137,15 @@ export default function DashboardPageClient() {
       }
     });
 
+    (expenseRows || []).forEach((row: any) => {
+      const amount = Number(row.amount ?? 0);
+      const date = row.expense_date ?? "";
+
+      if (date.startsWith(monthPrefix)) {
+        monthlyExpenseTotal += amount;
+      }
+    });
+
     const nextIds: string[] = [];
     const followIds: string[] = [];
     const lostIds: string[] = [];
@@ -160,58 +167,33 @@ export default function DashboardPageClient() {
       }
     });
 
-    let nextData: CustomerSummary[] = [];
-    let followData: CustomerSummary[] = [];
-    let lostData: CustomerSummary[] = [];
-
-    if (nextIds.length > 0) {
+    const fetchCustomers = async (ids: string[]) => {
+      if (ids.length === 0) return [];
       const { data } = await supabase
         .from("customers")
         .select("id, name")
-        .in("id", nextIds);
+        .in("id", ids);
 
-      nextData =
-        (data || []).map((item) => ({
-          id: item.id,
-          name: item.name || "名前未設定",
-        })) || [];
-    }
-
-    if (followIds.length > 0) {
-      const { data } = await supabase
-        .from("customers")
-        .select("id, name")
-        .in("id", followIds);
-
-      followData =
-        (data || []).map((item) => ({
-          id: item.id,
-          name: item.name || "名前未設定",
-        })) || [];
-    }
-
-    if (lostIds.length > 0) {
-      const { data } = await supabase
-        .from("customers")
-        .select("id, name")
-        .in("id", lostIds);
-
-      lostData =
-        (data || []).map((item) => ({
-          id: item.id,
-          name: item.name || "名前未設定",
-        })) || [];
-    }
+      return (data || []).map((item) => ({
+        id: item.id,
+        name: item.name || "名前未設定",
+      }));
+    };
 
     setCustomersCount(customers || 0);
     setVisitsCount(visits || 0);
     setMonthSales(monthlyTotal);
     setTotalSales(allTimeTotal);
+    setMonthExpenses(monthlyExpenseTotal);
 
-    setNextCustomers(nextData);
-    setFollowCustomers(followData);
-    setLostCustomers(lostData);
+    setNextCustomers(await fetchCustomers(nextIds));
+    setFollowCustomers(await fetchCustomers(followIds));
+    setLostCustomers(await fetchCustomers(lostIds));
   }
+
+  const profit = monthSales - monthExpenses;
+  const profitRate = monthSales > 0 ? (profit / monthSales) * 100 : 0;
+  const isProfitNegative = profit < 0;
 
   return (
     <div className="p-4 pb-24">
@@ -220,7 +202,7 @@ export default function DashboardPageClient() {
         顧客・来店・フォロー状況の一覧
       </p>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">総売上</p>
           <p className="mt-3 text-2xl font-bold">{formatYen(totalSales)}</p>
@@ -229,6 +211,29 @@ export default function DashboardPageClient() {
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <p className="text-sm text-gray-500">今月売上</p>
           <p className="mt-3 text-2xl font-bold">{formatYen(monthSales)}</p>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <p className="text-sm text-gray-500">今月経費</p>
+          <p className="mt-3 text-2xl font-bold">{formatYen(monthExpenses)}</p>
+        </div>
+
+        <div
+          className={`rounded-2xl border p-4 shadow-sm ${
+            isProfitNegative ? "bg-red-50" : "bg-orange-50"
+          }`}
+        >
+          <p className="text-sm text-gray-500">今月利益</p>
+          <p
+            className={`mt-3 text-3xl font-bold ${
+              isProfitNegative ? "text-red-500" : "text-orange-500"
+            }`}
+          >
+            {formatYen(profit)}
+          </p>
+          <p className="mt-2 text-sm font-medium text-gray-600">
+            利益率 {formatPercent(profitRate)}
+          </p>
         </div>
 
         <div className="rounded-2xl border bg-white p-4 shadow-sm">

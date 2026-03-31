@@ -22,7 +22,7 @@ type Visit = {
 };
 
 type CustomerIntake = {
-  id: number;
+  id: number | string;
   customer_id: string | null;
   name: string | null;
   phone: string | null;
@@ -39,6 +39,7 @@ type CustomerIntake = {
   check_condition: boolean | null;
   check_photo: boolean | null;
   submitted_at: string | null;
+  created_at?: string | null;
 };
 
 export default function CustomerDetailPage() {
@@ -85,40 +86,95 @@ export default function CustomerDetailPage() {
 
       if (visitsError) {
         console.error("visits取得エラー:", visitsError);
+        setVisits([]);
       } else {
-        setVisits(visitsData || []);
+        setVisits((visitsData || []) as Visit[]);
       }
 
-      const { data: intakeData, error: intakeError } = await supabase
-        .from("customer_intakes")
-        .select(`
-          id,
-          customer_id,
-          name,
-          phone,
-          birth_date,
-          allergy,
-          skin_trouble,
-          constitution,
-          avoid_items,
-          signer_name,
-          signature_data_url,
-          check_health,
-          check_reaction,
-          check_refund,
-          check_condition,
-          check_photo,
-          submitted_at
-        `)
-        .eq("customer_id", customerId)
-        .order("id", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      try {
+        const intakeRes = await supabase
+          .from("customer_intakes")
+          .select("*")
+          .eq("customer_id", customerId);
 
-      if (intakeError) {
-        console.error("customer_intakes取得エラー:", intakeError);
-      } else {
-        setIntake(intakeData || null);
+        if (intakeRes.error) {
+          console.error("customer_intakes取得エラー:", intakeRes.error);
+          console.error(
+            "customer_intakes取得エラー詳細:",
+            JSON.stringify(intakeRes.error, null, 2)
+          );
+          setIntake(null);
+        } else {
+          const intakeRows = ((intakeRes.data || []) as any[])
+            .filter((item) => item && item.customer_id)
+            .map((item) => ({
+              id: item.id,
+              customer_id: item.customer_id ?? null,
+              name: typeof item.name === "string" ? item.name : null,
+              phone: typeof item.phone === "string" ? item.phone : null,
+              birth_date:
+                typeof item.birth_date === "string" ? item.birth_date : null,
+              allergy: typeof item.allergy === "string" ? item.allergy : null,
+              skin_trouble:
+                typeof item.skin_trouble === "string"
+                  ? item.skin_trouble
+                  : null,
+              constitution:
+                typeof item.constitution === "string"
+                  ? item.constitution
+                  : null,
+              avoid_items:
+                typeof item.avoid_items === "string" ? item.avoid_items : null,
+              signer_name:
+                typeof item.signer_name === "string" ? item.signer_name : null,
+              signature_data_url:
+                typeof item.signature_data_url === "string"
+                  ? item.signature_data_url
+                  : null,
+              check_health:
+                typeof item.check_health === "boolean"
+                  ? item.check_health
+                  : null,
+              check_reaction:
+                typeof item.check_reaction === "boolean"
+                  ? item.check_reaction
+                  : null,
+              check_refund:
+                typeof item.check_refund === "boolean"
+                  ? item.check_refund
+                  : null,
+              check_condition:
+                typeof item.check_condition === "boolean"
+                  ? item.check_condition
+                  : null,
+              check_photo:
+                typeof item.check_photo === "boolean" ? item.check_photo : null,
+              submitted_at:
+                typeof item.submitted_at === "string" ? item.submitted_at : null,
+              created_at:
+                typeof item.created_at === "string" ? item.created_at : null,
+            })) as CustomerIntake[];
+
+          const latestIntake =
+            intakeRows.sort((a, b) => {
+              const aTime = a.created_at
+                ? new Date(a.created_at).getTime()
+                : a.submitted_at
+                ? new Date(a.submitted_at).getTime()
+                : 0;
+              const bTime = b.created_at
+                ? new Date(b.created_at).getTime()
+                : b.submitted_at
+                ? new Date(b.submitted_at).getTime()
+                : 0;
+              return bTime - aTime;
+            })[0] || null;
+
+          setIntake(latestIntake);
+        }
+      } catch (error) {
+        console.error("customer_intakes想定外エラー:", error);
+        setIntake(null);
       }
     } catch (error) {
       console.error("詳細取得エラー:", error);
@@ -132,7 +188,10 @@ export default function CustomerDetailPage() {
     const ok = window.confirm("この顧客を削除しますか？");
     if (!ok) return;
 
-    const { error } = await supabase.from("customers").delete().eq("id", customerId);
+    const { error } = await supabase
+      .from("customers")
+      .delete()
+      .eq("id", customerId);
 
     if (error) {
       console.error("顧客削除エラー:", error);
@@ -146,7 +205,11 @@ export default function CustomerDetailPage() {
 
   function formatDate(date: string | null) {
     if (!date) return "-";
-    return date;
+
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return date;
+
+    return d.toLocaleString("ja-JP");
   }
 
   function yesNo(value: boolean | null) {
@@ -220,7 +283,9 @@ export default function CustomerDetailPage() {
             </div>
 
             <div>
-              <p className="font-semibold text-gray-700">施術NG項目・避けてほしいこと</p>
+              <p className="font-semibold text-gray-700">
+                施術NG項目・避けてほしいこと
+              </p>
               <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
                 {intake.avoid_items || "-"}
               </div>

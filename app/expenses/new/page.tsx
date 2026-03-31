@@ -3,19 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import Link from "next/link";
 
-const CATEGORY_OPTIONS = [
+const EXPENSE_CATEGORIES = [
   "材料費",
-  "家賃",
-  "光熱費",
-  "通信費",
-  "人件費",
-  "広告宣伝費",
   "消耗品費",
+  "旅費交通費",
+  "通信費",
+  "広告宣伝費",
+  "医療費",
   "外注費",
+  "福利厚生費",
   "雑費",
-];
+] as const;
 
 export default function NewExpensePage() {
   const router = useRouter();
@@ -23,13 +22,12 @@ export default function NewExpensePage() {
   const [expenseDate, setExpenseDate] = useState(
     new Date().toISOString().split("T")[0]
   );
-  const [category, setCategory] = useState("材料費");
+  const [category, setCategory] = useState<string>("材料費");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
-  const [receiptUrl, setReceiptUrl] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!expenseDate) {
@@ -38,7 +36,7 @@ export default function NewExpensePage() {
     }
 
     if (!category) {
-      alert("勘定科目を選択してください");
+      alert("カテゴリを選択してください");
       return;
     }
 
@@ -47,120 +45,109 @@ export default function NewExpensePage() {
       return;
     }
 
-    setSaving(true);
+    setIsSaving(true);
 
     const { error } = await supabase.from("expenses").insert([
       {
         expense_date: expenseDate,
         category,
         amount: Number(amount),
-        memo: memo || null,
-        receipt_url: receiptUrl || null,
+        memo: memo.trim() || null,
       },
     ]);
 
-    setSaving(false);
+    setIsSaving(false);
 
     if (error) {
       console.error("経費登録エラー:", error);
-      alert("経費の登録に失敗しました");
+      alert(`保存に失敗しました: ${error.message}`);
       return;
     }
 
-    alert("経費を登録しました");
+    alert("登録しました");
     router.push("/expenses");
-  }
+  };
 
   return (
-    <div className="p-4 pb-24">
-      <div className="mb-4 flex items-center justify-between">
-        <Link href="/expenses" className="text-sm text-gray-600 underline">
-          ← 経費一覧に戻る
-        </Link>
+    <main className="p-4 pb-24 max-w-xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">経費を新規登録</h1>
+        <p className="text-sm text-gray-500 mt-1">
+          経費を手入力で登録できます。
+        </p>
       </div>
 
-      <div className="rounded-2xl border bg-white p-4 shadow-sm">
-        <h1 className="mb-4 text-xl font-bold">経費登録</h1>
+      <form onSubmit={handleSave} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">日付</label>
+          <input
+            type="date"
+            value={expenseDate}
+            onChange={(e) => setExpenseDate(e.target.value)}
+            className="w-full rounded-xl border px-3 py-2"
+            required
+          />
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              日付
-            </label>
-            <input
-              type="date"
-              value={expenseDate}
-              onChange={(e) => setExpenseDate(e.target.value)}
-              className="w-full rounded-xl border px-3 py-3 text-sm"
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">カテゴリ</label>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="w-full rounded-xl border px-3 py-2 bg-white"
+            required
+          >
+            {EXPENSE_CATEGORIES.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              勘定科目
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full rounded-xl border px-3 py-3 text-sm"
-            >
-              {CATEGORY_OPTIONS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">金額</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-full rounded-xl border px-3 py-2"
+            placeholder="例：1200"
+            required
+          />
+        </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              金額
-            </label>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="例: 12000"
-              className="w-full rounded-xl border px-3 py-3 text-sm"
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">メモ</label>
+          <textarea
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            rows={5}
+            className="w-full rounded-xl border px-3 py-2"
+            placeholder="補足メモ"
+          />
+        </div>
 
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              メモ
-            </label>
-            <textarea
-              value={memo}
-              onChange={(e) => setMemo(e.target.value)}
-              rows={4}
-              placeholder="例: ジェル材料、パーツ仕入れ"
-              className="w-full rounded-xl border px-3 py-3 text-sm"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-700">
-              レシート画像URL（任意）
-            </label>
-            <input
-              type="text"
-              value={receiptUrl}
-              onChange={(e) => setReceiptUrl(e.target.value)}
-              placeholder="今は任意入力。後で画像アップロード対応予定"
-              className="w-full rounded-xl border px-3 py-3 text-sm"
-            />
-          </div>
-
+        <div className="grid grid-cols-1 gap-3">
           <button
             type="submit"
-            disabled={saving}
-            className="w-full rounded-xl bg-black px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
+            disabled={isSaving}
+            className="w-full rounded-xl border px-4 py-3 font-medium"
           >
-            {saving ? "保存中..." : "経費を登録する"}
+            {isSaving ? "保存中..." : "保存する"}
           </button>
-        </form>
-      </div>
-    </div>
+
+          <button
+            type="button"
+            onClick={() => router.push("/expenses")}
+            className="w-full rounded-xl border px-4 py-3"
+          >
+            一覧に戻る
+          </button>
+        </div>
+      </form>
+    </main>
   );
 }
