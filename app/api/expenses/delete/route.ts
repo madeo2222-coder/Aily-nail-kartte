@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+function maskValue(value: string | undefined) {
+  if (!value) return null;
+  if (value.length <= 12) return `${value.slice(0, 4)}...`;
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,14 +14,20 @@ export async function POST(req: NextRequest) {
 
     if (!supabaseUrl || !supabaseServiceRoleKey) {
       return NextResponse.json(
-        { error: "Supabase環境変数が不足しています" },
+        {
+          error: "Supabase環境変数が不足しています",
+          debug: {
+            hasUrl: !!supabaseUrl,
+            hasServiceRoleKey: !!supabaseServiceRoleKey,
+            urlPreview: supabaseUrl ?? null,
+            serviceRolePreview: maskValue(supabaseServiceRoleKey),
+          },
+        },
         { status: 500 }
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const expenseId = body?.expenseId as string | undefined;
 
     if (!expenseId) {
@@ -25,7 +37,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. 先に expenses 本体を取得
+    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+
+    // まず接続テスト
+    const { error: healthError } = await supabase
+      .from("expenses")
+      .select("id")
+      .limit(1);
+
+    if (healthError) {
+      return NextResponse.json(
+        {
+          error: `Supabase接続テストに失敗しました: ${healthError.message}`,
+          debug: {
+            urlPreview: supabaseUrl,
+            serviceRolePreview: maskValue(supabaseServiceRoleKey),
+            serviceRoleLength: supabaseServiceRoleKey.length,
+          },
+        },
+        { status: 500 }
+      );
+    }
+
+    // 1. expenses 本体取得
     const { data: expenseRow, error: expenseFetchError } = await supabase
       .from("expenses")
       .select("id, source_import_row_id")
@@ -34,19 +68,27 @@ export async function POST(req: NextRequest) {
 
     if (expenseFetchError || !expenseRow) {
       return NextResponse.json(
-        { error: `対象経費の取得に失敗しました: ${expenseFetchError?.message}` },
+        {
+          error: `対象経費の取得に失敗しました: ${
+            expenseFetchError?.message ?? "not found"
+          }`,
+          debug: {
+            urlPreview: supabaseUrl,
+            serviceRolePreview: maskValue(supabaseServiceRoleKey),
+            serviceRoleLength: supabaseServiceRoleKey.length,
+          },
+        },
         { status: 500 }
       );
     }
 
     const restoreIds: string[] = [];
 
-    // 2. 新方式: expenses.source_import_row_id から復元対象を拾う
     if (expenseRow.source_import_row_id) {
       restoreIds.push(expenseRow.source_import_row_id);
     }
 
-    // 3. 旧方式フォールバック: matched_expense_id からも拾う
+    // 2. 旧方式フォールバック
     const { data: matchedRows, error: matchedError } = await supabase
       .from("expense_import_rows")
       .select("id")
@@ -54,7 +96,14 @@ export async function POST(req: NextRequest) {
 
     if (matchedError) {
       return NextResponse.json(
-        { error: `紐づき確認に失敗しました: ${matchedError.message}` },
+        {
+          error: `紐づき確認に失敗しました: ${matchedError.message}`,
+          debug: {
+            urlPreview: supabaseUrl,
+            serviceRolePreview: maskValue(supabaseServiceRoleKey),
+            serviceRoleLength: supabaseServiceRoleKey.length,
+          },
+        },
         { status: 500 }
       );
     }
@@ -67,7 +116,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 4. expenses 削除
+    // 3. expenses 削除
     const { error: deleteError } = await supabase
       .from("expenses")
       .delete()
@@ -75,12 +124,19 @@ export async function POST(req: NextRequest) {
 
     if (deleteError) {
       return NextResponse.json(
-        { error: `expenses削除に失敗しました: ${deleteError.message}` },
+        {
+          error: `expenses削除に失敗しました: ${deleteError.message}`,
+          debug: {
+            urlPreview: supabaseUrl,
+            serviceRolePreview: maskValue(supabaseServiceRoleKey),
+            serviceRoleLength: supabaseServiceRoleKey.length,
+          },
+        },
         { status: 500 }
       );
     }
 
-    // 5. review 側に戻す
+    // 4. review 戻し
     if (restoreIds.length > 0) {
       const { error: restoreError } = await supabase
         .from("expense_import_rows")
@@ -95,6 +151,11 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           {
             error: `expenses削除は完了しましたが、review復元に失敗しました: ${restoreError.message}`,
+            debug: {
+              urlPreview: supabaseUrl,
+              serviceRolePreview: maskValue(supabaseServiceRoleKey),
+              serviceRoleLength: supabaseServiceRoleKey.length,
+            },
           },
           { status: 500 }
         );
@@ -109,8 +170,15 @@ export async function POST(req: NextRequest) {
     console.error("expense delete API error:", error);
 
     return NextResponse.json(
-      { error: "経費削除中にサーバーエラーが発生しました" },
+      {
+        error: "経費削除中にサーバーエラーが発生しました",
+        debug:
+          error instanceof Error
+            ? { message: error.message, stack: error.stack }
+            : null,
+      },
       { status: 500 }
     );
   }
+  console.log("KEY LENGTH:", process.env.SUPABASE_SERVICE_ROLE_KEY?.length);
 }
