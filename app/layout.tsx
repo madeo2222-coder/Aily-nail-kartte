@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import BottomNavVisibility from "./components/BottomNavVisibility";
 
 export const metadata: Metadata = {
   title: "Naily AiDOL",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      <body suppressHydrationWarning>
+        {children}
+        <BottomNavVisibility />
+      </body>
     </html>
   );
 }
