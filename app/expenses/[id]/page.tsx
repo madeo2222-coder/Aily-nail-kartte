@@ -10,6 +10,7 @@ type ExpenseRow = {
   category: string | null;
   amount: number | null;
   memo: string | null;
+  receipt_url: string | null;
 };
 
 const EXPENSE_CATEGORIES = [
@@ -37,6 +38,8 @@ export default function ExpenseEditPage() {
   const [category, setCategory] = useState<string>("材料費");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
+  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (!expenseId || expenseId === "[id]") {
@@ -52,7 +55,7 @@ export default function ExpenseEditPage() {
 
     const { data, error } = await supabase
       .from("expenses")
-      .select("id, expense_date, category, amount, memo")
+      .select("id, expense_date, category, amount, memo, receipt_url")
       .eq("id", expenseId)
       .single();
 
@@ -67,18 +70,43 @@ export default function ExpenseEditPage() {
 
     setExpenseDate(row.expense_date ?? "");
     setCategory(
-      row.category && EXPENSE_CATEGORIES.includes(row.category as any)
+      row.category && EXPENSE_CATEGORIES.includes(row.category as never)
         ? row.category
         : "雑費"
     );
     setAmount(String(row.amount ?? ""));
     setMemo(row.memo ?? "");
+    setReceiptUrl(row.receipt_url ?? null);
     setIsLoading(false);
   };
 
   useEffect(() => {
-    fetchExpense();
+    void fetchExpense();
   }, [expenseId]);
+
+  const uploadReceiptImage = async () => {
+    if (!receiptFile) return receiptUrl;
+
+    const ext = receiptFile.name.split(".").pop() || "jpg";
+    const fileName = `expense-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.${ext}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("visit-photos")
+      .upload(fileName, receiptFile, {
+        cacheControl: "3600",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(`画像アップロードに失敗しました: ${uploadError.message}`);
+    }
+
+    const { data } = supabase.storage.from("visit-photos").getPublicUrl(fileName);
+
+    return data.publicUrl;
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,26 +133,34 @@ export default function ExpenseEditPage() {
 
     setIsSaving(true);
 
-    const { error } = await supabase
-      .from("expenses")
-      .update({
-        expense_date: expenseDate,
-        category,
-        amount: Number(amount),
-        memo: memo.trim() || null,
-      })
-      .eq("id", expenseId);
+    try {
+      const nextReceiptUrl = await uploadReceiptImage();
 
-    setIsSaving(false);
+      const { error } = await supabase
+        .from("expenses")
+        .update({
+          expense_date: expenseDate,
+          category,
+          amount: Number(amount),
+          memo: memo.trim() || null,
+          receipt_url: nextReceiptUrl,
+        })
+        .eq("id", expenseId);
 
-    if (error) {
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      alert("更新しました");
+      router.push("/expenses");
+    } catch (error) {
       console.error("経費更新エラー:", error);
-      alert(`保存に失敗しました: ${error.message}`);
-      return;
+      alert(
+        error instanceof Error ? `保存に失敗しました: ${error.message}` : "保存に失敗しました"
+      );
+    } finally {
+      setIsSaving(false);
     }
-
-    alert("更新しました");
-    router.push("/expenses");
   };
 
   const handleDelete = async () => {
@@ -233,6 +269,31 @@ export default function ExpenseEditPage() {
             className="w-full rounded-xl border px-3 py-2"
             placeholder="補足メモ"
           />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium mb-1">レシート画像</label>
+
+          {receiptUrl && (
+            <div className="mb-3">
+              <img
+                src={receiptUrl}
+                alt="レシート"
+                className="w-full rounded-xl border"
+              />
+            </div>
+          )}
+
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setReceiptFile(e.target.files?.[0] || null)}
+            className="w-full rounded-xl border px-3 py-2 bg-white"
+          />
+
+          {receiptFile && (
+            <p className="mt-2 text-sm text-gray-500">{receiptFile.name}</p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-3">
