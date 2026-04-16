@@ -10,7 +10,10 @@ export default function CustomerForm() {
     e.preventDefault();
 
     const trimmedName = name.trim();
-    if (!trimmedName) return;
+    if (!trimmedName) {
+      alert("顧客名を入力してください");
+      return;
+    }
 
     const { error } = await supabase.from("customers").insert([
       {
