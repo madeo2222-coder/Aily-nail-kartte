@@ -10,6 +10,7 @@ const navItems = [
   { href: "/expenses", label: "経費", icon: "🧾" },
   { href: "/finance", label: "収支", icon: "📊" },
   { href: "/receivables", label: "未収", icon: "💰" },
+  { href: "/tax", label: "税理士", icon: "📩" },
 ];
 
 export default function BottomNav() {
@@ -28,7 +29,7 @@ export default function BottomNav() {
       className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto grid max-w-md grid-cols-6">
+      <div className="mx-auto grid max-w-md grid-cols-7">
         {navItems.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(`${item.href}/`);

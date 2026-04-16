@@ -6,6 +6,14 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+type PaymentRow = {
+  id: string;
+  visit_id: string;
+  payment_method: string | null;
+  amount: number | null;
+  sort_order: number | null;
+};
+
 function toSafeNumber(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
 
@@ -33,6 +41,18 @@ function getMonthRange(month: string) {
     from: format(start),
     to: format(end),
   };
+}
+
+function normalizePaymentMethod(value: unknown) {
+  if (typeof value !== "string") return "未設定";
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : "未設定";
+}
+
+function isCashlessMethod(method: string) {
+  if (method === "現金") return false;
+  if (method === "ホットペッパーポイント") return false;
+  return true;
 }
 
 export async function POST(req: Request) {
@@ -110,6 +130,74 @@ export async function POST(req: Request) {
       }))
       .sort((a, b) => b.amount - a.amount);
 
+    const visitIds = safeVisits
+      .map((visit) => String(visit.id ?? ""))
+      .filter((id) => id.length > 0);
+
+    let paymentMethodRows: {
+      paymentMethod: string;
+      amount: number;
+      percent: number;
+      type: "cash" | "cashless" | "point" | "other";
+    }[] = [];
+
+    let cashSales = 0;
+    let cashlessSales = 0;
+    let pointSales = 0;
+
+    if (visitIds.length > 0) {
+      const { data: paymentData, error: paymentError } = await supabase
+        .from("visit_payments")
+        .select("id, visit_id, payment_method, amount, sort_order")
+        .in("visit_id", visitIds)
+        .order("sort_order", { ascending: true });
+
+      if (paymentError) {
+        return NextResponse.json(
+          { error: `visit_payments error: ${paymentError.message}` },
+          { status: 500 }
+        );
+      }
+
+      const paymentRows = (paymentData ?? []) as PaymentRow[];
+      const paymentMap = new Map<string, number>();
+
+      paymentRows.forEach((row) => {
+        const method = normalizePaymentMethod(row.payment_method);
+        const amount = toSafeNumber(row.amount);
+        paymentMap.set(method, (paymentMap.get(method) ?? 0) + amount);
+      });
+
+      const paymentTotal = Array.from(paymentMap.values()).reduce(
+        (sum, amount) => sum + amount,
+        0
+      );
+
+      paymentMethodRows = Array.from(paymentMap.entries())
+        .map(([paymentMethod, amount]) => {
+          let type: "cash" | "cashless" | "point" | "other" = "other";
+
+          if (paymentMethod === "現金") {
+            type = "cash";
+            cashSales += amount;
+          } else if (paymentMethod === "ホットペッパーポイント") {
+            type = "point";
+            pointSales += amount;
+          } else if (isCashlessMethod(paymentMethod)) {
+            type = "cashless";
+            cashlessSales += amount;
+          }
+
+          return {
+            paymentMethod,
+            amount,
+            percent: paymentTotal > 0 ? (amount / paymentTotal) * 100 : 0,
+            type,
+          };
+        })
+        .sort((a, b) => b.amount - a.amount);
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -121,9 +209,14 @@ export async function POST(req: Request) {
         expenseCount,
         avgUnitPrice,
         categoryRows,
+        cashSales,
+        cashlessSales,
+        pointSales,
+        paymentMethodRows,
       },
     });
-  } catch (e) {
+  } catch (error) {
+    console.error("generate-report route error:", error);
     return NextResponse.json({ error: "server error" }, { status: 500 });
   }
 }

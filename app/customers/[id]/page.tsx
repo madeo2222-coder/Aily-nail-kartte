@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -16,9 +16,18 @@ type Visit = {
   customer_id: string;
   visit_date: string | null;
   price: number | null;
+  payment_method: string | null;
   memo: string | null;
   next_visit_date: string | null;
   next_proposal: string | null;
+};
+
+type VisitPayment = {
+  id: string;
+  visit_id: string;
+  payment_method: string;
+  amount: number | null;
+  sort_order: number | null;
 };
 
 type CustomerIntake = {
@@ -42,6 +51,11 @@ type CustomerIntake = {
   created_at?: string | null;
 };
 
+function formatPrice(value: number | null) {
+  if (value === null || value === undefined) return "¥0";
+  return `¥${Math.round(value).toLocaleString("ja-JP")}`;
+}
+
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -49,6 +63,7 @@ export default function CustomerDetailPage() {
 
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
   const [intake, setIntake] = useState<CustomerIntake | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -56,6 +71,19 @@ export default function CustomerDetailPage() {
     if (!customerId) return;
     fetchCustomerDetail();
   }, [customerId]);
+
+  const paymentMap = useMemo(() => {
+    const nextMap: Record<string, VisitPayment[]> = {};
+
+    visitPayments.forEach((row) => {
+      if (!nextMap[row.visit_id]) {
+        nextMap[row.visit_id] = [];
+      }
+      nextMap[row.visit_id].push(row);
+    });
+
+    return nextMap;
+  }, [visitPayments]);
 
   async function fetchCustomerDetail() {
     setLoading(true);
@@ -79,7 +107,7 @@ export default function CustomerDetailPage() {
       const { data: visitsData, error: visitsError } = await supabase
         .from("visits")
         .select(
-          "id, customer_id, visit_date, price, memo, next_visit_date, next_proposal"
+          "id, customer_id, visit_date, price, payment_method, memo, next_visit_date, next_proposal"
         )
         .eq("customer_id", customerId)
         .order("visit_date", { ascending: false });
@@ -87,8 +115,29 @@ export default function CustomerDetailPage() {
       if (visitsError) {
         console.error("visits取得エラー:", visitsError);
         setVisits([]);
+        setVisitPayments([]);
       } else {
-        setVisits((visitsData || []) as Visit[]);
+        const nextVisits = (visitsData || []) as Visit[];
+        setVisits(nextVisits);
+
+        const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
+
+        if (visitIds.length > 0) {
+          const { data: paymentData, error: paymentError } = await supabase
+            .from("visit_payments")
+            .select("id, visit_id, payment_method, amount, sort_order")
+            .in("visit_id", visitIds)
+            .order("sort_order", { ascending: true });
+
+          if (paymentError) {
+            console.error("visit_payments取得エラー:", paymentError);
+            setVisitPayments([]);
+          } else {
+            setVisitPayments((paymentData || []) as VisitPayment[]);
+          }
+        } else {
+          setVisitPayments([]);
+        }
       }
 
       try {
@@ -215,6 +264,23 @@ export default function CustomerDetailPage() {
   function yesNo(value: boolean | null) {
     if (value === null) return "-";
     return value ? "確認済み" : "未確認";
+  }
+
+  function formatPaymentSummary(visit: Visit) {
+    const rows = paymentMap[visit.id] ?? [];
+
+    if (rows.length === 0) {
+      return visit.payment_method || "未設定";
+    }
+
+    if (rows.length === 1) {
+      const row = rows[0];
+      return `${row.payment_method} ${formatPrice(row.amount)}`;
+    }
+
+    return rows
+      .map((row) => `${row.payment_method} ${formatPrice(row.amount)}`)
+      .join(" / ");
   }
 
   if (loading) {
@@ -380,21 +446,45 @@ export default function CustomerDetailPage() {
                   <span className="font-semibold">来店日:</span>{" "}
                   {formatDate(visit.visit_date)}
                 </p>
-                <p className="text-sm">
+
+                <p className="mt-1 text-sm">
                   <span className="font-semibold">売上:</span>{" "}
-                  {visit.price ? `¥${visit.price.toLocaleString()}` : "-"}
+                  {formatPrice(visit.price)}
                 </p>
-                <p className="text-sm whitespace-pre-wrap">
-                  <span className="font-semibold">メモ:</span> {visit.memo || "-"}
+
+                <p className="mt-1 text-sm">
+                  <span className="font-semibold">支払い方法:</span>{" "}
+                  {visit.payment_method || "未設定"}
                 </p>
-                <p className="text-sm">
-                  <span className="font-semibold">次回来店日:</span>{" "}
+
+                <p className="mt-1 text-sm">
+                  <span className="font-semibold">支払い内訳:</span>{" "}
+                  {formatPaymentSummary(visit)}
+                </p>
+
+                <p className="mt-1 text-sm">
+                  <span className="font-semibold">メモ:</span>{" "}
+                  {visit.memo?.trim() ? visit.memo : "-"}
+                </p>
+
+                <p className="mt-1 text-sm">
+                  <span className="font-semibold">次回来店予定:</span>{" "}
                   {formatDate(visit.next_visit_date)}
                 </p>
-                <p className="text-sm whitespace-pre-wrap">
+
+                <p className="mt-1 text-sm">
                   <span className="font-semibold">次回提案:</span>{" "}
-                  {visit.next_proposal || "-"}
+                  {visit.next_proposal?.trim() ? visit.next_proposal : "-"}
                 </p>
+
+                <div className="mt-3">
+                  <Link
+                    href={`/visits/${visit.id}/edit`}
+                    className="inline-block rounded bg-blue-600 px-3 py-2 text-sm text-white"
+                  >
+                    この来店履歴を編集
+                  </Link>
+                </div>
               </div>
             ))}
           </div>

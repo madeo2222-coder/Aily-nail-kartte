@@ -1,14 +1,5 @@
 "use client";
 
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import PdfPage from "./PdfPage";
 
 type Row = {
@@ -24,6 +15,13 @@ type CategoryRow = {
   percent: number;
 };
 
+type PaymentMethodRow = {
+  paymentMethod: string;
+  amount: number;
+  percent: number;
+  type: "cash" | "cashless" | "point" | "other";
+};
+
 type MonthlySummary = {
   month?: string;
   totalSales?: number;
@@ -31,7 +29,12 @@ type MonthlySummary = {
   profit?: number;
   visitCount?: number;
   avgUnitPrice?: number;
+  expenseCount?: number;
   categoryRows?: CategoryRow[];
+  cashSales?: number;
+  cashlessSales?: number;
+  pointSales?: number;
+  paymentMethodRows?: PaymentMethodRow[];
 };
 
 function yen(value: number | undefined) {
@@ -46,9 +49,9 @@ function getMonthLabel(value?: string) {
 }
 
 function getDocumentNumber(month?: string) {
-  if (!month) return "NR-0000-00";
+  if (!month) return "TX-0000-00";
   const [year, monthText] = month.split("/");
-  return `NR-${year}-${String(monthText).padStart(2, "0")}`;
+  return `TX-${year}-${String(monthText).padStart(2, "0")}`;
 }
 
 function getTodayLabel() {
@@ -61,7 +64,10 @@ function getProfitColor(profit: number) {
 }
 
 function calcRate(cur: number, prev: number) {
-  if (prev === 0) return 0;
+  if (prev === 0) {
+    if (cur === 0) return 0;
+    return 100;
+  }
   return ((cur - prev) / prev) * 100;
 }
 
@@ -78,6 +84,13 @@ function rateColor(n: number, type: "sales" | "expenses" | "profit") {
   return n >= 0 ? "text-green-600" : "text-red-600";
 }
 
+function getTypeLabel(type: PaymentMethodRow["type"]) {
+  if (type === "cash") return "現金";
+  if (type === "cashless") return "キャッシュレス";
+  if (type === "point") return "ポイント";
+  return "その他";
+}
+
 export default function MonthlyReportPdf({
   summary,
   rows,
@@ -85,7 +98,7 @@ export default function MonthlyReportPdf({
   summary: MonthlySummary | null;
   rows: Row[];
 }) {
-  const total = 6;
+  const totalPages = 6;
 
   const month = summary?.month ?? "";
   const monthLabel = getMonthLabel(month);
@@ -95,8 +108,14 @@ export default function MonthlyReportPdf({
   const totalExpenses = summary?.totalExpenses ?? 0;
   const profit = summary?.profit ?? 0;
   const visitCount = summary?.visitCount ?? 0;
+  const expenseCount = summary?.expenseCount ?? 0;
   const avgUnitPrice = summary?.avgUnitPrice ?? 0;
   const categoryRows = summary?.categoryRows ?? [];
+  const paymentMethodRows = summary?.paymentMethodRows ?? [];
+  const cashSales = summary?.cashSales ?? 0;
+  const cashlessSales = summary?.cashlessSales ?? 0;
+  const pointSales = summary?.pointSales ?? 0;
+
   const topCategory = categoryRows[0];
 
   const current = rows.length >= 1 ? rows[rows.length - 1] : undefined;
@@ -138,19 +157,19 @@ export default function MonthlyReportPdf({
       <div className="pdf-sheet border border-slate-300 px-12 py-16">
         <div className="flex min-h-[260mm] flex-col items-center justify-center text-center">
           <div className="mb-4 text-lg tracking-[0.35em] text-slate-400">
-            NAILY AIDOL MANAGEMENT REPORT
+            TAX ACCOUNTANT MONTHLY PACKAGE
           </div>
 
-          <div className="mb-6 text-6xl font-bold leading-tight text-slate-900">
-            今月の利益と課題が、
+          <div className="mb-6 text-5xl font-bold leading-tight text-slate-900">
+            税理士提出用
             <br />
-            すぐわかる。
+            月次集計資料
           </div>
 
           <div className="mb-10 text-xl leading-9 text-slate-600">
-            売上・経費・粗利・前月比・経費カテゴリを整理した
+            売上・経費・粗利・件数・経費分類・支払い手段を整理した
             <br />
-            オーナー向け月次レポート
+            月次確認用の提出資料
           </div>
 
           <div className="mb-12 h-[3px] w-32 bg-slate-200" />
@@ -174,11 +193,13 @@ export default function MonthlyReportPdf({
             </div>
           </div>
 
-          <div className="mt-20 text-xl text-slate-400">page 1 / {total}</div>
+          <div className="mt-20 text-xl text-slate-400">
+            page 1 / {totalPages}
+          </div>
         </div>
       </div>
 
-      <PdfPage page={2} total={total}>
+      <PdfPage page={2} total={totalPages}>
         <div>
           <div className="mb-8 flex items-start justify-between">
             <div>
@@ -186,7 +207,7 @@ export default function MonthlyReportPdf({
                 Aily Nail Studio
               </div>
               <h2 className="mt-2 text-4xl font-bold text-slate-900">
-                今月の経営サマリー
+                月次集計サマリー
               </h2>
             </div>
             <div className="text-right text-sm text-slate-500">
@@ -195,26 +216,26 @@ export default function MonthlyReportPdf({
           </div>
 
           <div className="mb-8 text-lg text-slate-600">
-            今月の売上・経費・粗利をまとめて確認
+            税理士提出用の月次主要数値
           </div>
 
           <div className="grid grid-cols-1 gap-5">
             <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-              <div className="mb-3 text-lg text-slate-500">当月売上</div>
+              <div className="mb-3 text-lg text-slate-500">売上合計</div>
               <div className="text-5xl font-bold tracking-tight text-slate-900">
                 {yen(totalSales)}
               </div>
             </div>
 
             <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-              <div className="mb-3 text-lg text-slate-500">当月経費</div>
+              <div className="mb-3 text-lg text-slate-500">経費合計</div>
               <div className="text-5xl font-bold tracking-tight text-slate-900">
                 {yen(totalExpenses)}
               </div>
             </div>
 
             <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-              <div className="mb-3 text-lg text-slate-500">当月粗利</div>
+              <div className="mb-3 text-lg text-slate-500">粗利</div>
               <div
                 className={`text-5xl font-bold tracking-tight ${getProfitColor(
                   profit
@@ -225,90 +246,43 @@ export default function MonthlyReportPdf({
             </div>
           </div>
 
-          <div className="mt-8 rounded-[24px] bg-slate-50 p-6">
-            {profit < 0 ? (
-              <>
-                <div className="mb-3 text-2xl font-bold text-red-600">
-                  🚨 赤字：即改善が必要
-                </div>
-                <div className="space-y-2 text-base leading-8 text-slate-700">
-                  <div>・売上低下か経費増加かを最優先で切り分ける</div>
-                  <div>・広告費、材料費、外注費の増加有無を確認する</div>
-                  <div>・来店数減少か客単価低下かをチェックする</div>
-                  <div>・不要コストは即削減対象として洗い出す</div>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="mb-3 text-2xl font-bold text-slate-900">
-                  ✅ 黒字：維持と強化フェーズ
-                </div>
-                <div className="space-y-2 text-base leading-8 text-slate-700">
-                  <div>・利益を維持しつつ売上拡大余地を確認する</div>
-                  <div>・客単価アップ施策を検討する</div>
-                  <div>・次回予約導線で再来率を最大化する</div>
-                  <div>・利益が出ている今こそ無駄コストを点検する</div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      </PdfPage>
-
-      <PdfPage page={3} total={total}>
-        <div>
-          <div className="mb-8 flex items-start justify-between">
-            <div>
-              <div className="text-sm tracking-wide text-slate-500">
-                Aily Nail Studio
-              </div>
-              <h2 className="mt-2 text-4xl font-bold text-slate-900">
-                来店数と客単価
-              </h2>
-            </div>
-            <div className="text-right text-sm text-slate-500">
-              {documentNumber}
-            </div>
-          </div>
-
-          <div className="mb-8 text-lg text-slate-600">
-            今月の売上をつくっている基本指標
-          </div>
-
-          <div className="grid grid-cols-1 gap-5">
-            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-              <div className="mb-3 text-lg text-slate-500">来店数</div>
-              <div className="text-5xl font-bold tracking-tight text-slate-900">
-                {visitCount}件
+          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">来店件数</div>
+              <div className="text-4xl font-bold text-slate-900">
+                {visitCount.toLocaleString()}件
               </div>
             </div>
 
-            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-              <div className="mb-3 text-lg text-slate-500">客単価</div>
-              <div className="text-5xl font-bold tracking-tight text-slate-900">
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">経費件数</div>
+              <div className="text-4xl font-bold text-slate-900">
+                {expenseCount.toLocaleString()}件
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">客単価</div>
+              <div className="text-4xl font-bold text-slate-900">
                 {yen(avgUnitPrice)}
               </div>
             </div>
           </div>
 
           <div className="mt-8 rounded-[24px] bg-slate-50 p-6">
-            {visitCount === 0 ? (
-              <div className="text-base leading-8 text-red-600">
-                ⚠ 来店データなし：集客停止状態です
-              </div>
-            ) : (
-              <div className="space-y-2 text-base leading-8 text-slate-700">
-                <div>・来店数 × 客単価 = 売上の基本構造</div>
-                <div>・来店数が弱い場合は集客導線を見直す</div>
-                <div>・客単価が弱い場合はメニュー設計を見直す</div>
-                <div>・両方弱い場合は運用全体の再設計が必要</div>
-              </div>
-            )}
+            <div className="mb-3 text-2xl font-bold text-slate-900">
+              提出補足
+            </div>
+            <div className="space-y-2 text-base leading-8 text-slate-700">
+              <div>・本資料は対象月の売上・経費集計を整理した月次提出資料です。</div>
+              <div>・売上は来店日基準、経費は expense_date 基準で集計しています。</div>
+              <div>・粗利は 売上合計 - 経費合計 で算出しています。</div>
+            </div>
           </div>
         </div>
       </PdfPage>
 
-      <PdfPage page={4} total={total}>
+      <PdfPage page={3} total={totalPages}>
         <div>
           <div className="mb-8 flex items-start justify-between">
             <div>
@@ -316,7 +290,7 @@ export default function MonthlyReportPdf({
                 Aily Nail Studio
               </div>
               <h2 className="mt-2 text-4xl font-bold text-slate-900">
-                月次推移グラフ
+                月次推移・前月比
               </h2>
             </div>
             <div className="text-right text-sm text-slate-500">
@@ -325,52 +299,66 @@ export default function MonthlyReportPdf({
           </div>
 
           <div className="mb-8 text-lg text-slate-600">
-            売上・経費・粗利の流れを一目で確認
+            売上・経費・粗利の推移と前月比較
           </div>
 
-          <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
-            <div className="h-[420px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={rows}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value) => [yen(Number(value)), ""]}
-                    labelFormatter={(label) => `月: ${String(label)}`}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="sales"
-                    name="売上"
-                    stroke="#2563eb"
-                    strokeWidth={3}
-                    dot={{ r: 4 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="expenses"
-                    name="経費"
-                    stroke="#ef4444"
-                    strokeWidth={3}
-                    dot={{ r: 4 }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="profit"
-                    name="粗利"
-                    stroke="#16a34a"
-                    strokeWidth={3}
-                    dot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">売上前月比</div>
+              <div className={`text-4xl font-bold ${rateColor(salesRate, "sales")}`}>
+                {arrow(salesRate)} {salesRate.toFixed(1)}%
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">経費前月比</div>
+              <div
+                className={`text-4xl font-bold ${rateColor(
+                  expensesRate,
+                  "expenses"
+                )}`}
+              >
+                {arrow(expensesRate)} {expensesRate.toFixed(1)}%
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">粗利前月比</div>
+              <div className={`text-4xl font-bold ${rateColor(profitRate, "profit")}`}>
+                {arrow(profitRate)} {profitRate.toFixed(1)}%
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 rounded-[24px] border-2 border-slate-200 bg-white p-6">
+            <div className="mb-4 text-xl font-bold text-slate-900">月次推移</div>
+            <div className="overflow-hidden rounded-xl border">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-100">
+                    <th className="border px-3 py-2 text-left">月</th>
+                    <th className="border px-3 py-2 text-right">売上</th>
+                    <th className="border px-3 py-2 text-right">経費</th>
+                    <th className="border px-3 py-2 text-right">粗利</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.month}>
+                      <td className="border px-3 py-2">{getMonthLabel(row.month)}</td>
+                      <td className="border px-3 py-2 text-right">{yen(row.sales)}</td>
+                      <td className="border px-3 py-2 text-right">{yen(row.expenses)}</td>
+                      <td className="border px-3 py-2 text-right">{yen(row.profit)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       </PdfPage>
 
-      <PdfPage page={5} total={total}>
+      <PdfPage page={4} total={totalPages}>
         <div>
           <div className="mb-8 flex items-start justify-between">
             <div>
@@ -378,7 +366,7 @@ export default function MonthlyReportPdf({
                 Aily Nail Studio
               </div>
               <h2 className="mt-2 text-4xl font-bold text-slate-900">
-                前月比で見る変化
+                経費カテゴリ集計
               </h2>
             </div>
             <div className="text-right text-sm text-slate-500">
@@ -387,85 +375,7 @@ export default function MonthlyReportPdf({
           </div>
 
           <div className="mb-8 text-lg text-slate-600">
-            前月と比べて、今月どこが変わったかを確認
-          </div>
-
-          {!current || !prev ? (
-            <div className="text-slate-600">
-              前月比較に必要なデータが不足しています
-            </div>
-          ) : (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 gap-5">
-                <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-                  <div className="mb-2 text-lg text-slate-500">売上</div>
-                  <div className={`text-4xl font-bold ${rateColor(salesRate, "sales")}`}>
-                    {arrow(salesRate)} {salesRate.toFixed(1)}%
-                  </div>
-                </div>
-
-                <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-                  <div className="mb-2 text-lg text-slate-500">経費</div>
-                  <div
-                    className={`text-4xl font-bold ${rateColor(
-                      expensesRate,
-                      "expenses"
-                    )}`}
-                  >
-                    {arrow(expensesRate)} {expensesRate.toFixed(1)}%
-                  </div>
-                </div>
-
-                <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
-                  <div className="mb-2 text-lg text-slate-500">粗利</div>
-                  <div
-                    className={`text-4xl font-bold ${rateColor(profitRate, "profit")}`}
-                  >
-                    {arrow(profitRate)} {profitRate.toFixed(1)}%
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-[24px] bg-slate-50 p-6 text-base leading-8 text-slate-700">
-                {profitRate < 0 ? (
-                  <div className="space-y-2">
-                    <div>・利益が前月より悪化している</div>
-                    <div>・売上減少か経費増加の主因を特定する</div>
-                    <div>・広告費、固定費、材料費の増加を優先確認する</div>
-                    <div>・改善しない場合は構造見直しを検討する</div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <div>・利益は前月より改善している</div>
-                    <div>・改善が単発要因か再現性ある施策かを確認する</div>
-                    <div>・利益が出た導線へ再投資を検討する</div>
-                    <div>・拡大前に無駄コストがないか再点検する</div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      </PdfPage>
-
-      <PdfPage page={6} total={total}>
-        <div>
-          <div className="mb-8 flex items-start justify-between">
-            <div>
-              <div className="text-sm tracking-wide text-slate-500">
-                Aily Nail Studio
-              </div>
-              <h2 className="mt-2 text-4xl font-bold text-slate-900">
-                経費カテゴリ分析
-              </h2>
-            </div>
-            <div className="text-right text-sm text-slate-500">
-              {documentNumber}
-            </div>
-          </div>
-
-          <div className="mb-8 text-lg text-slate-600">
-            今月、どの経費が大きいかを確認
+            対象月の経費分類内訳
           </div>
 
           {categoryRows.length === 0 ? (
@@ -485,52 +395,165 @@ export default function MonthlyReportPdf({
                 </div>
               </div>
 
-              <div className="space-y-4">
-                {categoryRows.map((row) => (
-                  <div
-                    key={row.category}
-                    className="rounded-[24px] border-2 border-slate-200 bg-white p-6"
-                  >
-                    <div className="mb-3 flex items-center justify-between gap-4">
-                      <div className="text-2xl font-bold text-slate-900">
-                        {row.category}
-                      </div>
-                      <div className="text-right">
-                        <div className="text-2xl font-bold text-slate-900">
-                          {yen(row.amount)}
-                        </div>
-                        <div className="text-sm text-slate-500">
+              <div className="overflow-hidden rounded-xl border">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="border px-3 py-2 text-left">勘定科目</th>
+                      <th className="border px-3 py-2 text-right">金額</th>
+                      <th className="border px-3 py-2 text-right">構成比</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categoryRows.map((row) => (
+                      <tr key={row.category}>
+                        <td className="border px-3 py-2">{row.category}</td>
+                        <td className="border px-3 py-2 text-right">{yen(row.amount)}</td>
+                        <td className="border px-3 py-2 text-right">
                           {row.percent.toFixed(1)}%
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="h-4 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full bg-slate-900"
-                        style={{ width: `${Math.min(row.percent, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               <div className="rounded-[24px] bg-slate-50 p-6 text-base leading-8 text-slate-700">
-                {topCategory ? (
-                  <div className="space-y-2">
-                    <div>・最大コストは「{topCategory.category}」</div>
-                    <div>
-                      ・全体の {(topCategory.percent ?? 0).toFixed(1)}% を占める
-                    </div>
-                    <div>・必要経費か投資かを区別して判断する</div>
-                    <div>・固定費化していないかを確認する</div>
-                  </div>
-                ) : (
-                  <>カテゴリ分析データがありません</>
-                )}
+                <div>・経費は category を基準に集計しています。</div>
+                <div>・未設定カテゴリは「未分類」として表示しています。</div>
               </div>
             </div>
           )}
+        </div>
+      </PdfPage>
+
+      <PdfPage page={5} total={totalPages}>
+        <div>
+          <div className="mb-8 flex items-start justify-between">
+            <div>
+              <div className="text-sm tracking-wide text-slate-500">
+                Aily Nail Studio
+              </div>
+              <h2 className="mt-2 text-4xl font-bold text-slate-900">
+                支払い手段別集計
+              </h2>
+            </div>
+            <div className="text-right text-sm text-slate-500">
+              {documentNumber}
+            </div>
+          </div>
+
+          <div className="mb-8 text-lg text-slate-600">
+            対象月の支払い手段別内訳
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">現金</div>
+              <div className="text-4xl font-bold text-slate-900">
+                {yen(cashSales)}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">キャッシュレス</div>
+              <div className="text-4xl font-bold text-slate-900">
+                {yen(cashlessSales)}
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-6">
+              <div className="mb-2 text-lg text-slate-500">ポイント</div>
+              <div className="text-4xl font-bold text-slate-900">
+                {yen(pointSales)}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 overflow-hidden rounded-xl border">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-100">
+                  <th className="border px-3 py-2 text-left">支払い手段</th>
+                  <th className="border px-3 py-2 text-left">分類</th>
+                  <th className="border px-3 py-2 text-right">金額</th>
+                  <th className="border px-3 py-2 text-right">構成比</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentMethodRows.length === 0 ? (
+                  <tr>
+                    <td className="border px-3 py-4 text-center text-slate-500" colSpan={4}>
+                      当月の支払い手段別データはありません。
+                    </td>
+                  </tr>
+                ) : (
+                  paymentMethodRows.map((row) => (
+                    <tr key={row.paymentMethod}>
+                      <td className="border px-3 py-2">{row.paymentMethod}</td>
+                      <td className="border px-3 py-2">{getTypeLabel(row.type)}</td>
+                      <td className="border px-3 py-2 text-right">{yen(row.amount)}</td>
+                      <td className="border px-3 py-2 text-right">
+                        {row.percent.toFixed(1)}%
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </PdfPage>
+
+      <PdfPage page={6} total={totalPages}>
+        <div>
+          <div className="mb-8 flex items-start justify-between">
+            <div>
+              <div className="text-sm tracking-wide text-slate-500">
+                Aily Nail Studio
+              </div>
+              <h2 className="mt-2 text-4xl font-bold text-slate-900">
+                提出補足・確認事項
+              </h2>
+            </div>
+            <div className="text-right text-sm text-slate-500">
+              {documentNumber}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
+              <div className="mb-4 text-2xl font-bold text-slate-900">
+                資料の前提
+              </div>
+              <div className="space-y-2 text-base leading-8 text-slate-700">
+                <div>・対象月: {monthLabel}</div>
+                <div>・売上は visits.price を来店日基準で集計</div>
+                <div>・経費は expenses.amount を expense_date 基準で集計</div>
+                <div>・粗利は 売上合計 - 経費合計</div>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border-2 border-slate-200 bg-white p-7">
+              <div className="mb-4 text-2xl font-bold text-slate-900">
+                主な数値
+              </div>
+              <div className="space-y-2 text-base leading-8 text-slate-700">
+                <div>・売上合計: {yen(totalSales)}</div>
+                <div>・経費合計: {yen(totalExpenses)}</div>
+                <div>・粗利: {yen(profit)}</div>
+                <div>・来店件数: {visitCount.toLocaleString()}件</div>
+                <div>・経費件数: {expenseCount.toLocaleString()}件</div>
+                <div>・客単価: {yen(avgUnitPrice)}</div>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] bg-slate-50 p-6 text-base leading-8 text-slate-700">
+              <div>・本資料は月次確認と税理士提出を想定した集計資料です。</div>
+              <div>・明細ベースの売上CSV、経費CSVとあわせて提出する運用を推奨します。</div>
+              <div>・必要に応じて原票、領収書、レシート画像と照合してください。</div>
+            </div>
+          </div>
         </div>
       </PdfPage>
     </div>

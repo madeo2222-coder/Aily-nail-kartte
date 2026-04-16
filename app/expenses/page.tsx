@@ -135,6 +135,27 @@ function getReportComment(
   return "当月経費は大きな偏りは見られません。分類・金額・証憑の整合性確認を継続してください。";
 }
 
+function csvEscape(value: unknown) {
+  const text =
+    value === null || value === undefined ? "" : String(value).replace(/\r?\n/g, " ");
+  if (text.includes('"') || text.includes(",") || text.includes("\n")) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\r\n");
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
+  const blob = new Blob([bom, csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ExpensesPage() {
   const [rows, setRows] = useState<ExpenseRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -198,6 +219,7 @@ export default function ExpensesPage() {
 
     return monthFilteredRows.filter((row) => {
       const target = [
+        row.id ?? "",
         row.expense_date ?? "",
         row.category ?? "",
         String(row.amount ?? ""),
@@ -250,33 +272,28 @@ export default function ExpensesPage() {
       return;
     }
 
-    const header = ["日付", "カテゴリ", "金額", "内容"];
+    const csvRows: (string | number)[][] = [
+      [
+        "経費ID",
+        "利用日",
+        "勘定科目",
+        "金額",
+        "内容",
+        "証憑有無",
+        "証憑URL",
+      ],
+      ...filteredRows.map((row) => [
+        row.id,
+        row.expense_date ?? "",
+        row.category ?? "未分類",
+        row.amount ?? 0,
+        row.memo ?? "",
+        row.receipt_url ? "あり" : "なし",
+        row.receipt_url ?? "",
+      ]),
+    ];
 
-    const body = filteredRows.map((row) => [
-      row.expense_date ?? "",
-      row.category ?? "",
-      row.amount ?? 0,
-      row.memo ?? "",
-    ]);
-
-    const csvContent = [header, ...body]
-      .map((row) =>
-        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")
-      )
-      .join("\n");
-
-    const blob = new Blob([csvContent], {
-      type: "text/csv;charset=utf-8;",
-    });
-
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-
-    link.href = url;
-    link.download = `経費一覧_${selectedMonth}.csv`;
-    link.click();
-
-    URL.revokeObjectURL(url);
+    downloadCsv(`経費明細_${selectedMonth}.csv`, csvRows);
   }
 
   function handlePrint() {
@@ -596,7 +613,7 @@ export default function ExpensesPage() {
               onClick={handleDownloadCSV}
               className="rounded-xl border px-4 py-2 text-sm font-medium"
             >
-              CSVダウンロード
+              経費明細CSV
             </button>
           </div>
         </div>

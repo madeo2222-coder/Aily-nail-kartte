@@ -18,11 +18,20 @@ type Visit = {
   customer_id: string | null;
   visit_date: string | null;
   price: number | null;
+  payment_method: string | null;
   memo: string | null;
   next_visit_date: string | null;
   next_proposal: string | null;
   next_suggestion: string | null;
   customers: CustomerRelation;
+};
+
+type VisitPayment = {
+  id: string;
+  visit_id: string;
+  payment_method: string;
+  amount: number | null;
+  sort_order: number | null;
 };
 
 type QuickSelectMode = "current" | "previous" | "custom";
@@ -121,8 +130,50 @@ function getDocumentNumber(monthValue: string) {
   return `VR-${year}-${month}`;
 }
 
+function formatPaymentSummary(
+  visit: Visit,
+  paymentMap: Record<string, VisitPayment[]>
+) {
+  const rows = paymentMap[visit.id] ?? [];
+
+  if (rows.length === 0) {
+    return visit.payment_method || "未設定";
+  }
+
+  if (rows.length === 1) {
+    const row = rows[0];
+    return `${row.payment_method} ${formatPrice(row.amount)}`;
+  }
+
+  return rows
+    .map((row) => `${row.payment_method} ${formatPrice(row.amount)}`)
+    .join(" / ");
+}
+
+function csvEscape(value: unknown) {
+  const text =
+    value === null || value === undefined ? "" : String(value).replace(/\r?\n/g, " ");
+  if (text.includes('"') || text.includes(",") || text.includes("\n")) {
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+  return text;
+}
+
+function downloadCsv(filename: string, rows: (string | number)[][]) {
+  const csv = rows.map((row) => row.map(csvEscape).join(",")).join("\r\n");
+  const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
+  const blob = new Blob([bom, csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function VisitsPageClient() {
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [paymentMap, setPaymentMap] = useState<Record<string, VisitPayment[]>>({});
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(buildCurrentMonth());
   const [quickSelectMode, setQuickSelectMode] = useState<QuickSelectMode>("current");
@@ -143,6 +194,7 @@ export default function VisitsPageClient() {
         customer_id,
         visit_date,
         price,
+        payment_method,
         memo,
         next_visit_date,
         next_proposal,
@@ -157,12 +209,41 @@ export default function VisitsPageClient() {
     if (error) {
       console.error("来店履歴の取得エラー:", error);
       setVisits([]);
+      setPaymentMap({});
       setLoading(false);
       return;
     }
 
     const nextVisits = (data as Visit[]) || [];
     setVisits(nextVisits);
+
+    const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
+
+    if (visitIds.length > 0) {
+      const { data: paymentData, error: paymentError } = await supabase
+        .from("visit_payments")
+        .select("id, visit_id, payment_method, amount, sort_order")
+        .in("visit_id", visitIds)
+        .order("sort_order", { ascending: true });
+
+      if (paymentError) {
+        console.error("visit_payments取得エラー:", paymentError);
+        setPaymentMap({});
+      } else {
+        const nextMap: Record<string, VisitPayment[]> = {};
+
+        ((paymentData || []) as VisitPayment[]).forEach((row) => {
+          if (!nextMap[row.visit_id]) {
+            nextMap[row.visit_id] = [];
+          }
+          nextMap[row.visit_id].push(row);
+        });
+
+        setPaymentMap(nextMap);
+      }
+    } else {
+      setPaymentMap({});
+    }
 
     const currentMonth = buildCurrentMonth();
     const previousMonth = buildPreviousMonth();
@@ -257,6 +338,38 @@ export default function VisitsPageClient() {
       return;
     }
     window.print();
+  }
+
+  function handleExportSalesCsv() {
+    if (filteredVisits.length === 0) {
+      alert("出力する売上明細がありません");
+      return;
+    }
+
+    const rows: (string | number)[][] = [
+      [
+        "来店日",
+        "顧客名",
+        "売上",
+        "支払い方法",
+        "支払い内訳",
+        "メモ",
+        "次回来店予定",
+        "次回提案",
+      ],
+      ...filteredVisits.map((visit) => [
+        visit.visit_date || "",
+        getCustomerName(visit.customers),
+        visit.price ?? 0,
+        visit.payment_method || "未設定",
+        formatPaymentSummary(visit, paymentMap),
+        visit.memo?.trim() ? visit.memo : "",
+        visit.next_visit_date || "",
+        visit.next_proposal || visit.next_suggestion || "",
+      ]),
+    ];
+
+    downloadCsv(`sales-detail-${selectedMonth}.csv`, rows);
   }
 
   if (loading) {
@@ -369,6 +482,11 @@ export default function VisitsPageClient() {
 
                     <div className="mt-3 grid grid-cols-1 gap-2 text-sm">
                       <div>
+                        <span className="font-medium">支払い:</span>{" "}
+                        {formatPaymentSummary(visit, paymentMap)}
+                      </div>
+
+                      <div>
                         <span className="font-medium">次回来店予定:</span>{" "}
                         {formatDate(visit.next_visit_date)}
                       </div>
@@ -403,14 +521,22 @@ export default function VisitsPageClient() {
           <div>
             <h1 className="text-xl font-bold text-slate-900">来店一覧</h1>
             <p className="mt-1 text-sm text-slate-500">
-              対象月を切り替えて、施術実績をそのままPDF出力できます。
+              対象月を切り替えて、施術実績をPDFまたはCSVで出力できます。
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
               対象月: {selectedMonthLabel}
             </span>
+
+            <button
+              type="button"
+              onClick={handleExportSalesCsv}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow hover:bg-slate-50"
+            >
+              売上明細CSV
+            </button>
 
             <button
               type="button"
@@ -561,6 +687,11 @@ export default function VisitsPageClient() {
                     </div>
 
                     <div>
+                      <span className="font-medium">支払い:</span>{" "}
+                      {formatPaymentSummary(visit, paymentMap)}
+                    </div>
+
+                    <div>
                       <span className="font-medium">次回来店予定:</span>{" "}
                       {formatDate(visit.next_visit_date)}
                     </div>
@@ -638,24 +769,18 @@ export default function VisitsPageClient() {
           }
 
           body * {
-            visibility: hidden !important;
+            visibility: hidden;
           }
 
           .print-area,
           .print-area * {
-            visibility: visible !important;
+            visibility: visible;
           }
 
           .print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            max-width: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #ffffff !important;
-            box-shadow: none !important;
+            position: absolute;
+            inset: 0;
+            width: 100%;
           }
 
           .preview-toolbar {
@@ -663,51 +788,14 @@ export default function VisitsPageClient() {
           }
 
           .pdf-cover {
+            min-height: 92vh;
             page-break-after: always;
             break-after: page;
           }
 
+          .pdf-summary-grid,
           .avoid-break {
-            break-inside: avoid-page;
-            page-break-inside: avoid;
-          }
-
-          .pdf-summary-grid {
-            display: grid !important;
-            grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-            gap: 8px !important;
-          }
-
-          .rounded-xl,
-          .rounded-lg,
-          .rounded-2xl {
-            border-radius: 0 !important;
-          }
-
-          h1 {
-            font-size: 20px !important;
-            line-height: 1.25 !important;
-            margin-bottom: 6px !important;
-          }
-
-          h2 {
-            font-size: 15px !important;
-            line-height: 1.3 !important;
-            margin-bottom: 4px !important;
-          }
-
-          p,
-          div,
-          span,
-          td,
-          th {
-            line-height: 1.4 !important;
-          }
-
-          .print-area table,
-          .print-area tr,
-          .print-area td,
-          .print-area th {
+            break-inside: avoid;
             page-break-inside: avoid;
           }
         }
