@@ -30,6 +30,7 @@ const PAYMENT_METHOD_OPTIONS = [
   "UnionPay（銀聯）",
   "Discover",
   "ホットペッパーポイント",
+  "割引",
   "その他",
 ];
 
@@ -50,6 +51,16 @@ function toSafeNumber(value: string) {
   if (!normalized) return 0;
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function isDiscountMethod(method: string) {
+  return method.trim() === "割引";
+}
+
+function formatAmountPreview(value: string) {
+  const amount = toSafeNumber(value);
+  if (!Number.isFinite(amount)) return "未入力";
+  return `${amount.toLocaleString("ja-JP")}`;
 }
 
 export default function NewVisitPageClient() {
@@ -173,12 +184,12 @@ export default function NewVisitPageClient() {
     }
 
     if (!price || Number(price) < 0) {
-      setMessage("金額を正しく入力してください");
+      setMessage("売上金額を正しく入力してください");
       return;
     }
 
     if (!Number.isFinite(totalPrice)) {
-      setMessage("金額を正しく入力してください");
+      setMessage("売上金額を正しく入力してください");
       return;
     }
 
@@ -188,7 +199,7 @@ export default function NewVisitPageClient() {
         amount: toSafeNumber(line.amount),
         sort_order: index + 1,
       }))
-      .filter((line) => line.payment_method && line.amount > 0);
+      .filter((line) => line.payment_method && line.amount !== 0);
 
     if (cleanedPaymentLines.length === 0) {
       setMessage("支払い内訳を1件以上入力してください");
@@ -204,6 +215,24 @@ export default function NewVisitPageClient() {
       return;
     }
 
+    const hasDiscountPositive = cleanedPaymentLines.some(
+      (line) => isDiscountMethod(line.payment_method) && line.amount > 0
+    );
+
+    if (hasDiscountPositive) {
+      setMessage("割引はマイナス金額で入力してください");
+      return;
+    }
+
+    const hasNonDiscountNegative = cleanedPaymentLines.some(
+      (line) => !isDiscountMethod(line.payment_method) && line.amount < 0
+    );
+
+    if (hasNonDiscountNegative) {
+      setMessage("割引以外の支払い方法はマイナスにできません");
+      return;
+    }
+
     if (paymentTotal !== totalPrice) {
       setMessage("売上金額と支払い内訳合計を一致させてください");
       return;
@@ -215,7 +244,7 @@ export default function NewVisitPageClient() {
       const mainPaymentMethod =
         cleanedPaymentLines.length === 1
           ? cleanedPaymentLines[0].payment_method
-          : "分割払い";
+          : "複数";
 
       const visitPayload = {
         customer_id: customerId,
@@ -354,16 +383,19 @@ export default function NewVisitPageClient() {
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  金額 <span className="text-red-500">*</span>
+                  売上金額 <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="number"
                   inputMode="numeric"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  placeholder="例: 6800"
+                  placeholder="例: 5000"
                   className="w-full rounded-xl border px-3 py-3 text-sm"
                 />
+                <p className="mt-1 text-xs text-slate-500">
+                  割引後の最終売上金額を入力してください。
+                </p>
               </div>
 
               <div className="rounded-2xl border bg-slate-50 p-4">
@@ -373,7 +405,7 @@ export default function NewVisitPageClient() {
                       支払い内訳
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
-                      例: PayPay 5000 / ホットペッパーポイント 1000
+                      例: 現金 6000 / 割引 -1000 → 売上金額 5000
                     </div>
                   </div>
 
@@ -387,105 +419,127 @@ export default function NewVisitPageClient() {
                 </div>
 
                 <div className="space-y-3">
-                  {paymentLines.map((line, index) => (
-                    <div
-                      key={line.id}
-                      className="rounded-2xl border bg-white p-3"
-                    >
-                      <div className="mb-3 text-xs font-bold text-slate-500">
-                        内訳 {index + 1}
+                  {paymentLines.map((line, index) => {
+                    const isDiscount = isDiscountMethod(line.payment_method);
+
+                    return (
+                      <div
+                        key={line.id}
+                        className="rounded-2xl border bg-white p-3"
+                      >
+                        <div className="mb-3 text-xs font-bold text-slate-500">
+                          内訳 {index + 1}
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              支払い方法
+                            </label>
+                            <select
+                              value={line.payment_method}
+                              onChange={(e) =>
+                                updatePaymentLine(
+                                  line.id,
+                                  "payment_method",
+                                  e.target.value
+                                )
+                              }
+                              className="w-full rounded-xl border px-3 py-3 text-sm"
+                            >
+                              {PAYMENT_METHOD_OPTIONS.map((option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                              金額
+                            </label>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              value={line.amount}
+                              onChange={(e) =>
+                                updatePaymentLine(line.id, "amount", e.target.value)
+                              }
+                              placeholder={isDiscount ? "例: -1000" : "例: 5000"}
+                              className={`w-full rounded-xl border px-3 py-3 text-sm ${
+                                isDiscount ? "border-rose-300 bg-rose-50" : ""
+                              }`}
+                            />
+                            {isDiscount ? (
+                              <p className="mt-1 text-[11px] text-rose-600">
+                                割引はマイナスで入力
+                              </p>
+                            ) : null}
+                          </div>
+
+                          <div className="flex items-end">
+                            <button
+                              type="button"
+                              onClick={() => removePaymentLine(line.id)}
+                              className="w-full rounded-xl border px-3 py-3 text-sm font-bold text-slate-700"
+                            >
+                              削除
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="mt-2 text-xs text-slate-500">
+                          入力値: {formatAmountPreview(line.amount)}
+                        </div>
                       </div>
-
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-700">
-                            支払い方法
-                          </label>
-                          <select
-                            value={line.payment_method}
-                            onChange={(e) =>
-                              updatePaymentLine(
-                                line.id,
-                                "payment_method",
-                                e.target.value
-                              )
-                            }
-                            className="w-full rounded-xl border px-3 py-3 text-sm"
-                          >
-                            {PAYMENT_METHOD_OPTIONS.map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div>
-                          <label className="mb-1 block text-xs font-medium text-gray-700">
-                            金額
-                          </label>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={line.amount}
-                            onChange={(e) =>
-                              updatePaymentLine(line.id, "amount", e.target.value)
-                            }
-                            placeholder="例: 5000"
-                            className="w-full rounded-xl border px-3 py-3 text-sm"
-                          />
-                        </div>
-
-                        <div className="flex items-end">
-                          <button
-                            type="button"
-                            onClick={() => removePaymentLine(line.id)}
-                            className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm font-bold text-red-600"
-                          >
-                            削除
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200">
-                    <div className="text-xs text-slate-500">売上金額</div>
-                    <div className="mt-1 text-lg font-bold text-slate-900">
+                  <div className="rounded-xl bg-white p-3 text-sm">
+                    <div className="text-slate-500">売上金額</div>
+                    <div className="mt-1 font-bold text-slate-900">
                       {Number.isFinite(totalPrice)
-                        ? `¥${totalPrice.toLocaleString("ja-JP")}`
+                        ? totalPrice.toLocaleString("ja-JP")
                         : "-"}
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200">
-                    <div className="text-xs text-slate-500">内訳合計</div>
-                    <div className="mt-1 text-lg font-bold text-slate-900">
-                      ¥{paymentTotal.toLocaleString("ja-JP")}
+                  <div className="rounded-xl bg-white p-3 text-sm">
+                    <div className="text-slate-500">内訳合計</div>
+                    <div className="mt-1 font-bold text-slate-900">
+                      {paymentTotal.toLocaleString("ja-JP")}
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200">
-                    <div className="text-xs text-slate-500">差額</div>
+                  <div className="rounded-xl bg-white p-3 text-sm">
+                    <div className="text-slate-500">差額</div>
                     <div
-                      className={`mt-1 text-lg font-bold ${
-                        paymentDiff === 0 ? "text-green-600" : "text-red-600"
+                      className={`mt-1 font-bold ${
+                        paymentDiff === 0 ? "text-emerald-600" : "text-rose-600"
                       }`}
                     >
                       {Number.isFinite(paymentDiff)
-                        ? `¥${paymentDiff.toLocaleString("ja-JP")}`
+                        ? paymentDiff.toLocaleString("ja-JP")
                         : "-"}
                     </div>
                   </div>
                 </div>
+              </div>
 
-                {Number.isFinite(paymentDiff) && paymentDiff !== 0 ? (
-                  <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-700">
-                    売上金額と支払い内訳合計を一致させてください。
-                  </div>
-                ) : null}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">
+                  担当者
+                </label>
+                <input
+                  type="text"
+                  value={staffName}
+                  onChange={(e) => setStaffName(e.target.value)}
+                  placeholder="例: 山田"
+                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                />
               </div>
 
               <div>
@@ -495,15 +549,21 @@ export default function NewVisitPageClient() {
                 <textarea
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
+                  placeholder="施術内容や補足メモ"
                   rows={4}
-                  placeholder="施術内容、会話メモ、注意点など"
                   className="w-full rounded-xl border px-3 py-3 text-sm"
                 />
               </div>
+            </div>
+          </div>
 
+          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold">次回提案</h2>
+
+            <div className="space-y-4">
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">
-                  次回来店日
+                  次回来店予定日
                 </label>
                 <input
                   type="date"
@@ -520,42 +580,27 @@ export default function NewVisitPageClient() {
                 <textarea
                   value={nextProposal}
                   onChange={(e) => setNextProposal(e.target.value)}
+                  placeholder="例: 次回はフィルイン＋初夏カラー提案"
                   rows={3}
-                  placeholder="次回おすすめメニュー、色、デザイン提案など"
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  担当スタッフ
-                </label>
-                <input
-                  type="text"
-                  value={staffName}
-                  onChange={(e) => setStaffName(e.target.value)}
-                  placeholder="例: あかね"
                   className="w-full rounded-xl border px-3 py-3 text-sm"
                 />
               </div>
             </div>
           </div>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-2xl bg-black px-4 py-4 text-lg font-bold text-white disabled:opacity-50"
-            >
-              {saving ? "保存中..." : "来店履歴を保存する"}
-            </button>
+          {message ? (
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+              {message}
+            </div>
+          ) : null}
 
-            {message ? (
-              <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-700">
-                {message}
-              </div>
-            ) : null}
-          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {saving ? "登録中..." : "登録する"}
+          </button>
         </form>
       </div>
     </div>
