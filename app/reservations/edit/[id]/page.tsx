@@ -34,6 +34,8 @@ type ReservationDetail = {
   memo: string | null;
 };
 
+const STATUS_OPTIONS = ["予約", "来店", "完了", "キャンセル"] as const;
+
 function extractDate(value: string | null) {
   if (!value) return "";
   const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -53,6 +55,30 @@ function extractTime(value: string | null) {
 function buildDateTime(targetDate: string, targetTime: string) {
   if (!targetDate || !targetTime) return null;
   return `${targetDate}T${targetTime}:00`;
+}
+
+function normalizeStatus(value: string | null) {
+  if (!value) return "予約";
+
+  if (value === "pending") return "予約";
+  if (value === "confirmed") return "予約";
+  if (value === "completed") return "完了";
+  if (value === "cancelled") return "キャンセル";
+
+  if (value === "予約受付") return "予約";
+  if (value === "来店予定") return "来店";
+  if (value === "完了待ち") return "来店";
+
+  if (
+    value === "予約" ||
+    value === "来店" ||
+    value === "完了" ||
+    value === "キャンセル"
+  ) {
+    return value;
+  }
+
+  return "予約";
 }
 
 export default function EditReservationPage() {
@@ -77,7 +103,7 @@ export default function EditReservationPage() {
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [status, setStatus] = useState("confirmed");
+  const [status, setStatus] = useState<"予約" | "来店" | "完了" | "キャンセル">("予約");
   const [memo, setMemo] = useState("");
 
   async function loadPageData() {
@@ -150,7 +176,7 @@ export default function EditReservationPage() {
     setDate(extractDate(reservation.start_at));
     setStartTime(extractTime(reservation.start_at));
     setEndTime(extractTime(reservation.end_at));
-    setStatus(reservation.status ?? "confirmed");
+    setStatus(normalizeStatus(reservation.status) as "予約" | "来店" | "完了" | "キャンセル");
     setMemo(reservation.memo ?? "");
 
     setLoading(false);
@@ -448,13 +474,18 @@ export default function EditReservationPage() {
             <label className="mb-2 block text-sm font-medium">状態</label>
             <select
               value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              onChange={(e) =>
+                setStatus(
+                  e.target.value as "予約" | "来店" | "完了" | "キャンセル"
+                )
+              }
               className="w-full rounded border px-3 py-2"
             >
-              <option value="pending">pending</option>
-              <option value="confirmed">confirmed</option>
-              <option value="completed">completed</option>
-              <option value="cancelled">cancelled</option>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
             </select>
           </div>
 

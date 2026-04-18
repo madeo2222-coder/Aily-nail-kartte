@@ -68,20 +68,25 @@ export default function NewVisitPageClient() {
   const searchParams = useSearchParams();
 
   const preselectedCustomerId = searchParams.get("customer_id") || "";
+  const prefilledReservationId = searchParams.get("reservation_id") || "";
+  const prefilledVisitDate = searchParams.get("visit_date") || "";
+  const prefilledMenuName = searchParams.get("menu_name") || "";
+  const prefilledStaffName = searchParams.get("staff_name") || "";
+  const prefilledMemo = searchParams.get("memo") || "";
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
 
   const [customerId, setCustomerId] = useState(preselectedCustomerId);
   const [visitDate, setVisitDate] = useState(
-    new Date().toISOString().split("T")[0]
+    prefilledVisitDate || new Date().toISOString().split("T")[0]
   );
-  const [menuName, setMenuName] = useState("");
+  const [menuName, setMenuName] = useState(prefilledMenuName);
   const [price, setPrice] = useState("");
-  const [memo, setMemo] = useState("");
+  const [memo, setMemo] = useState(prefilledMemo);
   const [nextVisitDate, setNextVisitDate] = useState("");
   const [nextProposal, setNextProposal] = useState("");
-  const [staffName, setStaffName] = useState("");
+  const [staffName, setStaffName] = useState(prefilledStaffName);
 
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([
     createPaymentLine("現金", ""),
@@ -95,9 +100,28 @@ export default function NewVisitPageClient() {
   }, []);
 
   useEffect(() => {
-    if (!preselectedCustomerId) return;
-    setCustomerId(preselectedCustomerId);
-  }, [preselectedCustomerId]);
+    if (preselectedCustomerId) {
+      setCustomerId(preselectedCustomerId);
+    }
+    if (prefilledVisitDate) {
+      setVisitDate(prefilledVisitDate);
+    }
+    if (prefilledMenuName) {
+      setMenuName(prefilledMenuName);
+    }
+    if (prefilledStaffName) {
+      setStaffName(prefilledStaffName);
+    }
+    if (prefilledMemo) {
+      setMemo(prefilledMemo);
+    }
+  }, [
+    preselectedCustomerId,
+    prefilledVisitDate,
+    prefilledMenuName,
+    prefilledStaffName,
+    prefilledMemo,
+  ]);
 
   async function fetchCustomers() {
     setLoadingCustomers(true);
@@ -293,6 +317,22 @@ export default function NewVisitPageClient() {
         return;
       }
 
+      if (prefilledReservationId) {
+        const { error: reservationUpdateError } = await supabase
+          .from("reservations")
+          .update({ status: "完了" })
+          .eq("id", prefilledReservationId);
+
+        if (reservationUpdateError) {
+          console.error("reservations update error:", reservationUpdateError);
+          setMessage(
+            `来店履歴は登録できましたが、予約ステータス更新に失敗しました: ${reservationUpdateError.message}`
+          );
+          setSaving(false);
+          return;
+        }
+      }
+
       alert("来店履歴を登録しました");
       router.push(`/customers/${customerId}`);
     } catch (error) {
@@ -317,6 +357,12 @@ export default function NewVisitPageClient() {
           <p className="mt-2 text-sm text-gray-600">
             顧客を選択して、来店履歴を登録します。
           </p>
+
+          {prefilledReservationId ? (
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              予約から引き継いでいます。顧客・来店日・メニュー・担当者・メモを初期表示しています。
+            </div>
+          ) : null}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

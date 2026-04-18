@@ -4,6 +4,11 @@ import Link from "next/link";
 
 const primaryLinks = [
   {
+    title: "予約一覧",
+    description: "予約一元管理MVPの確認画面へ進む",
+    href: "/reservations",
+  },
+  {
     title: "初回情報クイック確認",
     description: "名前・電話番号で初回入力内容をすぐ確認",
     href: "/intake-lookup",
@@ -55,7 +60,7 @@ export default function StaffEntryPage() {
             スタッフ入口
           </h1>
           <p className="mt-3 text-sm leading-6 text-gray-600">
-            受付・施術前確認・来店登録でよく使う機能に、ここからすぐ入れます。
+            受付・施術前確認・予約確認・来店登録でよく使う機能に、ここからすぐ入れます。
             スタッフさんにはこのページをホーム画面追加またはブックマークしてもらう運用がおすすめです。
           </p>
         </div>
@@ -68,7 +73,7 @@ export default function StaffEntryPage() {
             </span>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {primaryLinks.map((item) => (
               <Link
                 key={item.href}
@@ -133,9 +138,10 @@ export default function StaffEntryPage() {
 
           <div className="mt-3 space-y-2 text-sm leading-6 text-amber-800">
             <p>① スタッフはまず /staff を開く</p>
-            <p>② 施術前は「初回情報クイック確認」でアレルギーやNG項目を確認</p>
-            <p>③ 詳細が必要なら「初回来店入力一覧」や顧客別の初回情報ページを見る</p>
-            <p>④ 施術後は「来店登録」へ進む</p>
+            <p>② 当日予約確認は「予約一覧」で確認</p>
+            <p>③ 施術前は「初回情報クイック確認」でアレルギーやNG項目を確認</p>
+            <p>④ 詳細が必要なら「初回来店入力一覧」や顧客別の初回情報ページを見る</p>
+            <p>⑤ 施術後は「来店登録」へ進む</p>
           </div>
         </section>
       </div>
