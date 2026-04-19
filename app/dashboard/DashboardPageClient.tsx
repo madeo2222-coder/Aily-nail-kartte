@@ -1,393 +1,658 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type VisitRow = {
+  id: string;
   price: number | null;
   visit_date: string | null;
   customer_id: string | null;
   next_visit_date: string | null;
 };
 
-type CustomerSummary = {
+type CustomerRow = {
   id: string;
-  name: string;
+  name: string | null;
+};
+
+type StaffRow = {
+  id: string;
+  name: string | null;
+};
+
+type ReceivableRow = {
+  id: string;
+  amount: number | null;
+  status: string | null;
+};
+
+type ReservationRow = {
+  id: string;
+  customer_id?: string | null;
+  staff_id?: string | null;
+  status?: string | null;
+  reservation_date?: string | null;
+  reservation_time?: string | null;
+  date?: string | null;
+  time?: string | null;
+  reserved_at?: string | null;
+  visit_date?: string | null;
+  menu_name?: string | null;
+  menu?: string | null;
+  staff_name?: string | null;
+  staff?: string | null;
+  duration_minutes?: number | string | null;
+  duration?: number | string | null;
+  start_at?: string | null;
+  memo?: string | null;
+  note?: string | null;
+  [key: string]: unknown;
+};
+
+type TodayReservation = {
+  id: string;
+  customerId: string | null;
+  customerName: string;
+  reservationDate: string | null;
+  reservationTime: string | null;
+  menuName: string;
+  staffName: string;
+  status: string;
+  memo: string;
+};
+
+type ReservationGroup = {
+  staffName: string;
+  items: TodayReservation[];
 };
 
 function formatYen(value: number) {
   return `¥${Math.round(value).toLocaleString("ja-JP")}`;
 }
 
-function formatPercent(value: number) {
-  return `${Math.round(value)}%`;
+function getMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-function diffDaysFromToday(dateStr: string | null) {
-  if (!dateStr) return null;
+function toDateOnlyString(date: Date) {
+  return date.toISOString().split("T")[0];
+}
 
-  const today = new Date();
-  const baseToday = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate()
+function pickString(
+  row: ReservationRow,
+  keys: string[],
+  fallback = ""
+): string {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return fallback;
+}
+
+function pickNullableString(
+  row: ReservationRow,
+  keys: string[]
+): string | null {
+  for (const key of keys) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function normalizeDateText(value: string | null) {
+  if (!value) return null;
+  return value.slice(0, 10);
+}
+
+function normalizeTimeText(value: string | null) {
+  if (!value) return null;
+
+  if (value.includes("T")) {
+    const sliced = value.slice(11, 16);
+    return sliced.length === 5 ? sliced : null;
+  }
+
+  return value.slice(0, 5);
+}
+
+function buildReservationDate(row: ReservationRow) {
+  return normalizeDateText(
+    pickNullableString(row, [
+      "start_at",
+      "reservation_date",
+      "date",
+      "visit_date",
+      "reserved_at",
+    ])
   );
+}
 
-  const target = new Date(dateStr);
-  if (Number.isNaN(target.getTime())) return null;
-
-  const baseTarget = new Date(
-    target.getFullYear(),
-    target.getMonth(),
-    target.getDate()
+function buildReservationTime(row: ReservationRow) {
+  return normalizeTimeText(
+    pickNullableString(row, ["start_at", "reservation_time", "time"])
   );
+}
 
-  const diffMs = baseToday.getTime() - baseTarget.getTime();
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+function normalizeStatus(row: ReservationRow) {
+  const raw = pickString(row, ["status"], "予約");
+  if (raw === "予約") return "予約受付";
+  return raw;
+}
+
+function normalizeMenuName(row: ReservationRow) {
+  return pickString(row, ["menu_name", "menu"], "未設定");
+}
+
+function normalizeMemo(row: ReservationRow) {
+  return pickString(row, ["memo", "note"], "");
+}
+
+function getStatusBadgeClass(status: string) {
+  if (status === "予約受付" || status === "予約") {
+    return "bg-blue-100 text-blue-700";
+  }
+  if (status === "来店予定" || status === "来店") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+  if (status === "完了待ち") {
+    return "bg-amber-100 text-amber-700";
+  }
+  if (status === "完了") {
+    return "bg-slate-100 text-slate-700";
+  }
+  if (status === "キャンセル") {
+    return "bg-rose-100 text-rose-700";
+  }
+  return "bg-gray-100 text-gray-700";
+}
+
+function sortByTime(a: TodayReservation, b: TodayReservation) {
+  const aTime = a.reservationTime || "99:99";
+  const bTime = b.reservationTime || "99:99";
+  return aTime.localeCompare(bTime);
+}
+
+function getStatusOrder(status: string) {
+  if (status === "予約受付" || status === "予約") return 1;
+  if (status === "来店予定" || status === "来店") return 2;
+  if (status === "完了待ち") return 3;
+  if (status === "完了") return 4;
+  if (status === "キャンセル") return 5;
+  return 9;
+}
+
+function sortByStatusThenTime(a: TodayReservation, b: TodayReservation) {
+  const statusDiff = getStatusOrder(a.status) - getStatusOrder(b.status);
+  if (statusDiff !== 0) return statusDiff;
+  return sortByTime(a, b);
+}
+
+function buildVisitLink(item: TodayReservation) {
+  const params = new URLSearchParams();
+
+  if (item.customerId) params.set("customer_id", item.customerId);
+  params.set("reservation_id", item.id);
+
+  if (item.reservationDate) params.set("visit_date", item.reservationDate);
+  if (item.menuName && item.menuName !== "未設定") {
+    params.set("menu_name", item.menuName);
+  }
+  if (item.staffName && item.staffName !== "未設定") {
+    params.set("staff_name", item.staffName);
+  }
+  if (item.memo) {
+    params.set("memo", item.memo);
+  }
+
+  return `/visits/new?${params.toString()}`;
+}
+
+function staffSort(a: string, b: string) {
+  if (a === "未設定" && b !== "未設定") return 1;
+  if (a !== "未設定" && b === "未設定") return -1;
+  return a.localeCompare(b, "ja");
 }
 
 export default function DashboardPageClient() {
+  const [loading, setLoading] = useState(true);
+
   const [customersCount, setCustomersCount] = useState(0);
   const [visitsCount, setVisitsCount] = useState(0);
+  const [todaySales, setTodaySales] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
   const [monthSales, setMonthSales] = useState(0);
-  const [totalSales, setTotalSales] = useState(0);
-  const [monthExpenses, setMonthExpenses] = useState(0);
-
-  const [nextCustomers, setNextCustomers] = useState<CustomerSummary[]>([]);
-  const [followCustomers, setFollowCustomers] = useState<CustomerSummary[]>([]);
-  const [lostCustomers, setLostCustomers] = useState<CustomerSummary[]>([]);
+  const [previousMonthSales, setPreviousMonthSales] = useState(0);
+  const [monthReceivables, setMonthReceivables] = useState(0);
+  const [nextVisitCount, setNextVisitCount] = useState(0);
+  const [todayReservations, setTodayReservations] = useState<TodayReservation[]>([]);
 
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   async function fetchDashboardData() {
-    const { count: customers } = await supabase
-      .from("customers")
-      .select("*", { count: "exact", head: true });
+    setLoading(true);
 
-    const { count: visits } = await supabase
-      .from("visits")
-      .select("*", { count: "exact", head: true });
+    const today = new Date();
+    const todayText = toDateOnlyString(today);
+    const currentMonthKey = getMonthKey(today);
 
-    const { data: visitRows } = await supabase
-      .from("visits")
-      .select("price, visit_date, customer_id, next_visit_date")
-      .order("visit_date", { ascending: false });
+    const previousMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const previousMonthKey = getMonthKey(previousMonthDate);
 
-    const { data: expenseRows } = await supabase
-      .from("expenses")
-      .select("amount, expense_date");
+    const [
+      customersResult,
+      staffsResult,
+      visitsResult,
+      receivablesResult,
+      reservationsResult,
+    ] = await Promise.all([
+      supabase.from("customers").select("id, name"),
+      supabase.from("staffs").select("id, name"),
+      supabase
+        .from("visits")
+        .select("id, price, visit_date, customer_id, next_visit_date")
+        .order("visit_date", { ascending: false }),
+      supabase.from("receivables").select("id, amount, status"),
+      supabase.from("reservations").select("*").order("created_at", { ascending: false }),
+    ]);
 
-    const now = new Date();
-    const monthPrefix = `${now.getFullYear()}-${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}`;
+    const customers = (customersResult.data || []) as CustomerRow[];
+    const staffs = (staffsResult.data || []) as StaffRow[];
+    const visits = (visitsResult.data || []) as VisitRow[];
+    const receivables = (receivablesResult.data || []) as ReceivableRow[];
+    const reservations = (reservationsResult.data || []) as ReservationRow[];
 
-    let monthlyTotal = 0;
-    let allTimeTotal = 0;
-    let monthlyExpenseTotal = 0;
-
-    const customerVisitMap: Record<
-      string,
-      {
-        lastVisitDate: string | null;
-        nextVisitDate: string | null;
-      }
-    > = {};
-
-    (visitRows as VisitRow[] | null)?.forEach((row) => {
-      const price = Number(row.price ?? 0);
-      const visitDate = row.visit_date ?? "";
-
-      allTimeTotal += price;
-
-      if (visitDate.startsWith(monthPrefix)) {
-        monthlyTotal += price;
-      }
-
-      if (!row.customer_id) return;
-
-      const existing = customerVisitMap[row.customer_id];
-
-      if (!existing) {
-        customerVisitMap[row.customer_id] = {
-          lastVisitDate: row.visit_date ?? null,
-          nextVisitDate: row.next_visit_date ?? null,
-        };
-        return;
-      }
-
-      const existingLast = existing.lastVisitDate
-        ? new Date(existing.lastVisitDate).getTime()
-        : 0;
-      const currentLast = row.visit_date ? new Date(row.visit_date).getTime() : 0;
-
-      if (currentLast > existingLast) {
-        customerVisitMap[row.customer_id] = {
-          lastVisitDate: row.visit_date ?? null,
-          nextVisitDate: row.next_visit_date ?? null,
-        };
-      } else if (!existing.nextVisitDate && row.next_visit_date) {
-        customerVisitMap[row.customer_id] = {
-          ...existing,
-          nextVisitDate: row.next_visit_date,
-        };
-      }
+    const customerMap: Record<string, string> = {};
+    customers.forEach((customer) => {
+      customerMap[customer.id] = customer.name || "顧客名未設定";
     });
 
-    (expenseRows || []).forEach((row: any) => {
-      const amount = Number(row.amount ?? 0);
-      const date = row.expense_date ?? "";
-
-      if (date.startsWith(monthPrefix)) {
-        monthlyExpenseTotal += amount;
-      }
+    const staffMap: Record<string, string> = {};
+    staffs.forEach((staff) => {
+      staffMap[staff.id] = staff.name || "未設定";
     });
 
-    const nextIds: string[] = [];
-    const followIds: string[] = [];
-    const lostIds: string[] = [];
+    setCustomersCount(customers.length);
+    setVisitsCount(visits.length);
 
-    Object.entries(customerVisitMap).forEach(([customerId, info]) => {
-      if (info.nextVisitDate) {
-        nextIds.push(customerId);
-        return;
-      }
+    const todayVisitRows = visits.filter((row) => row.visit_date === todayText);
+    const todaySalesTotal = todayVisitRows.reduce(
+      (sum, row) => sum + Number(row.price || 0),
+      0
+    );
 
-      const days = diffDaysFromToday(info.lastVisitDate);
+    const currentMonthVisits = visits.filter((row) =>
+      (row.visit_date || "").startsWith(currentMonthKey)
+    );
 
-      if (days === null) return;
+    const previousMonthVisits = visits.filter((row) =>
+      (row.visit_date || "").startsWith(previousMonthKey)
+    );
 
-      if (days < 30) {
-        followIds.push(customerId);
-      } else {
-        lostIds.push(customerId);
-      }
-    });
+    const currentMonthSales = currentMonthVisits.reduce(
+      (sum, row) => sum + Number(row.price || 0),
+      0
+    );
 
-    const fetchCustomers = async (ids: string[]) => {
-      if (ids.length === 0) return [];
-      const { data } = await supabase
-        .from("customers")
-        .select("id, name")
-        .in("id", ids);
+    const previousSales = previousMonthVisits.reduce(
+      (sum, row) => sum + Number(row.price || 0),
+      0
+    );
 
-      return (data || []).map((item) => ({
-        id: item.id,
-        name: item.name || "名前未設定",
-      }));
-    };
+    const unpaidTotal = receivables
+      .filter((row) => row.status !== "paid")
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
-    setCustomersCount(customers || 0);
-    setVisitsCount(visits || 0);
-    setMonthSales(monthlyTotal);
-    setTotalSales(allTimeTotal);
-    setMonthExpenses(monthlyExpenseTotal);
+    const nextVisits = currentMonthVisits.filter(
+      (row) => typeof row.next_visit_date === "string" && row.next_visit_date.trim() !== ""
+    );
 
-    setNextCustomers(await fetchCustomers(nextIds));
-    setFollowCustomers(await fetchCustomers(followIds));
-    setLostCustomers(await fetchCustomers(lostIds));
+    const normalizedTodayReservations = reservations
+      .map((row) => {
+        const customerId =
+          typeof row.customer_id === "string" ? row.customer_id : null;
+
+        const staffId =
+          typeof row.staff_id === "string" ? row.staff_id : null;
+
+        const directStaffName = pickString(row, ["staff_name", "staff"], "");
+        const resolvedStaffName = directStaffName
+          ? directStaffName
+          : staffId
+          ? staffMap[staffId] || "未設定"
+          : "未設定";
+
+        return {
+          id: String(row.id || ""),
+          customerId,
+          customerName: customerId
+            ? customerMap[customerId] || "顧客名未設定"
+            : "顧客未設定",
+          reservationDate: buildReservationDate(row),
+          reservationTime: buildReservationTime(row),
+          menuName: normalizeMenuName(row),
+          staffName: resolvedStaffName,
+          status: normalizeStatus(row),
+          memo: normalizeMemo(row),
+        } as TodayReservation;
+      })
+      .filter((row) => row.reservationDate === todayText);
+
+    setTodaySales(todaySalesTotal);
+    setTodayCount(todayVisitRows.length);
+    setMonthSales(currentMonthSales);
+    setPreviousMonthSales(previousSales);
+    setMonthReceivables(unpaidTotal);
+    setNextVisitCount(nextVisits.length);
+    setTodayReservations(normalizedTodayReservations);
+
+    setLoading(false);
   }
 
-  const profit = monthSales - monthExpenses;
-  const profitRate = monthSales > 0 ? (profit / monthSales) * 100 : 0;
-  const isProfitNegative = profit < 0;
+  const monthDiff = useMemo(() => {
+    return monthSales - previousMonthSales;
+  }, [monthSales, previousMonthSales]);
+
+  const monthDiffRate = useMemo(() => {
+    if (previousMonthSales === 0) {
+      if (monthSales === 0) return 0;
+      return 100;
+    }
+    return ((monthSales - previousMonthSales) / previousMonthSales) * 100;
+  }, [monthSales, previousMonthSales]);
+
+  const monthDiffLabel =
+    monthDiff > 0 ? "先月より増加" : monthDiff < 0 ? "先月より減少" : "先月と同水準";
+
+  const reservationGroups = useMemo<ReservationGroup[]>(() => {
+    const map = new Map<string, TodayReservation[]>();
+
+    todayReservations.forEach((item) => {
+      const key = item.staffName || "未設定";
+      const prev = map.get(key) || [];
+      prev.push(item);
+      map.set(key, prev);
+    });
+
+    return Array.from(map.entries())
+      .sort((a, b) => staffSort(a[0], b[0]))
+      .map(([staffName, items]) => ({
+        staffName,
+        items: [...items].sort(sortByStatusThenTime),
+      }));
+  }, [todayReservations]);
+
+  if (loading) {
+    return <div className="p-4 pb-24">読み込み中...</div>;
+  }
 
   return (
-    <div className="p-4 pb-24">
-      <h1 className="mb-2 text-2xl font-bold">ダッシュボード</h1>
-      <p className="mb-6 text-sm text-gray-500">
-        顧客・来店・フォロー状況の一覧
-      </p>
+    <div className="space-y-4 p-4 pb-24">
+      <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 to-amber-400 p-5 text-white shadow">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-bold tracking-[0.2em] text-white/80">
+              NAILY AIDOL
+            </p>
+            <h1 className="mt-2 text-2xl font-bold">スタッフダッシュボード</h1>
+            <p className="mt-2 text-sm leading-6 text-white/90">
+              今日の営業と今月の流れを、すぐ見れる現場向けホームです。
+            </p>
+          </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+          <Link
+            href="/visits/new"
+            className="shrink-0 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-orange-600 shadow"
+          >
+            来店登録
+          </Link>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">総売上</p>
-          <p className="mt-3 text-2xl font-bold">{formatYen(totalSales)}</p>
+          <div className="text-sm text-gray-500">今日の売上</div>
+          <div className="mt-2 text-2xl font-bold text-gray-900">
+            {formatYen(todaySales)}
+          </div>
+          <div className="mt-2 text-sm text-gray-500">来店数 {todayCount}件</div>
         </div>
 
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">今月売上</p>
-          <p className="mt-3 text-2xl font-bold">{formatYen(monthSales)}</p>
+          <div className="text-sm text-gray-500">今月の売上</div>
+          <div className="mt-2 text-2xl font-bold text-gray-900">
+            {formatYen(monthSales)}
+          </div>
+          <div className="mt-2 text-sm text-gray-500">{monthDiffLabel}</div>
         </div>
 
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">今月経費</p>
-          <p className="mt-3 text-2xl font-bold">{formatYen(monthExpenses)}</p>
-        </div>
-
-        <div
-          className={`rounded-2xl border p-4 shadow-sm ${
-            isProfitNegative ? "bg-red-50" : "bg-orange-50"
-          }`}
-        >
-          <p className="text-sm text-gray-500">今月利益</p>
-          <p
-            className={`mt-3 text-3xl font-bold ${
-              isProfitNegative ? "text-red-500" : "text-orange-500"
+          <div className="text-sm text-gray-500">前月比</div>
+          <div
+            className={`mt-2 text-2xl font-bold ${
+              monthDiffRate >= 0 ? "text-blue-600" : "text-red-500"
             }`}
           >
-            {formatYen(profit)}
-          </p>
-          <p className="mt-2 text-sm font-medium text-gray-600">
-            利益率 {formatPercent(profitRate)}
-          </p>
+            {monthDiffRate >= 0 ? "+" : ""}
+            {Math.round(monthDiffRate)}%
+          </div>
+          <div className="mt-2 text-sm text-gray-500">
+            差額 {formatYen(monthDiff)}
+          </div>
         </div>
 
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">顧客数</p>
-          <p className="mt-3 text-2xl font-bold">{customersCount}人</p>
+          <div className="text-sm text-gray-500">未収</div>
+          <div className="mt-2 text-2xl font-bold text-gray-900">
+            {formatYen(monthReceivables)}
+          </div>
+          <div className="mt-2 text-sm text-gray-500">要確認</div>
         </div>
 
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-sm text-gray-500">来店履歴数</p>
-          <p className="mt-3 text-2xl font-bold">{visitsCount}件</p>
+          <div className="text-sm text-gray-500">顧客数</div>
+          <div className="mt-2 text-2xl font-bold text-gray-900">
+            {customersCount}人
+          </div>
+          <div className="mt-2 text-sm text-gray-500">累計登録</div>
+        </div>
+
+        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="text-sm text-gray-500">来店履歴数</div>
+          <div className="mt-2 text-2xl font-bold text-gray-900">
+            {visitsCount}件
+          </div>
+          <div className="mt-2 text-sm text-gray-500">
+            次回来店提案 {nextVisitCount}件
+          </div>
         </div>
       </div>
 
-      <h2 className="mb-4 mt-8 text-2xl font-bold">営業・フォロー導線</h2>
-
-      <div className="space-y-4">
-        <Link href="/customers?type=next" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">次回来店予定</p>
-            <p className="mt-4 text-4xl font-bold">{nextCustomers.length}件</p>
-            <p className="mt-3 text-sm text-gray-500">
-              次回来店日が登録されている顧客を見る
-            </p>
-          </div>
-        </Link>
-
-        <Link href="/customers?type=follow" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">フォロー必要</p>
-            <p className="mt-4 text-4xl font-bold">{followCustomers.length}人</p>
-            <p className="mt-3 text-sm text-gray-500">
-              30日未満・次回来店未登録の顧客を見る
-            </p>
-          </div>
-        </Link>
-
-        <Link href="/customers?type=lost" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">失客</p>
-            <p className="mt-4 text-4xl font-bold">{lostCustomers.length}人</p>
-            <p className="mt-3 text-sm text-gray-500">
-              30日以上・次回来店未登録の顧客を見る
-            </p>
-          </div>
-        </Link>
-      </div>
-
-      <h2 className="mb-4 mt-8 text-2xl font-bold">基本メニュー</h2>
-
-      <div className="space-y-4">
-        <Link href="/customers" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">顧客一覧</p>
-            <p className="mt-3 text-sm text-gray-500">
-              顧客情報とLTV、来店状況を見る
-            </p>
-          </div>
-        </Link>
-
-        <Link href="/customers/new" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">新規顧客登録</p>
-            <p className="mt-3 text-sm text-gray-500">
-              顧客を新しく追加する
-            </p>
-          </div>
-        </Link>
-
-        <Link href="/visits" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">来店履歴一覧</p>
-            <p className="mt-3 text-sm text-gray-500">
-              登録済みの来店履歴を見る
-            </p>
-          </div>
-        </Link>
-
-        <Link href="/visits/new" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">来店履歴を追加</p>
-            <p className="mt-3 text-sm text-gray-500">
-              新しい来店履歴を登録する
-            </p>
-          </div>
-        </Link>
-
-        <Link href="/sales-dashboard" className="block">
-          <div className="rounded-2xl border bg-white p-6 shadow-sm">
-            <p className="text-2xl font-bold">売上ダッシュボード</p>
-            <p className="mt-3 text-sm text-gray-500">
-              今日・今月の売上と来店状況を見る
-            </p>
-          </div>
-        </Link>
-      </div>
-
-      <h2 className="mb-4 mt-10 text-xl font-bold">対象顧客一覧</h2>
-
-      <div className="space-y-6">
-        <div>
-          <p className="mb-2 text-lg font-bold">次回来店予定</p>
-          {nextCustomers.length === 0 ? (
-            <p className="text-sm text-gray-500">対象なし</p>
-          ) : (
-            <div className="space-y-2">
-              {nextCustomers.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="flex justify-between rounded-xl border p-3"
-                >
-                  <span>{customer.name}</span>
-                  <span className="text-sm text-blue-500">予約あり</span>
-                </div>
-              ))}
+      <div className="rounded-3xl border bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-bold text-gray-900">今日の予定一覧</div>
+            <div className="mt-1 text-sm text-gray-500">
+              今日の予約を担当者ごと・状態順・時間順に表示しています。
             </div>
-          )}
+          </div>
+
+          <Link
+            href="/reservations"
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+          >
+            予約一覧へ
+          </Link>
         </div>
 
-        <div>
-          <p className="mb-2 text-lg font-bold">フォロー必要</p>
-          {followCustomers.length === 0 ? (
-            <p className="text-sm text-gray-500">対象なし</p>
-          ) : (
-            <div className="space-y-2">
-              {followCustomers.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="flex justify-between rounded-xl border p-3"
-                >
-                  <span>{customer.name}</span>
-                  <span className="text-sm text-orange-500">30日未満</span>
+        {todayReservations.length === 0 ? (
+          <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
+            今日の予定はありません
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {reservationGroups.map((group) => (
+              <div key={group.staffName} className="rounded-2xl border bg-slate-50 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-base font-bold text-slate-900">
+                      担当者: {group.staffName}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-500">
+                      {group.items.length}件
+                    </div>
+                  </div>
                 </div>
-              ))}
+
+                <div className="space-y-3">
+                  {group.items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border bg-white p-4"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-base font-bold text-slate-900">
+                              {item.customerName}
+                            </div>
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-bold ${getStatusBadgeClass(
+                                item.status
+                              )}`}
+                            >
+                              {item.status}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 grid gap-1 text-sm text-slate-700">
+                            <div>
+                              <span className="font-medium">時間:</span>{" "}
+                              {item.reservationTime || "未設定"}
+                            </div>
+                            <div>
+                              <span className="font-medium">メニュー:</span>{" "}
+                              {item.menuName}
+                            </div>
+                            <div>
+                              <span className="font-medium">担当者:</span>{" "}
+                              {item.staffName}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Link
+                            href={`/reservations/edit/${item.id}`}
+                            className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                          >
+                            予約編集
+                          </Link>
+
+                          <Link
+                            href={buildVisitLink(item)}
+                            className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white"
+                          >
+                            来店登録へ
+                          </Link>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-3xl border bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <div className="text-lg font-bold text-gray-900">現場メニュー</div>
+            <div className="mt-1 text-sm text-gray-500">
+              スタッフがよく使う導線を優先しています。
             </div>
-          )}
+          </div>
         </div>
 
-        <div>
-          <p className="mb-2 text-lg font-bold">失客</p>
-          {lostCustomers.length === 0 ? (
-            <p className="text-sm text-gray-500">対象なし</p>
-          ) : (
-            <div className="space-y-2">
-              {lostCustomers.map((customer) => (
-                <div
-                  key={customer.id}
-                  className="flex justify-between rounded-xl border p-3"
-                >
-                  <span>{customer.name}</span>
-                  <span className="text-sm text-red-500">30日以上</span>
-                </div>
-              ))}
+        <div className="grid grid-cols-3 gap-3">
+          <Link
+            href="/customers"
+            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+          >
+            <div className="text-2xl">👤</div>
+            <div className="mt-2 text-sm font-bold text-gray-900">顧客</div>
+          </Link>
+
+          <Link
+            href="/visits"
+            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+          >
+            <div className="text-2xl">💅</div>
+            <div className="mt-2 text-sm font-bold text-gray-900">来店</div>
+          </Link>
+
+          <Link
+            href="/receivables"
+            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+          >
+            <div className="text-2xl">💰</div>
+            <div className="mt-2 text-sm font-bold text-gray-900">未収</div>
+          </Link>
+
+          <Link
+            href="/staff"
+            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+          >
+            <div className="text-2xl">🧑‍🤝‍🧑</div>
+            <div className="mt-2 text-sm font-bold text-gray-900">スタッフ</div>
+          </Link>
+
+          <Link
+            href="/customer-intake/list"
+            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+          >
+            <div className="text-2xl">📝</div>
+            <div className="mt-2 text-sm font-bold text-gray-900">初回入力</div>
+          </Link>
+
+          <Link
+            href="/reports/daily"
+            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+          >
+            <div className="text-2xl">📊</div>
+            <div className="mt-2 text-sm font-bold text-gray-900">日別売上</div>
+          </Link>
+        </div>
+      </div>
+
+      <div className="rounded-3xl border bg-slate-50 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-900">
+              オーナー向け経営ボード
             </div>
-          )}
+            <div className="mt-1 text-sm text-slate-600">
+              経営・税理士提出・収支確認は別ページに分けました。
+            </div>
+          </div>
+
+          <Link
+            href="/owner-dashboard"
+            className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+          >
+            経営ボードへ
+          </Link>
         </div>
       </div>
     </div>

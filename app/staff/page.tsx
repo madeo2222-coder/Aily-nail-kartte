@@ -27,6 +27,11 @@ const primaryLinks = [
 
 const secondaryLinks = [
   {
+    title: "スタッフ管理",
+    description: "スタッフ名の追加・確認・削除",
+    href: "/staff/manage",
+  },
+  {
     title: "スタッフ用ショートカット",
     description: "現場用の各種導線をまとめて開く",
     href: "/staff-tools",
@@ -141,7 +146,8 @@ export default function StaffEntryPage() {
             <p>② 当日予約確認は「予約一覧」で確認</p>
             <p>③ 施術前は「初回情報クイック確認」でアレルギーやNG項目を確認</p>
             <p>④ 詳細が必要なら「初回来店入力一覧」や顧客別の初回情報ページを見る</p>
-            <p>⑤ 施術後は「来店登録」へ進む</p>
+            <p>⑤ スタッフ追加や入れ替えがあれば「スタッフ管理」で更新</p>
+            <p>⑥ 施術後は「来店登録」へ進む</p>
           </div>
         </section>
       </div>

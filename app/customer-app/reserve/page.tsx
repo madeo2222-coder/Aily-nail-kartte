@@ -4,12 +4,6 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 const BOOKING_URL = "https://example.com/reserve";
-// ↑ここを実際の予約URLに差し替える
-// 例:
-// Hot Pepper Beauty
-// LINE予約
-// 自社予約フォーム
-// など
 
 const staffOptions = ["指名なし", "山田", "佐藤", "田中"];
 const menuOptions = [
@@ -64,7 +58,7 @@ export default function CustomerAppReservePage() {
       <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-rose-500 via-pink-500 to-orange-400 p-5 text-white shadow">
           <div className="text-xs font-bold tracking-wide opacity-90">
-            CUSTOMER APP RESERVE
+            AILY MY PAGE
           </div>
           <h1 className="mt-2 text-2xl font-bold leading-tight">予約する</h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
@@ -161,7 +155,7 @@ export default function CustomerAppReservePage() {
           <div className="flex items-center justify-between">
             <div className="text-base font-bold text-slate-900">予約確認</div>
             <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-600">
-              行動導線
+              ご確認ください
             </div>
           </div>
 
@@ -173,7 +167,7 @@ export default function CustomerAppReservePage() {
           </div>
 
           <p className="mt-4 text-sm leading-6 text-slate-600">
-            この画面から実際の予約ページへ進める形にしています。実URLを入れれば、そのまま提案や広告でも使いやすくなります。
+            この画面から実際の予約ページへ進める形にしています。実URLを入れれば、そのまま提案やご案内にも使いやすくなります。
           </p>
 
           <div className="mt-4 flex flex-col gap-2">
@@ -190,12 +184,12 @@ export default function CustomerAppReservePage() {
               onClick={handleBookingClick}
               className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
             >
-              外部予約リンクで進む
+              予約ページへ進む
             </button>
           </div>
 
           <div className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            今は外部予約URL連携方式です。Hot Pepper Beauty、LINE予約、自社フォームなどに接続できます。
+            今は外部予約URL連携方式です。今後、Ailyマイページ内で予約完結できるように進めていきます。
           </div>
         </section>
 
@@ -220,7 +214,7 @@ export default function CustomerAppReservePage() {
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs text-slate-500">STEP 3</div>
               <div className="mt-1 text-sm font-bold text-slate-900">
-                内容確認後に予約ページへ進む
+                内容確認後に予約へ進む
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -23,7 +23,6 @@ type Staff = {
 };
 
 const STATUS_OPTIONS = ["予約", "来店", "完了", "キャンセル"] as const;
-
 const DURATION_OPTIONS = [30, 45, 60, 75, 90, 120, 150, 180];
 
 function buildDateTime(targetDate: string, targetTime: string) {
@@ -115,8 +114,29 @@ export default function ReservationNewPage() {
     fetchMasterData();
   }, []);
 
+  const filteredCustomers = useMemo(() => {
+    return allCustomers.filter((item) => (salonId ? item.salon_id === salonId : true));
+  }, [allCustomers, salonId]);
+
+  const filteredStaffs = useMemo(() => {
+    return allStaffs.filter((item) => (salonId ? item.salon_id === salonId : true));
+  }, [allStaffs, salonId]);
+
   function handleSalonChange(nextSalonId: string) {
     setSalonId(nextSalonId);
+
+    const nextCustomers = allCustomers.filter((item) =>
+      nextSalonId ? item.salon_id === nextSalonId : true
+    );
+    const nextStaffs = allStaffs.filter((item) =>
+      nextSalonId ? item.salon_id === nextSalonId : true
+    );
+
+    const customerExists = nextCustomers.some((item) => item.id === customerId);
+    const staffExists = nextStaffs.some((item) => item.id === staffId);
+
+    setCustomerId(customerExists ? customerId : nextCustomers[0]?.id ?? "");
+    setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
   }
 
   function handleCustomerChange(nextCustomerId: string) {
@@ -128,7 +148,22 @@ export default function ReservationNewPage() {
     if (!selectedCustomer?.salon_id) return;
 
     if (!salonId) {
-      setSalonId(selectedCustomer.salon_id);
+      const nextSalonId = selectedCustomer.salon_id;
+      setSalonId(nextSalonId);
+
+      const nextStaffs = allStaffs.filter((item) => item.salon_id === nextSalonId);
+      const staffExists = nextStaffs.some((item) => item.id === staffId);
+      setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
+      return;
+    }
+
+    if (selectedCustomer.salon_id !== salonId) {
+      const nextSalonId = selectedCustomer.salon_id;
+      setSalonId(nextSalonId);
+
+      const nextStaffs = allStaffs.filter((item) => item.salon_id === nextSalonId);
+      const staffExists = nextStaffs.some((item) => item.id === staffId);
+      setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
     }
   }
 
@@ -246,7 +281,7 @@ export default function ReservationNewPage() {
               suppressHydrationWarning
             >
               <option value="">選択してください</option>
-              {allCustomers.map((customer) => (
+              {filteredCustomers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
                   {customer.name || "名称未設定"}
                 </option>
@@ -263,7 +298,7 @@ export default function ReservationNewPage() {
               suppressHydrationWarning
             >
               <option value="">選択してください</option>
-              {allStaffs.map((staff) => (
+              {filteredStaffs.map((staff) => (
                 <option key={staff.id} value={staff.id}>
                   {staff.name || "名称未設定"}
                 </option>

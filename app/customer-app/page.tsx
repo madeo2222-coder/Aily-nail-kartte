@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 type NewsItem = {
   id: string;
@@ -16,6 +18,41 @@ type MenuItem = {
   title: string;
   description: string;
   price: string;
+};
+
+type CustomerRow = {
+  id: string;
+  name: string | null;
+  salon_id: string | null;
+  user_id: string | null;
+};
+
+type SalonRow = {
+  id: string;
+  name: string | null;
+};
+
+type VisitRow = {
+  id: string;
+  customer_id: string | null;
+  visit_date: string | null;
+  menu: string | null;
+  memo: string | null;
+  created_at: string | null;
+};
+
+type ReservationRow = {
+  id: string;
+  customer_id: string | null;
+  staff_id: string | null;
+  menu: string | null;
+  start_at: string | null;
+  status: string | null;
+};
+
+type StaffRow = {
+  id: string;
+  name: string | null;
 };
 
 const newsItems: NewsItem[] = [
@@ -72,24 +109,268 @@ const navItems = [
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
 
+function formatDate(value: string | null) {
+  if (!value) return "未登録";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "未登録";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1);
+  const day = String(date.getDate());
+
+  return `${year}/${month}/${day}`;
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1);
+  const day = String(date.getDate());
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+
+  return `${year}/${month}/${day} ${hour}:${minute}`;
+}
+
+function addDays(base: Date, days: number) {
+  const next = new Date(base);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function buildVisitWindowText(lastVisitDate: string | null) {
+  if (!lastVisitDate) return "次回のおすすめ時期を準備中です";
+
+  const date = new Date(lastVisitDate);
+  if (Number.isNaN(date.getTime())) return "次回のおすすめ時期を準備中です";
+
+  const from = addDays(date, 21);
+  const to = addDays(date, 35);
+
+  const fromMonth = from.getMonth() + 1;
+  const fromDay = from.getDate();
+  const toMonth = to.getMonth() + 1;
+  const toDay = to.getDate();
+
+  return `${fromMonth}/${fromDay}〜${toMonth}/${toDay}ごろ`;
+}
+
 export default function CustomerAppPage() {
+  const router = useRouter();
+
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  const customerName = "山田 花子";
-  const salonName = "Aily Nail Studio";
-  const nextVisitWindow = "5月上旬〜中旬";
-  const lastVisitDate = "2026/04/10";
-  const lastMenu = "ワンカラー + フィルイン";
-  const lastStaff = "山田";
-  const nextReservedAt = "";
+  const [customerName, setCustomerName] = useState("お客様");
+  const [salonName, setSalonName] = useState("Aily Nail Studio");
+  const [nextVisitWindow, setNextVisitWindow] = useState("次回のおすすめ時期を準備中です");
+  const [lastVisitDate, setLastVisitDate] = useState("未登録");
+  const [lastMenu, setLastMenu] = useState("来店履歴を確認中です");
+  const [lastStaff, setLastStaff] = useState("未登録");
+  const [nextReservedAt, setNextReservedAt] = useState("");
 
-  const heroStatusText = nextReservedAt
-    ? `次回予約：${nextReservedAt}`
-    : "そろそろご来店のおすすめ時期です";
+  useEffect(() => {
+    async function fetchPageData() {
+      setLoading(true);
+      setErrorMessage("");
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        console.error("auth getUser error:", userError);
+        setLoading(false);
+        router.replace("/customer-app/login");
+        return;
+      }
+
+      if (!user) {
+        setLoading(false);
+        router.replace("/customer-app/login");
+        return;
+      }
+
+      const { data: customer, error: customerError } = await supabase
+        .from("customers")
+        .select("id, name, salon_id, user_id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (customerError || !customer) {
+        console.error("customer fetch error:", customerError);
+        setErrorMessage(
+          "お客様情報が見つかりませんでした。ログイン情報の確認が必要です。"
+        );
+        setLoading(false);
+        return;
+      }
+
+      const currentCustomer = customer as CustomerRow;
+      setCustomerName(currentCustomer.name || "お客様");
+
+      if (currentCustomer.salon_id) {
+        const { data: salonData } = await supabase
+          .from("salons")
+          .select("id, name")
+          .eq("id", currentCustomer.salon_id)
+          .single();
+
+        if (salonData) {
+          const salon = salonData as SalonRow;
+          setSalonName(salon.name || "Aily Nail Studio");
+        }
+      }
+
+      const { data: latestVisitData, error: latestVisitError } = await supabase
+        .from("visits")
+        .select("id, customer_id, visit_date, menu, memo, created_at")
+        .eq("customer_id", currentCustomer.id)
+        .order("visit_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (latestVisitError) {
+        console.error("latest visit fetch error:", latestVisitError);
+      }
+
+      const latestVisit = ((latestVisitData || [])[0] as VisitRow | undefined) || null;
+
+      if (latestVisit) {
+        setLastVisitDate(formatDate(latestVisit.visit_date));
+        setLastMenu(latestVisit.menu || "メニュー未登録");
+        setNextVisitWindow(buildVisitWindowText(latestVisit.visit_date));
+      } else {
+        setLastVisitDate("未登録");
+        setLastMenu("まだ来店履歴がありません");
+        setNextVisitWindow("初回ご予約をお待ちしています");
+      }
+
+      const nowIso = new Date().toISOString();
+
+      const { data: nextReservationData, error: nextReservationError } = await supabase
+        .from("reservations")
+        .select("id, customer_id, staff_id, menu, start_at, status")
+        .eq("customer_id", currentCustomer.id)
+        .neq("status", "キャンセル")
+        .gte("start_at", nowIso)
+        .order("start_at", { ascending: true })
+        .limit(1);
+
+      if (nextReservationError) {
+        console.error("next reservation fetch error:", nextReservationError);
+      }
+
+      const nextReservation =
+        ((nextReservationData || [])[0] as ReservationRow | undefined) || null;
+
+      if (nextReservation) {
+        setNextReservedAt(formatDateTime(nextReservation.start_at));
+
+        if (nextReservation.staff_id) {
+          const { data: staffData } = await supabase
+            .from("staffs")
+            .select("id, name")
+            .eq("id", nextReservation.staff_id)
+            .single();
+
+          if (staffData) {
+            const staff = staffData as StaffRow;
+            setLastStaff(staff.name || "未登録");
+          }
+        }
+      } else {
+        setNextReservedAt("");
+      }
+
+      if (!nextReservation) {
+        const { data: latestReservationData, error: latestReservationError } = await supabase
+          .from("reservations")
+          .select("id, customer_id, staff_id, menu, start_at, status")
+          .eq("customer_id", currentCustomer.id)
+          .neq("status", "キャンセル")
+          .order("start_at", { ascending: false })
+          .limit(1);
+
+        if (latestReservationError) {
+          console.error("latest reservation fetch error:", latestReservationError);
+        }
+
+        const latestReservation =
+          ((latestReservationData || [])[0] as ReservationRow | undefined) || null;
+
+        if (latestReservation?.staff_id) {
+          const { data: staffData } = await supabase
+            .from("staffs")
+            .select("id, name")
+            .eq("id", latestReservation.staff_id)
+            .single();
+
+          if (staffData) {
+            const staff = staffData as StaffRow;
+            setLastStaff(staff.name || "未登録");
+          }
+        }
+      }
+
+      setLoading(false);
+    }
+
+    fetchPageData();
+  }, [router]);
+
+  const heroStatusText = useMemo(() => {
+    if (nextReservedAt) {
+      return `次回予約：${nextReservedAt}`;
+    }
+
+    return "そろそろご来店のおすすめ時期です";
+  }, [nextReservedAt]);
 
   function showMessage(text: string) {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 2500);
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
+          <div className="rounded-3xl border bg-white p-6 shadow-sm">
+            <div className="text-base font-bold text-slate-900">Ailyマイページ</div>
+            <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
+          <div className="rounded-3xl border bg-white p-6 shadow-sm">
+            <div className="text-base font-bold text-slate-900">Ailyマイページ</div>
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+              {errorMessage}
+            </div>
+            <Link
+              href="/customer-app/login"
+              className="mt-4 block w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+            >
+              ログイン画面へ
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -97,7 +378,7 @@ export default function CustomerAppPage() {
       <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-pink-500 via-rose-500 to-orange-400 p-5 text-white shadow">
           <div className="text-xs font-bold tracking-wide opacity-90">
-            CUSTOMER APP PREVIEW
+            AILY MY PAGE
           </div>
           <div className="mt-2 text-sm opacity-90">{salonName}</div>
           <h1 className="mt-2 text-2xl font-bold leading-tight">
@@ -137,12 +418,12 @@ export default function CustomerAppPage() {
               </div>
             </div>
             <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-600">
-              再来促進
+              再来のおすすめ
             </div>
           </div>
 
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            きれいな状態を保つなら、この時期のご来店がおすすめです。前回の施術内容に合わせて次回メニューもご提案しています。
+            きれいな状態を保ちやすい時期を目安にご案内しています。前回内容に合わせた次回メニュー提案にもつなげていきます。
           </p>
 
           <div className="mt-4 rounded-2xl bg-slate-50 p-4">
@@ -195,7 +476,7 @@ export default function CustomerAppPage() {
           </div>
 
           <p className="mt-4 text-sm leading-6 text-slate-600">
-            前回は春系の透明感カラーで施術しています。次回は色味を少し明るめにする提案が相性良さそうです。
+            前回内容をもとに、次回の色味やメンテナンス時期もわかりやすくご案内していきます。
           </p>
         </section>
 
@@ -203,7 +484,7 @@ export default function CustomerAppPage() {
           <div className="flex items-center justify-between">
             <div className="text-base font-bold text-slate-900">今月のおすすめ</div>
             <div className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-600">
-              単価アップ
+              おすすめ
             </div>
           </div>
 
@@ -232,7 +513,7 @@ export default function CustomerAppPage() {
           <div className="flex items-center justify-between">
             <div className="text-base font-bold text-slate-900">口コミのお願い</div>
             <div className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-600">
-              GBP連動
+              ご協力お願いします
             </div>
           </div>
 
@@ -253,7 +534,7 @@ export default function CustomerAppPage() {
           <div className="flex items-center justify-between">
             <div className="text-base font-bold text-slate-900">キャンペーン / クーポン</div>
             <div className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-700">
-              再来理由
+              お得情報
             </div>
           </div>
 

@@ -31,7 +31,7 @@ const visitHistory = [
 
 const navItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
-  { key: "reserve", label: "予約", icon: "📅", href: "" },
+  { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
   { key: "news", label: "お知らせ", icon: "📢", href: "" },
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
@@ -43,7 +43,7 @@ export default function CustomerAppHistoryPage() {
       <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 p-5 text-white shadow">
           <div className="text-xs font-bold tracking-wide opacity-90">
-            CUSTOMER APP HISTORY
+            AILY MY PAGE
           </div>
           <h1 className="mt-2 text-2xl font-bold leading-tight">来店履歴</h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
@@ -55,7 +55,7 @@ export default function CustomerAppHistoryPage() {
               href="/customer-app"
               className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-900"
             >
-              ホームへ戻る
+              マイページへ戻る
             </Link>
             <button
               type="button"

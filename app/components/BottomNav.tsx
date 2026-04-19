@@ -15,7 +15,7 @@ const navItems = [
 export default function BottomNav() {
   const pathname = usePathname();
 
-  const hiddenPaths = ["/customer-intake"];
+  const hiddenPaths = ["/customer-intake", "/owner-dashboard"];
 
   const shouldHide = hiddenPaths.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`)
