@@ -10,6 +10,7 @@ export default function CustomerEditPage() {
   const customerId = params.id as string;
 
   const [name, setName] = useState("");
+  const [nameKana, setNameKana] = useState("");
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -24,7 +25,7 @@ export default function CustomerEditPage() {
 
     const { data, error } = await supabase
       .from("customers")
-      .select("id, name, phone")
+      .select("id, name, name_kana, phone")
       .eq("id", customerId)
       .single();
 
@@ -36,6 +37,7 @@ export default function CustomerEditPage() {
     }
 
     setName(data?.name || "");
+    setNameKana(data?.name_kana || "");
     setPhone(data?.phone || "");
     setFetching(false);
   }
@@ -70,6 +72,7 @@ export default function CustomerEditPage() {
       .from("customers")
       .update({
         name: name.trim(),
+        name_kana: nameKana.trim() || null,
         phone: normalizedPhone,
       })
       .eq("id", customerId);
@@ -91,31 +94,42 @@ export default function CustomerEditPage() {
   }
 
   return (
-    <div className="p-4 pb-24 max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">顧客情報を編集</h1>
+    <div className="mx-auto max-w-2xl p-4 pb-24">
+      <h1 className="mb-6 text-2xl font-bold">顧客情報を編集</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="bg-white rounded-2xl shadow p-4">
-          <label className="block text-sm font-medium mb-2">名前</label>
+        <div className="rounded-2xl bg-white p-4 shadow">
+          <label className="mb-2 block text-sm font-medium">名前</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="w-full border rounded-xl px-4 py-3"
+            className="w-full rounded-xl border px-4 py-3"
             placeholder="顧客名"
           />
         </div>
 
-        <div className="bg-white rounded-2xl shadow p-4">
-          <label className="block text-sm font-medium mb-2">電話番号</label>
+        <div className="rounded-2xl bg-white p-4 shadow">
+          <label className="mb-2 block text-sm font-medium">フリガナ</label>
+          <input
+            type="text"
+            value={nameKana}
+            onChange={(e) => setNameKana(e.target.value)}
+            className="w-full rounded-xl border px-4 py-3"
+            placeholder="ヤマダ ハナコ"
+          />
+        </div>
+
+        <div className="rounded-2xl bg-white p-4 shadow">
+          <label className="mb-2 block text-sm font-medium">電話番号</label>
           <input
             type="tel"
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full border rounded-xl px-4 py-3"
+            className="w-full rounded-xl border px-4 py-3"
             placeholder="09012345678 または +819012345678"
           />
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="mt-2 text-xs text-gray-500">
             保存時に 090 形式は自動で +81 形式へ変換します
           </p>
         </div>
@@ -123,7 +137,7 @@ export default function CustomerEditPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-xl bg-black text-white py-3 font-medium"
+          className="w-full rounded-xl bg-black py-3 font-medium text-white"
         >
           {loading ? "更新中..." : "更新する"}
         </button>

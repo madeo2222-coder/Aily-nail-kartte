@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Customer = {
   id: string;
   name: string | null;
+  name_kana: string | null;
   allergy: string | null;
 };
 
@@ -20,21 +21,20 @@ type Visit = {
 export default function CustomersPageClient() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [keyword, setKeyword] = useState("");
 
   useEffect(() => {
     fetchData();
   }, []);
 
   async function fetchData() {
-    // 顧客取得
     const { data: customersData } = await supabase
       .from("customers")
-      .select("id, name, allergy")
+      .select("id, name, name_kana, allergy")
       .order("created_at", { ascending: false });
 
     if (customersData) setCustomers(customersData);
 
-    // 来店履歴取得（新しい順）
     const { data: visitsData } = await supabase
       .from("visits")
       .select("customer_id, next_visit_date, next_proposal, visit_date")
@@ -43,34 +43,66 @@ export default function CustomersPageClient() {
     if (visitsData) setVisits(visitsData);
   }
 
-  // 最新visit取得
   function getLatestVisit(customerId: string) {
     return visits.find((v) => v.customer_id === customerId);
   }
 
+  const filteredCustomers = useMemo(() => {
+    const trimmed = keyword.trim().toLowerCase();
+
+    if (!trimmed) return customers;
+
+    return customers.filter((customer) => {
+      const name = (customer.name || "").toLowerCase();
+      const nameKana = (customer.name_kana || "").toLowerCase();
+
+      return name.includes(trimmed) || nameKana.includes(trimmed);
+    });
+  }, [customers, keyword]);
+
   return (
     <div className="p-4 pb-24">
-      <h1 className="text-xl font-bold mb-4">顧客一覧</h1>
+      <h1 className="mb-4 text-xl font-bold">顧客一覧</h1>
 
       <Link
         href="/customers/new"
-        className="block bg-blue-500 text-white text-center py-2 rounded mb-4"
+        className="mb-4 block rounded bg-blue-500 py-2 text-center text-white"
       >
         ＋ 顧客を追加
       </Link>
 
+      <div className="mb-4 rounded-2xl border bg-white p-4 shadow-sm">
+        <label className="mb-2 block text-sm font-medium text-gray-700">
+          顧客検索
+        </label>
+        <input
+          type="text"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          placeholder="名前 / フリガナで検索"
+          className="w-full rounded-xl border px-4 py-3"
+        />
+        <p className="mt-2 text-xs text-gray-500">
+          表示件数: {filteredCustomers.length}件
+        </p>
+      </div>
+
       <div className="space-y-3">
-        {customers.map((customer) => {
+        {filteredCustomers.map((customer) => {
           const latest = getLatestVisit(customer.id);
 
           return (
             <Link
               key={customer.id}
               href={`/customers/${customer.id}`}
-              className="block border p-3 rounded shadow-sm bg-white"
+              className="block rounded border bg-white p-3 shadow-sm"
             >
-              <div className="font-semibold text-lg">
+              <div className="text-lg font-semibold">
                 {customer.name || "顧客名なし"}
+              </div>
+
+              <div className="text-sm text-gray-500">
+                フリガナ：{customer.name_kana || "-"}
               </div>
 
               {customer.allergy && (
@@ -93,6 +125,12 @@ export default function CustomersPageClient() {
             </Link>
           );
         })}
+
+        {filteredCustomers.length === 0 && (
+          <div className="rounded-2xl border bg-white p-6 text-center text-sm text-gray-500 shadow-sm">
+            条件に合う顧客はいません
+          </div>
+        )}
       </div>
     </div>
   );

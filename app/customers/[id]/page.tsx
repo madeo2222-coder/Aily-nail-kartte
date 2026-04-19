@@ -8,6 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 type Customer = {
   id: string;
   name: string;
+  name_kana: string | null;
   phone: string | null;
 };
 
@@ -91,7 +92,7 @@ export default function CustomerDetailPage() {
     try {
       const { data: customerData, error: customerError } = await supabase
         .from("customers")
-        .select("id, name, phone")
+        .select("id, name, name_kana, phone")
         .eq("id", customerId)
         .single();
 
@@ -292,7 +293,7 @@ export default function CustomerDetailPage() {
   }
 
   return (
-    <div className="p-4 pb-24 space-y-4">
+    <div className="space-y-4 p-4 pb-24">
       <div className="flex items-center justify-between">
         <button
           onClick={() => router.push("/customers")}
@@ -319,7 +320,12 @@ export default function CustomerDetailPage() {
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm">
         <h1 className="text-xl font-bold">{customer.name}</h1>
-        <p className="mt-2 text-sm text-gray-600">電話番号: {customer.phone || "-"}</p>
+        <p className="mt-1 text-sm text-gray-500">
+          フリガナ: {customer.name_kana || "-"}
+        </p>
+        <p className="mt-2 text-sm text-gray-600">
+          電話番号: {customer.phone || "-"}
+        </p>
       </div>
 
       <div className="rounded-2xl border bg-white p-4 shadow-sm">
@@ -380,7 +386,7 @@ export default function CustomerDetailPage() {
 
             <div>
               <p className="font-semibold text-gray-700">注意事項確認</p>
-              <div className="mt-1 rounded bg-gray-50 p-3 space-y-1">
+              <div className="mt-1 space-y-1 rounded bg-gray-50 p-3">
                 <p>体調不良・感染症など: {yesNo(intake.check_health)}</p>
                 <p>反応リスク確認: {yesNo(intake.check_reaction)}</p>
                 <p>返金ポリシー確認: {yesNo(intake.check_refund)}</p>

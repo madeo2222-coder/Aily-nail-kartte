@@ -1,42 +1,43 @@
-"use client"
+"use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react"
-import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 type Visit = {
-  id: string
-  customer_id: string | null
-  menu: string | null
-  color: string | null
-  memo: string | null
-  price: number | null
-  payment_method: string | null
-  photo_urls: string[] | null
-  created_at: string | null
-}
+  id: string;
+  customer_id: string | null;
+  visit_date: string | null;
+  menu: string | null;
+  color: string | null;
+  memo: string | null;
+  price: number | null;
+  payment_method: string | null;
+  photo_urls: string[] | null;
+  created_at: string | null;
+};
 
 type Customer = {
-  id: string
-  name: string | null
-}
+  id: string;
+  name: string | null;
+};
 
 type VisitPaymentRow = {
-  id: string
-  visit_id: string
-  payment_method: string | null
-  amount: number | null
-  sort_order: number | null
-}
+  id: string;
+  visit_id: string;
+  payment_method: string | null;
+  amount: number | null;
+  sort_order: number | null;
+};
 
 type PaymentLine = {
-  id: string
-  payment_method: string
-  amount: string
-}
+  id: string;
+  payment_method: string;
+  amount: string;
+};
 
-const BUCKET_NAME = "visit-photos"
+const BUCKET_NAME = "visit-photos";
 
 const PAYMENT_METHOD_OPTIONS = [
   "現金",
@@ -51,18 +52,19 @@ const PAYMENT_METHOD_OPTIONS = [
   "UnionPay（銀聯）",
   "Discover",
   "ホットペッパーポイント",
+  "割引",
   "その他",
-]
+];
 
 function formatDate(date: string | null) {
-  if (!date) return "-"
-  const d = new Date(date)
-  if (Number.isNaN(d.getTime())) return "-"
-  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`
+  if (!date) return "-";
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return "-";
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 function createLineId() {
-  return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+  return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function createPaymentLine(method = "現金", amount = ""): PaymentLine {
@@ -70,107 +72,121 @@ function createPaymentLine(method = "現金", amount = ""): PaymentLine {
     id: createLineId(),
     payment_method: method,
     amount,
-  }
+  };
 }
 
 function toSafeNumber(value: string) {
-  const normalized = value.replace(/,/g, "").trim()
-  if (!normalized) return 0
-  const parsed = Number(normalized)
-  return Number.isFinite(parsed) ? parsed : NaN
+  const normalized = value.replace(/,/g, "").trim();
+  if (!normalized) return 0;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
 }
 
 function yen(value: number) {
-  return `¥${Math.round(value).toLocaleString("ja-JP")}`
+  return `¥${Math.round(value).toLocaleString("ja-JP")}`;
+}
+
+function isDiscountMethod(method: string) {
+  return method.trim() === "割引";
+}
+
+function formatAmountPreview(value: string) {
+  const amount = toSafeNumber(value);
+  if (!Number.isFinite(amount)) return "未入力";
+  return `${amount.toLocaleString("ja-JP")}`;
 }
 
 export default function EditVisitPage() {
-  const params = useParams()
-  const router = useRouter()
-  const id = params.id as string
+  const params = useParams();
+  const router = useRouter();
+  const id = params.id as string;
 
-  const [visit, setVisit] = useState<Visit | null>(null)
-  const [customer, setCustomer] = useState<Customer | null>(null)
+  const [visit, setVisit] = useState<Visit | null>(null);
+  const [customer, setCustomer] = useState<Customer | null>(null);
 
-  const [menu, setMenu] = useState("")
-  const [color, setColor] = useState("")
-  const [memo, setMemo] = useState("")
-  const [price, setPrice] = useState("")
-  const [photoUrls, setPhotoUrls] = useState<string[]>([])
+  const [visitDate, setVisitDate] = useState("");
+  const [menu, setMenu] = useState("");
+  const [color, setColor] = useState("");
+  const [memo, setMemo] = useState("");
+  const [price, setPrice] = useState("");
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([
     createPaymentLine("現金", ""),
-  ])
+  ]);
 
-  const [newFiles, setNewFiles] = useState<File[]>([])
-  const [newPreviews, setNewPreviews] = useState<string[]>([])
+  const [newFiles, setNewFiles] = useState<File[]>([]);
+  const [newPreviews, setNewPreviews] = useState<string[]>([]);
 
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [errorMessage, setErrorMessage] = useState("")
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const customerDetailHref = useMemo(() => {
-    if (!visit?.customer_id) return "/visits"
-    return `/customers/${visit.customer_id}`
-  }, [visit?.customer_id])
+    if (!visit?.customer_id) return "/visits";
+    return `/customers/${visit.customer_id}`;
+  }, [visit?.customer_id]);
 
   const totalPrice = useMemo(() => {
-    return toSafeNumber(price)
-  }, [price])
+    return toSafeNumber(price);
+  }, [price]);
 
   const paymentTotal = useMemo(() => {
     return paymentLines.reduce((sum, line) => {
-      const amount = toSafeNumber(line.amount)
-      if (!Number.isFinite(amount)) return sum
-      return sum + amount
-    }, 0)
-  }, [paymentLines])
+      const amount = toSafeNumber(line.amount);
+      if (!Number.isFinite(amount)) return sum;
+      return sum + amount;
+    }, 0);
+  }, [paymentLines]);
 
   const paymentDiff = useMemo(() => {
-    if (!Number.isFinite(totalPrice)) return NaN
-    return totalPrice - paymentTotal
-  }, [totalPrice, paymentTotal])
+    if (!Number.isFinite(totalPrice)) return NaN;
+    return totalPrice - paymentTotal;
+  }, [totalPrice, paymentTotal]);
 
   useEffect(() => {
-    if (!id) return
+    if (!id) return;
 
     async function fetchVisit() {
-      setLoading(true)
-      setErrorMessage("")
+      setLoading(true);
+      setErrorMessage("");
 
       const { data, error } = await supabase
         .from("visits")
-        .select("id,customer_id,menu,color,memo,price,payment_method,photo_urls,created_at")
+        .select(
+          "id,customer_id,visit_date,menu,color,memo,price,payment_method,photo_urls,created_at"
+        )
         .eq("id", id)
-        .single()
+        .single();
 
       if (error || !data) {
-        setErrorMessage("来店履歴が見つかりません。")
-        setLoading(false)
-        return
+        setErrorMessage("来店履歴が見つかりません。");
+        setLoading(false);
+        return;
       }
 
-      const currentVisit = data as Visit
-      setVisit(currentVisit)
-      setMenu(currentVisit.menu ?? "")
-      setColor(currentVisit.color ?? "")
-      setMemo(currentVisit.memo ?? "")
+      const currentVisit = data as Visit;
+      setVisit(currentVisit);
+      setVisitDate(currentVisit.visit_date || "");
+      setMenu(currentVisit.menu ?? "");
+      setColor(currentVisit.color ?? "");
+      setMemo(currentVisit.memo ?? "");
       setPrice(
         currentVisit.price === null || currentVisit.price === undefined
           ? ""
           : String(currentVisit.price)
-      )
-      setPhotoUrls(currentVisit.photo_urls ?? [])
+      );
+      setPhotoUrls(currentVisit.photo_urls ?? []);
 
       if (currentVisit.customer_id) {
         const { data: customerData } = await supabase
           .from("customers")
           .select("id,name")
           .eq("id", currentVisit.customer_id)
-          .single()
+          .single();
 
         if (customerData) {
-          setCustomer(customerData as Customer)
+          setCustomer(customerData as Customer);
         }
       }
 
@@ -178,13 +194,13 @@ export default function EditVisitPage() {
         .from("visit_payments")
         .select("id, visit_id, payment_method, amount, sort_order")
         .eq("visit_id", id)
-        .order("sort_order", { ascending: true })
+        .order("sort_order", { ascending: true });
 
       if (paymentError) {
-        console.error("visit_payments取得エラー:", paymentError)
+        console.error("visit_payments取得エラー:", paymentError);
       }
 
-      const paymentRows = (paymentData ?? []) as VisitPaymentRow[]
+      const paymentRows = (paymentData ?? []) as VisitPaymentRow[];
 
       if (paymentRows.length > 0) {
         setPaymentLines(
@@ -194,7 +210,7 @@ export default function EditVisitPage() {
             amount:
               row.amount === null || row.amount === undefined ? "" : String(row.amount),
           }))
-        )
+        );
       } else {
         setPaymentLines([
           createPaymentLine(
@@ -203,41 +219,41 @@ export default function EditVisitPage() {
               ? ""
               : String(currentVisit.price)
           ),
-        ])
+        ]);
       }
 
-      setLoading(false)
+      setLoading(false);
     }
 
-    fetchVisit()
-  }, [id])
+    fetchVisit();
+  }, [id]);
 
   useEffect(() => {
     return () => {
-      newPreviews.forEach((url) => URL.revokeObjectURL(url))
-    }
-  }, [newPreviews])
+      newPreviews.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [newPreviews]);
 
   function handleFilesChange(e: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? [])
-    if (files.length === 0) return
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
 
-    newPreviews.forEach((url) => URL.revokeObjectURL(url))
+    newPreviews.forEach((url) => URL.revokeObjectURL(url));
 
-    setNewFiles(files)
-    setNewPreviews(files.map((file) => URL.createObjectURL(file)))
+    setNewFiles(files);
+    setNewPreviews(files.map((file) => URL.createObjectURL(file)));
   }
 
   function removeExistingPhoto(targetUrl: string) {
-    setPhotoUrls((prev) => prev.filter((url) => url !== targetUrl))
+    setPhotoUrls((prev) => prev.filter((url) => url !== targetUrl));
   }
 
   function removeNewPhoto(index: number) {
-    const target = newPreviews[index]
-    if (target) URL.revokeObjectURL(target)
+    const target = newPreviews[index];
+    if (target) URL.revokeObjectURL(target);
 
-    setNewFiles((prev) => prev.filter((_, i) => i !== index))
-    setNewPreviews((prev) => prev.filter((_, i) => i !== index))
+    setNewFiles((prev) => prev.filter((_, i) => i !== index));
+    setNewPreviews((prev) => prev.filter((_, i) => i !== index));
   }
 
   function updatePaymentLine(
@@ -254,75 +270,81 @@ export default function EditVisitPage() {
             }
           : line
       )
-    )
+    );
   }
 
   function addPaymentLine() {
-    setPaymentLines((prev) => [...prev, createPaymentLine("現金", "")])
+    setPaymentLines((prev) => [...prev, createPaymentLine("現金", "")]);
   }
 
   function removePaymentLine(lineId: string) {
     setPaymentLines((prev) => {
       if (prev.length === 1) {
-        return [createPaymentLine("現金", "")]
+        return [createPaymentLine("現金", "")];
       }
-      return prev.filter((line) => line.id !== lineId)
-    })
+      return prev.filter((line) => line.id !== lineId);
+    });
   }
 
   async function uploadNewFiles() {
-    const uploadedUrls: string[] = []
+    const uploadedUrls: string[] = [];
 
     for (const file of newFiles) {
-      const ext = file.name.split(".").pop() || "jpg"
+      const ext = file.name.split(".").pop() || "jpg";
       const filePath = `${visit?.customer_id ?? "unknown"}/${id}/${Date.now()}-${Math.random()
         .toString(36)
-        .slice(2)}.${ext}`
+        .slice(2)}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, file)
+        .upload(filePath, file);
 
       if (uploadError) {
-        throw new Error("写真アップロードに失敗しました。")
+        throw new Error("写真アップロードに失敗しました。");
       }
 
-      const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath)
+      const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath);
       if (data?.publicUrl) {
-        uploadedUrls.push(data.publicUrl)
+        uploadedUrls.push(data.publicUrl);
       }
     }
 
-    return uploadedUrls
+    return uploadedUrls;
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    if (!visit || saving) return
+    e.preventDefault();
+    if (!visit || saving) return;
 
-    setSaving(true)
-    setErrorMessage("")
+    setSaving(true);
+    setErrorMessage("");
 
     try {
-      let uploadedUrls: string[] = []
+      let uploadedUrls: string[] = [];
 
       if (newFiles.length > 0) {
-        uploadedUrls = await uploadNewFiles()
+        uploadedUrls = await uploadNewFiles();
       }
 
       const parsedPrice =
-        price.trim() === "" ? null : Number(price.replace(/,/g, ""))
+        price.trim() === "" ? null : Number(price.replace(/,/g, ""));
 
       if (price.trim() !== "" && Number.isNaN(parsedPrice)) {
-        setErrorMessage("金額は数字で入力してください。")
-        setSaving(false)
-        return
+        setErrorMessage("金額は数字で入力してください。");
+        setSaving(false);
+        return;
+      }
+
+      if (!visitDate) {
+        setErrorMessage("来店日を入力してください。");
+        setSaving(false);
+        return;
       }
 
       if (!Number.isFinite(totalPrice) || totalPrice < 0) {
-        setErrorMessage("売上金額を正しく入力してください。")
-        setSaving(false)
-        return
+        setErrorMessage("売上金額を正しく入力してください。");
+        setSaving(false);
+        return;
       }
 
       const cleanedPaymentLines = paymentLines
@@ -331,39 +353,60 @@ export default function EditVisitPage() {
           amount: toSafeNumber(line.amount),
           sort_order: index + 1,
         }))
-        .filter((line) => line.payment_method && line.amount > 0)
+        .filter((line) => line.payment_method && line.amount !== 0);
 
       if (cleanedPaymentLines.length === 0) {
-        setErrorMessage("支払い内訳を1件以上入力してください。")
-        setSaving(false)
-        return
+        setErrorMessage("支払い内訳を1件以上入力してください。");
+        setSaving(false);
+        return;
       }
 
       const hasInvalidPaymentAmount = cleanedPaymentLines.some(
         (line) => !Number.isFinite(line.amount)
-      )
+      );
 
       if (hasInvalidPaymentAmount) {
-        setErrorMessage("支払い内訳の金額を正しく入力してください。")
-        setSaving(false)
-        return
+        setErrorMessage("支払い内訳の金額を正しく入力してください。");
+        setSaving(false);
+        return;
+      }
+
+      const hasDiscountPositive = cleanedPaymentLines.some(
+        (line) => isDiscountMethod(line.payment_method) && line.amount > 0
+      );
+
+      if (hasDiscountPositive) {
+        setErrorMessage("割引はマイナス金額で入力してください。");
+        setSaving(false);
+        return;
+      }
+
+      const hasNonDiscountNegative = cleanedPaymentLines.some(
+        (line) => !isDiscountMethod(line.payment_method) && line.amount < 0
+      );
+
+      if (hasNonDiscountNegative) {
+        setErrorMessage("割引以外の支払い方法はマイナスにできません。");
+        setSaving(false);
+        return;
       }
 
       if (paymentTotal !== totalPrice) {
-        setErrorMessage("売上金額と支払い内訳合計を一致させてください。")
-        setSaving(false)
-        return
+        setErrorMessage("売上金額と支払い内訳合計を一致させてください。");
+        setSaving(false);
+        return;
       }
 
-      const nextPhotoUrls = [...photoUrls, ...uploadedUrls]
+      const nextPhotoUrls = [...photoUrls, ...uploadedUrls];
       const mainPaymentMethod =
         cleanedPaymentLines.length === 1
           ? cleanedPaymentLines[0].payment_method
-          : "分割払い"
+          : "複数";
 
       const { error: visitUpdateError } = await supabase
         .from("visits")
         .update({
+          visit_date: visitDate,
           menu: menu.trim() || null,
           color: color.trim() || null,
           memo: memo.trim() || null,
@@ -371,23 +414,23 @@ export default function EditVisitPage() {
           payment_method: mainPaymentMethod,
           photo_urls: nextPhotoUrls,
         })
-        .eq("id", visit.id)
+        .eq("id", visit.id);
 
       if (visitUpdateError) {
-        setErrorMessage("来店履歴の更新に失敗しました。")
-        setSaving(false)
-        return
+        setErrorMessage("来店履歴の更新に失敗しました。");
+        setSaving(false);
+        return;
       }
 
       const { error: paymentDeleteError } = await supabase
         .from("visit_payments")
         .delete()
-        .eq("visit_id", visit.id)
+        .eq("visit_id", visit.id);
 
       if (paymentDeleteError) {
-        setErrorMessage("支払い内訳の更新に失敗しました。")
-        setSaving(false)
-        return
+        setErrorMessage("支払い内訳の更新に失敗しました。");
+        setSaving(false);
+        return;
       }
 
       const paymentPayload = cleanedPaymentLines.map((line) => ({
@@ -395,67 +438,67 @@ export default function EditVisitPage() {
         payment_method: line.payment_method,
         amount: line.amount,
         sort_order: line.sort_order,
-      }))
+      }));
 
       const { error: paymentInsertError } = await supabase
         .from("visit_payments")
-        .insert(paymentPayload)
+        .insert(paymentPayload);
 
       if (paymentInsertError) {
-        setErrorMessage("支払い内訳の更新に失敗しました。")
-        setSaving(false)
-        return
+        setErrorMessage("支払い内訳の更新に失敗しました。");
+        setSaving(false);
+        return;
       }
 
-      router.push(customerDetailHref)
+      router.push(customerDetailHref);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "更新中にエラーが発生しました。"
-      )
-      setSaving(false)
+      );
+      setSaving(false);
     }
   }
 
   async function handleDeleteVisit() {
-    if (!visit || deleting) return
+    if (!visit || deleting) return;
 
-    const confirmed = window.confirm("この来店履歴を削除しますか？")
-    if (!confirmed) return
+    const confirmed = window.confirm("この来店履歴を削除しますか？");
+    if (!confirmed) return;
 
-    setDeleting(true)
-    setErrorMessage("")
+    setDeleting(true);
+    setErrorMessage("");
 
     const { error: paymentDeleteError } = await supabase
       .from("visit_payments")
       .delete()
-      .eq("visit_id", visit.id)
+      .eq("visit_id", visit.id);
 
     if (paymentDeleteError) {
-      setErrorMessage("支払い内訳の削除に失敗しました。")
-      setDeleting(false)
-      return
+      setErrorMessage("支払い内訳の削除に失敗しました。");
+      setDeleting(false);
+      return;
     }
 
     const { error: visitDeleteError } = await supabase
       .from("visits")
       .delete()
-      .eq("id", visit.id)
+      .eq("id", visit.id);
 
     if (visitDeleteError) {
-      setErrorMessage("来店履歴の削除に失敗しました。")
-      setDeleting(false)
-      return
+      setErrorMessage("来店履歴の削除に失敗しました。");
+      setDeleting(false);
+      return;
     }
 
-    router.push(customerDetailHref)
+    router.push(customerDetailHref);
   }
 
   if (loading) {
-    return <div className="p-6">読み込み中...</div>
+    return <div className="p-6">読み込み中...</div>;
   }
 
   if (!visit) {
-    return <div className="p-6">来店履歴が見つかりません。</div>
+    return <div className="p-6">来店履歴が見つかりません。</div>;
   }
 
   return (
@@ -474,6 +517,16 @@ export default function EditVisitPage() {
 
       <div className="rounded-2xl border bg-white p-5 shadow-sm">
         <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label className="mb-2 block text-sm font-medium">来店日</label>
+            <input
+              type="date"
+              value={visitDate}
+              onChange={(e) => setVisitDate(e.target.value)}
+              className="w-full rounded-xl border px-4 py-3 outline-none focus:border-black"
+            />
+          </div>
+
           <div>
             <label className="mb-2 block text-sm font-medium">メニュー</label>
             <input
@@ -524,7 +577,7 @@ export default function EditVisitPage() {
               <div>
                 <div className="text-sm font-bold text-slate-900">支払い内訳</div>
                 <div className="mt-1 text-xs text-slate-500">
-                  例: PayPay 5000 / ホットペッパーポイント 1000
+                  例: 現金 6000 / 割引 -1000 → 売上金額 5000
                 </div>
               </div>
 
@@ -538,60 +591,75 @@ export default function EditVisitPage() {
             </div>
 
             <div className="space-y-3">
-              {paymentLines.map((line, index) => (
-                <div key={line.id} className="rounded-2xl border bg-white p-3">
-                  <div className="mb-3 text-xs font-bold text-slate-500">
-                    内訳 {index + 1}
+              {paymentLines.map((line, index) => {
+                const isDiscount = isDiscountMethod(line.payment_method);
+
+                return (
+                  <div key={line.id} className="rounded-2xl border bg-white p-3">
+                    <div className="mb-3 text-xs font-bold text-slate-500">
+                      内訳 {index + 1}
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">
+                          支払い方法
+                        </label>
+                        <select
+                          value={line.payment_method}
+                          onChange={(e) =>
+                            updatePaymentLine(line.id, "payment_method", e.target.value)
+                          }
+                          className="w-full rounded-xl border px-3 py-3 text-sm"
+                        >
+                          {PAYMENT_METHOD_OPTIONS.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="mb-1 block text-xs font-medium text-gray-700">
+                          金額
+                        </label>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={line.amount}
+                          onChange={(e) =>
+                            updatePaymentLine(line.id, "amount", e.target.value)
+                          }
+                          placeholder={isDiscount ? "例: -1000" : "例: 5000"}
+                          className={`w-full rounded-xl border px-3 py-3 text-sm ${
+                            isDiscount ? "border-rose-300 bg-rose-50" : ""
+                          }`}
+                        />
+                        {isDiscount ? (
+                          <p className="mt-1 text-[11px] text-rose-600">
+                            割引はマイナスで入力
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={() => removePaymentLine(line.id)}
+                          className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm font-bold text-red-600"
+                        >
+                          削除
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 text-xs text-slate-500">
+                      入力値: {formatAmountPreview(line.amount)}
+                    </div>
                   </div>
-
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        支払い方法
-                      </label>
-                      <select
-                        value={line.payment_method}
-                        onChange={(e) =>
-                          updatePaymentLine(line.id, "payment_method", e.target.value)
-                        }
-                        className="w-full rounded-xl border px-3 py-3 text-sm"
-                      >
-                        {PAYMENT_METHOD_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-1 block text-xs font-medium text-gray-700">
-                        金額
-                      </label>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={line.amount}
-                        onChange={(e) =>
-                          updatePaymentLine(line.id, "amount", e.target.value)
-                        }
-                        placeholder="例: 5000"
-                        className="w-full rounded-xl border px-3 py-3 text-sm"
-                      />
-                    </div>
-
-                    <div className="flex items-end">
-                      <button
-                        type="button"
-                        onClick={() => removePaymentLine(line.id)}
-                        className="w-full rounded-xl border border-red-200 bg-red-50 px-3 py-3 text-sm font-bold text-red-600"
-                      >
-                        削除
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -715,5 +783,5 @@ export default function EditVisitPage() {
         </form>
       </div>
     </div>
-  )
+  );
 }
