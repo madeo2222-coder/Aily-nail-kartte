@@ -57,6 +57,40 @@ function formatPrice(value: number | null) {
   return `¥${Math.round(value).toLocaleString("ja-JP")}`;
 }
 
+function formatDate(value: string | null) {
+  if (!value) return "-";
+
+  const normalized = value.trim().replace(/\//g, "-");
+  const parsed = new Date(normalized);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString("ja-JP");
+}
+
+function formatDateOnly(value: string | null) {
+  if (!value) return "-";
+
+  const normalized = value.trim().replace(/\//g, "-");
+  const matched = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (matched) {
+    return `${matched[1]}/${Number(matched[2])}/${Number(matched[3])}`;
+  }
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  return `${parsed.getFullYear()}/${parsed.getMonth() + 1}/${parsed.getDate()}`;
+}
+
+function yesNo(value: boolean | null) {
+  if (value === null) return "-";
+  return value ? "確認済み" : "未確認";
+}
+
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -253,20 +287,6 @@ export default function CustomerDetailPage() {
     router.push("/customers");
   }
 
-  function formatDate(date: string | null) {
-    if (!date) return "-";
-
-    const d = new Date(date);
-    if (Number.isNaN(d.getTime())) return date;
-
-    return d.toLocaleString("ja-JP");
-  }
-
-  function yesNo(value: boolean | null) {
-    if (value === null) return "-";
-    return value ? "確認済み" : "未確認";
-  }
-
   function formatPaymentSummary(visit: Visit) {
     const rows = paymentMap[visit.id] ?? [];
 
@@ -285,217 +305,304 @@ export default function CustomerDetailPage() {
   }
 
   if (loading) {
-    return <div className="p-4 pb-24">読み込み中...</div>;
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-[920px] p-4 pb-24">
+          <div className="rounded-[28px] border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
+            読み込み中...
+          </div>
+        </div>
+      </main>
+    );
   }
 
   if (!customer) {
-    return <div className="p-4 pb-24">顧客情報が見つかりません</div>;
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-[920px] p-4 pb-24">
+          <div className="rounded-[28px] border border-rose-100 bg-white p-6 text-sm text-gray-500 shadow-sm">
+            顧客情報が見つかりません
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
-    <div className="space-y-4 p-4 pb-24">
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => router.push("/customers")}
-          className="text-sm text-gray-600 underline"
-        >
-          ← 顧客一覧に戻る
-        </button>
-
-        <div className="flex gap-2">
-          <Link
-            href={`/customers/${customerId}/edit`}
-            className="rounded bg-blue-600 px-3 py-2 text-sm text-white"
-          >
-            編集
-          </Link>
-          <button
-            onClick={handleDeleteCustomer}
-            className="rounded bg-red-600 px-3 py-2 text-sm text-white"
-          >
-            削除
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border bg-white p-4 shadow-sm">
-        <h1 className="text-xl font-bold">{customer.name}</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          フリガナ: {customer.name_kana || "-"}
-        </p>
-        <p className="mt-2 text-sm text-gray-600">
-          電話番号: {customer.phone || "-"}
-        </p>
-      </div>
-
-      <div className="rounded-2xl border bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-lg font-bold">初回カウンセリング</h2>
-
-        {intake ? (
-          <div className="space-y-4 text-sm">
+    <main className="min-h-screen bg-rose-50/40">
+      <div className="mx-auto max-w-[920px] space-y-4 p-4 pb-24">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <p className="font-semibold text-gray-700">アレルギー情報</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {intake.allergy || "-"}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">皮膚トラブル</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {intake.skin_trouble || "-"}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">体質</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {intake.constitution || "-"}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">
-                施術NG項目・避けてほしいこと
+              <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+                NAILY AIDOL
               </p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {intake.avoid_items || "-"}
+              <h1 className="mt-2 text-2xl font-bold">顧客詳細ページ</h1>
+              <p className="mt-2 text-sm leading-6 text-white/90">
+                お客様情報、初回カウンセリング、来店履歴をまとめて確認できます。
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => router.push("/customers")}
+                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                顧客ページへ
+              </button>
+
+              <Link
+                href={`/customers/${customerId}/edit`}
+                className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+              >
+                編集
+              </Link>
+
+              <button
+                onClick={handleDeleteCustomer}
+                className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+              >
+                削除
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <div className="mb-4">
+            <div className="text-lg font-bold text-slate-900">{customer.name}</div>
+            <div className="mt-1 text-sm text-slate-500">
+              基本情報を確認できます。
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">お名前</div>
+              <div className="mt-2 text-base font-bold text-slate-900">
+                {customer.name || "-"}
               </div>
             </div>
 
-            <div>
-              <p className="font-semibold text-gray-700">初回記録の氏名</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {intake.name || "-"}
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">フリガナ</div>
+              <div className="mt-2 text-base font-bold text-slate-900">
+                {customer.name_kana || "-"}
               </div>
             </div>
 
-            <div>
-              <p className="font-semibold text-gray-700">初回記録の電話番号</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {intake.phone || "-"}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">生年月日</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {formatDate(intake.birth_date)}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">注意事項確認</p>
-              <div className="mt-1 space-y-1 rounded bg-gray-50 p-3">
-                <p>体調不良・感染症など: {yesNo(intake.check_health)}</p>
-                <p>反応リスク確認: {yesNo(intake.check_reaction)}</p>
-                <p>返金ポリシー確認: {yesNo(intake.check_refund)}</p>
-                <p>持病・妊娠・服薬申告: {yesNo(intake.check_condition)}</p>
-                <p>写真撮影確認: {yesNo(intake.check_photo)}</p>
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">署名者名</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {intake.signer_name || "-"}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">署名</p>
-              <div className="mt-1 rounded bg-gray-50 p-3">
-                {intake.signature_data_url ? (
-                  <img
-                    src={intake.signature_data_url}
-                    alt="署名"
-                    className="max-h-64 w-full rounded border bg-white object-contain"
-                  />
-                ) : (
-                  <div>-</div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <p className="font-semibold text-gray-700">送信日時</p>
-              <div className="mt-1 whitespace-pre-wrap rounded bg-gray-50 p-3">
-                {formatDate(intake.submitted_at)}
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">電話番号</div>
+              <div className="mt-2 text-base font-bold text-slate-900">
+                {customer.phone || "-"}
               </div>
             </div>
           </div>
-        ) : (
-          <p className="text-sm text-gray-500">
-            初回カウンセリング情報はまだ登録されていません
-          </p>
-        )}
-      </div>
+        </section>
 
-      <div className="rounded-2xl border bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold">来店履歴</h2>
-          <Link
-            href={`/visits/new?customer_id=${customerId}`}
-            className="rounded bg-black px-3 py-2 text-sm text-white"
-          >
-            来店履歴を追加
-          </Link>
-        </div>
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold text-slate-900">初回カウンセリング</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              初回来店時の確認内容や署名情報をまとめています。
+            </p>
+          </div>
 
-        {visits.length === 0 ? (
-          <p className="text-sm text-gray-500">来店履歴はまだありません</p>
-        ) : (
-          <div className="space-y-3">
-            {visits.map((visit) => (
-              <div key={visit.id} className="rounded-xl border p-3">
-                <p className="text-sm">
-                  <span className="font-semibold">来店日:</span>{" "}
-                  {formatDate(visit.visit_date)}
-                </p>
+          {intake ? (
+            <div className="space-y-4 text-sm">
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">アレルギー情報</p>
+                  <div className="mt-2 whitespace-pre-wrap rounded-2xl bg-white p-3 text-slate-700">
+                    {intake.allergy || "-"}
+                  </div>
+                </div>
 
-                <p className="mt-1 text-sm">
-                  <span className="font-semibold">売上:</span>{" "}
-                  {formatPrice(visit.price)}
-                </p>
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">皮膚トラブル</p>
+                  <div className="mt-2 whitespace-pre-wrap rounded-2xl bg-white p-3 text-slate-700">
+                    {intake.skin_trouble || "-"}
+                  </div>
+                </div>
 
-                <p className="mt-1 text-sm">
-                  <span className="font-semibold">支払い方法:</span>{" "}
-                  {visit.payment_method || "未設定"}
-                </p>
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">体質</p>
+                  <div className="mt-2 whitespace-pre-wrap rounded-2xl bg-white p-3 text-slate-700">
+                    {intake.constitution || "-"}
+                  </div>
+                </div>
 
-                <p className="mt-1 text-sm">
-                  <span className="font-semibold">支払い内訳:</span>{" "}
-                  {formatPaymentSummary(visit)}
-                </p>
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">
+                    施術NG項目・避けてほしいこと
+                  </p>
+                  <div className="mt-2 whitespace-pre-wrap rounded-2xl bg-white p-3 text-slate-700">
+                    {intake.avoid_items || "-"}
+                  </div>
+                </div>
 
-                <p className="mt-1 text-sm">
-                  <span className="font-semibold">メモ:</span>{" "}
-                  {visit.memo?.trim() ? visit.memo : "-"}
-                </p>
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">初回記録のお名前</p>
+                  <div className="mt-2 rounded-2xl bg-white p-3 text-slate-700">
+                    {intake.name || "-"}
+                  </div>
+                </div>
 
-                <p className="mt-1 text-sm">
-                  <span className="font-semibold">次回来店予定:</span>{" "}
-                  {formatDate(visit.next_visit_date)}
-                </p>
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">初回記録の電話番号</p>
+                  <div className="mt-2 rounded-2xl bg-white p-3 text-slate-700">
+                    {intake.phone || "-"}
+                  </div>
+                </div>
 
-                <p className="mt-1 text-sm">
-                  <span className="font-semibold">次回提案:</span>{" "}
-                  {visit.next_proposal?.trim() ? visit.next_proposal : "-"}
-                </p>
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">生年月日</p>
+                  <div className="mt-2 rounded-2xl bg-white p-3 text-slate-700">
+                    {formatDate(intake.birth_date)}
+                  </div>
+                </div>
 
-                <div className="mt-3">
-                  <Link
-                    href={`/visits/${visit.id}/edit`}
-                    className="inline-block rounded bg-blue-600 px-3 py-2 text-sm text-white"
-                  >
-                    この来店履歴を編集
-                  </Link>
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <p className="font-semibold text-slate-700">署名者名</p>
+                  <div className="mt-2 rounded-2xl bg-white p-3 text-slate-700">
+                    {intake.signer_name || "-"}
+                  </div>
                 </div>
               </div>
-            ))}
+
+              <div className="rounded-3xl bg-rose-50 p-4">
+                <p className="font-semibold text-slate-700">注意事項確認</p>
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  <div className="rounded-2xl bg-white p-3 text-slate-700">
+                    体調不良・感染症など: {yesNo(intake.check_health)}
+                  </div>
+                  <div className="rounded-2xl bg-white p-3 text-slate-700">
+                    反応リスク確認: {yesNo(intake.check_reaction)}
+                  </div>
+                  <div className="rounded-2xl bg-white p-3 text-slate-700">
+                    返金ポリシー確認: {yesNo(intake.check_refund)}
+                  </div>
+                  <div className="rounded-2xl bg-white p-3 text-slate-700">
+                    持病・妊娠・服薬申告: {yesNo(intake.check_condition)}
+                  </div>
+                  <div className="rounded-2xl bg-white p-3 text-slate-700 md:col-span-2">
+                    写真撮影確認: {yesNo(intake.check_photo)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl bg-rose-50 p-4">
+                <p className="font-semibold text-slate-700">署名</p>
+                <div className="mt-2 rounded-2xl bg-white p-3">
+                  {intake.signature_data_url ? (
+                    <img
+                      src={intake.signature_data_url}
+                      alt="署名"
+                      className="max-h-64 w-full rounded-2xl border bg-white object-contain"
+                    />
+                  ) : (
+                    <div className="text-slate-500">-</div>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-3xl bg-rose-50 p-4">
+                <p className="font-semibold text-slate-700">送信日時</p>
+                <div className="mt-2 rounded-2xl bg-white p-3 text-slate-700">
+                  {formatDate(intake.submitted_at)}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-3xl bg-rose-50 p-4 text-sm text-slate-500">
+              初回カウンセリング情報はまだ登録されていません
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">来店履歴</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                来店日や売上、次回来店予定を確認できます。
+              </p>
+            </div>
+
+            <Link
+              href={`/visits/new?customer_id=${customerId}`}
+              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+            >
+              来店履歴を追加
+            </Link>
           </div>
-        )}
+
+          {visits.length === 0 ? (
+            <div className="rounded-3xl bg-rose-50 p-4 text-sm text-slate-500">
+              来店履歴はまだありません
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {visits.map((visit) => (
+                <div
+                  key={visit.id}
+                  className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="text-base font-bold text-slate-900">
+                        来店日 {formatDateOnly(visit.visit_date)}
+                      </div>
+                      <div className="text-sm text-slate-500">
+                        次回の提案やお会計内容も確認できます。
+                      </div>
+                    </div>
+
+                    <Link
+                      href={`/visits/${visit.id}/edit`}
+                      className="shrink-0 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-600"
+                    >
+                      編集
+                    </Link>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                    <div>
+                      <span className="font-medium">売上:</span>{" "}
+                      {formatPrice(visit.price)}
+                    </div>
+
+                    <div>
+                      <span className="font-medium">支払い方法:</span>{" "}
+                      {visit.payment_method || "未設定"}
+                    </div>
+
+                    <div>
+                      <span className="font-medium">支払い内訳:</span>{" "}
+                      {formatPaymentSummary(visit)}
+                    </div>
+
+                    <div>
+                      <span className="font-medium">メモ:</span>{" "}
+                      {visit.memo?.trim() ? visit.memo : "-"}
+                    </div>
+
+                    <div>
+                      <span className="font-medium">次回来店予定:</span>{" "}
+                      {formatDateOnly(visit.next_visit_date)}
+                    </div>
+
+                    <div>
+                      <span className="font-medium">次回提案:</span>{" "}
+                      {visit.next_proposal?.trim() ? visit.next_proposal : "-"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

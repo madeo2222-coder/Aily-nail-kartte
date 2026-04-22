@@ -54,18 +54,18 @@ const subCards = [
 
 export default function OwnerDashboardPage() {
   return (
-    <main className="min-h-screen bg-neutral-50 p-4 pb-24">
+    <main className="min-h-screen bg-stone-50 p-4 pb-24">
       <div className="mx-auto max-w-5xl space-y-5">
-        <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 p-6 text-white shadow">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-900 via-slate-800 to-stone-700 p-6 text-white shadow-sm">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
             <div>
-              <p className="text-xs font-bold tracking-[0.2em] text-white/70">
+              <p className="text-xs font-bold tracking-[0.22em] text-white/70">
                 NAILY AIDOL
               </p>
               <h1 className="mt-2 text-3xl font-bold">オーナー向け経営ボード</h1>
-              <p className="mt-3 text-sm leading-7 text-slate-200">
+              <p className="mt-3 text-sm leading-7 text-stone-200">
                 オーナー・経理・税理士向けの導線をまとめたページです。
-                現場スタッフ用のホームとは分けて、必要な数字確認と提出作業へすぐ進めます。
+                現場スタッフ用ホームとは分けて、数字確認や提出作業へすぐ進めるようにしています。
               </p>
             </div>
 
@@ -76,14 +76,14 @@ export default function OwnerDashboardPage() {
               スタッフホームへ戻る
             </Link>
           </div>
-        </div>
+        </section>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <section className="grid gap-4 md:grid-cols-2">
           {mainCards.map((card) => (
             <Link
               key={card.href}
               href={card.href}
-              className="group rounded-3xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5"
+              className="group rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:bg-stone-50"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -101,12 +101,12 @@ export default function OwnerDashboardPage() {
               </div>
             </Link>
           ))}
-        </div>
+        </section>
 
-        <div className="rounded-3xl border bg-white p-5 shadow-sm">
+        <section className="rounded-[28px] border border-stone-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">その他の経営メニュー</h2>
           <p className="mt-1 text-sm text-slate-500">
-            月次確認や補助的な確認導線です。
+            月次確認や補助的な確認導線をまとめています。
           </p>
 
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -114,7 +114,7 @@ export default function OwnerDashboardPage() {
               <Link
                 key={card.href}
                 href={card.href}
-                className="rounded-2xl bg-slate-50 p-4 transition hover:bg-slate-100"
+                className="rounded-2xl bg-stone-50 p-4 transition hover:bg-stone-100"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -130,16 +130,16 @@ export default function OwnerDashboardPage() {
               </Link>
             ))}
           </div>
-        </div>
+        </section>
 
-        <div className="rounded-3xl border bg-amber-50 p-5 shadow-sm">
+        <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 shadow-sm">
           <h2 className="text-base font-bold text-amber-900">使い分けの考え方</h2>
           <div className="mt-3 space-y-2 text-sm leading-6 text-amber-800">
             <p>・スタッフは /dashboard を中心に使う</p>
             <p>・オーナー、経理、税理士導線は /owner-dashboard を使う</p>
             <p>・税理士提出や月次確認はこのページからまとめて入る</p>
           </div>
-        </div>
+        </section>
       </div>
     </main>
   );

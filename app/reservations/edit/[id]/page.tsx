@@ -103,7 +103,8 @@ export default function EditReservationPage() {
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [status, setStatus] = useState<"予約" | "来店" | "完了" | "キャンセル">("予約");
+  const [status, setStatus] =
+    useState<"予約" | "来店" | "完了" | "キャンセル">("予約");
   const [memo, setMemo] = useState("");
 
   async function loadPageData() {
@@ -116,58 +117,46 @@ export default function EditReservationPage() {
     setLoading(true);
     setErrorMessage("");
 
-    const [reservationRes, salonsRes, customersRes, staffsRes] = await Promise.all([
-      supabase
-        .from("reservations")
-        .select("id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo")
-        .eq("id", reservationId)
-        .single(),
-      supabase
-        .from("salons")
-        .select("id, name")
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("customers")
-        .select("id, name, salon_id")
-        .order("name", { ascending: true }),
-      supabase
-        .from("staffs")
-        .select("id, name, salon_id")
-        .order("created_at", { ascending: true }),
-    ]);
+    const [reservationRes, salonsRes, customersRes, staffsRes] =
+      await Promise.all([
+        supabase
+          .from("reservations")
+          .select(
+            "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo"
+          )
+          .eq("id", reservationId)
+          .single(),
+        supabase
+          .from("salons")
+          .select("id, name")
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("customers")
+          .select("id, name, salon_id")
+          .order("name", { ascending: true }),
+        supabase
+          .from("staffs")
+          .select("id, name, salon_id")
+          .order("created_at", { ascending: true }),
+      ]);
 
-    if (reservationRes.error || !reservationRes.data) {
+    if (
+      reservationRes.error ||
+      !reservationRes.data ||
+      salonsRes.error ||
+      customersRes.error ||
+      staffsRes.error
+    ) {
       setErrorMessage("予約情報の取得に失敗しました");
       setLoading(false);
       return;
     }
 
-    if (salonsRes.error) {
-      setErrorMessage("サロン情報の取得に失敗しました");
-      setLoading(false);
-      return;
-    }
-
-    if (customersRes.error) {
-      setErrorMessage("顧客情報の取得に失敗しました");
-      setLoading(false);
-      return;
-    }
-
-    if (staffsRes.error) {
-      setErrorMessage("スタッフ情報の取得に失敗しました");
-      setLoading(false);
-      return;
-    }
-
     const reservation = reservationRes.data as ReservationDetail;
-    const salonList = (salonsRes.data ?? []) as Salon[];
-    const customerList = (customersRes.data ?? []) as Customer[];
-    const staffList = (staffsRes.data ?? []) as Staff[];
 
-    setSalons(salonList);
-    setAllCustomers(customerList);
-    setAllStaffs(staffList);
+    setSalons((salonsRes.data ?? []) as Salon[]);
+    setAllCustomers((customersRes.data ?? []) as Customer[]);
+    setAllStaffs((staffsRes.data ?? []) as Staff[]);
 
     setSalonId(reservation.salon_id ?? "");
     setCustomerId(reservation.customer_id ?? "");
@@ -176,7 +165,13 @@ export default function EditReservationPage() {
     setDate(extractDate(reservation.start_at));
     setStartTime(extractTime(reservation.start_at));
     setEndTime(extractTime(reservation.end_at));
-    setStatus(normalizeStatus(reservation.status) as "予約" | "来店" | "完了" | "キャンセル");
+    setStatus(
+      normalizeStatus(reservation.status) as
+        | "予約"
+        | "来店"
+        | "完了"
+        | "キャンセル"
+    );
     setMemo(reservation.memo ?? "");
 
     setLoading(false);
@@ -187,97 +182,41 @@ export default function EditReservationPage() {
   }, [reservationId]);
 
   const filteredCustomers = useMemo(() => {
-    return allCustomers.filter((item) => (salonId ? item.salon_id === salonId : true));
+    return allCustomers.filter((item) =>
+      salonId ? item.salon_id === salonId : true
+    );
   }, [allCustomers, salonId]);
 
   const filteredStaffs = useMemo(() => {
-    return allStaffs.filter((item) => (salonId ? item.salon_id === salonId : true));
+    return allStaffs.filter((item) =>
+      salonId ? item.salon_id === salonId : true
+    );
   }, [allStaffs, salonId]);
 
   function handleSalonChange(nextSalonId: string) {
     setSalonId(nextSalonId);
-
-    const nextCustomers = allCustomers.filter((item) =>
-      nextSalonId ? item.salon_id === nextSalonId : true
-    );
-    const nextStaffs = allStaffs.filter((item) =>
-      nextSalonId ? item.salon_id === nextSalonId : true
-    );
-
-    const customerExists = nextCustomers.some((item) => item.id === customerId);
-    const staffExists = nextStaffs.some((item) => item.id === staffId);
-
-    setCustomerId(customerExists ? customerId : nextCustomers[0]?.id ?? "");
-    setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
-  }
-
-  function handleCustomerChange(nextCustomerId: string) {
-    setCustomerId(nextCustomerId);
-
-    const selectedCustomer =
-      allCustomers.find((item) => item.id === nextCustomerId) ?? null;
-
-    if (!selectedCustomer?.salon_id) return;
-
-    if (selectedCustomer.salon_id !== salonId) {
-      const nextSalonId = selectedCustomer.salon_id;
-      setSalonId(nextSalonId);
-
-      const nextStaffs = allStaffs.filter((item) => item.salon_id === nextSalonId);
-      const staffExists = nextStaffs.some((item) => item.id === staffId);
-      setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
-    }
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    if (!reservationId) {
-      setErrorMessage("予約IDが取得できませんでした");
-      return;
-    }
+    if (!reservationId) return;
 
-    setSaving(true);
-    setErrorMessage("");
-
-    if (!salonId) {
-      setErrorMessage("サロンを選択してください");
-      setSaving(false);
-      return;
-    }
-
-    if (!customerId) {
-      setErrorMessage("顧客を選択してください");
-      setSaving(false);
-      return;
-    }
-
-    if (!staffId) {
-      setErrorMessage("スタッフを選択してください");
-      setSaving(false);
-      return;
-    }
-
-    if (!date || !startTime || !endTime) {
-      setErrorMessage("日時を入力してください");
-      setSaving(false);
+    if (!salonId || !customerId || !staffId || !date || !startTime || !endTime) {
+      setErrorMessage("必要項目を入力してください");
       return;
     }
 
     const startAt = buildDateTime(date, startTime);
     const endAt = buildDateTime(date, endTime);
 
-    if (!startAt || !endAt) {
-      setErrorMessage("日時の形式が正しくありません");
-      setSaving(false);
+    if (!startAt || !endAt || startAt >= endAt) {
+      setErrorMessage("日時を正しく入力してください");
       return;
     }
 
-    if (startAt >= endAt) {
-      setErrorMessage("終了時間は開始時間より後にしてください");
-      setSaving(false);
-      return;
-    }
+    setSaving(true);
+    setErrorMessage("");
 
     const { error } = await supabase
       .from("reservations")
@@ -293,240 +232,233 @@ export default function EditReservationPage() {
       })
       .eq("id", reservationId);
 
-    if (error) {
-      setErrorMessage("予約の更新に失敗しました");
-      setSaving(false);
-      return;
-    }
-
     setSaving(false);
 
-    if (customerId) {
-      router.push(`/customers/${customerId}`);
+    if (error) {
+      setErrorMessage("予約の更新に失敗しました");
       return;
     }
 
-    router.push("/reservations");
+    router.push(customerId ? `/customers/${customerId}` : "/reservations");
   }
 
   async function handleDelete() {
-    if (!reservationId) {
-      setErrorMessage("予約IDが取得できませんでした");
-      return;
-    }
+    if (!reservationId) return;
 
     const confirmed = window.confirm("この予約を削除しますか？");
     if (!confirmed) return;
 
     setDeleting(true);
-    setErrorMessage("");
-
-    const currentCustomerId = customerId;
 
     const { error } = await supabase
       .from("reservations")
       .delete()
       .eq("id", reservationId);
 
-    if (error) {
-      setErrorMessage("予約の削除に失敗しました");
-      setDeleting(false);
-      return;
-    }
-
     setDeleting(false);
 
-    if (currentCustomerId) {
-      router.push(`/customers/${currentCustomerId}`);
+    if (error) {
+      setErrorMessage("予約の削除に失敗しました");
       return;
     }
 
-    router.push("/reservations");
+    router.push(customerId ? `/customers/${customerId}` : "/reservations");
   }
 
   const backHref = customerId ? `/customers/${customerId}` : "/reservations";
 
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-6">
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">予約編集</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            更新後は顧客詳細へ戻れるようにしています
-          </p>
-        </div>
-
-        <Link
-          href={backHref}
-          className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
-        >
-          戻る
-        </Link>
-      </div>
-
-      {loading ? (
-        <div className="rounded-lg border bg-white p-6">
-          <p>読み込み中...</p>
-        </div>
-      ) : (
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-5 rounded-lg border bg-white p-4 sm:p-6"
-        >
-          {errorMessage ? (
-            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">サロン</label>
-            <select
-              value={salonId}
-              onChange={(e) => handleSalonChange(e.target.value)}
-              className="w-full rounded border px-3 py-2"
-            >
-              <option value="">選択してください</option>
-              {salons.map((salon) => (
-                <option key={salon.id} value={salon.id}>
-                  {salon.name ?? "名称未設定"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">顧客</label>
-            <select
-              value={customerId}
-              onChange={(e) => handleCustomerChange(e.target.value)}
-              className="w-full rounded border px-3 py-2"
-            >
-              <option value="">選択してください</option>
-              {filteredCustomers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name ?? "名前未登録"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">担当スタッフ</label>
-            <select
-              value={staffId}
-              onChange={(e) => setStaffId(e.target.value)}
-              className="w-full rounded border px-3 py-2"
-            >
-              <option value="">選択してください</option>
-              {filteredStaffs.map((staff) => (
-                <option key={staff.id} value={staff.id}>
-                  {staff.name ?? "名前未登録"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">メニュー</label>
-            <input
-              type="text"
-              value={menu}
-              onChange={(e) => setMenu(e.target.value)}
-              placeholder="ワンカラー / 定額デザイン など"
-              className="w-full rounded border px-3 py-2"
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
+    <main className="min-h-screen bg-rose-50/40">
+      <div className="mx-auto max-w-3xl space-y-4 p-4 pb-24 sm:p-6">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <label className="mb-2 block text-sm font-medium">日付</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded border px-3 py-2"
-              />
+              <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+                NAILY AIDOL
+              </p>
+              <h1 className="mt-2 text-2xl font-bold">予約編集ページ</h1>
+              <p className="mt-2 text-sm leading-6 text-white/90">
+                ご予約内容の変更・削除ができるページです。
+              </p>
             </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium">開始時間</label>
-              <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full rounded border px-3 py-2"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium">終了時間</label>
-              <input
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                className="w-full rounded border px-3 py-2"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">状態</label>
-            <select
-              value={status}
-              onChange={(e) =>
-                setStatus(
-                  e.target.value as "予約" | "来店" | "完了" | "キャンセル"
-                )
-              }
-              className="w-full rounded border px-3 py-2"
-            >
-              {STATUS_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium">メモ</label>
-            <textarea
-              value={memo}
-              onChange={(e) => setMemo(e.target.value)}
-              rows={4}
-              className="w-full rounded border px-3 py-2"
-              placeholder="要望や補足があれば入力"
-            />
-          </div>
-
-          <div className="flex flex-wrap gap-3 pt-2">
-            <button
-              type="submit"
-              disabled={saving}
-              className="rounded bg-black px-5 py-2 text-white disabled:opacity-60"
-            >
-              {saving ? "更新中..." : "更新する"}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="rounded border border-red-300 px-5 py-2 text-red-600 hover:bg-red-50 disabled:opacity-60"
-            >
-              {deleting ? "削除中..." : "削除する"}
-            </button>
 
             <Link
               href={backHref}
-              className="rounded border px-5 py-2 hover:bg-gray-50"
+              className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600"
             >
-              キャンセル
+              戻る
             </Link>
           </div>
-        </form>
-      )}
-    </div>
+        </section>
+
+        {loading ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
+            読み込み中...
+          </section>
+        ) : (
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-4 rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6"
+          >
+            {errorMessage ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+                {errorMessage}
+              </div>
+            ) : null}
+
+            <div className="grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  サロン
+                </label>
+                <select
+                  value={salonId}
+                  onChange={(e) => handleSalonChange(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                >
+                  <option value="">選択してください</option>
+                  {salons.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name || "名称未設定"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  顧客
+                </label>
+                <select
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                >
+                  <option value="">選択してください</option>
+                  {filteredCustomers.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name || "名前未登録"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  担当スタッフ
+                </label>
+                <select
+                  value={staffId}
+                  onChange={(e) => setStaffId(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                >
+                  <option value="">選択してください</option>
+                  {filteredStaffs.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name || "名前未登録"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  メニュー
+                </label>
+                <input
+                  value={menu}
+                  onChange={(e) => setMenu(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                />
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                />
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  className="rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  状態
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) =>
+                    setStatus(
+                      e.target.value as
+                        | "予約"
+                        | "来店"
+                        | "完了"
+                        | "キャンセル"
+                    )
+                  }
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                >
+                  {STATUS_OPTIONS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  メモ
+                </label>
+                <textarea
+                  rows={4}
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {saving ? "更新中..." : "更新する"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
+              >
+                {deleting ? "削除中..." : "削除する"}
+              </button>
+
+              <Link
+                href={backHref}
+                className="rounded-2xl border border-rose-200 bg-white py-4 text-center text-sm font-bold text-slate-700"
+              >
+                キャンセル
+              </Link>
+            </div>
+          </form>
+        )}
+      </div>
+    </main>
   );
 }

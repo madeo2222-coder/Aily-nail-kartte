@@ -90,66 +90,117 @@ export default function CustomerEditPage() {
   }
 
   if (fetching) {
-    return <div className="p-4 pb-24">読み込み中...</div>;
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-2xl p-4 pb-24">
+          <div className="rounded-[28px] border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
+            読み込み中...
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-4 pb-24">
-      <h1 className="mb-6 text-2xl font-bold">顧客情報を編集</h1>
+    <main className="min-h-screen bg-rose-50/40">
+      <div className="mx-auto max-w-2xl space-y-4 p-4 pb-24">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+                NAILY AIDOL
+              </p>
+              <h1 className="mt-2 text-2xl font-bold">顧客編集ページ</h1>
+              <p className="mt-2 text-sm leading-6 text-white/90">
+                お客様の基本情報を、見やすく整えて更新できるページです。
+              </p>
+            </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="rounded-2xl bg-white p-4 shadow">
-          <label className="mb-2 block text-sm font-medium">名前</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-xl border px-4 py-3"
-            placeholder="顧客名"
-          />
-        </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => router.push(`/customers/${customerId}`)}
+                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                顧客詳細へ
+              </button>
+            </div>
+          </div>
+        </section>
 
-        <div className="rounded-2xl bg-white p-4 shadow">
-          <label className="mb-2 block text-sm font-medium">フリガナ</label>
-          <input
-            type="text"
-            value={nameKana}
-            onChange={(e) => setNameKana(e.target.value)}
-            className="w-full rounded-xl border px-4 py-3"
-            placeholder="ヤマダ ハナコ"
-          />
-        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+            <div className="mb-4">
+              <h2 className="text-lg font-bold text-slate-900">基本情報</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                名前、フリガナ、電話番号を更新できます。
+              </p>
+            </div>
 
-        <div className="rounded-2xl bg-white p-4 shadow">
-          <label className="mb-2 block text-sm font-medium">電話番号</label>
-          <input
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            className="w-full rounded-xl border px-4 py-3"
-            placeholder="09012345678 または +819012345678"
-          />
-          <p className="mt-2 text-xs text-gray-500">
-            保存時に 090 形式は自動で +81 形式へ変換します
-          </p>
-        </div>
+            <div className="space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  名前
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  placeholder="顧客名"
+                />
+              </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-xl bg-black py-3 font-medium text-white"
-        >
-          {loading ? "更新中..." : "更新する"}
-        </button>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  フリガナ
+                </label>
+                <input
+                  type="text"
+                  value={nameKana}
+                  onChange={(e) => setNameKana(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  placeholder="ヤマダ ハナコ"
+                />
+              </div>
 
-        <button
-          type="button"
-          onClick={() => router.push(`/customers/${customerId}`)}
-          className="w-full rounded-xl border border-gray-300 bg-white py-3 font-medium"
-        >
-          戻る
-        </button>
-      </form>
-    </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  電話番号
+                </label>
+                <input
+                  type="tel"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  placeholder="09012345678 または +819012345678"
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  保存時に 090 形式は自動で +81 形式へ変換します
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {loading ? "更新中..." : "更新する"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => router.push(`/customers/${customerId}`)}
+              className="w-full rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600"
+            >
+              戻る
+            </button>
+          </div>
+        </form>
+      </div>
+    </main>
   );
 }

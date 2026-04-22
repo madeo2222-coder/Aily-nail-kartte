@@ -49,6 +49,14 @@ function getCustomerName(customers: CustomerRelation) {
 
 function formatDate(value: string | null) {
   if (!value) return "未設定";
+
+  const normalized = value.trim().replace(/\//g, "-");
+  const matched = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (matched) {
+    return `${matched[1]}/${Number(matched[2])}/${Number(matched[3])}`;
+  }
+
   return value;
 }
 
@@ -373,13 +381,21 @@ export default function VisitsPageClient() {
   }
 
   if (loading) {
-    return <div className="p-4 pb-24">読み込み中...</div>;
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-[920px] p-4 pb-24">
+          <div className="rounded-[28px] border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
+            読み込み中...
+          </div>
+        </div>
+      </main>
+    );
   }
 
   const previewContent = (
     <div className="print-area bg-white text-slate-900">
-      <div className="mx-auto max-w-4xl rounded-2xl bg-white p-8 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
-        <div className="pdf-cover flex min-h-[88vh] flex-col justify-center rounded-2xl border bg-white px-8 py-16 text-center print:rounded-none">
+      <div className="mx-auto max-w-4xl rounded-3xl bg-white p-8 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+        <div className="pdf-cover flex min-h-[88vh] flex-col justify-center rounded-3xl border bg-white px-8 py-16 text-center print:rounded-none">
           <div className="mb-3 text-sm tracking-[0.18em] text-slate-400">
             VISIT REPORT
           </div>
@@ -405,7 +421,7 @@ export default function VisitsPageClient() {
           <div className="mt-12 text-sm text-slate-400">Naily AiDOL</div>
         </div>
 
-        <div className="mt-6 rounded-2xl border bg-white p-5 print:mt-0 print:rounded-none">
+        <div className="mt-6 rounded-3xl border bg-white p-5 print:mt-0 print:rounded-none">
           <div className="mb-4 flex items-start justify-between gap-4 border-b pb-4">
             <div>
               <div className="text-sm text-slate-500">{BUSINESS_NAME}</div>
@@ -420,21 +436,21 @@ export default function VisitsPageClient() {
           </div>
 
           <div className="pdf-summary-grid mb-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="rounded-2xl border bg-white p-4">
+            <div className="rounded-3xl border bg-white p-4">
               <div className="text-sm text-slate-500">施術件数</div>
               <div className="mt-2 text-2xl font-bold text-slate-900">
                 {visitCount.toLocaleString()}件
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-white p-4">
+            <div className="rounded-3xl border bg-white p-4">
               <div className="text-sm text-slate-500">売上合計</div>
               <div className="mt-2 text-2xl font-bold text-slate-900">
                 {formatPrice(totalSales)}
               </div>
             </div>
 
-            <div className="rounded-2xl border bg-white p-4">
+            <div className="rounded-3xl border bg-white p-4">
               <div className="text-sm text-slate-500">客単価</div>
               <div className="mt-2 text-2xl font-bold text-slate-900">
                 {formatPrice(avgUnitPrice)}
@@ -442,15 +458,15 @@ export default function VisitsPageClient() {
             </div>
           </div>
 
-          <div className="mb-5 rounded-2xl border bg-white p-4">
+          <div className="mb-5 rounded-3xl border bg-white p-4">
             <div className="mb-2 text-sm font-bold text-slate-900">所見</div>
-            <div className="rounded-xl bg-slate-50 p-3 text-sm leading-7 text-slate-700">
+            <div className="rounded-2xl bg-slate-50 p-3 text-sm leading-7 text-slate-700">
               {reportComment}
             </div>
           </div>
 
           {filteredVisits.length === 0 ? (
-            <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">
+            <div className="rounded-3xl border bg-white p-4 text-sm text-gray-500">
               来店履歴がありません
             </div>
           ) : (
@@ -463,7 +479,7 @@ export default function VisitsPageClient() {
                 return (
                   <div
                     key={visit.id}
-                    className="avoid-break rounded-2xl border bg-white p-4"
+                    className="avoid-break rounded-3xl border bg-white p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -475,7 +491,7 @@ export default function VisitsPageClient() {
                         </div>
                       </div>
 
-                      <div className="shrink-0 rounded-xl bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900">
+                      <div className="shrink-0 rounded-2xl bg-slate-50 px-3 py-2 text-sm font-medium text-slate-900">
                         {formatPrice(visit.price)}
                       </div>
                     </div>
@@ -516,237 +532,244 @@ export default function VisitsPageClient() {
 
   return (
     <>
-      <div className="p-4 pb-24 space-y-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">来店一覧</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              対象月を切り替えて、施術実績をPDFまたはCSVで出力できます。
-            </p>
-          </div>
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-[920px] space-y-4 p-4 pb-24">
+          <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+                  NAILY AIDOL
+                </p>
+                <h1 className="mt-2 text-2xl font-bold">来店ページ</h1>
+                <p className="mt-2 text-sm leading-6 text-white/90">
+                  来店履歴や施術実績を、月ごとに見やすく確認できるページです。
+                </p>
+              </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
-              対象月: {selectedMonthLabel}
-            </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white/85 px-3 py-1 text-xs font-bold text-rose-600">
+                  対象月: {selectedMonthLabel}
+                </span>
 
-            <button
-              type="button"
-              onClick={handleExportSalesCsv}
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow hover:bg-slate-50"
-            >
-              売上明細CSV
-            </button>
+                <button
+                  type="button"
+                  onClick={handleExportSalesCsv}
+                  className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+                >
+                  売上明細CSV
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setIsPreviewOpen(true)}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow hover:bg-slate-800"
-            >
-              PDFプレビュー
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setIsPreviewOpen(true)}
+                  className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+                >
+                  PDFプレビュー
+                </button>
 
-            <Link
-              href="/visits/new"
-              className="rounded-lg bg-black px-4 py-2 text-sm text-white"
-            >
-              来店履歴を追加
-            </Link>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="mb-3">
-            <div className="text-sm font-bold text-slate-900">対象月クイック選択</div>
-            <div className="mt-1 text-xs text-slate-500">
-              今月 / 先月 / 任意月 をすぐ切り替えできます。
+                <Link
+                  href="/visits/new"
+                  className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+                >
+                  来店履歴を追加
+                </Link>
+              </div>
             </div>
-          </div>
+          </section>
 
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickSelect("current")}
-              disabled={!hasCurrentMonth}
-              className={`rounded-lg px-4 py-2 text-sm font-bold ${
-                quickSelectMode === "current"
-                  ? "bg-blue-600 text-white"
-                  : "border bg-white text-slate-700"
-              } disabled:opacity-50`}
-            >
-              今月
-            </button>
+          <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+            <div className="mb-3">
+              <div className="text-sm font-bold text-slate-900">対象月クイック選択</div>
+              <div className="mt-1 text-xs text-slate-500">
+                今月 / 先月 / 任意月 をすぐ切り替えできます。
+              </div>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => handleQuickSelect("previous")}
-              disabled={!hasPreviousMonth}
-              className={`rounded-lg px-4 py-2 text-sm font-bold ${
-                quickSelectMode === "previous"
-                  ? "bg-blue-600 text-white"
-                  : "border bg-white text-slate-700"
-              } disabled:opacity-50`}
-            >
-              先月
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setQuickSelectMode("custom")}
-              className={`rounded-lg px-4 py-2 text-sm font-bold ${
-                quickSelectMode === "custom"
-                  ? "bg-blue-600 text-white"
-                  : "border bg-white text-slate-700"
-              }`}
-            >
-              任意月
-            </button>
-          </div>
-
-          {quickSelectMode === "custom" ? (
-            <div className="mt-4 max-w-xs">
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                任意月を選択
-              </label>
-              <select
-                value={selectedMonth}
-                onChange={(e) => handleCustomMonthChange(e.target.value)}
-                className="w-full rounded-lg border bg-white px-3 py-2"
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleQuickSelect("current")}
+                disabled={!hasCurrentMonth}
+                className={`rounded-2xl px-4 py-2 text-sm font-bold ${
+                  quickSelectMode === "current"
+                    ? "bg-rose-500 text-white"
+                    : "border border-rose-200 bg-white text-rose-600"
+                } disabled:opacity-50`}
               >
-                {monthOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                今月
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleQuickSelect("previous")}
+                disabled={!hasPreviousMonth}
+                className={`rounded-2xl px-4 py-2 text-sm font-bold ${
+                  quickSelectMode === "previous"
+                    ? "bg-rose-500 text-white"
+                    : "border border-rose-200 bg-white text-rose-600"
+                } disabled:opacity-50`}
+              >
+                先月
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setQuickSelectMode("custom")}
+                className={`rounded-2xl px-4 py-2 text-sm font-bold ${
+                  quickSelectMode === "custom"
+                    ? "bg-rose-500 text-white"
+                    : "border border-rose-200 bg-white text-rose-600"
+                }`}
+              >
+                任意月
+              </button>
+            </div>
+
+            {quickSelectMode === "custom" ? (
+              <div className="mt-4 max-w-xs">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  任意月を選択
+                </label>
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => handleCustomMonthChange(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3"
+                >
+                  {monthOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-500">施術件数</div>
+              <div className="mt-2 text-xl font-bold text-slate-900">
+                {visitCount.toLocaleString()}件
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-500">売上合計</div>
+              <div className="mt-2 text-xl font-bold text-slate-900">
+                {formatPrice(totalSales)}
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-500">客単価</div>
+              <div className="mt-2 text-xl font-bold text-slate-900">
+                {formatPrice(avgUnitPrice)}
+              </div>
+            </div>
+          </section>
+
+          {filteredVisits.length === 0 ? (
+            <section className="rounded-[28px] border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
+              来店履歴がありません
+            </section>
+          ) : (
+            <section className="space-y-3">
+              {filteredVisits.map((visit) => {
+                const customerName = getCustomerName(visit.customers);
+                const proposal =
+                  visit.next_proposal || visit.next_suggestion || "未設定";
+
+                return (
+                  <div
+                    key={visit.id}
+                    className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="text-lg font-semibold text-slate-900">
+                          {customerName}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          来店日: {formatDate(visit.visit_date)}
+                        </div>
+                      </div>
+
+                      <Link
+                        href={`/visits/${visit.id}/edit`}
+                        className="shrink-0 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-600"
+                      >
+                        編集
+                      </Link>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-700">
+                      <div>
+                        <span className="font-medium">売上:</span>{" "}
+                        {formatPrice(visit.price)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">支払い:</span>{" "}
+                        {formatPaymentSummary(visit, paymentMap)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">次回来店予定:</span>{" "}
+                        {formatDate(visit.next_visit_date)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">次回提案:</span> {proposal}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">メモ:</span>{" "}
+                        {visit.memo?.trim() ? visit.memo : "なし"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+          )}
+
+          {isPreviewOpen ? (
+            <div className="fixed inset-0 z-50 bg-black/50 p-4 print:bg-white print:p-0">
+              <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl print:max-w-none print:rounded-none print:shadow-none">
+                <div className="preview-toolbar flex items-center justify-between border-b px-4 py-3">
+                  <div>
+                    <div className="text-lg font-bold text-slate-900">PDFプレビュー</div>
+                    <div className="text-sm text-slate-500">
+                      内容を確認してから印刷 / PDF保存できます
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrint}
+                      className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
+                    >
+                      印刷 / PDF保存
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPreviewOpen(false)}
+                      className="rounded-2xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-600 hover:bg-rose-50"
+                    >
+                      閉じる
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto bg-slate-100 p-4 print:overflow-visible print:bg-white print:p-0">
+                  {previewContent}
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">施術件数</div>
-            <div className="mt-2 text-xl font-bold text-slate-900">
-              {visitCount.toLocaleString()}件
-            </div>
-          </div>
-
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">売上合計</div>
-            <div className="mt-2 text-xl font-bold text-slate-900">
-              {formatPrice(totalSales)}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">客単価</div>
-            <div className="mt-2 text-xl font-bold text-slate-900">
-              {formatPrice(avgUnitPrice)}
-            </div>
-          </div>
-        </div>
-
-        {filteredVisits.length === 0 ? (
-          <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500 shadow-sm">
-            来店履歴がありません
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {filteredVisits.map((visit) => {
-              const customerName = getCustomerName(visit.customers);
-              const proposal =
-                visit.next_proposal || visit.next_suggestion || "未設定";
-
-              return (
-                <div
-                  key={visit.id}
-                  className="rounded-2xl border bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="text-lg font-semibold text-slate-900">
-                        {customerName}
-                      </div>
-                      <div className="text-sm text-gray-500">
-                        来店日: {formatDate(visit.visit_date)}
-                      </div>
-                    </div>
-
-                    <Link
-                      href={`/visits/${visit.id}/edit`}
-                      className="shrink-0 rounded-lg border px-3 py-2 text-sm"
-                    >
-                      編集
-                    </Link>
-                  </div>
-
-                  <div className="mt-3 grid grid-cols-1 gap-2 text-sm">
-                    <div>
-                      <span className="font-medium">売上:</span>{" "}
-                      {formatPrice(visit.price)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">支払い:</span>{" "}
-                      {formatPaymentSummary(visit, paymentMap)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">次回来店予定:</span>{" "}
-                      {formatDate(visit.next_visit_date)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">次回提案:</span> {proposal}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">メモ:</span>{" "}
-                      {visit.memo?.trim() ? visit.memo : "なし"}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {isPreviewOpen ? (
-          <div className="fixed inset-0 z-50 bg-black/50 p-4 print:bg-white print:p-0">
-            <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl print:max-w-none print:rounded-none print:shadow-none">
-              <div className="preview-toolbar flex items-center justify-between border-b px-4 py-3">
-                <div>
-                  <div className="text-lg font-bold text-slate-900">PDFプレビュー</div>
-                  <div className="text-sm text-slate-500">
-                    内容を確認してから印刷 / PDF保存できます
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={handlePrint}
-                    className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800"
-                  >
-                    印刷 / PDF保存
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsPreviewOpen(false)}
-                    className="rounded-lg border px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-                  >
-                    閉じる
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto bg-slate-100 p-4 print:overflow-visible print:bg-white print:p-0">
-                {previewContent}
-              </div>
-            </div>
-          </div>
-        ) : null}
-      </div>
+      </main>
 
       <style jsx global>{`
         @page {

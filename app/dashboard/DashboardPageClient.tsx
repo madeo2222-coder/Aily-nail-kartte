@@ -157,7 +157,7 @@ function normalizeMemo(row: ReservationRow) {
 
 function getStatusBadgeClass(status: string) {
   if (status === "予約受付" || status === "予約") {
-    return "bg-blue-100 text-blue-700";
+    return "bg-pink-100 text-pink-700";
   }
   if (status === "来店予定" || status === "来店") {
     return "bg-emerald-100 text-emerald-700";
@@ -371,7 +371,7 @@ export default function DashboardPageClient() {
   }, [monthSales, previousMonthSales]);
 
   const monthDiffLabel =
-    monthDiff > 0 ? "先月より増加" : monthDiff < 0 ? "先月より減少" : "先月と同水準";
+    monthDiff > 0 ? "先月よりアップ" : monthDiff < 0 ? "先月よりダウン" : "先月と同じくらい";
 
   const reservationGroups = useMemo<ReservationGroup[]>(() => {
     const map = new Map<string, TodayReservation[]>();
@@ -396,22 +396,22 @@ export default function DashboardPageClient() {
   }
 
   return (
-    <div className="space-y-4 p-4 pb-24">
-      <div className="overflow-hidden rounded-3xl bg-gradient-to-br from-orange-500 to-amber-400 p-5 text-white shadow">
+    <div className="space-y-4 bg-rose-50/40 p-4 pb-24">
+      <div className="overflow-hidden rounded-[28px] bg-gradient-to-br from-orange-400 via-rose-400 to-pink-400 p-5 text-white shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold tracking-[0.2em] text-white/80">
+            <p className="text-xs font-bold tracking-[0.25em] text-white/80">
               NAILY AIDOL
             </p>
-            <h1 className="mt-2 text-2xl font-bold">スタッフダッシュボード</h1>
+            <h1 className="mt-2 text-2xl font-bold">スタッフページ</h1>
             <p className="mt-2 text-sm leading-6 text-white/90">
-              今日の営業と今月の流れを、すぐ見れる現場向けホームです。
+              今日のご予約やお店の流れを、見やすくまとめた店舗ページです。
             </p>
           </div>
 
           <Link
             href="/visits/new"
-            className="shrink-0 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-orange-600 shadow"
+            className="shrink-0 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
           >
             来店登録
           </Link>
@@ -419,7 +419,7 @@ export default function DashboardPageClient() {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">今日の売上</div>
           <div className="mt-2 text-2xl font-bold text-gray-900">
             {formatYen(todaySales)}
@@ -427,7 +427,7 @@ export default function DashboardPageClient() {
           <div className="mt-2 text-sm text-gray-500">来店数 {todayCount}件</div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">今月の売上</div>
           <div className="mt-2 text-2xl font-bold text-gray-900">
             {formatYen(monthSales)}
@@ -435,11 +435,11 @@ export default function DashboardPageClient() {
           <div className="mt-2 text-sm text-gray-500">{monthDiffLabel}</div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">前月比</div>
           <div
             className={`mt-2 text-2xl font-bold ${
-              monthDiffRate >= 0 ? "text-blue-600" : "text-red-500"
+              monthDiffRate >= 0 ? "text-pink-600" : "text-rose-500"
             }`}
           >
             {monthDiffRate >= 0 ? "+" : ""}
@@ -450,62 +450,65 @@ export default function DashboardPageClient() {
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">未収</div>
           <div className="mt-2 text-2xl font-bold text-gray-900">
             {formatYen(monthReceivables)}
           </div>
-          <div className="mt-2 text-sm text-gray-500">要確認</div>
+          <div className="mt-2 text-sm text-gray-500">確認しておきたい金額</div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">顧客数</div>
           <div className="mt-2 text-2xl font-bold text-gray-900">
             {customersCount}人
           </div>
-          <div className="mt-2 text-sm text-gray-500">累計登録</div>
+          <div className="mt-2 text-sm text-gray-500">登録中のお客様</div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">来店履歴数</div>
           <div className="mt-2 text-2xl font-bold text-gray-900">
             {visitsCount}件
           </div>
           <div className="mt-2 text-sm text-gray-500">
-            次回来店提案 {nextVisitCount}件
+            次回来店のご提案 {nextVisitCount}件
           </div>
         </div>
       </div>
 
-      <div className="rounded-3xl border bg-white p-4 shadow-sm">
+      <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <div className="text-lg font-bold text-gray-900">今日の予定一覧</div>
             <div className="mt-1 text-sm text-gray-500">
-              今日の予約を担当者ごと・状態順・時間順に表示しています。
+              今日のご予約を、担当者ごとに見やすくまとめています。
             </div>
           </div>
 
           <Link
             href="/reservations"
-            className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+            className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-bold text-rose-600"
           >
             予約一覧へ
           </Link>
         </div>
 
         {todayReservations.length === 0 ? (
-          <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">
-            今日の予定はありません
+          <div className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-400">
+            今日の予定はまだありません
           </div>
         ) : (
           <div className="space-y-4">
             {reservationGroups.map((group) => (
-              <div key={group.staffName} className="rounded-2xl border bg-slate-50 p-4">
+              <div
+                key={group.staffName}
+                className="rounded-3xl border border-rose-100 bg-rose-50/50 p-4"
+              >
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-base font-bold text-slate-900">
-                      担当者: {group.staffName}
+                      担当: {group.staffName}
                     </div>
                     <div className="mt-1 text-sm text-slate-500">
                       {group.items.length}件
@@ -517,7 +520,7 @@ export default function DashboardPageClient() {
                   {group.items.map((item) => (
                     <div
                       key={item.id}
-                      className="rounded-2xl border bg-white p-4"
+                      className="rounded-3xl border border-white bg-white p-4"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
@@ -544,7 +547,7 @@ export default function DashboardPageClient() {
                               {item.menuName}
                             </div>
                             <div>
-                              <span className="font-medium">担当者:</span>{" "}
+                              <span className="font-medium">担当:</span>{" "}
                               {item.staffName}
                             </div>
                           </div>
@@ -553,14 +556,14 @@ export default function DashboardPageClient() {
                         <div className="flex flex-wrap gap-2">
                           <Link
                             href={`/reservations/edit/${item.id}`}
-                            className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700"
+                            className="inline-flex items-center justify-center rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-600"
                           >
                             予約編集
                           </Link>
 
                           <Link
                             href={buildVisitLink(item)}
-                            className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white"
+                            className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-4 py-2 text-sm font-bold text-white"
                           >
                             来店登録へ
                           </Link>
@@ -575,12 +578,12 @@ export default function DashboardPageClient() {
         )}
       </div>
 
-      <div className="rounded-3xl border bg-white p-4 shadow-sm">
+      <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <div className="text-lg font-bold text-gray-900">現場メニュー</div>
+            <div className="text-lg font-bold text-gray-900">店舗メニュー</div>
             <div className="mt-1 text-sm text-gray-500">
-              スタッフがよく使う導線を優先しています。
+              お店でよく使うメニューをまとめています。
             </div>
           </div>
         </div>
@@ -588,7 +591,7 @@ export default function DashboardPageClient() {
         <div className="grid grid-cols-3 gap-3">
           <Link
             href="/customers"
-            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
           >
             <div className="text-2xl">👤</div>
             <div className="mt-2 text-sm font-bold text-gray-900">顧客</div>
@@ -596,7 +599,7 @@ export default function DashboardPageClient() {
 
           <Link
             href="/visits"
-            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
           >
             <div className="text-2xl">💅</div>
             <div className="mt-2 text-sm font-bold text-gray-900">来店</div>
@@ -604,7 +607,7 @@ export default function DashboardPageClient() {
 
           <Link
             href="/receivables"
-            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
           >
             <div className="text-2xl">💰</div>
             <div className="mt-2 text-sm font-bold text-gray-900">未収</div>
@@ -612,7 +615,7 @@ export default function DashboardPageClient() {
 
           <Link
             href="/staff"
-            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
           >
             <div className="text-2xl">🧑‍🤝‍🧑</div>
             <div className="mt-2 text-sm font-bold text-gray-900">スタッフ</div>
@@ -620,7 +623,7 @@ export default function DashboardPageClient() {
 
           <Link
             href="/customer-intake/list"
-            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
           >
             <div className="text-2xl">📝</div>
             <div className="mt-2 text-sm font-bold text-gray-900">初回入力</div>
@@ -628,7 +631,7 @@ export default function DashboardPageClient() {
 
           <Link
             href="/reports/daily"
-            className="rounded-2xl bg-gray-50 p-4 text-center shadow-sm"
+            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
           >
             <div className="text-2xl">📊</div>
             <div className="mt-2 text-sm font-bold text-gray-900">日別売上</div>
@@ -636,14 +639,14 @@ export default function DashboardPageClient() {
         </div>
       </div>
 
-      <div className="rounded-3xl border bg-slate-50 p-4 shadow-sm">
+      <div className="rounded-[28px] border border-rose-100 bg-gradient-to-r from-rose-50 to-orange-50 p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-base font-bold text-slate-900">
               オーナー向け経営ボード
             </div>
             <div className="mt-1 text-sm text-slate-600">
-              経営・税理士提出・収支確認は別ページに分けました。
+              経営や収支の確認は別ページに分けています。
             </div>
           </div>
 

@@ -19,6 +19,7 @@ type ReservationRow = {
   menu?: string | null;
   staff_name?: string | null;
   staff?: string | null;
+  staff_id?: string | null;
   duration_minutes?: number | string | null;
   duration?: number | string | null;
   source?: string | null;
@@ -126,7 +127,7 @@ function formatDateLabel(value: string | null) {
 function formatTimeRange(startTime: string | null, durationMinutes: number) {
   if (!startTime) return "未設定";
 
-  const [hourText, minuteText] = startTime.split(":");
+  const [hourText, minuteText] = startTime.split(":").map(Number);
   const hour = Number(hourText);
   const minute = Number(minuteText);
 
@@ -146,7 +147,7 @@ function formatTimeRange(startTime: string | null, durationMinutes: number) {
 
 function getStatusBadgeClass(status: string) {
   if (status === "予約受付" || status === "予約") {
-    return "bg-blue-100 text-blue-700";
+    return "bg-pink-100 text-pink-700";
   }
   if (status === "来店予定" || status === "来店") {
     return "bg-emerald-100 text-emerald-700";
@@ -184,7 +185,6 @@ function buildReservationTime(row: ReservationRow) {
 
 function normalizeStatus(row: ReservationRow) {
   const raw = pickString(row, ["status"], "予約");
-
   if (raw === "予約") return "予約受付";
   return raw;
 }
@@ -475,74 +475,86 @@ export default function ReservationsPageClient() {
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-[920px] p-4" style={{ paddingBottom: "100px" }}>
-        <div className="rounded-2xl border bg-white p-4 text-sm text-gray-500">
-          読み込み中...
+      <main className="min-h-screen bg-rose-50/40">
+        <div
+          className="mx-auto w-full max-w-[920px] p-4"
+          style={{ paddingBottom: "100px" }}
+        >
+          <div className="rounded-3xl border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
+            読み込み中...
+          </div>
         </div>
-      </div>
+      </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-neutral-50">
+    <main className="min-h-screen bg-rose-50/40">
       <div
         className="mx-auto w-full max-w-[920px] space-y-4 p-4"
         style={{ paddingBottom: "100px" }}
         suppressHydrationWarning
       >
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="text-sm font-semibold text-orange-500">NAILY AIDOL</p>
-            <h1 className="mt-1 text-2xl font-bold text-slate-900">予約一覧</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              予約の確認・更新・重複注意の確認ができます。
-            </p>
-          </div>
+        <div className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+                NAILY AIDOL
+              </p>
+              <h1 className="mt-2 text-2xl font-bold text-white">予約ページ</h1>
+              <p className="mt-2 text-sm leading-6 text-white/90">
+                ご予約の確認や変更、重複チェックを見やすくまとめたページです。
+              </p>
+            </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/staff"
-              className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
-            >
-              スタッフ入口へ
-            </Link>
-            <Link
-              href="/reservations/new"
-              className="rounded-xl bg-black px-4 py-3 text-sm font-bold text-white"
-            >
-              新規予約
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/staff"
+                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                スタッフページへ
+              </Link>
+              <Link
+                href="/reservations/new"
+                className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+              >
+                新規予約
+              </Link>
+            </div>
           </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
             <div className="text-sm text-slate-500">対象日の予約件数</div>
             <div className="mt-2 text-2xl font-bold text-slate-900">
               {reservationCount.toLocaleString()}件
             </div>
+            <div className="mt-2 text-sm text-slate-500">今日の確認件数</div>
           </div>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
             <div className="text-sm text-slate-500">重複注意</div>
-            <div className="mt-2 text-2xl font-bold text-rose-600">
+            <div className="mt-2 text-2xl font-bold text-rose-500">
               {overlapReservations.length.toLocaleString()}件
             </div>
+            <div className="mt-2 text-sm text-slate-500">時間重複をチェック中</div>
           </div>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
             <div className="text-sm text-slate-500">運用状態</div>
             <div className="mt-2 text-base font-bold text-slate-900">
               Supabase連携中
             </div>
+            <div className="mt-2 text-sm text-slate-500">予約データ反映OK</div>
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="mb-4">
             <div className="text-sm font-bold text-slate-900">絞り込み</div>
             <div className="mt-1 text-xs text-slate-500">
-              日付と担当者で予約状況を確認できます。
+              日付と担当者を選んで、見たい予約だけ確認できます。
             </div>
           </div>
 
@@ -555,7 +567,7 @@ export default function ReservationsPageClient() {
                 type="date"
                 value={selectedDate}
                 onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
                 suppressHydrationWarning
               />
             </div>
@@ -567,7 +579,7 @@ export default function ReservationsPageClient() {
               <select
                 value={selectedStaff}
                 onChange={(e) => setSelectedStaff(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
                 suppressHydrationWarning
               >
                 {staffOptions.map((staff) => (
@@ -581,9 +593,9 @@ export default function ReservationsPageClient() {
         </div>
 
         {overlapReservations.length > 0 ? (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm">
+          <div className="rounded-[28px] border border-rose-200 bg-rose-50 p-4 shadow-sm">
             <div className="text-sm font-bold text-rose-700">
-              ダブルブッキング注意
+              ダブルブッキングにご注意ください
             </div>
             <div className="mt-2 space-y-2 text-sm text-rose-700">
               {overlapReservations.map((item) => (
@@ -595,18 +607,18 @@ export default function ReservationsPageClient() {
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <div className="rounded-[28px] border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
             <div className="text-sm font-bold text-emerald-700">
               重複は見つかっていません
             </div>
             <div className="mt-2 text-sm text-emerald-700">
-              同一スタッフ・同日・時間帯重複は現在ありません。
+              同じ担当者・同時間帯の重複は現在ありません。
             </div>
           </div>
         )}
 
         {filteredReservations.length === 0 ? (
-          <div className="rounded-2xl border bg-white p-5 text-center text-sm text-gray-500 shadow-sm">
+          <div className="rounded-[28px] border border-rose-100 bg-white p-5 text-center text-sm text-gray-500 shadow-sm">
             条件に合う予約はありません
           </div>
         ) : (
@@ -618,8 +630,10 @@ export default function ReservationsPageClient() {
               return (
                 <div
                   key={item.id}
-                  className={`rounded-2xl border p-4 shadow-sm ${
-                    isOverlap ? "border-rose-300 bg-rose-50" : "bg-white"
+                  className={`rounded-[28px] border p-4 shadow-sm ${
+                    isOverlap
+                      ? "border-rose-300 bg-rose-50"
+                      : "border-rose-100 bg-white"
                   }`}
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -637,7 +651,7 @@ export default function ReservationsPageClient() {
                           {item.status}
                         </span>
 
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                        <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
                           {item.source || "手入力"}
                         </span>
 
@@ -684,7 +698,7 @@ export default function ReservationsPageClient() {
                     <div className="flex flex-wrap gap-2">
                       <Link
                         href={`/reservations/edit/${item.id}`}
-                        className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+                        className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
                       >
                         編集
                       </Link>
@@ -694,7 +708,7 @@ export default function ReservationsPageClient() {
                           type="button"
                           onClick={() => handleMarkVisited(item.id)}
                           disabled={isUpdating}
-                          className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-50"
+                          className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600 disabled:opacity-50"
                           suppressHydrationWarning
                         >
                           {isUpdating ? "更新中..." : "来店にする"}
@@ -706,7 +720,7 @@ export default function ReservationsPageClient() {
                           type="button"
                           onClick={() => handleMarkCompleted(item.id)}
                           disabled={isUpdating}
-                          className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-50"
+                          className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600 disabled:opacity-50"
                           suppressHydrationWarning
                         >
                           {isUpdating ? "更新中..." : "完了にする"}
@@ -715,7 +729,7 @@ export default function ReservationsPageClient() {
 
                       <Link
                         href={buildVisitLink(item)}
-                        className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+                        className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
                       >
                         来店登録へ
                       </Link>

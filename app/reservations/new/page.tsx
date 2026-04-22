@@ -224,181 +224,209 @@ export default function ReservationNewPage() {
   }
 
   return (
-    <div
-      className="mx-auto max-w-[720px] p-4"
-      style={{ paddingBottom: "100px" }}
+    <main
+      className="min-h-screen bg-rose-50/40"
       suppressHydrationWarning
     >
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold">予約登録</h1>
-          <p className="mt-1 text-sm text-gray-500">予約情報を登録します</p>
-        </div>
+      <div className="mx-auto max-w-[720px] space-y-4 p-4 pb-24">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+                NAILY AIDOL
+              </p>
+              <h1 className="mt-2 text-2xl font-bold">予約登録ページ</h1>
+              <p className="mt-2 text-sm leading-6 text-white/90">
+                ご予約情報をやさしく見やすく入力できる店舗用ページです。
+              </p>
+            </div>
 
-        <Link
-          href="/reservations"
-          className="rounded border px-4 py-2 text-sm hover:bg-gray-50"
-        >
-          戻る
-        </Link>
+            <Link
+              href="/reservations"
+              className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+            >
+              予約ページへ
+            </Link>
+          </div>
+        </section>
+
+        {pageLoading ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
+            <p className="text-sm text-slate-500">読み込み中...</p>
+          </section>
+        ) : (
+          <section className="space-y-4 rounded-[28px] border border-rose-100 bg-white p-4 sm:p-6 shadow-sm">
+            {errorMessage ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+                {errorMessage}
+              </div>
+            ) : null}
+
+            <div className="grid gap-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  サロン
+                </label>
+                <select
+                  value={salonId}
+                  onChange={(e) => handleSalonChange(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  suppressHydrationWarning
+                >
+                  <option value="">選択してください</option>
+                  {salons.map((salon) => (
+                    <option key={salon.id} value={salon.id}>
+                      {salon.name || "名称未設定"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  顧客
+                </label>
+                <select
+                  value={customerId}
+                  onChange={(e) => handleCustomerChange(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  suppressHydrationWarning
+                >
+                  <option value="">選択してください</option>
+                  {filteredCustomers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.name || "名称未設定"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  担当スタッフ
+                </label>
+                <select
+                  value={staffId}
+                  onChange={(e) => setStaffId(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  suppressHydrationWarning
+                >
+                  <option value="">選択してください</option>
+                  {filteredStaffs.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.name || "名称未設定"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  メニュー
+                </label>
+                <input
+                  type="text"
+                  value={menu}
+                  onChange={(e) => setMenu(e.target.value)}
+                  placeholder="例: ワンカラー"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  suppressHydrationWarning
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    日付
+                  </label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                    suppressHydrationWarning
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    開始時間
+                  </label>
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                    suppressHydrationWarning
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    所要時間
+                  </label>
+                  <select
+                    value={durationMinutes}
+                    onChange={(e) => setDurationMinutes(Number(e.target.value))}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                    suppressHydrationWarning
+                  >
+                    {DURATION_OPTIONS.map((minutes) => (
+                      <option key={minutes} value={minutes}>
+                        {minutes}分
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  メモ
+                </label>
+                <textarea
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  rows={3}
+                  placeholder="補足メモ"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  suppressHydrationWarning
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  ステータス
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) =>
+                    setStatus(e.target.value as (typeof STATUS_OPTIONS)[number])
+                  }
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  suppressHydrationWarning
+                >
+                  {STATUS_OPTIONS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={loading}
+              className="w-full rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
+              suppressHydrationWarning
+            >
+              {loading ? "登録中..." : "登録する"}
+            </button>
+          </section>
+        )}
       </div>
-
-      {pageLoading ? (
-        <div className="rounded-lg border bg-white p-6">
-          <p>読み込み中...</p>
-        </div>
-      ) : (
-        <div className="space-y-4 rounded-lg border bg-white p-4 sm:p-6">
-          {errorMessage ? (
-            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          <div>
-            <label className="mb-1 block text-sm">サロン</label>
-            <select
-              value={salonId}
-              onChange={(e) => handleSalonChange(e.target.value)}
-              className="w-full rounded border p-2"
-              suppressHydrationWarning
-            >
-              <option value="">選択してください</option>
-              {salons.map((salon) => (
-                <option key={salon.id} value={salon.id}>
-                  {salon.name || "名称未設定"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm">顧客</label>
-            <select
-              value={customerId}
-              onChange={(e) => handleCustomerChange(e.target.value)}
-              className="w-full rounded border p-2"
-              suppressHydrationWarning
-            >
-              <option value="">選択してください</option>
-              {filteredCustomers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.name || "名称未設定"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm">担当スタッフ</label>
-            <select
-              value={staffId}
-              onChange={(e) => setStaffId(e.target.value)}
-              className="w-full rounded border p-2"
-              suppressHydrationWarning
-            >
-              <option value="">選択してください</option>
-              {filteredStaffs.map((staff) => (
-                <option key={staff.id} value={staff.id}>
-                  {staff.name || "名称未設定"}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm">メニュー</label>
-            <input
-              type="text"
-              value={menu}
-              onChange={(e) => setMenu(e.target.value)}
-              placeholder="例: ワンカラー"
-              className="w-full rounded border p-2"
-              suppressHydrationWarning
-            />
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-sm">日付</label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded border p-2"
-                suppressHydrationWarning
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm">開始時間</label>
-              <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="w-full rounded border p-2"
-                suppressHydrationWarning
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm">所要時間</label>
-              <select
-                value={durationMinutes}
-                onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                className="w-full rounded border p-2"
-                suppressHydrationWarning
-              >
-                {DURATION_OPTIONS.map((minutes) => (
-                  <option key={minutes} value={minutes}>
-                    {minutes}分
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm">メモ</label>
-            <textarea
-              value={memo}
-              onChange={(e) => setMemo(e.target.value)}
-              rows={3}
-              placeholder="補足メモ"
-              className="w-full rounded border p-2"
-              suppressHydrationWarning
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm">ステータス</label>
-            <select
-              value={status}
-              onChange={(e) =>
-                setStatus(e.target.value as (typeof STATUS_OPTIONS)[number])
-              }
-              className="w-full rounded border p-2"
-              suppressHydrationWarning
-            >
-              {STATUS_OPTIONS.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={loading}
-            className="w-full rounded bg-black py-3 text-white disabled:opacity-60"
-            suppressHydrationWarning
-          >
-            {loading ? "登録中..." : "登録する"}
-          </button>
-        </div>
-      )}
-    </div>
+    </main>
   );
 }

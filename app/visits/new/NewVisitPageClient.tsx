@@ -344,39 +344,56 @@ export default function NewVisitPageClient() {
   }
 
   return (
-    <div className="p-4 pb-24">
-      <div className="mx-auto max-w-xl space-y-4">
-        <div className="flex items-center justify-between">
-          <Link href="/visits" className="text-sm text-gray-600 underline">
-            ← 来店一覧に戻る
-          </Link>
-        </div>
+    <main className="min-h-screen bg-rose-50/40">
+      <div className="mx-auto max-w-xl space-y-4 p-4 pb-24">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+                NAILY AIDOL
+              </p>
+              <h1 className="mt-2 text-2xl font-bold">来店登録ページ</h1>
+              <p className="mt-2 text-sm leading-6 text-white/90">
+                来店内容、お会計、次回提案をまとめて入力できるページです。
+              </p>
+            </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <h1 className="text-xl font-bold">来店履歴を追加</h1>
-          <p className="mt-2 text-sm text-gray-600">
-            顧客を選択して、来店履歴を登録します。
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/visits"
+                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                来店ページへ
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <h2 className="text-lg font-bold text-slate-900">ご案内</h2>
+          <p className="mt-2 text-sm text-slate-600">
+            顧客を選択して、来店内容とお会計、次回提案を登録します。
           </p>
 
           {prefilledReservationId ? (
-            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+            <div className="mt-3 rounded-2xl border border-pink-200 bg-pink-50 px-4 py-3 text-sm text-pink-700">
               予約から引き継いでいます。顧客・来店日・メニュー・担当者・メモを初期表示しています。
             </div>
           ) : null}
-        </div>
+        </section>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold">顧客情報</h2>
+          <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-slate-900">顧客情報</h2>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
-                顧客 <span className="text-red-500">*</span>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                顧客 <span className="text-rose-500">*</span>
               </label>
               <select
                 value={customerId}
                 onChange={(e) => setCustomerId(e.target.value)}
-                className="w-full rounded-xl border px-3 py-3 text-sm"
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
               >
                 <option value="">
                   {loadingCustomers ? "読み込み中..." : "顧客を選択してください"}
@@ -391,31 +408,36 @@ export default function NewVisitPageClient() {
             </div>
 
             {selectedCustomer ? (
-              <div className="mt-3 rounded-xl bg-gray-50 p-3 text-sm text-gray-700">
-                <p>顧客名: {selectedCustomer.name}</p>
-                <p>電話番号: {selectedCustomer.phone || "-"}</p>
+              <div className="mt-3 rounded-3xl bg-rose-50 p-4 text-sm text-slate-700">
+                <p>
+                  <span className="font-medium">顧客名:</span> {selectedCustomer.name}
+                </p>
+                <p className="mt-1">
+                  <span className="font-medium">電話番号:</span>{" "}
+                  {selectedCustomer.phone || "-"}
+                </p>
               </div>
             ) : null}
-          </div>
+          </section>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold">来店情報</h2>
+          <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-slate-900">来店情報</h2>
 
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  来店日 <span className="text-red-500">*</span>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  来店日 <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="date"
                   value={visitDate}
                   onChange={(e) => setVisitDate(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   メニュー
                 </label>
                 <input
@@ -423,13 +445,13 @@ export default function NewVisitPageClient() {
                   value={menuName}
                   onChange={(e) => setMenuName(e.target.value)}
                   placeholder="例: ワンカラー / 定額デザイン"
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
-                  売上金額 <span className="text-red-500">*</span>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  売上金額 <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number"
@@ -437,14 +459,14 @@ export default function NewVisitPageClient() {
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
                   placeholder="例: 5000"
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-slate-500">
                   割引後の最終売上金額を入力してください。
                 </p>
               </div>
 
-              <div className="rounded-2xl border bg-slate-50 p-4">
+              <div className="rounded-[28px] border border-rose-100 bg-rose-50/50 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-bold text-slate-900">
@@ -458,7 +480,7 @@ export default function NewVisitPageClient() {
                   <button
                     type="button"
                     onClick={addPaymentLine}
-                    className="rounded-xl border bg-white px-3 py-2 text-sm font-bold text-slate-700"
+                    className="rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-600"
                   >
                     ＋行追加
                   </button>
@@ -471,7 +493,7 @@ export default function NewVisitPageClient() {
                     return (
                       <div
                         key={line.id}
-                        className="rounded-2xl border bg-white p-3"
+                        className="rounded-[28px] border border-rose-100 bg-white p-3"
                       >
                         <div className="mb-3 text-xs font-bold text-slate-500">
                           内訳 {index + 1}
@@ -479,7 +501,7 @@ export default function NewVisitPageClient() {
 
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                            <label className="mb-1 block text-xs font-medium text-slate-700">
                               支払い方法
                             </label>
                             <select
@@ -491,7 +513,7 @@ export default function NewVisitPageClient() {
                                   e.target.value
                                 )
                               }
-                              className="w-full rounded-xl border px-3 py-3 text-sm"
+                              className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                             >
                               {PAYMENT_METHOD_OPTIONS.map((option) => (
                                 <option key={option} value={option}>
@@ -502,7 +524,7 @@ export default function NewVisitPageClient() {
                           </div>
 
                           <div>
-                            <label className="mb-1 block text-xs font-medium text-gray-700">
+                            <label className="mb-1 block text-xs font-medium text-slate-700">
                               金額
                             </label>
                             <input
@@ -513,8 +535,10 @@ export default function NewVisitPageClient() {
                                 updatePaymentLine(line.id, "amount", e.target.value)
                               }
                               placeholder={isDiscount ? "例: -1000" : "例: 5000"}
-                              className={`w-full rounded-xl border px-3 py-3 text-sm ${
-                                isDiscount ? "border-rose-300 bg-rose-50" : ""
+                              className={`w-full rounded-2xl border px-3 py-3 text-sm ${
+                                isDiscount
+                                  ? "border-rose-300 bg-rose-50"
+                                  : "border-rose-200 bg-rose-50/40"
                               }`}
                             />
                             {isDiscount ? (
@@ -528,7 +552,7 @@ export default function NewVisitPageClient() {
                             <button
                               type="button"
                               onClick={() => removePaymentLine(line.id)}
-                              className="w-full rounded-xl border px-3 py-3 text-sm font-bold text-slate-700"
+                              className="w-full rounded-2xl border border-rose-200 bg-white px-3 py-3 text-sm font-bold text-rose-600"
                             >
                               削除
                             </button>
@@ -544,7 +568,7 @@ export default function NewVisitPageClient() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl bg-white p-3 text-sm">
+                  <div className="rounded-3xl bg-white p-3 text-sm shadow-sm">
                     <div className="text-slate-500">売上金額</div>
                     <div className="mt-1 font-bold text-slate-900">
                       {Number.isFinite(totalPrice)
@@ -553,14 +577,14 @@ export default function NewVisitPageClient() {
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-white p-3 text-sm">
+                  <div className="rounded-3xl bg-white p-3 text-sm shadow-sm">
                     <div className="text-slate-500">内訳合計</div>
                     <div className="mt-1 font-bold text-slate-900">
                       {paymentTotal.toLocaleString("ja-JP")}
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-white p-3 text-sm">
+                  <div className="rounded-3xl bg-white p-3 text-sm shadow-sm">
                     <div className="text-slate-500">差額</div>
                     <div
                       className={`mt-1 font-bold ${
@@ -576,7 +600,7 @@ export default function NewVisitPageClient() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   担当者
                 </label>
                 <input
@@ -584,12 +608,12 @@ export default function NewVisitPageClient() {
                   value={staffName}
                   onChange={(e) => setStaffName(e.target.value)}
                   placeholder="例: 山田"
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   メモ
                 </label>
                 <textarea
@@ -597,30 +621,30 @@ export default function NewVisitPageClient() {
                   onChange={(e) => setMemo(e.target.value)}
                   placeholder="施術内容や補足メモ"
                   rows={4}
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold">次回提案</h2>
+          <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+            <h2 className="mb-4 text-lg font-bold text-slate-900">次回提案</h2>
 
             <div className="space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   次回来店予定日
                 </label>
                 <input
                   type="date"
                   value={nextVisitDate}
                   onChange={(e) => setNextVisitDate(e.target.value)}
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
                   次回提案
                 </label>
                 <textarea
@@ -628,14 +652,14 @@ export default function NewVisitPageClient() {
                   onChange={(e) => setNextProposal(e.target.value)}
                   placeholder="例: 次回はフィルイン＋初夏カラー提案"
                   rows={3}
-                  className="w-full rounded-xl border px-3 py-3 text-sm"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
               </div>
             </div>
-          </div>
+          </section>
 
           {message ? (
-            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
               {message}
             </div>
           ) : null}
@@ -643,12 +667,12 @@ export default function NewVisitPageClient() {
           <button
             type="submit"
             disabled={saving}
-            className="w-full rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            className="w-full rounded-2xl bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:opacity-50"
           >
             {saving ? "登録中..." : "登録する"}
           </button>
         </form>
       </div>
-    </div>
+    </main>
   );
 }
