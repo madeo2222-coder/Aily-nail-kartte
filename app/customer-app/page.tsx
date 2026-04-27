@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type NewsItem = {
@@ -37,6 +36,7 @@ type VisitRow = {
   customer_id: string | null;
   visit_date: string | null;
   menu: string | null;
+  menu_name?: string | null;
   memo: string | null;
   created_at: string | null;
 };
@@ -70,20 +70,14 @@ const newsItems: NewsItem[] = [
     date: "2026/04/15",
     tag: "営業案内",
   },
-  {
-    id: "3",
-    title: "フットキャンペーン実施中",
-    body: "フットネイルご利用の方に、期間限定でケアメニューをおすすめしています。",
-    date: "2026/04/12",
-    tag: "キャンペーン",
-  },
 ];
 
 const recommendedMenus: MenuItem[] = [
   {
     id: "1",
     title: "初夏デザインコース",
-    description: "透明感のある季節カラーとトレンドデザインを組み合わせたおすすめメニューです。",
+    description:
+      "透明感のある季節カラーとトレンドデザインを組み合わせたおすすめメニューです。",
     price: "¥7,700〜",
   },
   {
@@ -95,13 +89,14 @@ const recommendedMenus: MenuItem[] = [
   },
   {
     id: "3",
-    title: "フット＋角質ケア",
-    description: "サンダル時期に向けて足元を整えたい方におすすめです。",
-    price: "¥8,800〜",
+    title: "シンプルデザインコース",
+    description:
+      "オフィスでもなじみやすい上品デザインを中心に整えたい方へおすすめです。",
+    price: "¥7,200〜",
   },
 ];
 
-const navItems = [
+const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
@@ -161,10 +156,9 @@ function buildVisitWindowText(lastVisitDate: string | null) {
 }
 
 export default function CustomerAppPage() {
-  const router = useRouter();
-
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const [customerName, setCustomerName] = useState("お客様");
@@ -181,22 +175,18 @@ export default function CustomerAppPage() {
       setErrorMessage("");
 
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      if (userError) {
-        console.error("auth getUser error:", userError);
-        setLoading(false);
-        router.replace("/customer-app/login");
-        return;
-      }
+      const user = session?.user ?? null;
 
       if (!user) {
+        setIsLoggedIn(false);
         setLoading(false);
-        router.replace("/customer-app/login");
         return;
       }
+
+      setIsLoggedIn(true);
 
       const { data: customer, error: customerError } = await supabase
         .from("customers")
@@ -205,7 +195,6 @@ export default function CustomerAppPage() {
         .single();
 
       if (customerError || !customer) {
-        console.error("customer fetch error:", customerError);
         setErrorMessage(
           "お客様情報が見つかりませんでした。ログイン情報の確認が必要です。"
         );
@@ -229,23 +218,20 @@ export default function CustomerAppPage() {
         }
       }
 
-      const { data: latestVisitData, error: latestVisitError } = await supabase
+      const { data: latestVisitData } = await supabase
         .from("visits")
-        .select("id, customer_id, visit_date, menu, memo, created_at")
+        .select("id, customer_id, visit_date, menu, menu_name, memo, created_at")
         .eq("customer_id", currentCustomer.id)
         .order("visit_date", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(1);
 
-      if (latestVisitError) {
-        console.error("latest visit fetch error:", latestVisitError);
-      }
-
       const latestVisit = ((latestVisitData || [])[0] as VisitRow | undefined) || null;
 
       if (latestVisit) {
+        const displayMenu = latestVisit.menu_name || latestVisit.menu || "メニュー未登録";
         setLastVisitDate(formatDate(latestVisit.visit_date));
-        setLastMenu(latestVisit.menu || "メニュー未登録");
+        setLastMenu(displayMenu);
         setNextVisitWindow(buildVisitWindowText(latestVisit.visit_date));
       } else {
         setLastVisitDate("未登録");
@@ -255,7 +241,7 @@ export default function CustomerAppPage() {
 
       const nowIso = new Date().toISOString();
 
-      const { data: nextReservationData, error: nextReservationError } = await supabase
+      const { data: nextReservationData } = await supabase
         .from("reservations")
         .select("id, customer_id, staff_id, menu, start_at, status")
         .eq("customer_id", currentCustomer.id)
@@ -263,10 +249,6 @@ export default function CustomerAppPage() {
         .gte("start_at", nowIso)
         .order("start_at", { ascending: true })
         .limit(1);
-
-      if (nextReservationError) {
-        console.error("next reservation fetch error:", nextReservationError);
-      }
 
       const nextReservation =
         ((nextReservationData || [])[0] as ReservationRow | undefined) || null;
@@ -291,17 +273,13 @@ export default function CustomerAppPage() {
       }
 
       if (!nextReservation) {
-        const { data: latestReservationData, error: latestReservationError } = await supabase
+        const { data: latestReservationData } = await supabase
           .from("reservations")
           .select("id, customer_id, staff_id, menu, start_at, status")
           .eq("customer_id", currentCustomer.id)
           .neq("status", "キャンセル")
           .order("start_at", { ascending: false })
           .limit(1);
-
-        if (latestReservationError) {
-          console.error("latest reservation fetch error:", latestReservationError);
-        }
 
         const latestReservation =
           ((latestReservationData || [])[0] as ReservationRow | undefined) || null;
@@ -324,7 +302,7 @@ export default function CustomerAppPage() {
     }
 
     fetchPageData();
-  }, [router]);
+  }, []);
 
   const heroStatusText = useMemo(() => {
     if (nextReservedAt) {
@@ -352,6 +330,156 @@ export default function CustomerAppPage() {
     );
   }
 
+  if (!isLoggedIn) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
+          <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-pink-500 via-rose-500 to-orange-400 p-5 text-white shadow">
+            <div className="text-xs font-bold tracking-wide opacity-90">
+              AILY MY PAGE
+            </div>
+            <div className="mt-2 text-sm opacity-90">Aily Nail Studio</div>
+            <h1 className="mt-2 text-2xl font-bold leading-tight">
+              LINEからのご来店ありがとうございます
+            </h1>
+            <p className="mt-3 text-sm leading-6 text-white/90">
+              はじめての方は初回入力へ、会員の方はログインして来店履歴やご予約確認へお進みください。
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <Link
+                href="/customer-intake"
+                className="rounded-xl bg-white px-4 py-3 text-center text-sm font-bold text-rose-500"
+              >
+                はじめての方はこちら
+              </Link>
+              <Link
+                href="/customer-app/login"
+                className="rounded-xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                会員の方はこちら
+              </Link>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <div className="text-base font-bold text-slate-900">ご利用メニュー</div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <Link
+                href="/customer-intake"
+                className="rounded-2xl bg-slate-50 p-4 transition hover:bg-rose-50"
+              >
+                <div className="text-sm font-bold text-slate-900">初回入力</div>
+                <div className="mt-2 text-sm leading-6 text-slate-600">
+                  初めてご来店の方はこちらから、事前確認とご署名をお願いします。
+                </div>
+              </Link>
+
+              <Link
+                href="/customer-app/login"
+                className="rounded-2xl bg-slate-50 p-4 transition hover:bg-rose-50"
+              >
+                <div className="text-sm font-bold text-slate-900">Ailyマイページへログイン</div>
+                <div className="mt-2 text-sm leading-6 text-slate-600">
+                  電話番号でログインすると、来店履歴・次回提案・今後のご予約確認ができます。
+                </div>
+              </Link>
+
+              <Link
+                href="/customer-app/reserve"
+                className="rounded-2xl bg-slate-50 p-4 transition hover:bg-rose-50"
+              >
+                <div className="text-sm font-bold text-slate-900">予約する</div>
+                <div className="mt-2 text-sm leading-6 text-slate-600">
+                  ご希望日時の確認や次回予約の入口としてご利用ください。
+                </div>
+              </Link>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="text-base font-bold text-slate-900">今月のおすすめ</div>
+              <div className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-600">
+                おすすめ
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {recommendedMenus.map((menu) => (
+                <div key={menu.id} className="rounded-2xl border bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-slate-900">
+                        {menu.title}
+                      </div>
+                      <div className="mt-2 text-sm leading-6 text-slate-600">
+                        {menu.description}
+                      </div>
+                    </div>
+                    <div className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-700">
+                      {menu.price}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between">
+              <div className="text-base font-bold text-slate-900">最新のお知らせ</div>
+              <button
+                type="button"
+                onClick={() => showMessage("お知らせ一覧ページは次段階で実装します")}
+                className="text-sm font-bold text-rose-500"
+              >
+                もっと見る
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {newsItems.map((item) => (
+                <div key={item.id} className="rounded-2xl border bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-600">
+                      {item.tag}
+                    </div>
+                    <div className="text-xs text-slate-400">{item.date}</div>
+                  </div>
+                  <div className="mt-3 text-sm font-bold text-slate-900">
+                    {item.title}
+                  </div>
+                  <div className="mt-2 text-sm leading-6 text-slate-600">
+                    {item.body}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {message ? (
+            <div className="fixed left-1/2 top-4 z-50 w-[calc(100%-24px)] max-w-md -translate-x-1/2">
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-lg">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="text-sm font-bold text-blue-700">{message}</div>
+                  <button
+                    type="button"
+                    onClick={() => setMessage("")}
+                    className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs font-bold text-blue-700"
+                  >
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </main>
+    );
+  }
+
   if (errorMessage) {
     return (
       <main className="min-h-screen bg-slate-50 pb-24">
@@ -361,12 +489,20 @@ export default function CustomerAppPage() {
             <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
               {errorMessage}
             </div>
-            <Link
-              href="/customer-app/login"
-              className="mt-4 block w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
-            >
-              ログイン画面へ
-            </Link>
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <Link
+                href="/customer-app/login"
+                className="block w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                ログイン画面へ
+              </Link>
+              <Link
+                href="/customer-intake"
+                className="block w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-center text-sm font-bold text-slate-700"
+              >
+                初回入力はこちら
+              </Link>
+            </div>
           </div>
         </div>
       </main>
@@ -603,7 +739,7 @@ export default function CustomerAppPage() {
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto grid max-w-md grid-cols-5">
-          {navItems.map((item) => {
+          {signedInNavItems.map((item) => {
             const isActive = item.key === "home";
 
             if (item.href) {

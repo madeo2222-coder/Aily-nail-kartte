@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 const BOOKING_URL = "https://example.com/reserve";
 
@@ -10,11 +11,10 @@ const menuOptions = [
   "ワンカラー",
   "定額デザインコース",
   "フィルインメンテナンス",
-  "フットネイル",
   "ケアメニュー",
 ];
 
-const navItems = [
+const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
@@ -28,12 +28,28 @@ function isBookingUrlReady(url: string) {
 
 export default function CustomerAppReservePage() {
   const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
   const [selectedMenu, setSelectedMenu] = useState(menuOptions[0]);
   const [selectedStaff, setSelectedStaff] = useState(staffOptions[0]);
   const [selectedDate, setSelectedDate] = useState("2026-04-25");
   const [selectedTime, setSelectedTime] = useState("14:00");
 
   const bookingReady = isBookingUrlReady(BOOKING_URL);
+
+  useEffect(() => {
+    async function checkAuth() {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      setIsLoggedIn(!!user);
+      setLoading(false);
+    }
+
+    checkAuth();
+  }, []);
 
   const summaryText = useMemo(() => {
     return `${selectedDate} ${selectedTime} / ${selectedMenu} / ${selectedStaff}`;
@@ -51,6 +67,104 @@ export default function CustomerAppReservePage() {
     }
 
     window.open(BOOKING_URL, "_blank", "noopener,noreferrer");
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
+          <div className="rounded-3xl border bg-white p-6 shadow-sm">
+            <div className="text-base font-bold text-slate-900">予約ページ</div>
+            <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
+          <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-rose-500 via-pink-500 to-orange-400 p-5 text-white shadow">
+            <div className="text-xs font-bold tracking-wide opacity-90">
+              AILY MY PAGE
+            </div>
+            <h1 className="mt-2 text-2xl font-bold leading-tight">予約する</h1>
+            <p className="mt-3 text-sm leading-6 text-white/90">
+              会員のお客様はログイン後にご予約へ、初めてのお客様は初回入力後にご案内いたします。
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <Link
+                href="/customer-app/login"
+                className="rounded-xl bg-white px-4 py-3 text-center text-sm font-bold text-rose-500"
+              >
+                会員の方はこちら
+              </Link>
+              <Link
+                href="/customer-intake"
+                className="rounded-xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                初めての方はこちら
+              </Link>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <div className="text-base font-bold text-slate-900">予約の流れ</div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="text-xs text-slate-500">STEP 1</div>
+                <div className="mt-1 text-sm font-bold text-slate-900">
+                  会員の方はログイン
+                </div>
+                <div className="mt-2 text-sm leading-6 text-slate-600">
+                  電話番号認証でAilyマイページへログインします。
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="text-xs text-slate-500">STEP 2</div>
+                <div className="mt-1 text-sm font-bold text-slate-900">
+                  初めての方は初回入力
+                </div>
+                <div className="mt-2 text-sm leading-6 text-slate-600">
+                  事前確認とご署名を済ませていただくと、その後のご案内がスムーズです。
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="text-xs text-slate-500">STEP 3</div>
+                <div className="mt-1 text-sm font-bold text-slate-900">
+                  予約ページへ進む
+                </div>
+                <div className="mt-2 text-sm leading-6 text-slate-600">
+                  次回予約やご希望日時の調整へ進みます。
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <div className="text-base font-bold text-slate-900">ご案内</div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              LINEの入口からご来店ありがとうございます。まずはログインまたは初回入力をお選びください。
+            </p>
+
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <Link
+                href="/customer-app"
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-center text-sm font-bold text-slate-700"
+              >
+                入口ページへ戻る
+              </Link>
+            </div>
+          </section>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -167,7 +281,7 @@ export default function CustomerAppReservePage() {
           </div>
 
           <p className="mt-4 text-sm leading-6 text-slate-600">
-            この画面から実際の予約ページへ進める形にしています。実URLを入れれば、そのまま提案やご案内にも使いやすくなります。
+            この画面から実際の予約ページへ進める形にしています。実URLを入れれば、そのままLINE導線でも運用できます。
           </p>
 
           <div className="mt-4 flex flex-col gap-2">
@@ -243,7 +357,7 @@ export default function CustomerAppReservePage() {
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto grid max-w-md grid-cols-5">
-          {navItems.map((item) => {
+          {signedInNavItems.map((item) => {
             const isActive = item.key === "reserve";
 
             if (item.href) {

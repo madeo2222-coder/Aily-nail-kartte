@@ -174,7 +174,7 @@ export default function CustomerAppLoginPage() {
     if (customers.length === 0) {
       setLoading(false);
       setErrorMessage(
-        "一致する顧客が見つかりませんでした。店舗側で顧客電話番号の確認が必要です。"
+        "一致する顧客が見つかりませんでした。初めての方は初回入力をご利用ください。"
       );
       return;
     }
@@ -226,18 +226,24 @@ export default function CustomerAppLoginPage() {
             AILY MY PAGE
           </div>
           <h1 className="mt-2 text-2xl font-bold leading-tight">
-            Ailyマイページへログイン
+            会員のお客様ログイン
           </h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            電話番号でログインすると、ご予約・来店履歴・次回提案を確認できます。
+            LINEからご来店いただいた既存のお客様はこちらからログインしてください。電話番号で認証後、来店履歴や次回提案を確認できます。
           </p>
 
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Link
               href="/customer-app"
-              className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-900"
+              className="rounded-xl bg-white px-4 py-2 text-center text-sm font-bold text-slate-900"
             >
-              マイページへ戻る
+              入口ページへ戻る
+            </Link>
+            <Link
+              href="/customer-intake"
+              className="rounded-xl border border-white/30 px-4 py-2 text-center text-sm font-bold text-white"
+            >
+              初めての方はこちら
             </Link>
           </div>
         </section>
@@ -246,7 +252,7 @@ export default function CustomerAppLoginPage() {
           <section className="rounded-3xl border bg-white p-4 shadow-sm">
             <div className="text-base font-bold text-slate-900">電話番号を入力</div>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              顧客情報に登録している電話番号を入力してください。
+              店舗の顧客情報に登録している電話番号を入力してください。
             </p>
 
             <form onSubmit={handleSendOtp} className="mt-4 space-y-4">
