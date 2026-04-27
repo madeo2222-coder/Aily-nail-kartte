@@ -82,6 +82,7 @@ export default function NewVisitPageClient() {
     prefilledVisitDate || new Date().toISOString().split("T")[0]
   );
   const [menuName, setMenuName] = useState(prefilledMenuName);
+  const [color, setColor] = useState("");
   const [price, setPrice] = useState("");
   const [memo, setMemo] = useState(prefilledMemo);
   const [nextVisitDate, setNextVisitDate] = useState("");
@@ -274,6 +275,7 @@ export default function NewVisitPageClient() {
         customer_id: customerId,
         visit_date: visitDate,
         menu_name: menuName.trim() || null,
+        color: color.trim() || null,
         price: totalPrice,
         payment_method: mainPaymentMethod,
         memo: memo.trim() || null,
@@ -445,6 +447,19 @@ export default function NewVisitPageClient() {
                   value={menuName}
                   onChange={(e) => setMenuName(e.target.value)}
                   placeholder="例: ワンカラー / 定額デザイン"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  カラー
+                </label>
+                <input
+                  type="text"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="例: ピンクベージュ / マグネット / ぷるマグ"
                   className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                 />
               </div>
