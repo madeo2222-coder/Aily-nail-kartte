@@ -16,6 +16,9 @@ type Visit = {
   id: string;
   customer_id: string;
   visit_date: string | null;
+  menu_name: string | null;
+  menu: string | null;
+  color: string | null;
   price: number | null;
   payment_method: string | null;
   memo: string | null;
@@ -142,7 +145,7 @@ export default function CustomerDetailPage() {
       const { data: visitsData, error: visitsError } = await supabase
         .from("visits")
         .select(
-          "id, customer_id, visit_date, price, payment_method, memo, next_visit_date, next_proposal"
+          "id, customer_id, visit_date, menu_name, menu, color, price, payment_method, memo, next_visit_date, next_proposal"
         )
         .eq("customer_id", customerId)
         .order("visit_date", { ascending: false });
@@ -302,6 +305,12 @@ export default function CustomerDetailPage() {
     return rows
       .map((row) => `${row.payment_method} ${formatPrice(row.amount)}`)
       .join(" / ");
+  }
+
+  function getDisplayMenu(visit: Visit) {
+    if (visit.menu_name?.trim()) return visit.menu_name;
+    if (visit.menu?.trim()) return visit.menu;
+    return "-";
   }
 
   if (loading) {
@@ -567,6 +576,15 @@ export default function CustomerDetailPage() {
                   </div>
 
                   <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                    <div>
+                      <span className="font-medium">メニュー:</span> {getDisplayMenu(visit)}
+                    </div>
+
+                    <div>
+                      <span className="font-medium">カラー:</span>{" "}
+                      {visit.color?.trim() ? visit.color : "-"}
+                    </div>
+
                     <div>
                       <span className="font-medium">売上:</span>{" "}
                       {formatPrice(visit.price)}

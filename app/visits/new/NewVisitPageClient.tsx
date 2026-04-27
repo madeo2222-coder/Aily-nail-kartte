@@ -266,6 +266,8 @@ export default function NewVisitPageClient() {
     setSaving(true);
 
     try {
+      const normalizedMenuName = menuName.trim() || null;
+
       const mainPaymentMethod =
         cleanedPaymentLines.length === 1
           ? cleanedPaymentLines[0].payment_method
@@ -274,7 +276,8 @@ export default function NewVisitPageClient() {
       const visitPayload = {
         customer_id: customerId,
         visit_date: visitDate,
-        menu_name: menuName.trim() || null,
+        menu_name: normalizedMenuName,
+        menu: normalizedMenuName,
         color: color.trim() || null,
         price: totalPrice,
         payment_method: mainPaymentMethod,
