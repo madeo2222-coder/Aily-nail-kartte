@@ -300,12 +300,12 @@ export default function CustomerIntakePage() {
             <div className="mt-6 space-y-5">
               <div>
                 <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  お名前 <span className="text-red-500">*</span>
+                  お名前 カナ<span className="text-red-500">*</span>
                 </label>
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="山田 花子"
+                  placeholder="山田 花子　ヤマダ　ハナコ"
                   className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
                 />
               </div>
