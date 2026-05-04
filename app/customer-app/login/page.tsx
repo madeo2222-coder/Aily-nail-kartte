@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
 
 type MeResponse = {
   authenticated: boolean;
@@ -18,7 +18,7 @@ type MeResponse = {
   } | null;
 };
 
-export default function CustomerAppLoginPage() {
+function CustomerAppLoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -64,9 +64,10 @@ export default function CustomerAppLoginPage() {
     }
   }, [queryError]);
 
-  async function handleLineLogin() {
+  function handleLineLogin() {
     setChecking(true);
-    window.location.href = "/api/line-login/session?mode=start&next=/customer-app";
+    window.location.href =
+      "/api/line-login/session?mode=start&next=/customer-app";
   }
 
   if (loading) {
@@ -74,7 +75,9 @@ export default function CustomerAppLoginPage() {
       <main className="min-h-screen bg-slate-50 pb-24">
         <div className="mx-auto max-w-md px-4 pb-6 pt-4">
           <div className="rounded-3xl border bg-white p-6 shadow-sm">
-            <div className="text-base font-bold text-slate-900">LINEログイン</div>
+            <div className="text-base font-bold text-slate-900">
+              LINEログイン
+            </div>
             <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
           </div>
         </div>
@@ -113,14 +116,17 @@ export default function CustomerAppLoginPage() {
         </section>
 
         <section className="rounded-3xl border bg-white p-5 shadow-sm">
-          <div className="text-base font-bold text-slate-900">LINEでログイン</div>
+          <div className="text-base font-bold text-slate-900">
+            LINEでログイン
+          </div>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             公式LINEからご利用のお客様は、このままLINEログインへ進んでください。
           </p>
 
           {pendingDisplayName ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-              {pendingDisplayName} さんのLINEアカウントで連携待ちです。続けて顧客連携へ進めます。
+              {pendingDisplayName}
+              さんのLINEアカウントで連携待ちです。続けて顧客連携へ進めます。
             </div>
           ) : null}
 
@@ -152,7 +158,9 @@ export default function CustomerAppLoginPage() {
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">ログイン後にできること</div>
+          <div className="text-base font-bold text-slate-900">
+            ログイン後にできること
+          </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3">
             <div className="rounded-2xl bg-slate-50 p-4">
@@ -163,14 +171,18 @@ export default function CustomerAppLoginPage() {
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm font-bold text-slate-900">来店履歴確認</div>
+              <div className="text-sm font-bold text-slate-900">
+                来店履歴確認
+              </div>
               <div className="mt-2 text-sm leading-6 text-slate-600">
                 前回メニューや担当者、次回提案を確認できます。
               </div>
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm font-bold text-slate-900">お知らせ確認</div>
+              <div className="text-sm font-bold text-slate-900">
+                お知らせ確認
+              </div>
               <div className="mt-2 text-sm leading-6 text-slate-600">
                 最新キャンペーンや再来提案を見られます。
               </div>
@@ -179,5 +191,26 @@ export default function CustomerAppLoginPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <main className="min-h-screen bg-slate-50 pb-24">
+      <div className="mx-auto max-w-md px-4 pb-6 pt-4">
+        <div className="rounded-3xl border bg-white p-6 shadow-sm">
+          <div className="text-base font-bold text-slate-900">LINEログイン</div>
+          <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+export default function CustomerAppLoginPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <CustomerAppLoginPageContent />
+    </Suspense>
   );
 }
