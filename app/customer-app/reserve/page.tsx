@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
 
 const BOOKING_URL = "https://example.com/reserve";
 
@@ -13,6 +12,10 @@ const menuOptions = [
   "フィルインメンテナンス",
   "ケアメニュー",
 ];
+
+type MeResponse = {
+  authenticated: boolean;
+};
 
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
@@ -40,12 +43,17 @@ export default function CustomerAppReservePage() {
 
   useEffect(() => {
     async function checkAuth() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      setIsLoggedIn(!!user);
-      setLoading(false);
+      try {
+        const res = await fetch("/api/line-login/me", {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as MeResponse;
+        setIsLoggedIn(!!json.authenticated);
+      } catch {
+        setIsLoggedIn(false);
+      } finally {
+        setLoading(false);
+      }
     }
 
     checkAuth();
@@ -92,7 +100,7 @@ export default function CustomerAppReservePage() {
             </div>
             <h1 className="mt-2 text-2xl font-bold leading-tight">予約する</h1>
             <p className="mt-3 text-sm leading-6 text-white/90">
-              会員のお客様はログイン後にご予約へ、初めてのお客様は初回入力後にご案内いたします。
+              会員のお客様はLINEログイン後にご予約へ、初めてのお客様は初回入力後にご案内いたします。
             </p>
 
             <div className="mt-4 grid grid-cols-1 gap-2">
@@ -100,7 +108,7 @@ export default function CustomerAppReservePage() {
                 href="/customer-app/login"
                 className="rounded-xl bg-white px-4 py-3 text-center text-sm font-bold text-rose-500"
               >
-                会員の方はこちら
+                LINEでログイン
               </Link>
               <Link
                 href="/customer-intake"
@@ -118,10 +126,10 @@ export default function CustomerAppReservePage() {
               <div className="rounded-2xl bg-slate-50 p-4">
                 <div className="text-xs text-slate-500">STEP 1</div>
                 <div className="mt-1 text-sm font-bold text-slate-900">
-                  会員の方はログイン
+                  LINEログイン
                 </div>
                 <div className="mt-2 text-sm leading-6 text-slate-600">
-                  電話番号認証でAilyマイページへログインします。
+                  顧客情報と紐づいた状態でマイページへ入れます。
                 </div>
               </div>
 
@@ -144,22 +152,6 @@ export default function CustomerAppReservePage() {
                   次回予約やご希望日時の調整へ進みます。
                 </div>
               </div>
-            </div>
-          </section>
-
-          <section className="rounded-3xl border bg-white p-4 shadow-sm">
-            <div className="text-base font-bold text-slate-900">ご案内</div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">
-              LINEの入口からご来店ありがとうございます。まずはログインまたは初回入力をお選びください。
-            </p>
-
-            <div className="mt-4 grid grid-cols-1 gap-2">
-              <Link
-                href="/customer-app"
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-center text-sm font-bold text-slate-700"
-              >
-                入口ページへ戻る
-              </Link>
             </div>
           </section>
         </div>
@@ -304,33 +296,6 @@ export default function CustomerAppReservePage() {
 
           <div className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
             今は外部予約URL連携方式です。今後、Ailyマイページ内で予約完結できるように進めていきます。
-          </div>
-        </section>
-
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">予約の流れ</div>
-
-          <div className="mt-4 grid grid-cols-1 gap-3">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">STEP 1</div>
-              <div className="mt-1 text-sm font-bold text-slate-900">
-                メニューを選ぶ
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">STEP 2</div>
-              <div className="mt-1 text-sm font-bold text-slate-900">
-                担当者と日時を選ぶ
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">STEP 3</div>
-              <div className="mt-1 text-sm font-bold text-slate-900">
-                内容確認後に予約へ進む
-              </div>
-            </div>
           </div>
         </section>
       </div>

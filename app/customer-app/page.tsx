@@ -23,7 +23,7 @@ type CustomerRow = {
   id: string;
   name: string | null;
   salon_id: string | null;
-  user_id: string | null;
+  line_user_id: string | null;
 };
 
 type SalonRow = {
@@ -53,6 +53,11 @@ type ReservationRow = {
 type StaffRow = {
   id: string;
   name: string | null;
+};
+
+type MeResponse = {
+  authenticated: boolean;
+  customer?: CustomerRow | null;
 };
 
 const newsItems: NewsItem[] = [
@@ -110,11 +115,7 @@ function formatDate(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "未登録";
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1);
-  const day = String(date.getDate());
-
-  return `${year}/${month}/${day}`;
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
 }
 
 function formatDateTime(value: string | null) {
@@ -147,12 +148,7 @@ function buildVisitWindowText(lastVisitDate: string | null) {
   const from = addDays(date, 21);
   const to = addDays(date, 35);
 
-  const fromMonth = from.getMonth() + 1;
-  const fromDay = from.getDate();
-  const toMonth = to.getMonth() + 1;
-  const toDay = to.getDate();
-
-  return `${fromMonth}/${fromDay}〜${toMonth}/${toDay}ごろ`;
+  return `${from.getMonth() + 1}/${from.getDate()}〜${to.getMonth() + 1}/${to.getDate()}ごろ`;
 }
 
 export default function CustomerAppPage() {
@@ -161,6 +157,7 @@ export default function CustomerAppPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const [customerId, setCustomerId] = useState("");
   const [customerName, setCustomerName] = useState("お客様");
   const [salonName, setSalonName] = useState("Aily Nail Studio");
   const [nextVisitWindow, setNextVisitWindow] = useState("次回のおすすめ時期を準備中です");
@@ -174,131 +171,118 @@ export default function CustomerAppPage() {
       setLoading(true);
       setErrorMessage("");
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      try {
+        const meRes = await fetch("/api/line-login/me", { cache: "no-store" });
+        const meJson = (await meRes.json()) as MeResponse;
 
-      const user = session?.user ?? null;
-
-      if (!user) {
-        setIsLoggedIn(false);
-        setLoading(false);
-        return;
-      }
-
-      setIsLoggedIn(true);
-
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .select("id, name, salon_id, user_id")
-        .eq("user_id", user.id)
-        .single();
-
-      if (customerError || !customer) {
-        setErrorMessage(
-          "お客様情報が見つかりませんでした。ログイン情報の確認が必要です。"
-        );
-        setLoading(false);
-        return;
-      }
-
-      const currentCustomer = customer as CustomerRow;
-      setCustomerName(currentCustomer.name || "お客様");
-
-      if (currentCustomer.salon_id) {
-        const { data: salonData } = await supabase
-          .from("salons")
-          .select("id, name")
-          .eq("id", currentCustomer.salon_id)
-          .single();
-
-        if (salonData) {
-          const salon = salonData as SalonRow;
-          setSalonName(salon.name || "Aily Nail Studio");
+        if (!meJson.authenticated || !meJson.customer) {
+          setIsLoggedIn(false);
+          setLoading(false);
+          return;
         }
-      }
 
-      const { data: latestVisitData } = await supabase
-        .from("visits")
-        .select("id, customer_id, visit_date, menu, menu_name, memo, created_at")
-        .eq("customer_id", currentCustomer.id)
-        .order("visit_date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(1);
+        const currentCustomer = meJson.customer;
+        setIsLoggedIn(true);
+        setCustomerId(currentCustomer.id);
+        setCustomerName(currentCustomer.name || "お客様");
 
-      const latestVisit = ((latestVisitData || [])[0] as VisitRow | undefined) || null;
-
-      if (latestVisit) {
-        const displayMenu = latestVisit.menu_name || latestVisit.menu || "メニュー未登録";
-        setLastVisitDate(formatDate(latestVisit.visit_date));
-        setLastMenu(displayMenu);
-        setNextVisitWindow(buildVisitWindowText(latestVisit.visit_date));
-      } else {
-        setLastVisitDate("未登録");
-        setLastMenu("まだ来店履歴がありません");
-        setNextVisitWindow("初回ご予約をお待ちしています");
-      }
-
-      const nowIso = new Date().toISOString();
-
-      const { data: nextReservationData } = await supabase
-        .from("reservations")
-        .select("id, customer_id, staff_id, menu, start_at, status")
-        .eq("customer_id", currentCustomer.id)
-        .neq("status", "キャンセル")
-        .gte("start_at", nowIso)
-        .order("start_at", { ascending: true })
-        .limit(1);
-
-      const nextReservation =
-        ((nextReservationData || [])[0] as ReservationRow | undefined) || null;
-
-      if (nextReservation) {
-        setNextReservedAt(formatDateTime(nextReservation.start_at));
-
-        if (nextReservation.staff_id) {
-          const { data: staffData } = await supabase
-            .from("staffs")
+        if (currentCustomer.salon_id) {
+          const { data: salonData } = await supabase
+            .from("salons")
             .select("id, name")
-            .eq("id", nextReservation.staff_id)
+            .eq("id", currentCustomer.salon_id)
             .single();
 
-          if (staffData) {
-            const staff = staffData as StaffRow;
-            setLastStaff(staff.name || "未登録");
+          if (salonData) {
+            const salon = salonData as SalonRow;
+            setSalonName(salon.name || "Aily Nail Studio");
           }
         }
-      } else {
-        setNextReservedAt("");
-      }
 
-      if (!nextReservation) {
-        const { data: latestReservationData } = await supabase
+        const { data: latestVisitData } = await supabase
+          .from("visits")
+          .select("id, customer_id, visit_date, menu, menu_name, memo, created_at")
+          .eq("customer_id", currentCustomer.id)
+          .order("visit_date", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        const latestVisit = ((latestVisitData || [])[0] as VisitRow | undefined) || null;
+
+        if (latestVisit) {
+          const displayMenu = latestVisit.menu_name || latestVisit.menu || "メニュー未登録";
+          setLastVisitDate(formatDate(latestVisit.visit_date));
+          setLastMenu(displayMenu);
+          setNextVisitWindow(buildVisitWindowText(latestVisit.visit_date));
+        } else {
+          setLastVisitDate("未登録");
+          setLastMenu("まだ来店履歴がありません");
+          setNextVisitWindow("初回ご予約をお待ちしています");
+        }
+
+        const nowIso = new Date().toISOString();
+
+        const { data: nextReservationData } = await supabase
           .from("reservations")
           .select("id, customer_id, staff_id, menu, start_at, status")
           .eq("customer_id", currentCustomer.id)
           .neq("status", "キャンセル")
-          .order("start_at", { ascending: false })
+          .gte("start_at", nowIso)
+          .order("start_at", { ascending: true })
           .limit(1);
 
-        const latestReservation =
-          ((latestReservationData || [])[0] as ReservationRow | undefined) || null;
+        const nextReservation =
+          ((nextReservationData || [])[0] as ReservationRow | undefined) || null;
 
-        if (latestReservation?.staff_id) {
-          const { data: staffData } = await supabase
-            .from("staffs")
-            .select("id, name")
-            .eq("id", latestReservation.staff_id)
-            .single();
+        if (nextReservation) {
+          setNextReservedAt(formatDateTime(nextReservation.start_at));
 
-          if (staffData) {
-            const staff = staffData as StaffRow;
-            setLastStaff(staff.name || "未登録");
+          if (nextReservation.staff_id) {
+            const { data: staffData } = await supabase
+              .from("staffs")
+              .select("id, name")
+              .eq("id", nextReservation.staff_id)
+              .single();
+
+            if (staffData) {
+              const staff = staffData as StaffRow;
+              setLastStaff(staff.name || "未登録");
+            }
+          }
+        } else {
+          setNextReservedAt("");
+        }
+
+        if (!nextReservation) {
+          const { data: latestReservationData } = await supabase
+            .from("reservations")
+            .select("id, customer_id, staff_id, menu, start_at, status")
+            .eq("customer_id", currentCustomer.id)
+            .neq("status", "キャンセル")
+            .order("start_at", { ascending: false })
+            .limit(1);
+
+          const latestReservation =
+            ((latestReservationData || [])[0] as ReservationRow | undefined) || null;
+
+          if (latestReservation?.staff_id) {
+            const { data: staffData } = await supabase
+              .from("staffs")
+              .select("id, name")
+              .eq("id", latestReservation.staff_id)
+              .single();
+
+            if (staffData) {
+              const staff = staffData as StaffRow;
+              setLastStaff(staff.name || "未登録");
+            }
           }
         }
+      } catch {
+        setErrorMessage("読み込みに失敗しました。");
+      } finally {
+        setLoading(false);
       }
-
-      setLoading(false);
     }
 
     fetchPageData();
@@ -308,13 +292,19 @@ export default function CustomerAppPage() {
     if (nextReservedAt) {
       return `次回予約：${nextReservedAt}`;
     }
-
     return "そろそろご来店のおすすめ時期です";
   }, [nextReservedAt]);
 
   function showMessage(text: string) {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 2500);
+  }
+
+  async function handleLogout() {
+    await fetch("/api/line-login/logout", {
+      method: "POST",
+    });
+    window.location.href = "/customer-app";
   }
 
   if (loading) {
@@ -343,7 +333,7 @@ export default function CustomerAppPage() {
               LINEからのご来店ありがとうございます
             </h1>
             <p className="mt-3 text-sm leading-6 text-white/90">
-              はじめての方は初回入力へ、会員の方はログインして来店履歴やご予約確認へお進みください。
+              はじめての方は初回入力へ、会員の方はLINEログインして来店履歴やご予約確認へお進みください。
             </p>
 
             <div className="mt-4 grid grid-cols-1 gap-2">
@@ -357,7 +347,7 @@ export default function CustomerAppPage() {
                 href="/customer-app/login"
                 className="rounded-xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
               >
-                会員の方はこちら
+                LINEでログイン
               </Link>
             </div>
           </section>
@@ -382,7 +372,7 @@ export default function CustomerAppPage() {
               >
                 <div className="text-sm font-bold text-slate-900">Ailyマイページへログイン</div>
                 <div className="mt-2 text-sm leading-6 text-slate-600">
-                  電話番号でログインすると、来店履歴・次回提案・今後のご予約確認ができます。
+                  LINEログインで来店履歴・次回提案・今後のご予約確認ができます。
                 </div>
               </Link>
 
@@ -426,55 +416,6 @@ export default function CustomerAppPage() {
               ))}
             </div>
           </section>
-
-          <section className="rounded-3xl border bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <div className="text-base font-bold text-slate-900">最新のお知らせ</div>
-              <button
-                type="button"
-                onClick={() => showMessage("お知らせ一覧ページは次段階で実装します")}
-                className="text-sm font-bold text-rose-500"
-              >
-                もっと見る
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {newsItems.map((item) => (
-                <div key={item.id} className="rounded-2xl border bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="rounded-full bg-white px-3 py-1 text-[11px] font-bold text-slate-600">
-                      {item.tag}
-                    </div>
-                    <div className="text-xs text-slate-400">{item.date}</div>
-                  </div>
-                  <div className="mt-3 text-sm font-bold text-slate-900">
-                    {item.title}
-                  </div>
-                  <div className="mt-2 text-sm leading-6 text-slate-600">
-                    {item.body}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {message ? (
-            <div className="fixed left-1/2 top-4 z-50 w-[calc(100%-24px)] max-w-md -translate-x-1/2">
-              <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-lg">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="text-sm font-bold text-blue-700">{message}</div>
-                  <button
-                    type="button"
-                    onClick={() => setMessage("")}
-                    className="rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs font-bold text-blue-700"
-                  >
-                    閉じる
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       </main>
     );
@@ -495,12 +436,6 @@ export default function CustomerAppPage() {
                 className="block w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
               >
                 ログイン画面へ
-              </Link>
-              <Link
-                href="/customer-intake"
-                className="block w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-center text-sm font-bold text-slate-700"
-              >
-                初回入力はこちら
               </Link>
             </div>
           </div>
@@ -610,10 +545,6 @@ export default function CustomerAppPage() {
               </div>
             </div>
           </div>
-
-          <p className="mt-4 text-sm leading-6 text-slate-600">
-            前回内容をもとに、次回の色味やメンテナンス時期もわかりやすくご案内していきます。
-          </p>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
@@ -642,45 +573,6 @@ export default function CustomerAppPage() {
                 </div>
               </div>
             ))}
-          </div>
-        </section>
-
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">口コミのお願い</div>
-            <div className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-600">
-              ご協力お願いします
-            </div>
-          </div>
-
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            ご来店ありがとうございました。よろしければGoogle口コミのご投稿をお願いいたします。
-          </p>
-
-          <button
-            type="button"
-            onClick={() => showMessage("Google口コミ導線の接続は次段階で実装します")}
-            className="mt-4 w-full rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-bold text-white"
-          >
-            口コミを書く
-          </button>
-        </section>
-
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">キャンペーン / クーポン</div>
-            <div className="rounded-full bg-yellow-100 px-3 py-1 text-xs font-bold text-yellow-700">
-              お得情報
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl bg-gradient-to-r from-amber-50 to-rose-50 p-4">
-            <div className="text-sm font-bold text-slate-900">
-              次回来店特典キャンペーン
-            </div>
-            <div className="mt-2 text-sm leading-6 text-slate-600">
-              次回ご来店時にフィルインメニューをご利用の方へ、季節カラー追加提案をしています。
-            </div>
           </div>
         </section>
 
@@ -715,6 +607,16 @@ export default function CustomerAppPage() {
             ))}
           </div>
         </section>
+
+        <div className="rounded-3xl border bg-white p-4 shadow-sm">
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+          >
+            ログアウト
+          </button>
+        </div>
       </div>
 
       {message ? (

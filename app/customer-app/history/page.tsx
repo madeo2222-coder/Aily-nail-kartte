@@ -21,6 +21,11 @@ type VisitRow = {
   created_at: string | null;
 };
 
+type MeResponse = {
+  authenticated: boolean;
+  customer?: CustomerRow | null;
+};
+
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -35,11 +40,7 @@ function formatDate(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "未登録";
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1);
-  const day = String(date.getDate());
-
-  return `${year}/${month}/${day}`;
+  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
 }
 
 function getDisplayMenu(visit: VisitRow) {
@@ -60,53 +61,44 @@ export default function CustomerAppHistoryPage() {
       setLoading(true);
       setErrorMessage("");
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      try {
+        const meRes = await fetch("/api/line-login/me", {
+          cache: "no-store",
+        });
+        const meJson = (await meRes.json()) as MeResponse;
 
-      if (userError || !user) {
-        setIsLoggedIn(false);
+        if (!meJson.authenticated || !meJson.customer) {
+          setIsLoggedIn(false);
+          setLoading(false);
+          return;
+        }
+
+        setIsLoggedIn(true);
+
+        const currentCustomer = meJson.customer;
+        setCustomerName(currentCustomer.name || "お客様");
+
+        const { data: visitData, error: visitError } = await supabase
+          .from("visits")
+          .select(
+            "id, customer_id, visit_date, menu, menu_name, memo, next_proposal, staff_name, created_at"
+          )
+          .eq("customer_id", currentCustomer.id)
+          .order("visit_date", { ascending: false })
+          .order("created_at", { ascending: false });
+
+        if (visitError) {
+          setErrorMessage("来店履歴の取得に失敗しました。");
+          setLoading(false);
+          return;
+        }
+
+        setVisits((visitData || []) as VisitRow[]);
+      } catch {
+        setErrorMessage("読み込みに失敗しました。");
+      } finally {
         setLoading(false);
-        return;
       }
-
-      setIsLoggedIn(true);
-
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .select("id, name")
-        .eq("user_id", user.id)
-        .single();
-
-      if (customerError || !customer) {
-        setErrorMessage(
-          "お客様情報が見つかりませんでした。ログイン情報の確認が必要です。"
-        );
-        setLoading(false);
-        return;
-      }
-
-      const currentCustomer = customer as CustomerRow;
-      setCustomerName(currentCustomer.name || "お客様");
-
-      const { data: visitData, error: visitError } = await supabase
-        .from("visits")
-        .select(
-          "id, customer_id, visit_date, menu, menu_name, memo, next_proposal, staff_name, created_at"
-        )
-        .eq("customer_id", currentCustomer.id)
-        .order("visit_date", { ascending: false })
-        .order("created_at", { ascending: false });
-
-      if (visitError) {
-        setErrorMessage("来店履歴の取得に失敗しました。");
-        setLoading(false);
-        return;
-      }
-
-      setVisits((visitData || []) as VisitRow[]);
-      setLoading(false);
     }
 
     fetchHistory();
@@ -145,7 +137,7 @@ export default function CustomerAppHistoryPage() {
             </div>
             <h1 className="mt-2 text-2xl font-bold leading-tight">来店履歴</h1>
             <p className="mt-3 text-sm leading-6 text-white/90">
-              来店履歴は会員ログイン後に確認できます。初めての方は初回入力からお進みください。
+              来店履歴はLINEログイン後に確認できます。初めての方は初回入力からお進みください。
             </p>
 
             <div className="mt-4 grid grid-cols-1 gap-2">
@@ -153,7 +145,7 @@ export default function CustomerAppHistoryPage() {
                 href="/customer-app/login"
                 className="rounded-xl bg-white px-4 py-3 text-center text-sm font-bold text-slate-900"
               >
-                会員の方はこちら
+                LINEでログイン
               </Link>
               <Link
                 href="/customer-intake"
@@ -161,33 +153,6 @@ export default function CustomerAppHistoryPage() {
               >
                 初めての方はこちら
               </Link>
-            </div>
-          </section>
-
-          <section className="rounded-3xl border bg-white p-4 shadow-sm">
-            <div className="text-base font-bold text-slate-900">履歴で確認できること</div>
-
-            <div className="mt-4 grid grid-cols-1 gap-3">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <div className="text-sm font-bold text-slate-900">前回メニュー</div>
-                <div className="mt-2 text-sm leading-6 text-slate-600">
-                  これまでの施術内容を見返せます。
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <div className="text-sm font-bold text-slate-900">担当スタッフ</div>
-                <div className="mt-2 text-sm leading-6 text-slate-600">
-                  前回担当者や記録メモを確認できます。
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <div className="text-sm font-bold text-slate-900">次回提案</div>
-                <div className="mt-2 text-sm leading-6 text-slate-600">
-                  次回おすすめ時期やメニュー提案を確認できます。
-                </div>
-              </div>
             </div>
           </section>
         </div>
