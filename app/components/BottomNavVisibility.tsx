@@ -6,7 +6,11 @@ import BottomNav from "@/components/BottomNav";
 export default function BottomNavVisibility() {
   const pathname = usePathname();
 
-  const hiddenPaths = ["/customer-intake"];
+  const hiddenPaths = [
+    "/customer-intake",
+    "/customer-app",
+    "/owner-dashboard",
+  ];
 
   const shouldHide = hiddenPaths.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`)
