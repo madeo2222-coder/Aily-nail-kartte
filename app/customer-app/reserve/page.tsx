@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-
-const BOOKING_URL = "https://example.com/reserve";
+import { useSearchParams } from "next/navigation";
 
 const staffOptions = ["指名なし", "山田", "佐藤", "田中"];
+
 const menuOptions = [
   "ワンカラー",
   "定額デザインコース",
   "フィルインメンテナンス",
   "ケアメニュー",
+  "開運ネイル相談",
+  "ネイルチップ相談",
 ];
 
 type MeResponse = {
@@ -20,33 +22,30 @@ type MeResponse = {
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
+  { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
-  { key: "news", label: "お知らせ", icon: "📢", href: "" },
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
 
-function isBookingUrlReady(url: string) {
-  return url.trim().length > 0 && !url.includes("example.com");
-}
-
 export default function CustomerAppReservePage() {
+  const searchParams = useSearchParams();
+const menuFromQuery = searchParams.get("menu");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  const [selectedMenu, setSelectedMenu] = useState(menuOptions[0]);
+ const [selectedMenu, setSelectedMenu] = useState(
+  menuFromQuery || menuOptions[0]
+);
   const [selectedStaff, setSelectedStaff] = useState(staffOptions[0]);
-  const [selectedDate, setSelectedDate] = useState("2026-04-25");
-  const [selectedTime, setSelectedTime] = useState("14:00");
-
-  const bookingReady = isBookingUrlReady(BOOKING_URL);
+  const [selectedDate, setSelectedDate] = useState("");
+  const [selectedTime, setSelectedTime] = useState("");
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     async function checkAuth() {
       try {
-        const res = await fetch("/api/line-login/me", {
-          cache: "no-store",
-        });
+        const res = await fetch("/api/line-login/me", { cache: "no-store" });
         const json = (await res.json()) as MeResponse;
         setIsLoggedIn(!!json.authenticated);
       } catch {
@@ -60,7 +59,9 @@ export default function CustomerAppReservePage() {
   }, []);
 
   const summaryText = useMemo(() => {
-    return `${selectedDate} ${selectedTime} / ${selectedMenu} / ${selectedStaff}`;
+    const dateText = selectedDate || "未選択";
+    const timeText = selectedTime || "未選択";
+    return `${dateText} ${timeText} / ${selectedMenu} / ${selectedStaff}`;
   }, [selectedDate, selectedTime, selectedMenu, selectedStaff]);
 
   function showMessage(text: string) {
@@ -68,14 +69,46 @@ export default function CustomerAppReservePage() {
     window.setTimeout(() => setMessage(""), 2500);
   }
 
-  function handleBookingClick() {
-    if (!bookingReady) {
-      showMessage("予約URL未設定です。BOOKING_URL を実URLに差し替えてください。");
+  async function handleReserveSubmit() {
+  if (!selectedDate) {
+    showMessage("希望日を選択してください");
+    return;
+  }
+
+  if (!selectedTime) {
+    showMessage("希望時間を選択してください");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/reservations", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        menu: selectedMenu,
+        date: selectedDate,
+        time: selectedTime,
+        memo: note,
+      }),
+    });
+
+    const json = await response.json();
+
+    if (!response.ok || !json.ok) {
+      showMessage(json.error || "予約保存に失敗しました");
       return;
     }
 
-    window.open(BOOKING_URL, "_blank", "noopener,noreferrer");
+    showMessage("予約希望を受け付けました");
+
+    setNote("");
+  } catch (error) {
+    console.error(error);
+    showMessage("通信エラーが発生しました");
   }
+}
 
   if (loading) {
     return (
@@ -118,42 +151,6 @@ export default function CustomerAppReservePage() {
               </Link>
             </div>
           </section>
-
-          <section className="rounded-3xl border bg-white p-4 shadow-sm">
-            <div className="text-base font-bold text-slate-900">予約の流れ</div>
-
-            <div className="mt-4 grid grid-cols-1 gap-3">
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <div className="text-xs text-slate-500">STEP 1</div>
-                <div className="mt-1 text-sm font-bold text-slate-900">
-                  LINEログイン
-                </div>
-                <div className="mt-2 text-sm leading-6 text-slate-600">
-                  顧客情報と紐づいた状態でマイページへ入れます。
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <div className="text-xs text-slate-500">STEP 2</div>
-                <div className="mt-1 text-sm font-bold text-slate-900">
-                  初めての方は初回入力
-                </div>
-                <div className="mt-2 text-sm leading-6 text-slate-600">
-                  事前確認とご署名を済ませていただくと、その後のご案内がスムーズです。
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-4">
-                <div className="text-xs text-slate-500">STEP 3</div>
-                <div className="mt-1 text-sm font-bold text-slate-900">
-                  予約ページへ進む
-                </div>
-                <div className="mt-2 text-sm leading-6 text-slate-600">
-                  次回予約やご希望日時の調整へ進みます。
-                </div>
-              </div>
-            </div>
-          </section>
         </div>
       </main>
     );
@@ -168,29 +165,45 @@ export default function CustomerAppReservePage() {
           </div>
           <h1 className="mt-2 text-2xl font-bold leading-tight">予約する</h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            ご希望のメニュー、担当者、日時を選んで次回予約の流れを確認できます。
+            ご希望の日時・メニューを入力してください。診断結果をもとにした開運ネイル相談も選べます。
           </p>
-
-          <div className="mt-4 flex gap-2">
-            <Link
-              href="/customer-app"
-              className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-rose-500"
-            >
-              ホームへ戻る
-            </Link>
-            <Link
-              href="/customer-app/history"
-              className="rounded-xl border border-white/30 px-4 py-2 text-sm font-bold text-white"
-            >
-              履歴を見る
-            </Link>
-          </div>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">予約内容を選択</div>
+          <div className="text-base font-bold text-slate-900">予約内容</div>
 
           <div className="mt-4 space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                希望日
+              </label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                希望時間
+              </label>
+              <select
+                value={selectedTime}
+                onChange={(e) => setSelectedTime(e.target.value)}
+                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+              >
+                <option value="">選択してください</option>
+                <option value="10:00">10:00</option>
+                <option value="11:00">11:00</option>
+                <option value="13:00">13:00</option>
+                <option value="14:00">14:00</option>
+                <option value="15:00">15:00</option>
+                <option value="16:00">16:00</option>
+              </select>
+            </div>
+
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
                 メニュー
@@ -198,7 +211,7 @@ export default function CustomerAppReservePage() {
               <select
                 value={selectedMenu}
                 onChange={(e) => setSelectedMenu(e.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3"
+                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
                 {menuOptions.map((menu) => (
                   <option key={menu} value={menu}>
@@ -215,7 +228,7 @@ export default function CustomerAppReservePage() {
               <select
                 value={selectedStaff}
                 onChange={(e) => setSelectedStaff(e.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3"
+                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
                 {staffOptions.map((staff) => (
                   <option key={staff} value={staff}>
@@ -227,32 +240,15 @@ export default function CustomerAppReservePage() {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                希望日
+                ご要望・備考
               </label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3"
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                rows={4}
+                placeholder="例：診断結果のラッキーカラーを使いたい、爪が薄い、オフィス向けにしたい等"
+                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                希望時間
-              </label>
-              <select
-                value={selectedTime}
-                onChange={(e) => setSelectedTime(e.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3"
-              >
-                <option value="10:00">10:00</option>
-                <option value="11:00">11:00</option>
-                <option value="13:00">13:00</option>
-                <option value="14:00">14:00</option>
-                <option value="15:00">15:00</option>
-                <option value="16:00">16:00</option>
-              </select>
             </div>
           </div>
         </section>
@@ -261,7 +257,7 @@ export default function CustomerAppReservePage() {
           <div className="flex items-center justify-between">
             <div className="text-base font-bold text-slate-900">予約確認</div>
             <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-600">
-              ご確認ください
+              確認
             </div>
           </div>
 
@@ -270,32 +266,23 @@ export default function CustomerAppReservePage() {
             <div className="mt-2 text-sm font-bold leading-6 text-slate-900">
               {summaryText}
             </div>
+            {note.trim() ? (
+              <div className="mt-3 text-sm leading-6 text-slate-600">
+                {note}
+              </div>
+            ) : null}
           </div>
 
-          <p className="mt-4 text-sm leading-6 text-slate-600">
-            この画面から実際の予約ページへ進める形にしています。実URLを入れれば、そのままLINE導線でも運用できます。
-          </p>
-
-          <div className="mt-4 flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={handleBookingClick}
-              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
-            >
-              この内容で予約する
-            </button>
-
-            <button
-              type="button"
-              onClick={handleBookingClick}
-              className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
-            >
-              予約ページへ進む
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleReserveSubmit}
+            className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+          >
+            この内容で予約希望を送る
+          </button>
 
           <div className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            今は外部予約URL連携方式です。今後、Ailyマイページ内で予約完結できるように進めていきます。
+            現時点では画面上の受付確認までです。次の段階で予約データのDB保存、スタッフ側予約一覧、空き枠管理を実装します。
           </div>
         </section>
       </div>

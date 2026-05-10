@@ -102,11 +102,36 @@ const recommendedMenus: MenuItem[] = [
 ];
 
 const signedInNavItems = [
-  { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
-  { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
-  { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
-  { key: "news", label: "お知らせ", icon: "📢", href: "" },
-  { key: "mypage", label: "マイ", icon: "👤", href: "" },
+  {
+    key: "home",
+    label: "ホーム",
+    icon: "🏠",
+    href: "/customer-app",
+  },
+  {
+    key: "reserve",
+    label: "予約",
+    icon: "📅",
+    href: "/customer-app/reserve",
+  },
+  {
+    key: "diagnosis",
+    label: "診断",
+    icon: "✨",
+    href: "/customer-app/sanmeigaku",
+  },
+  {
+    key: "history",
+    label: "履歴",
+    icon: "📝",
+    href: "/customer-app/history",
+  },
+  {
+    key: "mypage",
+    label: "マイ",
+    icon: "👤",
+    href: "",
+  },
 ];
 
 function formatDate(value: string | null) {

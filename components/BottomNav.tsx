@@ -43,7 +43,13 @@ export default function BottomNav() {
       className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="mx-auto grid max-w-md grid-cols-8">
+      <div
+        className="mx-auto max-w-md"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(8, minmax(0, 1fr))",
+        }}
+      >
         {navItems.map((item) => {
           const isActive =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
