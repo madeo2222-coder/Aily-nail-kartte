@@ -1,8 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+
+type MeResponse = {
+  authenticated: boolean;
+  customer?: {
+    id?: string;
+    salon_id?: string | null;
+    name?: string | null;
+  };
+};
 
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
@@ -24,6 +33,29 @@ function NailTipOrderContent() {
   const [sizeStatus, setSizeStatus] = useState("サイズ未確認");
   const [deliveryRequest, setDeliveryRequest] = useState("");
 
+  const [customerId, setCustomerId] = useState("");
+  const [salonId, setSalonId] = useState("");
+
+  useEffect(() => {
+    async function fetchMe() {
+      try {
+        const res = await fetch("/api/line-login/me", {
+          cache: "no-store",
+        });
+
+        const json = (await res.json()) as MeResponse;
+
+        setCustomerId(json.customer?.id || "");
+        setSalonId(json.customer?.salon_id || "");
+      } catch {
+        setCustomerId("");
+        setSalonId("");
+      }
+    }
+
+    fetchMe();
+  }, []);
+
   const summaryText = useMemo(() => {
     return `${color} / ${stone} / ${theme}`;
   }, [color, stone, theme]);
@@ -33,8 +65,41 @@ function NailTipOrderContent() {
     window.setTimeout(() => setMessage(""), 2500);
   }
 
-  function handleSubmit() {
-    showMessage("ネイルチップ注文受付は次段階でDB保存します");
+  async function handleSubmit() {
+    try {
+      const response = await fetch("/api/nail-tip-orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          salonId,
+          customerId,
+          luckyColor: color,
+          luckyStone: stone,
+          nailTheme: theme,
+          designRequest,
+          sizeStatus,
+          deliveryRequest,
+        }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.ok) {
+        showMessage(json.error || "注文保存に失敗しました");
+        return;
+      }
+
+      showMessage("ネイルチップ注文を受け付けました");
+
+      setDesignRequest("");
+      setDeliveryRequest("");
+      setSizeStatus("サイズ未確認");
+    } catch (error) {
+      console.error(error);
+      showMessage("通信エラーが発生しました");
+    }
   }
 
   return (
@@ -115,8 +180,12 @@ function NailTipOrderContent() {
               >
                 <option value="サイズ未確認">サイズ未確認</option>
                 <option value="サイズ測定済み">サイズ測定済み</option>
-                <option value="サイズ確認キット希望">サイズ確認キット希望</option>
-                <option value="過去注文と同じサイズ">過去注文と同じサイズ</option>
+                <option value="サイズ確認キット希望">
+                  サイズ確認キット希望
+                </option>
+                <option value="過去注文と同じサイズ">
+                  過去注文と同じサイズ
+                </option>
               </select>
             </div>
 
@@ -147,6 +216,7 @@ function NailTipOrderContent() {
           <div className="text-base font-bold text-slate-900">
             店舗施術もできます
           </div>
+
           <p className="mt-2 text-sm leading-6 text-slate-600">
             実際に店舗で施術を受けたい場合は、開運ネイル相談として予約できます。
           </p>
@@ -164,7 +234,10 @@ function NailTipOrderContent() {
         <div className="fixed left-1/2 top-4 z-50 w-[calc(100%-24px)] max-w-md -translate-x-1/2">
           <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-lg">
             <div className="flex items-start justify-between gap-3">
-              <div className="text-sm font-bold text-blue-700">{message}</div>
+              <div className="text-sm font-bold text-blue-700">
+                {message}
+              </div>
+
               <button
                 type="button"
                 onClick={() => setMessage("")}
@@ -196,8 +269,13 @@ function NailTipOrderContent() {
                       : "text-gray-500 hover:text-gray-800"
                   }`}
                 >
-                  <span className="text-lg leading-none">{item.icon}</span>
-                  <span className="mt-1 leading-none">{item.label}</span>
+                  <span className="text-lg leading-none">
+                    {item.icon}
+                  </span>
+
+                  <span className="mt-1 leading-none">
+                    {item.label}
+                  </span>
                 </Link>
               );
             }
@@ -206,11 +284,18 @@ function NailTipOrderContent() {
               <button
                 key={item.key}
                 type="button"
-                onClick={() => showMessage(`${item.label} 画面は次段階で実装します`)}
+                onClick={() =>
+                  showMessage(`${item.label} 画面は次段階で実装します`)
+                }
                 className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
               >
-                <span className="text-lg leading-none">{item.icon}</span>
-                <span className="mt-1 leading-none">{item.label}</span>
+                <span className="text-lg leading-none">
+                  {item.icon}
+                </span>
+
+                <span className="mt-1 leading-none">
+                  {item.label}
+                </span>
               </button>
             );
           })}
