@@ -52,8 +52,7 @@ export function middleware(request: NextRequest) {
     }
 
     if (!isAllowedCustomerPath(pathname)) {
-      const redirectUrl = new URL("/customer-app", request.url);
-      return NextResponse.redirect(redirectUrl);
+      return NextResponse.redirect(new URL("/customer-app", request.url));
     }
   }
 
