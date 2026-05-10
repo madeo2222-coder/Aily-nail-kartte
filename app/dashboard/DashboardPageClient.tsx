@@ -238,6 +238,16 @@ export default function DashboardPageClient() {
     fetchDashboardData();
   }, []);
 
+  async function handleStaffLogout() {
+    try {
+      await fetch("/api/staff-login/logout", {
+        method: "POST",
+      });
+    } finally {
+      window.location.href = "/login";
+    }
+  }
+
   async function fetchDashboardData() {
     setLoading(true);
 
@@ -409,12 +419,22 @@ export default function DashboardPageClient() {
             </p>
           </div>
 
-          <Link
-            href="/visits/new"
-            className="shrink-0 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
-          >
-            来店登録
-          </Link>
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={handleStaffLogout}
+              className="rounded-2xl border border-white/40 bg-white/15 px-4 py-3 text-sm font-bold text-white backdrop-blur"
+            >
+              ログアウト
+            </button>
+
+            <Link
+              href="/visits/new"
+              className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+            >
+              来店登録
+            </Link>
+          </div>
         </div>
       </div>
 
