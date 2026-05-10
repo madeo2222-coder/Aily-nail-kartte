@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const CUSTOMER_SESSION_COOKIE = "customer_line_session";
 const STAFF_SESSION_COOKIE = "staff_session";
+const STAFF_ROLE_COOKIE = "staff_role";
 
 function hasCustomerSession(request: NextRequest) {
   return request.cookies.has(CUSTOMER_SESSION_COOKIE);
@@ -9,6 +10,11 @@ function hasCustomerSession(request: NextRequest) {
 
 function hasStaffSession(request: NextRequest) {
   return request.cookies.has(STAFF_SESSION_COOKIE);
+}
+
+function getStaffRole(request: NextRequest) {
+  const role = request.cookies.get(STAFF_ROLE_COOKIE)?.value;
+  return role === "owner" ? "owner" : role === "staff" ? "staff" : null;
 }
 
 function isStaticAsset(pathname: string) {
@@ -36,10 +42,7 @@ function isAllowedCustomerPath(pathname: string) {
 }
 
 function isAllowedStaffPath(pathname: string) {
-  return (
-    pathname === "/login" ||
-    pathname.startsWith("/api/staff-login/")
-  );
+  return pathname === "/login" || pathname.startsWith("/api/staff-login/");
 }
 
 function isBlockedApiPathForCustomer(pathname: string) {
@@ -54,6 +57,10 @@ function isStaffProtectedPath(pathname: string) {
   return true;
 }
 
+function isOwnerOnlyPath(pathname: string) {
+  return pathname === "/owner-dashboard" || pathname.startsWith("/owner-dashboard/");
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -63,8 +70,8 @@ export function middleware(request: NextRequest) {
 
   const customerLoggedIn = hasCustomerSession(request);
   const staffLoggedIn = hasStaffSession(request);
+  const staffRole = getStaffRole(request);
 
-  // お客様ログイン中は customer-app 以外へ行かせない
   if (customerLoggedIn) {
     if (isBlockedApiPathForCustomer(pathname)) {
       return NextResponse.json(
@@ -80,14 +87,19 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // スタッフ領域はスタッフログイン必須
   if (isStaffProtectedPath(pathname) && !staffLoggedIn) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // ログイン済みスタッフが /login に来たらダッシュボードへ
   if (pathname === "/login" && staffLoggedIn) {
+    if (staffRole === "owner") {
+      return NextResponse.redirect(new URL("/owner-dashboard", request.url));
+    }
     return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  if (staffLoggedIn && isOwnerOnlyPath(pathname) && staffRole !== "owner") {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
   return NextResponse.next();
