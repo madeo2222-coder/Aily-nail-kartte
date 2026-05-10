@@ -5,6 +5,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+const customMenuOption = "その他・自由入力";
+
 const menuOptions = [
   "ワンカラー",
   "定額デザインコース",
@@ -12,6 +14,7 @@ const menuOptions = [
   "ケアメニュー",
   "開運ネイル相談",
   "ネイルチップ相談",
+  customMenuOption,
 ];
 
 type MeResponse = {
@@ -51,6 +54,7 @@ function ReservePageContent() {
   const [selectedMenu, setSelectedMenu] = useState(
     menuFromQuery || menuOptions[0]
   );
+  const [customMenu, setCustomMenu] = useState("");
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
@@ -95,11 +99,21 @@ function ReservePageContent() {
     return staffs.find((staff) => staff.id === selectedStaffId)?.name || "未設定";
   }, [selectedStaffId, staffs]);
 
+  const reservationMenu = useMemo(() => {
+    if (selectedMenu === customMenuOption) {
+      return customMenu.trim();
+    }
+
+    return selectedMenu;
+  }, [selectedMenu, customMenu]);
+
   const summaryText = useMemo(() => {
     const dateText = selectedDate || "未選択";
     const timeText = selectedTime || "未選択";
-    return `${dateText} ${timeText} / ${selectedMenu} / ${selectedStaffName}`;
-  }, [selectedDate, selectedTime, selectedMenu, selectedStaffName]);
+    return `${dateText} ${timeText} / ${
+      reservationMenu || "メニュー未入力"
+    } / ${selectedStaffName}`;
+  }, [selectedDate, selectedTime, reservationMenu, selectedStaffName]);
 
   function showMessage(text: string) {
     setMessage(text);
@@ -117,6 +131,11 @@ function ReservePageContent() {
       return;
     }
 
+    if (!reservationMenu) {
+      showMessage("メニューを入力してください");
+      return;
+    }
+
     try {
       const response = await fetch("/api/reservations", {
         method: "POST",
@@ -124,14 +143,14 @@ function ReservePageContent() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          menu: selectedMenu,
+          menu: reservationMenu,
           date: selectedDate,
           time: selectedTime,
           staffId: selectedStaffId,
           customerId,
           salonId,
           memo:
-            selectedMenu === "開運ネイル相談"
+            reservationMenu === "開運ネイル相談"
               ? `AI算命学診断経由\n${note}`
               : note,
         }),
@@ -146,6 +165,7 @@ function ReservePageContent() {
 
       showMessage("予約希望を受け付けました");
       setNote("");
+      setCustomMenu("");
     } catch (error) {
       console.error(error);
       showMessage("通信エラーが発生しました");
@@ -261,6 +281,21 @@ function ReservePageContent() {
                   </option>
                 ))}
               </select>
+
+              {selectedMenu === customMenuOption ? (
+                <div>
+                  <label className="mb-2 mt-3 block text-sm font-medium text-slate-700">
+                    メニュー自由入力
+                  </label>
+                  <input
+                    type="text"
+                    value={customMenu}
+                    onChange={(e) => setCustomMenu(e.target.value)}
+                    placeholder="例：持ち込みデザイン、長さ出し相談、ブライダルネイル等"
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div>

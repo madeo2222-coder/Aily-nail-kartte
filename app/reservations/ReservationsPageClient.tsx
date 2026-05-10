@@ -398,16 +398,15 @@ export default function ReservationsPageClient() {
   }, [reservations, customerMap, staffMap]);
 
   useEffect(() => {
-    if (selectedDate) return;
+  if (selectedDate) return;
 
-    const firstDate =
-      normalizedReservations.find((row) => row.reservationDate)?.reservationDate ||
-      "";
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  const dd = String(today.getDate()).padStart(2, "0");
 
-    if (firstDate) {
-      setSelectedDate(firstDate);
-    }
-  }, [normalizedReservations, selectedDate]);
+  setSelectedDate(`${yyyy}-${mm}-${dd}`);
+}, [selectedDate, reservations]);
 
   const staffOptions = useMemo(() => {
     const set = new Set<string>();
@@ -446,7 +445,18 @@ export default function ReservationsPageClient() {
   }, [filteredReservations, overlapIds]);
 
   const reservationCount = filteredReservations.length;
+const requestedCount = filteredReservations.filter(
+  (item) =>
+    item.status === "予約受付" || item.status === "予約"
+).length;
 
+const aiDiagnosisCount = filteredReservations.filter(
+  (item) => item.isAiDiagnosis
+).length;
+
+const completedCount = filteredReservations.filter(
+  (item) => item.status === "完了"
+).length;
   async function updateStatus(id: string, status: string) {
     setUpdatingId(id);
 
@@ -528,31 +538,47 @@ export default function ReservationsPageClient() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">対象日の予約件数</div>
-            <div className="mt-2 text-2xl font-bold text-slate-900">
-              {reservationCount.toLocaleString()}件
-            </div>
-            <div className="mt-2 text-sm text-slate-500">今日の確認件数</div>
-          </div>
+       <div className="grid gap-4 md:grid-cols-4">
+  <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
+    <div className="text-sm text-slate-500">本日予約</div>
+    <div className="mt-2 text-2xl font-bold text-slate-900">
+      {reservationCount.toLocaleString()}件
+    </div>
+    <div className="mt-2 text-sm text-slate-500">
+      選択中条件の予約件数
+    </div>
+  </div>
 
-          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">重複注意</div>
-            <div className="mt-2 text-2xl font-bold text-rose-500">
-              {overlapReservations.length.toLocaleString()}件
-            </div>
-            <div className="mt-2 text-sm text-slate-500">時間重複をチェック中</div>
-          </div>
+  <div className="rounded-3xl border border-amber-100 bg-white p-4 shadow-sm">
+    <div className="text-sm text-slate-500">未確認予約</div>
+    <div className="mt-2 text-2xl font-bold text-amber-500">
+      {requestedCount.toLocaleString()}件
+    </div>
+    <div className="mt-2 text-sm text-slate-500">
+      予約受付ステータス
+    </div>
+  </div>
 
-          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">運用状態</div>
-            <div className="mt-2 text-base font-bold text-slate-900">
-              Supabase連携中
-            </div>
-            <div className="mt-2 text-sm text-slate-500">予約データ反映OK</div>
-          </div>
-        </div>
+  <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
+    <div className="text-sm text-slate-500">AI診断予約</div>
+    <div className="mt-2 text-2xl font-bold text-purple-600">
+      {aiDiagnosisCount.toLocaleString()}件
+    </div>
+    <div className="mt-2 text-sm text-slate-500">
+      算命学診断経由
+    </div>
+  </div>
+
+  <div className="rounded-3xl border border-emerald-100 bg-white p-4 shadow-sm">
+    <div className="text-sm text-slate-500">完了件数</div>
+    <div className="mt-2 text-2xl font-bold text-emerald-600">
+      {completedCount.toLocaleString()}件
+    </div>
+    <div className="mt-2 text-sm text-slate-500">
+      来店完了済み
+    </div>
+  </div>
+</div>
 
         <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="mb-4">

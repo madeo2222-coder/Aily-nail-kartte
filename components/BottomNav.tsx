@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const navItems = [
   { href: "/dashboard", label: "ホーム", icon: "🏠" },
   { href: "/customers", label: "顧客", icon: "👤" },
+  { href: "/reservations", label: "予約", icon: "📅" },
   { href: "/visits", label: "来店", icon: "💅" },
   { href: "/expenses", label: "経費", icon: "🧾" },
   { href: "/finance", label: "収支", icon: "📊" },
@@ -47,7 +48,7 @@ export default function BottomNav() {
         className="mx-auto max-w-md"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(8, minmax(0, 1fr))",
+          gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
         }}
       >
         {navItems.map((item) => {

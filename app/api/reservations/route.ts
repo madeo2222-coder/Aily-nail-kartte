@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const memo = String(body.memo || "").trim();
     const staffId = String(body.staffId || "").trim();
     const customerId = String(body.customerId || "").trim();
-    const salonId = String(body.salonId || "").trim();
+    let salonId = String(body.salonId || "").trim();
 
     if (!menu) {
       return NextResponse.json(
@@ -34,6 +34,44 @@ export async function POST(request: Request) {
       );
     }
 
+    if (!salonId && staffId) {
+      const { data: staffData, error: staffError } = await supabase
+        .from("staffs")
+        .select("salon_id")
+        .eq("id", staffId)
+        .maybeSingle();
+
+      if (staffError) {
+        return NextResponse.json(
+          { ok: false, error: staffError.message },
+          { status: 500 }
+        );
+      }
+
+      if (staffData?.salon_id) {
+        salonId = String(staffData.salon_id);
+      }
+    }
+
+    if (!salonId && customerId) {
+      const { data: customerData, error: customerError } = await supabase
+        .from("customers")
+        .select("salon_id")
+        .eq("id", customerId)
+        .maybeSingle();
+
+      if (customerError) {
+        return NextResponse.json(
+          { ok: false, error: customerError.message },
+          { status: 500 }
+        );
+      }
+
+      if (customerData?.salon_id) {
+        salonId = String(customerData.salon_id);
+      }
+    }
+
     const startAt = new Date(`${date}T${time}:00+09:00`);
     const endAt = new Date(startAt.getTime() + 90 * 60 * 1000);
     const startIso = startAt.toISOString();
@@ -48,6 +86,10 @@ export async function POST(request: Request) {
 
     if (staffId) {
       overlapQuery = overlapQuery.eq("staff_id", staffId);
+    }
+
+    if (salonId) {
+      overlapQuery = overlapQuery.eq("salon_id", salonId);
     }
 
     const { data: overlapReservations, error: overlapError } =
