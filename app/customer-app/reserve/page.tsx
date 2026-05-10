@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-
-const staffOptions = ["指名なし", "山田", "佐藤", "田中"];
+import { supabase } from "@/lib/supabase";
 
 const menuOptions = [
   "ワンカラー",
@@ -19,6 +18,11 @@ type MeResponse = {
   authenticated: boolean;
 };
 
+type StaffRow = {
+  id: string;
+  name: string | null;
+};
+
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -29,40 +33,60 @@ const signedInNavItems = [
 
 function ReservePageContent() {
   const searchParams = useSearchParams();
-const menuFromQuery = searchParams.get("menu");
+  const menuFromQuery = searchParams.get("menu");
+
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [staffs, setStaffs] = useState<StaffRow[]>([]);
 
- const [selectedMenu, setSelectedMenu] = useState(
-  menuFromQuery || menuOptions[0]
-);
-  const [selectedStaff, setSelectedStaff] = useState(staffOptions[0]);
+  const [selectedMenu, setSelectedMenu] = useState(
+    menuFromQuery || menuOptions[0]
+  );
+  const [selectedStaffId, setSelectedStaffId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [note, setNote] = useState("");
 
   useEffect(() => {
-    async function checkAuth() {
+    async function checkAuthAndLoadStaffs() {
       try {
         const res = await fetch("/api/line-login/me", { cache: "no-store" });
         const json = (await res.json()) as MeResponse;
         setIsLoggedIn(!!json.authenticated);
+
+        const { data, error } = await supabase
+          .from("staffs")
+          .select("id, name")
+          .order("name", { ascending: true });
+
+        if (error) {
+          console.error("staffs fetch error:", error.message);
+          setStaffs([]);
+        } else {
+          setStaffs((data as StaffRow[]) || []);
+        }
       } catch {
         setIsLoggedIn(false);
+        setStaffs([]);
       } finally {
         setLoading(false);
       }
     }
 
-    checkAuth();
+    checkAuthAndLoadStaffs();
   }, []);
+
+  const selectedStaffName = useMemo(() => {
+    if (!selectedStaffId) return "指名なし";
+    return staffs.find((staff) => staff.id === selectedStaffId)?.name || "未設定";
+  }, [selectedStaffId, staffs]);
 
   const summaryText = useMemo(() => {
     const dateText = selectedDate || "未選択";
     const timeText = selectedTime || "未選択";
-    return `${dateText} ${timeText} / ${selectedMenu} / ${selectedStaff}`;
-  }, [selectedDate, selectedTime, selectedMenu, selectedStaff]);
+    return `${dateText} ${timeText} / ${selectedMenu} / ${selectedStaffName}`;
+  }, [selectedDate, selectedTime, selectedMenu, selectedStaffName]);
 
   function showMessage(text: string) {
     setMessage(text);
@@ -70,48 +94,48 @@ const menuFromQuery = searchParams.get("menu");
   }
 
   async function handleReserveSubmit() {
-  if (!selectedDate) {
-    showMessage("希望日を選択してください");
-    return;
-  }
-
-  if (!selectedTime) {
-    showMessage("希望時間を選択してください");
-    return;
-  }
-
-  try {
-    const response = await fetch("/api/reservations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-     body: JSON.stringify({
-  menu: selectedMenu,
-  date: selectedDate,
-  time: selectedTime,
-  memo:
-    selectedMenu === "開運ネイル相談"
-      ? `AI算命学診断経由\n${note}`
-      : note,
-}),
-    });
-
-    const json = await response.json();
-
-    if (!response.ok || !json.ok) {
-      showMessage(json.error || "予約保存に失敗しました");
+    if (!selectedDate) {
+      showMessage("希望日を選択してください");
       return;
     }
 
-    showMessage("予約希望を受け付けました");
+    if (!selectedTime) {
+      showMessage("希望時間を選択してください");
+      return;
+    }
 
-    setNote("");
-  } catch (error) {
-    console.error(error);
-    showMessage("通信エラーが発生しました");
+    try {
+      const response = await fetch("/api/reservations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          menu: selectedMenu,
+          date: selectedDate,
+          time: selectedTime,
+          staffId: selectedStaffId,
+          memo:
+            selectedMenu === "開運ネイル相談"
+              ? `AI算命学診断経由\n${note}`
+              : note,
+        }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.ok) {
+        showMessage(json.error || "予約保存に失敗しました");
+        return;
+      }
+
+      showMessage("予約希望を受け付けました");
+      setNote("");
+    } catch (error) {
+      console.error(error);
+      showMessage("通信エラーが発生しました");
+    }
   }
-}
 
   if (loading) {
     return (
@@ -229,13 +253,14 @@ const menuFromQuery = searchParams.get("menu");
                 担当者
               </label>
               <select
-                value={selectedStaff}
-                onChange={(e) => setSelectedStaff(e.target.value)}
+                value={selectedStaffId}
+                onChange={(e) => setSelectedStaffId(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
-                {staffOptions.map((staff) => (
-                  <option key={staff} value={staff}>
-                    {staff}
+                <option value="">指名なし</option>
+                {staffs.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.name || "名前未設定"}
                   </option>
                 ))}
               </select>
@@ -349,6 +374,7 @@ const menuFromQuery = searchParams.get("menu");
     </main>
   );
 }
+
 export default function CustomerAppReservePage() {
   return (
     <Suspense fallback={null}>
