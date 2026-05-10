@@ -35,7 +35,9 @@ function isCustomerAllowedApiPath(pathname: string) {
   return (
     pathname.startsWith("/api/line-login/") ||
     pathname === "/api/reservations" ||
-    pathname.startsWith("/api/reservations/")
+    pathname.startsWith("/api/reservations/") ||
+    pathname === "/api/nail-tip-orders" ||
+    pathname.startsWith("/api/nail-tip-orders/")
   );
 }
 
@@ -103,6 +105,7 @@ export function middleware(request: NextRequest) {
     if (staffRole === "owner") {
       return NextResponse.redirect(new URL("/owner-dashboard", request.url));
     }
+
     return NextResponse.redirect(new URL("/", request.url));
   }
 
