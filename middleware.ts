@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const CUSTOMER_SESSION_COOKIE = "customer_line_session";
+const STAFF_SESSION_COOKIE = "staff_session";
 
 function hasCustomerSession(request: NextRequest) {
   return request.cookies.has(CUSTOMER_SESSION_COOKIE);
+}
+
+function hasStaffSession(request: NextRequest) {
+  return request.cookies.has(STAFF_SESSION_COOKIE);
 }
 
 function isStaticAsset(pathname: string) {
@@ -30,8 +35,23 @@ function isAllowedCustomerPath(pathname: string) {
   );
 }
 
-function isBlockedApiPath(pathname: string) {
+function isAllowedStaffPath(pathname: string) {
+  return (
+    pathname === "/login" ||
+    pathname.startsWith("/api/staff-login/")
+  );
+}
+
+function isBlockedApiPathForCustomer(pathname: string) {
   return pathname.startsWith("/api/") && !pathname.startsWith("/api/line-login/");
+}
+
+function isStaffProtectedPath(pathname: string) {
+  if (isStaticAsset(pathname)) return false;
+  if (isAllowedCustomerPath(pathname)) return false;
+  if (isAllowedStaffPath(pathname)) return false;
+
+  return true;
 }
 
 export function middleware(request: NextRequest) {
@@ -41,10 +61,12 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const isCustomerLoggedIn = hasCustomerSession(request);
+  const customerLoggedIn = hasCustomerSession(request);
+  const staffLoggedIn = hasStaffSession(request);
 
-  if (isCustomerLoggedIn) {
-    if (isBlockedApiPath(pathname)) {
+  // お客様ログイン中は customer-app 以外へ行かせない
+  if (customerLoggedIn) {
+    if (isBlockedApiPathForCustomer(pathname)) {
       return NextResponse.json(
         { ok: false, error: "customer session cannot access staff api" },
         { status: 403 }
@@ -54,6 +76,18 @@ export function middleware(request: NextRequest) {
     if (!isAllowedCustomerPath(pathname)) {
       return NextResponse.redirect(new URL("/customer-app", request.url));
     }
+
+    return NextResponse.next();
+  }
+
+  // スタッフ領域はスタッフログイン必須
+  if (isStaffProtectedPath(pathname) && !staffLoggedIn) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
+  // ログイン済みスタッフが /login に来たらダッシュボードへ
+  if (pathname === "/login" && staffLoggedIn) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();
