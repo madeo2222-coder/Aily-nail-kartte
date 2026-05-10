@@ -10,6 +10,8 @@ export async function POST(request: Request) {
     const time = String(body.time || "").trim();
     const memo = String(body.memo || "").trim();
     const staffId = String(body.staffId || "").trim();
+    const customerId = String(body.customerId || "").trim();
+    const salonId = String(body.salonId || "").trim();
 
     if (!menu) {
       return NextResponse.json(
@@ -77,6 +79,8 @@ export async function POST(request: Request) {
       status: string;
       memo: string;
       staff_id?: string;
+      customer_id?: string;
+      salon_id?: string;
     } = {
       menu,
       start_at: startIso,
@@ -87,6 +91,14 @@ export async function POST(request: Request) {
 
     if (staffId) {
       insertData.staff_id = staffId;
+    }
+
+    if (customerId) {
+      insertData.customer_id = customerId;
+    }
+
+    if (salonId) {
+      insertData.salon_id = salonId;
     }
 
     const { data, error } = await supabase

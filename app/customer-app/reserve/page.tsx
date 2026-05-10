@@ -16,6 +16,11 @@ const menuOptions = [
 
 type MeResponse = {
   authenticated: boolean;
+  customer?: {
+    id?: string;
+    salon_id?: string | null;
+    name?: string | null;
+  };
 };
 
 type StaffRow = {
@@ -40,6 +45,9 @@ function ReservePageContent() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
 
+  const [customerId, setCustomerId] = useState("");
+  const [salonId, setSalonId] = useState("");
+
   const [selectedMenu, setSelectedMenu] = useState(
     menuFromQuery || menuOptions[0]
   );
@@ -53,7 +61,10 @@ function ReservePageContent() {
       try {
         const res = await fetch("/api/line-login/me", { cache: "no-store" });
         const json = (await res.json()) as MeResponse;
+
         setIsLoggedIn(!!json.authenticated);
+        setCustomerId(json.customer?.id || "");
+        setSalonId(json.customer?.salon_id || "");
 
         const { data, error } = await supabase
           .from("staffs")
@@ -68,6 +79,8 @@ function ReservePageContent() {
         }
       } catch {
         setIsLoggedIn(false);
+        setCustomerId("");
+        setSalonId("");
         setStaffs([]);
       } finally {
         setLoading(false);
@@ -115,6 +128,8 @@ function ReservePageContent() {
           date: selectedDate,
           time: selectedTime,
           staffId: selectedStaffId,
+          customerId,
+          salonId,
           memo:
             selectedMenu === "開運ネイル相談"
               ? `AI算命学診断経由\n${note}`
@@ -310,7 +325,7 @@ function ReservePageContent() {
           </button>
 
           <div className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            現時点では画面上の受付確認までです。次の段階で予約データのDB保存、スタッフ側予約一覧、空き枠管理を実装します。
+            予約内容はスタッフ側予約一覧に反映されます。確定連絡は店舗からのご案内をお待ちください。
           </div>
         </section>
       </div>
