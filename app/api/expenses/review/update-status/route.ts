@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 function isValidUuid(value: unknown): value is string {
   return (
@@ -29,17 +30,14 @@ function toDbReceiptStatus(value: unknown): DbReceiptStatus | undefined {
     case "あり":
     case "有":
       return "has_receipt";
-
     case "without_receipt":
     case "no_receipt":
     case "なし":
     case "無":
       return "no_receipt";
-
     case "unchecked":
     case "未確認":
       return "unchecked";
-
     default:
       return undefined;
   }
@@ -53,6 +51,9 @@ function toReviewStatus(value: unknown): ReviewStatus | undefined {
 }
 
 export async function PATCH(request: NextRequest) {
+  const authError = requireStaffSession(request);
+  if (authError) return authError;
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -67,16 +68,12 @@ export async function PATCH(request: NextRequest) {
     const body = await request.json().catch(() => null);
 
     const rowId = body?.rowId ?? body?.row_id;
-
     const receiptStatusRaw =
       body?.receipt_status ?? body?.receiptStatus ?? body?.receipt;
-
     const duplicateFlagRaw =
       body?.duplicate_flag ?? body?.duplicateFlag ?? body?.duplicate;
-
     const excludedFlagRaw =
       body?.excluded_flag ?? body?.excludedFlag ?? body?.excluded;
-
     const reviewStatusRaw =
       body?.review_status ?? body?.reviewStatus ?? body?.status;
 

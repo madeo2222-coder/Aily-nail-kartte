@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 export async function POST(req: NextRequest) {
+  const authError = requireStaffSession(req);
+  if (authError) return authError;
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -15,7 +19,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-    const body = await req.json();
+    const body = await req.json().catch(() => null);
     const importId = body?.importId as string | undefined;
 
     if (!importId) {

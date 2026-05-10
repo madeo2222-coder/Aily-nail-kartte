@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -55,7 +56,10 @@ function isCashlessMethod(method: string) {
   return true;
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  const authError = requireStaffSession(req);
+  if (authError) return authError;
+
   try {
     const { month } = await req.json();
 

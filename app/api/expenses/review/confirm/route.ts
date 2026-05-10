@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -103,6 +104,9 @@ function toNumber(value: unknown): number | null {
 }
 
 export async function POST(request: NextRequest) {
+  const authError = requireStaffSession(request);
+  if (authError) return authError;
+
   try {
     if (!supabaseUrl || !serviceRoleKey) {
       return NextResponse.json(
@@ -182,7 +186,6 @@ export async function POST(request: NextRequest) {
       .filter((value) => typeof value === "string" && value.trim().length > 0)
       .join(" / ");
 
-    // すでにexpenseに紐づいている場合は、まずそのexpense実在確認
     if (isValidUuid(row.matched_expense_id)) {
       const { data: existingExpense, error: existingExpenseError } =
         await supabase

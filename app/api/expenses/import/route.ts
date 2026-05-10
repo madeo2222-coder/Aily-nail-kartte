@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 type SourceType = "credit_card" | "paypay";
 
@@ -226,7 +227,6 @@ function parseCsvText(csvText: string, sourceType: SourceType): ParsedRow[] {
       continue;
     }
 
-    // PayPayのチャージは経費候補から除外
     if (vendor === "チャージ") {
       continue;
     }
@@ -252,6 +252,9 @@ function buildDuplicateKey(row: ParsedRow): string {
 }
 
 export async function POST(req: NextRequest) {
+  const authError = requireStaffSession(req);
+  if (authError) return authError;
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
