@@ -21,6 +21,23 @@ type VisitRow = {
   created_at: string | null;
 };
 
+type ReservationRow = {
+  id: string;
+  customer_id: string | null;
+  staff_id: string | null;
+  menu: string | null;
+  memo: string | null;
+  status: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  created_at: string | null;
+};
+
+type StaffRow = {
+  id: string;
+  name: string | null;
+};
+
 type MeResponse = {
   authenticated: boolean;
   customer?: CustomerRow | null;
@@ -58,13 +75,35 @@ const signedInNavItems = [
     href: "",
   },
 ];
+
 function formatDate(value: string | null) {
   if (!value) return "未登録";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "未登録";
+
+  if (Number.isNaN(date.getTime())) {
+    return "未登録";
+  }
 
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "未登録";
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return "未登録";
+  }
+
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mi = String(date.getMinutes()).padStart(2, "0");
+
+  return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
 }
 
 function getDisplayMenu(visit: VisitRow) {
@@ -73,12 +112,30 @@ function getDisplayMenu(visit: VisitRow) {
   return "メニュー未登録";
 }
 
+function getReservationStatusLabel(status: string | null) {
+  switch (status) {
+    case "requested":
+      return "予約申請中";
+    case "confirmed":
+      return "予約確定";
+    case "completed":
+      return "来店完了";
+    case "cancelled":
+      return "キャンセル";
+    default:
+      return status || "未設定";
+  }
+}
+
 export default function CustomerAppHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [customerName, setCustomerName] = useState("お客様");
+
   const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [reservations, setReservations] = useState<ReservationRow[]>([]);
+  const [staffs, setStaffs] = useState<StaffRow[]>([]);
 
   useEffect(() => {
     async function fetchHistory() {
@@ -89,6 +146,7 @@ export default function CustomerAppHistoryPage() {
         const meRes = await fetch("/api/line-login/me", {
           cache: "no-store",
         });
+
         const meJson = (await meRes.json()) as MeResponse;
 
         if (!meJson.authenticated || !meJson.customer) {
@@ -100,24 +158,59 @@ export default function CustomerAppHistoryPage() {
         setIsLoggedIn(true);
 
         const currentCustomer = meJson.customer;
+
         setCustomerName(currentCustomer.name || "お客様");
 
-        const { data: visitData, error: visitError } = await supabase
-          .from("visits")
-          .select(
-            "id, customer_id, visit_date, menu, menu_name, memo, next_proposal, staff_name, created_at"
-          )
-          .eq("customer_id", currentCustomer.id)
-          .order("visit_date", { ascending: false })
-          .order("created_at", { ascending: false });
+        const [
+          visitResponse,
+          reservationResponse,
+          staffResponse,
+        ] = await Promise.all([
+          supabase
+            .from("visits")
+            .select(
+              "id, customer_id, visit_date, menu, menu_name, memo, next_proposal, staff_name, created_at"
+            )
+            .eq("customer_id", currentCustomer.id)
+            .order("visit_date", { ascending: false })
+            .order("created_at", { ascending: false }),
 
-        if (visitError) {
+          supabase
+            .from("reservations")
+            .select(
+              "id, customer_id, staff_id, menu, memo, status, start_at, end_at, created_at"
+            )
+            .eq("customer_id", currentCustomer.id)
+            .order("start_at", { ascending: false }),
+
+          supabase
+            .from("staffs")
+            .select("id, name"),
+        ]);
+
+        if (visitResponse.error) {
           setErrorMessage("来店履歴の取得に失敗しました。");
           setLoading(false);
           return;
         }
 
-        setVisits((visitData || []) as VisitRow[]);
+        if (reservationResponse.error) {
+          setErrorMessage("予約履歴の取得に失敗しました。");
+          setLoading(false);
+          return;
+        }
+
+        if (staffResponse.error) {
+          setErrorMessage("スタッフ情報の取得に失敗しました。");
+          setLoading(false);
+          return;
+        }
+
+        setVisits((visitResponse.data || []) as VisitRow[]);
+        setReservations(
+          (reservationResponse.data || []) as ReservationRow[]
+        );
+        setStaffs((staffResponse.data || []) as StaffRow[]);
       } catch {
         setErrorMessage("読み込みに失敗しました。");
       } finally {
@@ -128,14 +221,33 @@ export default function CustomerAppHistoryPage() {
     fetchHistory();
   }, []);
 
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>();
+
+    staffs.forEach((staff) => {
+      if (staff.id) {
+        map.set(staff.id, staff.name || "未設定");
+      }
+    });
+
+    return map;
+  }, [staffs]);
+
   const visitCount = visits.length;
+
   const lastVisitDate = useMemo(() => {
-    return visits[0]?.visit_date ? formatDate(visits[0].visit_date) : "未登録";
+    return visits[0]?.visit_date
+      ? formatDate(visits[0].visit_date)
+      : "未登録";
   }, [visits]);
 
   const recentSuggestion = useMemo(() => {
     const latest = visits.find((item) => item.next_proposal?.trim());
-    return latest?.next_proposal?.trim() || "次回提案はまだ登録されていません";
+
+    return (
+      latest?.next_proposal?.trim() ||
+      "次回提案はまだ登録されていません"
+    );
   }, [visits]);
 
   if (loading) {
@@ -143,8 +255,12 @@ export default function CustomerAppHistoryPage() {
       <main className="min-h-screen bg-slate-50 pb-24">
         <div className="mx-auto max-w-md px-4 pb-6 pt-4">
           <div className="rounded-3xl border bg-white p-6 shadow-sm">
-            <div className="text-base font-bold text-slate-900">来店履歴</div>
-            <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
+            <div className="text-base font-bold text-slate-900">
+              来店履歴
+            </div>
+            <div className="mt-3 text-sm text-slate-600">
+              読み込み中...
+            </div>
           </div>
         </div>
       </main>
@@ -159,9 +275,13 @@ export default function CustomerAppHistoryPage() {
             <div className="text-xs font-bold tracking-wide opacity-90">
               AILY MY PAGE
             </div>
-            <h1 className="mt-2 text-2xl font-bold leading-tight">来店履歴</h1>
+
+            <h1 className="mt-2 text-2xl font-bold leading-tight">
+              来店履歴
+            </h1>
+
             <p className="mt-3 text-sm leading-6 text-white/90">
-              来店履歴はLINEログイン後に確認できます。初めての方は初回入力からお進みください。
+              来店履歴はLINEログイン後に確認できます。
             </p>
 
             <div className="mt-4 grid grid-cols-1 gap-2">
@@ -171,37 +291,8 @@ export default function CustomerAppHistoryPage() {
               >
                 LINEでログイン
               </Link>
-              <Link
-                href="/customer-intake"
-                className="rounded-xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
-              >
-                初めての方はこちら
-              </Link>
             </div>
           </section>
-        </div>
-      </main>
-    );
-  }
-
-  if (errorMessage) {
-    return (
-      <main className="min-h-screen bg-slate-50 pb-24">
-        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
-          <div className="rounded-3xl border bg-white p-6 shadow-sm">
-            <div className="text-base font-bold text-slate-900">来店履歴</div>
-            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-              {errorMessage}
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-2">
-              <Link
-                href="/customer-app"
-                className="rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
-              >
-                ホームへ戻る
-              </Link>
-            </div>
-          </div>
         </div>
       </main>
     );
@@ -214,47 +305,47 @@ export default function CustomerAppHistoryPage() {
           <div className="text-xs font-bold tracking-wide opacity-90">
             AILY MY PAGE
           </div>
-          <h1 className="mt-2 text-2xl font-bold leading-tight">来店履歴</h1>
-          <p className="mt-3 text-sm leading-6 text-white/90">
-            {customerName}様の前回までの施術内容や次回提案を確認できます。
-          </p>
 
-          <div className="mt-4 flex gap-2">
-            <Link
-              href="/customer-app"
-              className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-900"
-            >
-              マイページへ戻る
-            </Link>
-            <Link
-              href="/customer-app/reserve"
-              className="rounded-xl border border-white/30 px-4 py-2 text-sm font-bold text-white"
-            >
-              次回予約する
-            </Link>
-          </div>
+          <h1 className="mt-2 text-2xl font-bold leading-tight">
+            来店履歴
+          </h1>
+
+          <p className="mt-3 text-sm leading-6 text-white/90">
+            {customerName}様の予約状況・来店履歴を確認できます。
+          </p>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">履歴サマリー</div>
+          <div className="text-base font-bold text-slate-900">
+            履歴サマリー
+          </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3">
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">累計来店回数</div>
+              <div className="text-xs text-slate-500">
+                累計来店回数
+              </div>
+
               <div className="mt-1 text-2xl font-bold text-slate-900">
                 {visitCount}回
               </div>
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">前回来店日</div>
+              <div className="text-xs text-slate-500">
+                前回来店日
+              </div>
+
               <div className="mt-1 text-2xl font-bold text-slate-900">
                 {lastVisitDate}
               </div>
             </div>
 
             <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">最近の次回提案</div>
+              <div className="text-xs text-slate-500">
+                最近の次回提案
+              </div>
+
               <div className="mt-1 text-sm font-bold text-slate-900">
                 {recentSuggestion}
               </div>
@@ -262,16 +353,98 @@ export default function CustomerAppHistoryPage() {
           </div>
         </section>
 
-        {visits.length === 0 ? (
-          <section className="rounded-3xl border bg-white p-4 shadow-sm">
-            <div className="text-base font-bold text-slate-900">来店履歴</div>
-            <div className="mt-3 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-              まだ来店履歴がありません。ご予約後に履歴が反映されます。
+        <section className="space-y-3">
+          <div className="text-lg font-bold text-slate-900">
+            予約状況
+          </div>
+
+          {reservations.length === 0 ? (
+            <div className="rounded-3xl border bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-500">
+                予約中データはありません。
+              </div>
             </div>
-          </section>
-        ) : (
-          <section className="space-y-3">
-            {visits.map((item) => (
+          ) : (
+            reservations.map((item) => {
+              const isAiReservation =
+                item.menu?.includes("開運") ||
+                item.memo?.includes("AI算命学");
+
+              return (
+                <article
+                  key={item.id}
+                  className="rounded-3xl border bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-lg font-bold text-slate-900">
+                      {item.menu || "メニュー未設定"}
+                    </div>
+
+                    <div className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+                      {getReservationStatusLabel(item.status)}
+                    </div>
+                  </div>
+
+                  {isAiReservation ? (
+                    <div className="mt-3 rounded-2xl bg-pink-50 px-3 py-2 text-sm font-bold text-pink-700">
+                      ✨ AI算命学診断からの予約
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 grid grid-cols-1 gap-3">
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <div className="text-xs text-slate-500">
+                        予約日時
+                      </div>
+
+                      <div className="mt-1 text-base font-bold text-slate-900">
+                        {formatDateTime(item.start_at)}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <div className="text-xs text-slate-500">
+                        担当スタッフ
+                      </div>
+
+                      <div className="mt-1 text-base font-bold text-slate-900">
+                        {item.staff_id
+                          ? staffMap.get(item.staff_id) || "未設定"
+                          : "指名なし"}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <div className="text-xs text-slate-500">
+                        ご要望・備考
+                      </div>
+
+                      <div className="mt-1 text-sm leading-6 text-slate-700">
+                        {item.memo?.trim()
+                          ? item.memo
+                          : "備考はありません"}
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              );
+            })
+          )}
+        </section>
+
+        <section className="space-y-3">
+          <div className="text-lg font-bold text-slate-900">
+            来店履歴
+          </div>
+
+          {visits.length === 0 ? (
+            <div className="rounded-3xl border bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-500">
+                まだ来店履歴がありません。
+              </div>
+            </div>
+          ) : (
+            visits.map((item) => (
               <article
                 key={item.id}
                 className="rounded-3xl border bg-white p-4 shadow-sm"
@@ -280,28 +453,42 @@ export default function CustomerAppHistoryPage() {
                   <div className="text-lg font-bold text-slate-900">
                     {getDisplayMenu(item)}
                   </div>
+
                   <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
                     {formatDate(item.visit_date)}
                   </div>
                 </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-3">
+                <div className="mt-4 grid grid-cols-1 gap-3">
                   <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">担当スタッフ</div>
+                    <div className="text-xs text-slate-500">
+                      担当スタッフ
+                    </div>
+
                     <div className="mt-1 text-base font-bold text-slate-900">
-                      {item.staff_name?.trim() ? item.staff_name : "未登録"}
+                      {item.staff_name?.trim()
+                        ? item.staff_name
+                        : "未登録"}
                     </div>
                   </div>
 
                   <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">施術メモ</div>
+                    <div className="text-xs text-slate-500">
+                      施術メモ
+                    </div>
+
                     <div className="mt-1 text-sm leading-6 text-slate-700">
-                      {item.memo?.trim() ? item.memo : "メモはまだありません"}
+                      {item.memo?.trim()
+                        ? item.memo
+                        : "メモはまだありません"}
                     </div>
                   </div>
 
                   <div className="rounded-2xl bg-rose-50 p-4">
-                    <div className="text-xs text-rose-500">次回提案</div>
+                    <div className="text-xs text-rose-500">
+                      次回提案
+                    </div>
+
                     <div className="mt-1 text-sm font-bold leading-6 text-rose-700">
                       {item.next_proposal?.trim()
                         ? item.next_proposal
@@ -310,9 +497,9 @@ export default function CustomerAppHistoryPage() {
                   </div>
                 </div>
               </article>
-            ))}
-          </section>
-        )}
+            ))
+          )}
+        </section>
       </div>
 
       <nav
@@ -334,8 +521,13 @@ export default function CustomerAppHistoryPage() {
                       : "text-gray-500 hover:text-gray-800"
                   }`}
                 >
-                  <span className="text-lg leading-none">{item.icon}</span>
-                  <span className="mt-1 leading-none">{item.label}</span>
+                  <span className="text-lg leading-none">
+                    {item.icon}
+                  </span>
+
+                  <span className="mt-1 leading-none">
+                    {item.label}
+                  </span>
                 </Link>
               );
             }
@@ -346,8 +538,13 @@ export default function CustomerAppHistoryPage() {
                 type="button"
                 className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
               >
-                <span className="text-lg leading-none">{item.icon}</span>
-                <span className="mt-1 leading-none">{item.label}</span>
+                <span className="text-lg leading-none">
+                  {item.icon}
+                </span>
+
+                <span className="mt-1 leading-none">
+                  {item.label}
+                </span>
               </button>
             );
           })}

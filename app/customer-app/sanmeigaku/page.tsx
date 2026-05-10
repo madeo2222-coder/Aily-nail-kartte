@@ -29,36 +29,11 @@ const moodOptions = [
 ];
 
 const signedInNavItems = [
-  {
-    key: "home",
-    label: "ホーム",
-    icon: "🏠",
-    href: "/customer-app",
-  },
-  {
-    key: "reserve",
-    label: "予約",
-    icon: "📅",
-    href: "/customer-app/reserve",
-  },
-  {
-    key: "diagnosis",
-    label: "診断",
-    icon: "✨",
-    href: "/customer-app/sanmeigaku",
-  },
-  {
-    key: "history",
-    label: "履歴",
-    icon: "📝",
-    href: "/customer-app/history",
-  },
-  {
-    key: "mypage",
-    label: "マイ",
-    icon: "👤",
-    href: "",
-  },
+  { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
+  { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
+  { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
+  { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
+  { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
 
 function buildDiagnosis(
@@ -68,7 +43,9 @@ function buildDiagnosis(
   mood: string
 ): DiagnosisResult {
   const seedText = `${name}-${birthday}-${fortune}-${mood}`;
-  const seed = seedText.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const seed = seedText
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
   const colors = [
     "ローズピンク",
@@ -109,6 +86,16 @@ function buildDiagnosis(
   };
 }
 
+function buildTipOrderHref(result: DiagnosisResult) {
+  const params = new URLSearchParams();
+
+  params.set("color", result.luckyColor);
+  params.set("stone", result.luckyStone);
+  params.set("theme", result.nailTheme);
+
+  return `/customer-app/nail-tip-order?${params.toString()}`;
+}
+
 export default function SanmeigakuNailDiagnosisPage() {
   const [message, setMessage] = useState("");
   const [name, setName] = useState("");
@@ -120,6 +107,10 @@ export default function SanmeigakuNailDiagnosisPage() {
   const result = useMemo(() => {
     return buildDiagnosis(name, birthday, fortune, mood);
   }, [name, birthday, fortune, mood]);
+
+  const tipOrderHref = useMemo(() => {
+    return buildTipOrderHref(result);
+  }, [result]);
 
   function showMessage(text: string) {
     setMessage(text);
@@ -258,28 +249,34 @@ export default function SanmeigakuNailDiagnosisPage() {
               </div>
 
               <div className="rounded-2xl bg-slate-50 p-4">
-                <div className="text-xs text-slate-500">おすすめネイル方向性</div>
+                <div className="text-xs text-slate-500">
+                  おすすめネイル方向性
+                </div>
                 <div className="mt-1 text-sm font-bold leading-6 text-slate-900">
                   {result.nailTheme}
                 </div>
               </div>
             </div>
 
+            <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+              診断結果をもとに、店舗施術またはネイルチップ注文を選べます。
+              通販の場合は、来店せずに開運デザインの相談・注文ができます。
+            </div>
+
             <div className="mt-4 grid grid-cols-1 gap-2">
               <Link
-               href="/customer-app/reserve?menu=開運ネイル相談"
-                className="block w-full rounded-2xl bg-rose-500 px-4 py-3 text-center text-sm font-bold text-white"
+                href={tipOrderHref}
+                className="block w-full rounded-2xl bg-purple-600 px-4 py-3 text-center text-sm font-bold text-white shadow"
               >
-                この内容で店舗予約する
+                この内容でネイルチップ注文する
               </Link>
 
-              <button
-                type="button"
-                onClick={() => showMessage("ネイルチップ通販ページは次段階で実装します")}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              <Link
+                href="/customer-app/reserve?menu=開運ネイル相談"
+                className="block w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-center text-sm font-bold text-rose-600"
               >
-                開運ネイルチップ通販を見る
-              </button>
+                店舗で施術予約する
+              </Link>
             </div>
           </section>
         ) : null}
