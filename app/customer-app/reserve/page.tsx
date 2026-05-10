@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 const staffOptions = ["指名なし", "山田", "佐藤", "田中"];
@@ -27,7 +27,7 @@ const signedInNavItems = [
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
 
-export default function CustomerAppReservePage() {
+function ReservePageContent() {
   const searchParams = useSearchParams();
 const menuFromQuery = searchParams.get("menu");
   const [message, setMessage] = useState("");
@@ -344,5 +344,12 @@ const menuFromQuery = searchParams.get("menu");
         </div>
       </nav>
     </main>
+  );
+}
+export default function CustomerAppReservePage() {
+  return (
+    <Suspense fallback={null}>
+      <ReservePageContent />
+    </Suspense>
   );
 }
