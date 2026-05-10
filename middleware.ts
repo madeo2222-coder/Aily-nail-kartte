@@ -31,13 +31,21 @@ function isStaticAsset(pathname: string) {
   );
 }
 
+function isCustomerAllowedApiPath(pathname: string) {
+  return (
+    pathname.startsWith("/api/line-login/") ||
+    pathname === "/api/reservations" ||
+    pathname.startsWith("/api/reservations/")
+  );
+}
+
 function isAllowedCustomerPath(pathname: string) {
   return (
     pathname === "/customer-app" ||
     pathname.startsWith("/customer-app/") ||
     pathname === "/customer-intake" ||
     pathname.startsWith("/customer-intake/") ||
-    pathname.startsWith("/api/line-login/")
+    isCustomerAllowedApiPath(pathname)
   );
 }
 
@@ -46,7 +54,7 @@ function isAllowedStaffPath(pathname: string) {
 }
 
 function isBlockedApiPathForCustomer(pathname: string) {
-  return pathname.startsWith("/api/") && !pathname.startsWith("/api/line-login/");
+  return pathname.startsWith("/api/") && !isCustomerAllowedApiPath(pathname);
 }
 
 function isStaffProtectedPath(pathname: string) {
