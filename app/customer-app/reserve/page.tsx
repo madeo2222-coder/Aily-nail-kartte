@@ -86,12 +86,15 @@ const menuFromQuery = searchParams.get("menu");
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        menu: selectedMenu,
-        date: selectedDate,
-        time: selectedTime,
-        memo: note,
-      }),
+     body: JSON.stringify({
+  menu: selectedMenu,
+  date: selectedDate,
+  time: selectedTime,
+  memo:
+    selectedMenu === "開運ネイル相談"
+      ? `AI算命学診断経由\n${note}`
+      : note,
+}),
     });
 
     const json = await response.json();

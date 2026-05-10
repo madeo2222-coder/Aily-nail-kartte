@@ -41,6 +41,7 @@ type StaffRow = {
 };
 
 type NormalizedReservation = {
+  isAiDiagnosis: boolean;
   id: string;
   customerId: string | null;
   customerName: string;
@@ -374,6 +375,9 @@ export default function ReservationsPageClient() {
 
       return {
         id: reservation.id,
+        isAiDiagnosis:
+  normalizeMenuName(reservation) === "開運ネイル相談" ||
+  normalizeMemo(reservation).includes("AI算命学診断経由"),
         customerId,
         customerName,
         staffId,
@@ -654,6 +658,11 @@ export default function ReservationsPageClient() {
                         <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
                           {item.source || "手入力"}
                         </span>
+                        {item.isAiDiagnosis ? (
+  <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">
+    ✨ AI診断
+  </span>
+) : null}
 
                         {isOverlap ? (
                           <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
