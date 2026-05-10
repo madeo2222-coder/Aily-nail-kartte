@@ -53,6 +53,16 @@ const subCards = [
 ];
 
 export default function OwnerDashboardPage() {
+  async function handleStaffLogout() {
+    try {
+      await fetch("/api/staff-login/logout", {
+        method: "POST",
+      });
+    } finally {
+      window.location.href = "/login";
+    }
+  }
+
   return (
     <main className="min-h-screen bg-stone-50 p-4 pb-24">
       <div className="mx-auto max-w-5xl space-y-5">
@@ -69,12 +79,22 @@ export default function OwnerDashboardPage() {
               </p>
             </div>
 
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900"
-            >
-              スタッフホームへ戻る
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleStaffLogout}
+                className="inline-flex items-center justify-center rounded-2xl border border-white/30 bg-white/10 px-4 py-3 text-sm font-bold text-white backdrop-blur"
+              >
+                ログアウト
+              </button>
+
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-900"
+              >
+                スタッフホームへ戻る
+              </Link>
+            </div>
           </div>
         </section>
 
