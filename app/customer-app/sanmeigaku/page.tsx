@@ -599,16 +599,21 @@ export default function SanmeigakuNailDiagnosisPage() {
                     <div className="text-xs font-black tracking-[0.3em] text-fuchsia-500">
                       AI BEAUTY ORACLE
                     </div>
+                    <div className="mt-2 inline-flex items-center rounded-full bg-fuchsia-50 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-fuchsia-500">
+  PERSONAL BEAUTY AI
+</div>
                     <div className="mt-1 text-2xl font-black leading-tight text-slate-900">
                       あなた専用の
                       <br />
                       AI開運ビューティー解析
                     </div>
                   </div>
-
-                  <div className="rounded-full bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1 text-xs font-black text-white shadow">
-                    ORACLE AI
-                  </div>
+<div className="mt-3 max-w-[260px] text-xs leading-6 text-slate-500">
+  AI BEAUTY ORACLE が、あなたの運気・美容運・魅力バランスを解析しています。
+</div>
+                  <div className="rounded-full bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-2 text-[10px] font-black tracking-[0.25em] text-white shadow-lg">
+  AI ORACLE
+</div>
                 </div>
 
                 <div className="relative mt-5 overflow-hidden rounded-[32px] bg-gradient-to-br from-pink-50 via-rose-50 to-fuchsia-50 p-5">
@@ -668,12 +673,15 @@ export default function SanmeigakuNailDiagnosisPage() {
                       <div className="mt-1 text-xs font-bold tracking-wide text-slate-400">
                         SANMEIGAKU AI ANALYSIS
                       </div>
-                      <div className="mt-4 rounded-2xl bg-white/70 p-4 text-[15px] leading-8 text-slate-700 shadow-sm">
-                        {result.message}
-                      </div>
+                      <div className="mt-4 rounded-[28px] border border-white/70 bg-white/80 p-5 text-[15px] leading-8 text-slate-700 shadow-sm backdrop-blur">
+  {result.message}
+</div>
                     </div>
 
                     <div className="mt-5 flex flex-wrap items-center gap-2">
+                        <div className="rounded-full bg-violet-100 px-3 py-1 text-[10px] font-black tracking-wide text-violet-600">
+  ORACLE ANALYSIS
+</div>
                       <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-[10px] font-black tracking-wide text-fuchsia-600">
                         AI BEAUTY
                       </div>
