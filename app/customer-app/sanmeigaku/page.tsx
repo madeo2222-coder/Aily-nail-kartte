@@ -36,7 +36,26 @@ const moodOptions = [
   "ナチュラル",
   "個性的",
 ];
-
+const premiumStones = [
+  {
+    name: "天然ダイヤモンド",
+    grade: "Premium",
+    message:
+      "圧倒的な輝きと浄化力を持つ最高級天然石。特別な開運タイミングや贈答用にもおすすめ。",
+  },
+  {
+    name: "ルビー",
+    grade: "Luxury",
+    message:
+      "情熱・恋愛運・女性性を高める高級天然石。魅力を引き上げたい時におすすめ。",
+  },
+  {
+    name: "サファイア",
+    grade: "Luxury",
+    message:
+      "仕事運・知性・冷静な判断力を整える高級天然石。経営者層にも人気。",
+  },
+];
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -339,7 +358,51 @@ export default function SanmeigakuNailDiagnosisPage() {
               診断結果をもとに、店舗施術またはネイルチップ注文を選べます。
               通販の場合は、来店せずに開運デザインの相談・注文ができます。
             </div>
+<div className="mt-4 rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
+  <div className="flex items-center justify-between">
+    <div>
+      <div className="text-xs font-bold tracking-wide text-amber-600">
+        PREMIUM STONE
+      </div>
 
+      <div className="mt-1 text-lg font-bold text-slate-900">
+        プレミアム天然石提案
+      </div>
+    </div>
+
+    <div className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+      高級ライン
+    </div>
+  </div>
+
+  <div className="mt-4 space-y-3">
+    {premiumStones.map((stone) => (
+      <div
+        key={stone.name}
+        className="rounded-2xl border border-amber-100 bg-white p-4"
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-base font-bold text-slate-900">
+            {stone.name}
+          </div>
+
+          <div className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">
+            {stone.grade}
+          </div>
+        </div>
+
+        <div className="mt-2 text-sm leading-6 text-slate-700">
+          {stone.message}
+        </div>
+      </div>
+    ))}
+  </div>
+
+  <div className="mt-4 rounded-2xl bg-amber-100/60 p-4 text-sm leading-6 text-amber-900">
+    宝石商ルートによる天然石を使用した、
+    高級開運ネイル・ネイルチップ・ギフト相談にも対応予定です。
+  </div>
+</div>
             <div className="mt-4 grid grid-cols-1 gap-2">
               <Link
                 href={tipOrderHref}
