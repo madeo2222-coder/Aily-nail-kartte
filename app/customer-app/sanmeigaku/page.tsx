@@ -56,6 +56,38 @@ const premiumStones = [
       "仕事運・知性・冷静な判断力を整える高級天然石。経営者層にも人気。",
   },
 ];
+const fortuneColorSets = [
+  {
+    lucky: "#ec4899",
+    luckyName: "ローズピンク",
+    avoid: "#6b7280",
+    avoidName: "ダークグレー",
+    love: "#f472b6",
+    loveName: "フェミニンピンク",
+    money: "#facc15",
+    moneyName: "ゴールドイエロー",
+  },
+  {
+    lucky: "#8b5cf6",
+    luckyName: "パープル",
+    avoid: "#1f2937",
+    avoidName: "ブラック",
+    love: "#c084fc",
+    loveName: "ラベンダー",
+    money: "#22c55e",
+    moneyName: "エメラルドグリーン",
+  },
+  {
+    lucky: "#06b6d4",
+    luckyName: "ターコイズ",
+    avoid: "#78716c",
+    avoidName: "ブラウン",
+    love: "#fb7185",
+    loveName: "ローズレッド",
+    money: "#eab308",
+    moneyName: "シャイニーゴールド",
+  },
+];
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -163,7 +195,14 @@ export default function SanmeigakuNailDiagnosisPage() {
   const result = useMemo(() => {
     return buildDiagnosis(name, birthday, fortune, mood);
   }, [name, birthday, fortune, mood]);
+const selectedFortuneColor = useMemo(() => {
+  const seedText = `${name}-${birthday}-${fortune}-${mood}-color`;
+  const seed = seedText
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
+  return fortuneColorSets[seed % fortuneColorSets.length];
+}, [name, birthday, fortune, mood]);
   const tipOrderHref = useMemo(() => {
     return buildTipOrderHref(result);
   }, [result]);
