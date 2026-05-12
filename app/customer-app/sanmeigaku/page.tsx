@@ -586,8 +586,8 @@ const selectedFortuneColor = useMemo(() => {
       {selectedLuckyDay.message}
     </div>
   </div>
-<section className="mt-6 rounded-[32px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-xl">
-  <div className="rounded-[31px] bg-white/95 p-5 backdrop-blur">
+<section className="mt-6 overflow-hidden rounded-[36px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-2xl">
+  <div className="relative overflow-hidden rounded-[35px] bg-white/95 p-5 backdrop-blur">
     <div className="flex items-center justify-between">
       <div>
         <div className="text-xs font-bold tracking-[0.2em] text-fuchsia-500">
@@ -604,7 +604,7 @@ const selectedFortuneColor = useMemo(() => {
       </div>
     </div>
 
-    <div className="mt-5 rounded-3xl bg-gradient-to-br from-pink-50 to-rose-50 p-5">
+    <div className="relative mt-5 overflow-hidden rounded-[32px] bg-gradient-to-br from-pink-50 via-rose-50 to-fuchsia-50 p-5">
       <div className="text-sm text-slate-500">
         今日のラッキーカラー
       </div>
@@ -621,7 +621,9 @@ const selectedFortuneColor = useMemo(() => {
           <div className="text-2xl font-black text-slate-900">
             {selectedFortuneColor.luckyName}
           </div>
-
+<div className="mt-2 inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-bold text-fuchsia-600 shadow-sm">
+  ✨ AI開運カラー解析
+</div>
           <div className="text-sm text-slate-500">
             運気を引き寄せる開運カラー
           </div>
@@ -646,7 +648,9 @@ const selectedFortuneColor = useMemo(() => {
         <div className="text-sm font-bold text-fuchsia-500">
           AIメッセージ
         </div>
-
+<div className="mt-1 text-xs font-bold tracking-wide text-slate-400">
+  SANMEIGAKU AI ANALYSIS
+</div>
         <div className="mt-2 text-sm leading-7 text-slate-700">
           {result.message}
         </div>
@@ -654,9 +658,9 @@ const selectedFortuneColor = useMemo(() => {
     </div>
 
     <button
-      type="button"
-      className="mt-5 w-full rounded-2xl bg-gradient-to-r from-fuchsia-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-lg"
-    >
+  type="button"
+  className="mt-5 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-xl transition active:scale-[0.98]"
+>
       診断結果をシェアする（準備中）
     </button>
   </div>
