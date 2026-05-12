@@ -612,7 +612,87 @@ export default function SanmeigakuNailDiagnosisPage() {
                 高級開運ネイル・ネイルチップ・ギフト相談にも対応予定です。
               </div>
             </section>
+<section className="mt-6 overflow-hidden rounded-[36px] bg-gradient-to-br from-slate-900 via-violet-950 to-fuchsia-950 p-[1px] shadow-2xl">
+  <div className="rounded-[35px] bg-gradient-to-br from-slate-950 via-violet-950 to-fuchsia-950 p-5 text-white">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <div className="text-xs font-black tracking-[0.3em] text-fuchsia-300">
+          AI ORACLE CONSULT
+        </div>
 
+        <div className="mt-2 text-2xl font-black leading-tight">
+          AI BEAUTY ORACLE に
+          <br />
+          相談する
+        </div>
+      </div>
+
+      <div className="rounded-full bg-white/10 px-3 py-1 text-[10px] font-black tracking-[0.25em] text-fuchsia-200 backdrop-blur">
+        PREMIUM AI
+      </div>
+    </div>
+
+    <div className="mt-5 rounded-[28px] border border-white/10 bg-white/5 p-5 backdrop-blur">
+      <div className="text-sm font-black text-fuchsia-300">
+        今のあなたへのAI提案
+      </div>
+
+      <div className="mt-4 text-[15px] leading-8 text-white/90">
+        今週は「自分を整える行動」が未来の運気を大きく変えやすいタイミングです。
+        ネイル・香り・美容・休息を意識することで、恋愛運や魅力運の流れが整いやすくなります。
+      </div>
+    </div>
+
+    <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+        <div className="text-[10px] font-black tracking-[0.2em] text-fuchsia-300">
+          BEAUTY
+        </div>
+
+        <div className="mt-2 text-sm font-bold text-white">
+          開運ネイル
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+        <div className="text-[10px] font-black tracking-[0.2em] text-fuchsia-300">
+          FEMCARE
+        </div>
+
+        <div className="mt-2 text-sm font-bold text-white">
+          女性ケア提案
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+        <div className="text-[10px] font-black tracking-[0.2em] text-fuchsia-300">
+          STONE
+        </div>
+
+        <div className="mt-2 text-sm font-bold text-white">
+          天然石提案
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+        <div className="text-[10px] font-black tracking-[0.2em] text-fuchsia-300">
+          AROMA
+        </div>
+
+        <div className="mt-2 text-sm font-bold text-white">
+          香り・空間提案
+        </div>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      className="mt-5 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-xl transition active:scale-[0.98]"
+    >
+      AI BEAUTY ORACLE に相談する（準備中）
+    </button>
+  </div>
+</section>
             <section className="mt-6 overflow-hidden rounded-[36px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-2xl">
               <div className="relative overflow-hidden rounded-[35px] bg-white/95 p-5 backdrop-blur">
                 <div className="absolute right-4 top-4 rounded-full bg-black/5 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-slate-500">
