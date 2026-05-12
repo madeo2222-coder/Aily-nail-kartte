@@ -289,6 +289,64 @@ export default function NailTipOrdersPageClient() {
                         <div className="text-xs text-slate-400">
                           注文日時：{formatDateTime(order.created_at)}
                         </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+  <button
+    type="button"
+    onClick={async () => {
+      const { error } = await supabase
+        .from("nail_tip_orders")
+        .update({
+          status: "making",
+        })
+        .eq("id", order.id);
+
+      if (!error) {
+        void fetchOrders();
+      }
+    }}
+    className="rounded-2xl bg-amber-500 px-4 py-2 text-xs font-bold text-white"
+  >
+    制作中へ
+  </button>
+
+  <button
+    type="button"
+    onClick={async () => {
+      const { error } = await supabase
+        .from("nail_tip_orders")
+        .update({
+          status: "shipped",
+        })
+        .eq("id", order.id);
+
+      if (!error) {
+        void fetchOrders();
+      }
+    }}
+    className="rounded-2xl bg-blue-500 px-4 py-2 text-xs font-bold text-white"
+  >
+    発送済みへ
+  </button>
+
+  <button
+    type="button"
+    onClick={async () => {
+      const { error } = await supabase
+        .from("nail_tip_orders")
+        .update({
+          status: "completed",
+        })
+        .eq("id", order.id);
+
+      if (!error) {
+        void fetchOrders();
+      }
+    }}
+    className="rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white"
+  >
+    完了へ
+  </button>
+</div>
                       </div>
                     </div>
                   </div>
