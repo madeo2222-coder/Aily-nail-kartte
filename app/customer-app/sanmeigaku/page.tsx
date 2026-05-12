@@ -586,7 +586,81 @@ const selectedFortuneColor = useMemo(() => {
       {selectedLuckyDay.message}
     </div>
   </div>
+<section className="mt-6 rounded-[32px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-xl">
+  <div className="rounded-[31px] bg-white/95 p-5 backdrop-blur">
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="text-xs font-bold tracking-[0.2em] text-fuchsia-500">
+          SHARE CARD
+        </div>
 
+        <div className="mt-1 text-xl font-black text-slate-900">
+          あなたの開運診断結果
+        </div>
+      </div>
+
+      <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-bold text-fuchsia-600">
+        AI解析
+      </div>
+    </div>
+
+    <div className="mt-5 rounded-3xl bg-gradient-to-br from-pink-50 to-rose-50 p-5">
+      <div className="text-sm text-slate-500">
+        今日のラッキーカラー
+      </div>
+
+      <div className="mt-3 flex items-center gap-3">
+        <div
+          className="h-14 w-14 rounded-2xl shadow"
+          style={{
+            backgroundColor: selectedFortuneColor.lucky,
+          }}
+        />
+
+        <div>
+          <div className="text-2xl font-black text-slate-900">
+            {selectedFortuneColor.luckyName}
+          </div>
+
+          <div className="text-sm text-slate-500">
+            運気を引き寄せる開運カラー
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-2xl bg-white/80 p-4">
+        <div className="text-sm font-bold text-rose-500">
+          今月の開運日
+        </div>
+
+        <div className="mt-2 text-3xl font-black text-slate-900">
+          {selectedLuckyDay.day}
+        </div>
+
+        <div className="mt-2 text-sm leading-6 text-slate-700">
+          {selectedLuckyDay.message}
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-2xl bg-white/80 p-4">
+        <div className="text-sm font-bold text-fuchsia-500">
+          AIメッセージ
+        </div>
+
+        <div className="mt-2 text-sm leading-7 text-slate-700">
+          {result.message}
+        </div>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      className="mt-5 w-full rounded-2xl bg-gradient-to-r from-fuchsia-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-lg"
+    >
+      診断結果をシェアする（準備中）
+    </button>
+  </div>
+</section>
   <Link
     href="/customer-app/reserve?menu=開運ネイル相談"
     className="mt-4 block w-full rounded-2xl bg-rose-500 px-4 py-3 text-center text-sm font-bold text-white shadow"
