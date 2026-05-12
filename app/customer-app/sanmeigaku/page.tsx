@@ -593,7 +593,9 @@ const selectedFortuneColor = useMemo(() => {
         <div className="text-xs font-bold tracking-[0.2em] text-fuchsia-500">
           SHARE CARD
         </div>
-
+<div className="absolute right-4 top-4 rounded-full bg-black/5 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-slate-500">
+  NAILY AiDOL
+</div>
         <div className="mt-1 text-xl font-black text-slate-900">
           あなたの開運診断結果
         </div>
@@ -636,7 +638,9 @@ const selectedFortuneColor = useMemo(() => {
         <div className="text-sm font-bold text-rose-500">
           今月の開運日
         </div>
-
+<div className="mt-1 text-[10px] font-black tracking-[0.2em] text-rose-300">
+  LUCKY TIMING ANALYSIS
+</div>
         <div className="bg-gradient-to-r from-rose-500 to-pink-500 bg-clip-text text-4xl font-black text-transparent">
   {selectedLuckyDay.day}
 </div>
@@ -647,18 +651,18 @@ const selectedFortuneColor = useMemo(() => {
       </div>
 
       <div className="mt-5 rounded-2xl bg-white/80 p-4">
-        <div className="text-sm font-bold text-fuchsia-500">
-          AIメッセージ
-        </div>
+        <div className="bg-gradient-to-r from-fuchsia-500 to-rose-500 bg-clip-text text-sm font-black text-transparent">
+  AIメッセージ
+</div>
 <div className="mt-1 text-xs font-bold tracking-wide text-slate-400">
   SANMEIGAKU AI ANALYSIS
 </div>
-        <div className="mt-2 text-sm leading-7 text-slate-700">
-          {result.message}
-        </div>
+        <div className="mt-3 text-[15px] leading-8 text-slate-700">
+  {result.message}
+</div>
       </div>
     </div>
-<div className="mt-4 flex items-center gap-2">
+<div className="mt-5 flex flex-wrap items-center gap-2">
   <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-[10px] font-black tracking-wide text-fuchsia-600">
     AI BEAUTY
   </div>
