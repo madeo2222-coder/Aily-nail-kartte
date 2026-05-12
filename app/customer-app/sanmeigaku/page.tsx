@@ -88,6 +88,26 @@ const fortuneColorSets = [
     moneyName: "シャイニーゴールド",
   },
 ];
+const luckyDayMessages = [
+  {
+    title: "恋愛運アップ日",
+    day: "7日・16日・25日",
+    message:
+      "ピンク系ネイルや天然石を身につけることで、人間関係や恋愛運の流れが整いやすい日です。",
+  },
+  {
+    title: "金運アップ日",
+    day: "8日・18日・28日",
+    message:
+      "ゴールド系カラーや輝きのあるストーンを取り入れることで、豊かさの流れを引き寄せやすい日です。",
+  },
+  {
+    title: "美容運アップ日",
+    day: "5日・15日・24日",
+    message:
+      "ネイル・美容・自分磨きをすることで、自信と魅力が高まりやすいタイミングです。",
+  },
+];
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -202,6 +222,15 @@ const selectedFortuneColor = useMemo(() => {
     .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
   return fortuneColorSets[seed % fortuneColorSets.length];
+}, [name, birthday, fortune, mood]);
+   const selectedLuckyDay = useMemo(() => {
+  const seedText = `${name}-${birthday}-${fortune}-${mood}-luckyday`;
+
+  const seed = seedText
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+
+  return luckyDayMessages[seed % luckyDayMessages.length];
 }, [name, birthday, fortune, mood]);
   const tipOrderHref = useMemo(() => {
     return buildTipOrderHref(result);
@@ -397,6 +426,73 @@ const selectedFortuneColor = useMemo(() => {
               診断結果をもとに、店舗施術またはネイルチップ注文を選べます。
               通販の場合は、来店せずに開運デザインの相談・注文ができます。
             </div>
+            <section className="mt-6 space-y-4">
+  <div className="text-lg font-bold text-slate-900">
+    今日の開運カラー診断
+  </div>
+
+  <div className="grid grid-cols-2 gap-3">
+    <div className="rounded-3xl border bg-white p-4 shadow-sm">
+      <div className="text-xs font-bold text-slate-500">
+        ラッキーカラー
+      </div>
+
+      <div
+        className="mt-3 h-14 rounded-2xl"
+        style={{ backgroundColor: selectedFortuneColor.lucky }}
+      />
+
+      <div className="mt-3 font-bold text-slate-900">
+        {selectedFortuneColor.luckyName}
+      </div>
+    </div>
+
+    <div className="rounded-3xl border bg-white p-4 shadow-sm">
+      <div className="text-xs font-bold text-slate-500">
+        NGカラー
+      </div>
+
+      <div
+        className="mt-3 h-14 rounded-2xl"
+        style={{ backgroundColor: selectedFortuneColor.avoid }}
+      />
+
+      <div className="mt-3 font-bold text-slate-900">
+        {selectedFortuneColor.avoidName}
+      </div>
+    </div>
+
+    <div className="rounded-3xl border bg-white p-4 shadow-sm">
+      <div className="text-xs font-bold text-pink-500">
+        恋愛運UP
+      </div>
+
+      <div
+        className="mt-3 h-14 rounded-2xl"
+        style={{ backgroundColor: selectedFortuneColor.love }}
+      />
+
+      <div className="mt-3 font-bold text-slate-900">
+        {selectedFortuneColor.loveName}
+      </div>
+    </div>
+
+    <div className="rounded-3xl border bg-white p-4 shadow-sm">
+      <div className="text-xs font-bold text-yellow-600">
+        金運UP
+      </div>
+
+      <div
+        className="mt-3 h-14 rounded-2xl"
+        style={{ backgroundColor: selectedFortuneColor.money }}
+      />
+
+      <div className="mt-3 font-bold text-slate-900">
+        {selectedFortuneColor.moneyName}
+      </div>
+    </div>
+  </div>
+</section>
 <div className="mt-4 rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
   <div className="flex items-center justify-between">
     <div>
@@ -460,7 +556,44 @@ const selectedFortuneColor = useMemo(() => {
           </section>
         ) : null}
       </div>
+<section className="mt-6 rounded-3xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-5 shadow-sm">
+  <div className="flex items-center justify-between">
+    <div>
+      <div className="text-xs font-bold tracking-wide text-rose-500">
+        LUCKY DAY
+      </div>
 
+      <div className="mt-1 text-lg font-bold text-slate-900">
+        今月の開運日
+      </div>
+    </div>
+
+    <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-600">
+      運気上昇
+    </div>
+  </div>
+
+  <div className="mt-4 rounded-2xl bg-white p-4">
+    <div className="text-sm font-bold text-rose-500">
+      {selectedLuckyDay.title}
+    </div>
+
+    <div className="mt-2 text-2xl font-bold text-slate-900">
+      {selectedLuckyDay.day}
+    </div>
+
+    <div className="mt-3 text-sm leading-6 text-slate-700">
+      {selectedLuckyDay.message}
+    </div>
+  </div>
+
+  <Link
+    href="/customer-app/reserve?menu=開運ネイル相談"
+    className="mt-4 block w-full rounded-2xl bg-rose-500 px-4 py-3 text-center text-sm font-bold text-white shadow"
+  >
+    開運日に予約相談する
+  </Link>
+</section>
       {message ? (
         <div className="fixed left-1/2 top-4 z-50 w-[calc(100%-24px)] max-w-md -translate-x-1/2">
           <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-lg">
