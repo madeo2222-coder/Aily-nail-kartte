@@ -267,7 +267,42 @@ export default function SanmeigakuNailDiagnosisPage() {
   const tipOrderHref = useMemo(() => {
     return buildTipOrderHref(result);
   }, [result]);
+async function handleShareResult() {
+  const shareText = `
+✨ AI BEAUTY ORACLE 診断結果 ✨
 
+ラッキーカラー：${result.luckyColor}
+ラッキーストーン：${result.luckyStone}
+
+おすすめネイル：
+${result.nailTheme}
+
+AIメッセージ：
+${result.message}
+
+#AI美容
+#開運ネイル
+#NailyAiDOL
+`;
+
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: "AI BEAUTY ORACLE",
+        text: shareText,
+      });
+
+      showMessage("診断結果をシェアしました");
+      return;
+    }
+
+    await navigator.clipboard.writeText(shareText);
+
+    showMessage("診断結果をコピーしました");
+  } catch {
+    showMessage("シェアに失敗しました");
+  }
+}
   function showMessage(text: string) {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 2500);
@@ -819,11 +854,12 @@ export default function SanmeigakuNailDiagnosisPage() {
                 </div>
 
                 <button
-                  type="button"
-                  className="mt-5 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-xl transition active:scale-[0.98]"
-                >
-                  診断結果を保存・シェア（準備中）
-                </button>
+  type="button"
+  onClick={handleShareResult}
+  className="mt-5 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-xl transition active:scale-[0.98]"
+>
+  診断結果をシェアする
+</button>
               </div>
             </section>
 
