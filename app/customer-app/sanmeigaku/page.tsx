@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import html2canvas from "html2canvas";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type DiagnosisResult = {
   luckyColor: string;
@@ -219,7 +220,8 @@ export default function SanmeigakuNailDiagnosisPage() {
   const [saving, setSaving] = useState(false);
 
   const [customerId, setCustomerId] = useState("");
-  const [salonId, setSalonId] = useState("");
+const [salonId, setSalonId] = useState("");
+const resultCardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function fetchMe() {
@@ -318,6 +320,33 @@ https://aily-nail-kartte.vercel.app/customer-app/sanmeigaku
     showMessage("診断結果をコピーしました");
   } catch {
     showMessage("シェアに失敗しました");
+  }
+}
+async function handleSaveImage() {
+  if (!resultCardRef.current) {
+    showMessage("保存対象が見つかりません");
+    return;
+  }
+
+  try {
+    const canvas = await html2canvas(resultCardRef.current, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+    });
+
+    const image = canvas.toDataURL("image/png");
+
+    const link = document.createElement("a");
+    link.href = image;
+    link.download = "ai-beauty-oracle.png";
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showMessage("診断画像を保存しました");
+  } catch {
+    showMessage("画像保存に失敗しました");
   }
 }
   function showMessage(text: string) {
@@ -760,7 +789,10 @@ https://aily-nail-kartte.vercel.app/customer-app/sanmeigaku
               </div>
             </section>
 
-            <section className="mt-6 overflow-hidden rounded-[36px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-2xl">
+            <section
+  ref={resultCardRef}
+  className="mt-6 overflow-hidden rounded-[36px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-2xl"
+>
               <div className="relative overflow-hidden rounded-[35px] bg-white/95 p-5 backdrop-blur">
                 <div className="absolute right-4 top-4 rounded-full bg-black/5 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-slate-500">
                   NAILY AiDOL
@@ -879,7 +911,13 @@ https://aily-nail-kartte.vercel.app/customer-app/sanmeigaku
 </button>
               </div>
             </section>
-
+<button
+  type="button"
+  onClick={handleSaveImage}
+  className="mt-3 w-full rounded-3xl border border-fuchsia-200 bg-white px-4 py-4 text-sm font-black text-fuchsia-600 shadow-xl transition active:scale-[0.98]"
+>
+  診断画像を保存する
+</button>
             <div className="mt-4 grid grid-cols-1 gap-2">
               <Link
                 href={tipOrderHref}
