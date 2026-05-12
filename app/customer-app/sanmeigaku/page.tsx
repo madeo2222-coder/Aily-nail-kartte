@@ -36,6 +36,7 @@ const moodOptions = [
   "ナチュラル",
   "個性的",
 ];
+
 const premiumStones = [
   {
     name: "天然ダイヤモンド",
@@ -56,6 +57,7 @@ const premiumStones = [
       "仕事運・知性・冷静な判断力を整える高級天然石。経営者層にも人気。",
   },
 ];
+
 const fortuneColorSets = [
   {
     lucky: "#ec4899",
@@ -88,6 +90,7 @@ const fortuneColorSets = [
     moneyName: "シャイニーゴールド",
   },
 ];
+
 const luckyDayMessages = [
   {
     title: "恋愛運アップ日",
@@ -108,11 +111,22 @@ const luckyDayMessages = [
       "ネイル・美容・自分磨きをすることで、自信と魅力が高まりやすいタイミングです。",
   },
 ];
+
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
-  { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
-  { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
+  {
+    key: "diagnosis",
+    label: "診断",
+    icon: "✨",
+    href: "/customer-app/sanmeigaku",
+  },
+  {
+    key: "history",
+    label: "履歴",
+    icon: "📝",
+    href: "/customer-app/history",
+  },
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
 
@@ -215,23 +229,25 @@ export default function SanmeigakuNailDiagnosisPage() {
   const result = useMemo(() => {
     return buildDiagnosis(name, birthday, fortune, mood);
   }, [name, birthday, fortune, mood]);
-const selectedFortuneColor = useMemo(() => {
-  const seedText = `${name}-${birthday}-${fortune}-${mood}-color`;
-  const seed = seedText
-    .split("")
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
-  return fortuneColorSets[seed % fortuneColorSets.length];
-}, [name, birthday, fortune, mood]);
-   const selectedLuckyDay = useMemo(() => {
-  const seedText = `${name}-${birthday}-${fortune}-${mood}-luckyday`;
+  const selectedFortuneColor = useMemo(() => {
+    const seedText = `${name}-${birthday}-${fortune}-${mood}-color`;
+    const seed = seedText
+      .split("")
+      .reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
-  const seed = seedText
-    .split("")
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    return fortuneColorSets[seed % fortuneColorSets.length];
+  }, [name, birthday, fortune, mood]);
 
-  return luckyDayMessages[seed % luckyDayMessages.length];
-}, [name, birthday, fortune, mood]);
+  const selectedLuckyDay = useMemo(() => {
+    const seedText = `${name}-${birthday}-${fortune}-${mood}-luckyday`;
+    const seed = seedText
+      .split("")
+      .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+
+    return luckyDayMessages[seed % luckyDayMessages.length];
+  }, [name, birthday, fortune, mood]);
+
   const tipOrderHref = useMemo(() => {
     return buildTipOrderHref(result);
   }, [result]);
@@ -301,11 +317,13 @@ const selectedFortuneColor = useMemo(() => {
           <div className="text-xs font-bold tracking-wide opacity-90">
             AILY MY PAGE
           </div>
+
           <h1 className="mt-2 text-2xl font-bold leading-tight">
             あなたの未来が上がる
             <br />
             算命学ネイル診断
           </h1>
+
           <p className="mt-3 text-sm leading-6 text-white/90">
             お名前・生年月日・今月上げたい運気から、今のあなたに合うカラー、ストーン、ネイルデザインを提案します。
           </p>
@@ -426,118 +444,258 @@ const selectedFortuneColor = useMemo(() => {
               診断結果をもとに、店舗施術またはネイルチップ注文を選べます。
               通販の場合は、来店せずに開運デザインの相談・注文ができます。
             </div>
+
             <section className="mt-6 space-y-4">
-  <div className="text-lg font-bold text-slate-900">
-    今日の開運カラー診断
-  </div>
+              <div className="text-lg font-bold text-slate-900">
+                今日の開運カラー診断
+              </div>
 
-  <div className="grid grid-cols-2 gap-3">
-    <div className="rounded-3xl border bg-white p-4 shadow-sm">
-      <div className="text-xs font-bold text-slate-500">
-        ラッキーカラー
-      </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-3xl border bg-white p-4 shadow-sm">
+                  <div className="text-xs font-bold text-slate-500">
+                    ラッキーカラー
+                  </div>
+                  <div
+                    className="mt-3 h-14 rounded-2xl"
+                    style={{ backgroundColor: selectedFortuneColor.lucky }}
+                  />
+                  <div className="mt-3 font-bold text-slate-900">
+                    {selectedFortuneColor.luckyName}
+                  </div>
+                </div>
 
-      <div
-        className="mt-3 h-14 rounded-2xl"
-        style={{ backgroundColor: selectedFortuneColor.lucky }}
-      />
+                <div className="rounded-3xl border bg-white p-4 shadow-sm">
+                  <div className="text-xs font-bold text-slate-500">
+                    NGカラー
+                  </div>
+                  <div
+                    className="mt-3 h-14 rounded-2xl"
+                    style={{ backgroundColor: selectedFortuneColor.avoid }}
+                  />
+                  <div className="mt-3 font-bold text-slate-900">
+                    {selectedFortuneColor.avoidName}
+                  </div>
+                </div>
 
-      <div className="mt-3 font-bold text-slate-900">
-        {selectedFortuneColor.luckyName}
-      </div>
-    </div>
+                <div className="rounded-3xl border bg-white p-4 shadow-sm">
+                  <div className="text-xs font-bold text-pink-500">
+                    恋愛運UP
+                  </div>
+                  <div
+                    className="mt-3 h-14 rounded-2xl"
+                    style={{ backgroundColor: selectedFortuneColor.love }}
+                  />
+                  <div className="mt-3 font-bold text-slate-900">
+                    {selectedFortuneColor.loveName}
+                  </div>
+                </div>
 
-    <div className="rounded-3xl border bg-white p-4 shadow-sm">
-      <div className="text-xs font-bold text-slate-500">
-        NGカラー
-      </div>
+                <div className="rounded-3xl border bg-white p-4 shadow-sm">
+                  <div className="text-xs font-bold text-yellow-600">
+                    金運UP
+                  </div>
+                  <div
+                    className="mt-3 h-14 rounded-2xl"
+                    style={{ backgroundColor: selectedFortuneColor.money }}
+                  />
+                  <div className="mt-3 font-bold text-slate-900">
+                    {selectedFortuneColor.moneyName}
+                  </div>
+                </div>
+              </div>
+            </section>
 
-      <div
-        className="mt-3 h-14 rounded-2xl"
-        style={{ backgroundColor: selectedFortuneColor.avoid }}
-      />
+            <section className="mt-6 rounded-3xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold tracking-wide text-rose-500">
+                    LUCKY DAY
+                  </div>
+                  <div className="mt-1 text-lg font-bold text-slate-900">
+                    今月の開運日
+                  </div>
+                </div>
 
-      <div className="mt-3 font-bold text-slate-900">
-        {selectedFortuneColor.avoidName}
-      </div>
-    </div>
+                <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-600">
+                  運気上昇
+                </div>
+              </div>
 
-    <div className="rounded-3xl border bg-white p-4 shadow-sm">
-      <div className="text-xs font-bold text-pink-500">
-        恋愛運UP
-      </div>
+              <div className="mt-4 rounded-2xl bg-white p-4">
+                <div className="text-sm font-bold text-rose-500">
+                  {selectedLuckyDay.title}
+                </div>
+                <div className="mt-1 text-[10px] font-black tracking-[0.2em] text-rose-300">
+                  LUCKY TIMING ANALYSIS
+                </div>
+                <div className="bg-gradient-to-r from-rose-500 to-pink-500 bg-clip-text text-4xl font-black text-transparent">
+                  {selectedLuckyDay.day}
+                </div>
+                <div className="mt-3 text-sm leading-6 text-slate-700">
+                  {selectedLuckyDay.message}
+                </div>
+              </div>
 
-      <div
-        className="mt-3 h-14 rounded-2xl"
-        style={{ backgroundColor: selectedFortuneColor.love }}
-      />
+              <Link
+                href="/customer-app/reserve?menu=開運ネイル相談"
+                className="mt-4 block w-full rounded-2xl bg-rose-500 px-4 py-3 text-center text-sm font-bold text-white shadow"
+              >
+                開運日に予約相談する
+              </Link>
+            </section>
 
-      <div className="mt-3 font-bold text-slate-900">
-        {selectedFortuneColor.loveName}
-      </div>
-    </div>
+            <section className="mt-6 rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold tracking-wide text-amber-600">
+                    PREMIUM STONE
+                  </div>
+                  <div className="mt-1 text-lg font-bold text-slate-900">
+                    プレミアム天然石提案
+                  </div>
+                </div>
 
-    <div className="rounded-3xl border bg-white p-4 shadow-sm">
-      <div className="text-xs font-bold text-yellow-600">
-        金運UP
-      </div>
+                <div className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
+                  高級ライン
+                </div>
+              </div>
 
-      <div
-        className="mt-3 h-14 rounded-2xl"
-        style={{ backgroundColor: selectedFortuneColor.money }}
-      />
+              <div className="mt-4 space-y-3">
+                {premiumStones.map((stone) => (
+                  <div
+                    key={stone.name}
+                    className="rounded-2xl border border-amber-100 bg-white p-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-base font-bold text-slate-900">
+                        {stone.name}
+                      </div>
+                      <div className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">
+                        {stone.grade}
+                      </div>
+                    </div>
 
-      <div className="mt-3 font-bold text-slate-900">
-        {selectedFortuneColor.moneyName}
-      </div>
-    </div>
-  </div>
-</section>
-<div className="mt-4 rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
-  <div className="flex items-center justify-between">
-    <div>
-      <div className="text-xs font-bold tracking-wide text-amber-600">
-        PREMIUM STONE
-      </div>
+                    <div className="mt-2 text-sm leading-6 text-slate-700">
+                      {stone.message}
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-      <div className="mt-1 text-lg font-bold text-slate-900">
-        プレミアム天然石提案
-      </div>
-    </div>
+              <div className="mt-4 rounded-2xl bg-amber-100/60 p-4 text-sm leading-6 text-amber-900">
+                宝石商ルートによる天然石を使用した、
+                高級開運ネイル・ネイルチップ・ギフト相談にも対応予定です。
+              </div>
+            </section>
 
-    <div className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
-      高級ライン
-    </div>
-  </div>
+            <section className="mt-6 overflow-hidden rounded-[36px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-2xl">
+              <div className="relative overflow-hidden rounded-[35px] bg-white/95 p-5 backdrop-blur">
+                <div className="absolute right-4 top-4 rounded-full bg-black/5 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-slate-500">
+                  NAILY AiDOL
+                </div>
 
-  <div className="mt-4 space-y-3">
-    {premiumStones.map((stone) => (
-      <div
-        key={stone.name}
-        className="rounded-2xl border border-amber-100 bg-white p-4"
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-base font-bold text-slate-900">
-            {stone.name}
-          </div>
+                <div className="flex items-start justify-between gap-3 pr-24">
+                  <div>
+                    <div className="text-xs font-black tracking-[0.3em] text-fuchsia-500">
+                      AI BEAUTY ORACLE
+                    </div>
+                    <div className="mt-1 text-2xl font-black leading-tight text-slate-900">
+                      あなた専用の
+                      <br />
+                      AI開運ビューティー解析
+                    </div>
+                  </div>
 
-          <div className="rounded-full bg-slate-900 px-3 py-1 text-xs font-bold text-white">
-            {stone.grade}
-          </div>
-        </div>
+                  <div className="rounded-full bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1 text-xs font-black text-white shadow">
+                    ORACLE AI
+                  </div>
+                </div>
 
-        <div className="mt-2 text-sm leading-6 text-slate-700">
-          {stone.message}
-        </div>
-      </div>
-    ))}
-  </div>
+                <div className="relative mt-5 overflow-hidden rounded-[32px] bg-gradient-to-br from-pink-50 via-rose-50 to-fuchsia-50 p-5">
+                  <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-pink-200/30 blur-3xl" />
+                  <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-fuchsia-200/30 blur-3xl" />
 
-  <div className="mt-4 rounded-2xl bg-amber-100/60 p-4 text-sm leading-6 text-amber-900">
-    宝石商ルートによる天然石を使用した、
-    高級開運ネイル・ネイルチップ・ギフト相談にも対応予定です。
-  </div>
-</div>
+                  <div className="relative">
+                    <div className="text-sm font-bold tracking-wide text-slate-500">
+                      AIが導き出した開運カラー
+                    </div>
+
+                    <div className="mt-3 flex items-center gap-3">
+                      <div
+                        className="h-14 w-14 rounded-2xl shadow"
+                        style={{
+                          backgroundColor: selectedFortuneColor.lucky,
+                        }}
+                      />
+
+                      <div>
+                        <div className="bg-gradient-to-r from-fuchsia-600 via-pink-500 to-rose-500 bg-clip-text text-3xl font-black text-transparent">
+                          {selectedFortuneColor.luckyName}
+                        </div>
+
+                        <div className="mt-2 inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-bold text-fuchsia-600 shadow-sm">
+                          ✨ AI開運カラー解析
+                        </div>
+
+                        <div className="mt-1 text-sm text-slate-500">
+                          運気を引き寄せる開運カラー
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 rounded-2xl bg-white/80 p-4">
+                      <div className="text-sm font-bold text-rose-500">
+                        今月の開運日
+                      </div>
+                      <div className="mt-1 text-[10px] font-black tracking-[0.2em] text-rose-300">
+                        LUCKY TIMING ANALYSIS
+                      </div>
+                      <div className="bg-gradient-to-r from-rose-500 to-pink-500 bg-clip-text text-4xl font-black text-transparent">
+                        {selectedLuckyDay.day}
+                      </div>
+                      <div className="mt-2 text-sm leading-6 text-slate-700">
+                        {selectedLuckyDay.message}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 rounded-2xl bg-white/80 p-4">
+                      <div className="bg-gradient-to-r from-fuchsia-500 to-rose-500 bg-clip-text text-sm font-black text-transparent">
+                        AIメッセージ
+                      </div>
+                      <div className="mt-1 text-[10px] font-black tracking-[0.25em] text-fuchsia-300">
+                        PERSONAL BEAUTY ORACLE
+                      </div>
+                      <div className="mt-1 text-xs font-bold tracking-wide text-slate-400">
+                        SANMEIGAKU AI ANALYSIS
+                      </div>
+                      <div className="mt-4 rounded-2xl bg-white/70 p-4 text-[15px] leading-8 text-slate-700 shadow-sm">
+                        {result.message}
+                      </div>
+                    </div>
+
+                    <div className="mt-5 flex flex-wrap items-center gap-2">
+                      <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-[10px] font-black tracking-wide text-fuchsia-600">
+                        AI BEAUTY
+                      </div>
+                      <div className="rounded-full bg-rose-100 px-3 py-1 text-[10px] font-black tracking-wide text-rose-500">
+                        LUCKY NAIL
+                      </div>
+                      <div className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black tracking-wide text-amber-600">
+                        PREMIUM STONE
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  className="mt-5 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-xl transition active:scale-[0.98]"
+                >
+                  診断結果を保存・シェア（準備中）
+                </button>
+              </div>
+            </section>
+
             <div className="mt-4 grid grid-cols-1 gap-2">
               <Link
                 href={tipOrderHref}
@@ -556,144 +714,7 @@ const selectedFortuneColor = useMemo(() => {
           </section>
         ) : null}
       </div>
-<section className="mt-6 rounded-3xl border border-rose-100 bg-gradient-to-br from-rose-50 to-white p-5 shadow-sm">
-  <div className="flex items-center justify-between">
-    <div>
-      <div className="text-xs font-bold tracking-wide text-rose-500">
-        LUCKY DAY
-      </div>
 
-      <div className="mt-1 text-lg font-bold text-slate-900">
-        今月の開運日
-      </div>
-    </div>
-
-    <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-600">
-      運気上昇
-    </div>
-  </div>
-
-  <div className="mt-4 rounded-2xl bg-white p-4">
-    <div className="text-sm font-bold text-rose-500">
-      {selectedLuckyDay.title}
-    </div>
-
-    <div className="mt-2 text-2xl font-bold text-slate-900">
-      {selectedLuckyDay.day}
-    </div>
-
-    <div className="mt-3 text-sm leading-6 text-slate-700">
-      {selectedLuckyDay.message}
-    </div>
-  </div>
-<section className="mt-6 overflow-hidden rounded-[36px] bg-gradient-to-br from-fuchsia-500 via-pink-500 to-rose-500 p-[1px] shadow-2xl">
-  <div className="relative overflow-hidden rounded-[35px] bg-white/95 p-5 backdrop-blur">
-    <div className="flex items-center justify-between">
-      <div>
-        <div className="text-xs font-black tracking-[0.3em] text-fuchsia-500">
-  AI BEAUTY ORACLE
-</div>
-<div className="absolute right-4 top-4 rounded-full bg-black/5 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-slate-500">
-  NAILY AiDOL
-</div>
-        <div className="mt-1 text-2xl font-black leading-tight text-slate-900">
-  あなた専用の
-  <br />
-  AI開運ビューティー解析
-</div>
-
-      <div className="rounded-full bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1 text-xs font-black text-white shadow">
-  ORACLE AI
-</div>
-    </div>
-
-    <div className="relative mt-5 overflow-hidden rounded-[32px] bg-gradient-to-br from-pink-50 via-rose-50 to-fuchsia-50 p-5">
-      <div className="text-sm font-bold tracking-wide text-slate-500">
-  AIが導き出した開運カラー
-</div>
-<div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-pink-200/30 blur-3xl" />
-
-<div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-fuchsia-200/30 blur-3xl" />
-      <div className="mt-3 flex items-center gap-3">
-        <div
-          className="h-14 w-14 rounded-2xl shadow"
-          style={{
-            backgroundColor: selectedFortuneColor.lucky,
-          }}
-        />
-
-        <div>
-          <div className="bg-gradient-to-r from-fuchsia-600 via-pink-500 to-rose-500 bg-clip-text text-3xl font-black text-transparent">
-  {selectedFortuneColor.luckyName}
-</div>
-<div className="mt-2 inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-bold text-fuchsia-600 shadow-sm">
-  ✨ AI開運カラー解析
-</div>
-          <div className="text-sm text-slate-500">
-            運気を引き寄せる開運カラー
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-2xl bg-white/80 p-4">
-        <div className="text-sm font-bold text-rose-500">
-          今月の開運日
-        </div>
-<div className="mt-1 text-[10px] font-black tracking-[0.2em] text-rose-300">
-  LUCKY TIMING ANALYSIS
-</div>
-        <div className="bg-gradient-to-r from-rose-500 to-pink-500 bg-clip-text text-4xl font-black text-transparent">
-  {selectedLuckyDay.day}
-</div>
-
-        <div className="mt-2 text-sm leading-6 text-slate-700">
-          {selectedLuckyDay.message}
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-2xl bg-white/80 p-4">
-        <div className="bg-gradient-to-r from-fuchsia-500 to-rose-500 bg-clip-text text-sm font-black text-transparent">
-  AIメッセージ
-</div>
-<div className="mt-1 text-[10px] font-black tracking-[0.25em] text-fuchsia-300">
-  PERSONAL BEAUTY ORACLE
-</div>
-<div className="mt-1 text-xs font-bold tracking-wide text-slate-400">
-  SANMEIGAKU AI ANALYSIS
-</div>
-        <div className="mt-4 rounded-2xl bg-white/70 p-4 text-[15px] leading-8 text-slate-700 shadow-sm">
-  {result.message}
-</div>
-      </div>
-    </div>
-<div className="mt-5 flex flex-wrap items-center gap-2">
-  <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-[10px] font-black tracking-wide text-fuchsia-600">
-    AI BEAUTY
-  </div>
-
-  <div className="rounded-full bg-rose-100 px-3 py-1 text-[10px] font-black tracking-wide text-rose-500">
-    LUCKY NAIL
-  </div>
-
-  <div className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black tracking-wide text-amber-600">
-    PREMIUM STONE
-  </div>
-</div>
-    <button
-  type="button"
-  className="mt-5 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-xl transition active:scale-[0.98]"
->
-      診断結果を保存・シェア（準備中）
-    </button>
-  </div>
-</section>
-  <Link
-    href="/customer-app/reserve?menu=開運ネイル相談"
-    className="mt-4 block w-full rounded-2xl bg-rose-500 px-4 py-3 text-center text-sm font-bold text-white shadow"
-  >
-    開運日に予約相談する
-  </Link>
-</section>
       {message ? (
         <div className="fixed left-1/2 top-4 z-50 w-[calc(100%-24px)] max-w-md -translate-x-1/2">
           <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-lg">
@@ -740,7 +761,9 @@ const selectedFortuneColor = useMemo(() => {
               <button
                 key={item.key}
                 type="button"
-                onClick={() => showMessage(`${item.label} 画面は次段階で実装します`)}
+                onClick={() =>
+                  showMessage(`${item.label} 画面は次段階で実装します`)
+                }
                 className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
               >
                 <span className="text-lg leading-none">{item.icon}</span>
