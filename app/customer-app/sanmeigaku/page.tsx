@@ -590,26 +590,27 @@ const selectedFortuneColor = useMemo(() => {
   <div className="relative overflow-hidden rounded-[35px] bg-white/95 p-5 backdrop-blur">
     <div className="flex items-center justify-between">
       <div>
-        <div className="text-xs font-bold tracking-[0.2em] text-fuchsia-500">
-          SHARE CARD
-        </div>
+        <div className="text-xs font-black tracking-[0.3em] text-fuchsia-500">
+  AI BEAUTY ORACLE
+</div>
 <div className="absolute right-4 top-4 rounded-full bg-black/5 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-slate-500">
   NAILY AiDOL
 </div>
-        <div className="mt-1 text-xl font-black text-slate-900">
-          あなたの開運診断結果
-        </div>
-      </div>
+        <div className="mt-1 text-2xl font-black leading-tight text-slate-900">
+  あなた専用の
+  <br />
+  AI開運ビューティー解析
+</div>
 
-      <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-bold text-fuchsia-600">
-        AI解析
-      </div>
+      <div className="rounded-full bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1 text-xs font-black text-white shadow">
+  ORACLE AI
+</div>
     </div>
 
     <div className="relative mt-5 overflow-hidden rounded-[32px] bg-gradient-to-br from-pink-50 via-rose-50 to-fuchsia-50 p-5">
-      <div className="text-sm text-slate-500">
-        今日のラッキーカラー
-      </div>
+      <div className="text-sm font-bold tracking-wide text-slate-500">
+  AIが導き出した開運カラー
+</div>
 <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-pink-200/30 blur-3xl" />
 
 <div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-fuchsia-200/30 blur-3xl" />
@@ -654,10 +655,13 @@ const selectedFortuneColor = useMemo(() => {
         <div className="bg-gradient-to-r from-fuchsia-500 to-rose-500 bg-clip-text text-sm font-black text-transparent">
   AIメッセージ
 </div>
+<div className="mt-1 text-[10px] font-black tracking-[0.25em] text-fuchsia-300">
+  PERSONAL BEAUTY ORACLE
+</div>
 <div className="mt-1 text-xs font-bold tracking-wide text-slate-400">
   SANMEIGAKU AI ANALYSIS
 </div>
-        <div className="mt-3 text-[15px] leading-8 text-slate-700">
+        <div className="mt-4 rounded-2xl bg-white/70 p-4 text-[15px] leading-8 text-slate-700 shadow-sm">
   {result.message}
 </div>
       </div>
