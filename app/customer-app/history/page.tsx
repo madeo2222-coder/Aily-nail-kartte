@@ -67,7 +67,12 @@ type MeResponse = {
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
-  { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
+  {
+    key: "diagnosis",
+    label: "診断",
+    icon: "✨",
+    href: "/customer-app/sanmeigaku",
+  },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
@@ -383,8 +388,14 @@ export default function CustomerAppHistoryPage() {
         </section>
 
         <section className="space-y-3">
-          <div className="text-lg font-bold text-slate-900">
-            AI算命学診断履歴
+          <div>
+            <div className="text-xs font-black tracking-[0.25em] text-fuchsia-500">
+              AI BEAUTY ORACLE
+            </div>
+
+            <div className="mt-1 text-lg font-black text-slate-900">
+              AI算命学診断履歴
+            </div>
           </div>
 
           {diagnoses.length === 0 ? (
@@ -397,24 +408,24 @@ export default function CustomerAppHistoryPage() {
             diagnoses.map((item) => (
               <article
                 key={item.id}
-                className="rounded-3xl border bg-white p-4 shadow-sm"
+                className="overflow-hidden rounded-[32px] border border-fuchsia-100 bg-gradient-to-br from-white to-fuchsia-50 p-4 shadow-sm"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-lg font-bold text-slate-900">
                     開運ネイル診断
                   </div>
 
-                  <div className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">
+                  <div className="rounded-full bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-white shadow">
                     {formatDate(item.created_at)}
                   </div>
                 </div>
 
-                <div className="mt-3 rounded-2xl bg-purple-50 px-3 py-2 text-sm font-bold text-purple-700">
-                  ✨ AI算命学診断
+                <div className="mt-3 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-3 text-sm font-black text-white shadow">
+                  ✨ AI BEAUTY ORACLE ANALYSIS
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3">
-                  <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
                     <div className="text-xs text-slate-500">
                       ラッキーカラー
                     </div>
@@ -423,7 +434,7 @@ export default function CustomerAppHistoryPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
                     <div className="text-xs text-slate-500">
                       ラッキーストーン
                     </div>
@@ -432,7 +443,7 @@ export default function CustomerAppHistoryPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
                     <div className="text-xs text-slate-500">
                       おすすめネイル方向性
                     </div>
@@ -441,11 +452,11 @@ export default function CustomerAppHistoryPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-amber-50 p-4">
-                    <div className="text-xs text-amber-600">
-                      診断メッセージ
+                  <div className="rounded-[28px] border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5">
+                    <div className="text-xs font-black tracking-[0.2em] text-amber-500">
+                      ORACLE MESSAGE
                     </div>
-                    <div className="mt-1 text-sm leading-6 text-amber-900">
+                    <div className="mt-2 text-sm leading-6 text-amber-900">
                       {item.diagnosis_message?.trim()
                         ? item.diagnosis_message
                         : "診断メッセージはありません"}
@@ -455,7 +466,7 @@ export default function CustomerAppHistoryPage() {
 
                 <Link
                   href="/customer-app/sanmeigaku"
-                  className="mt-4 block w-full rounded-2xl bg-purple-600 px-4 py-3 text-center text-sm font-bold text-white"
+                  className="mt-5 block w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-center text-sm font-black text-white shadow-xl"
                 >
                   もう一度診断する
                 </Link>
