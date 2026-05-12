@@ -608,7 +608,9 @@ const selectedFortuneColor = useMemo(() => {
       <div className="text-sm text-slate-500">
         今日のラッキーカラー
       </div>
+<div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-pink-200/30 blur-3xl" />
 
+<div className="absolute -bottom-10 -left-10 h-40 w-40 rounded-full bg-fuchsia-200/30 blur-3xl" />
       <div className="mt-3 flex items-center gap-3">
         <div
           className="h-14 w-14 rounded-2xl shadow"
@@ -618,9 +620,9 @@ const selectedFortuneColor = useMemo(() => {
         />
 
         <div>
-          <div className="text-2xl font-black text-slate-900">
-            {selectedFortuneColor.luckyName}
-          </div>
+          <div className="bg-gradient-to-r from-fuchsia-600 via-pink-500 to-rose-500 bg-clip-text text-3xl font-black text-transparent">
+  {selectedFortuneColor.luckyName}
+</div>
 <div className="mt-2 inline-flex items-center rounded-full bg-white px-3 py-1 text-xs font-bold text-fuchsia-600 shadow-sm">
   ✨ AI開運カラー解析
 </div>
@@ -635,9 +637,9 @@ const selectedFortuneColor = useMemo(() => {
           今月の開運日
         </div>
 
-        <div className="mt-2 text-3xl font-black text-slate-900">
-          {selectedLuckyDay.day}
-        </div>
+        <div className="bg-gradient-to-r from-rose-500 to-pink-500 bg-clip-text text-4xl font-black text-transparent">
+  {selectedLuckyDay.day}
+</div>
 
         <div className="mt-2 text-sm leading-6 text-slate-700">
           {selectedLuckyDay.message}
@@ -656,12 +658,24 @@ const selectedFortuneColor = useMemo(() => {
         </div>
       </div>
     </div>
+<div className="mt-4 flex items-center gap-2">
+  <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-[10px] font-black tracking-wide text-fuchsia-600">
+    AI BEAUTY
+  </div>
 
+  <div className="rounded-full bg-rose-100 px-3 py-1 text-[10px] font-black tracking-wide text-rose-500">
+    LUCKY NAIL
+  </div>
+
+  <div className="rounded-full bg-amber-100 px-3 py-1 text-[10px] font-black tracking-wide text-amber-600">
+    PREMIUM STONE
+  </div>
+</div>
     <button
   type="button"
   className="mt-5 w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-sm font-black text-white shadow-xl transition active:scale-[0.98]"
 >
-      診断結果をシェアする（準備中）
+      診断結果を保存・シェア（準備中）
     </button>
   </div>
 </section>
