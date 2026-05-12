@@ -271,17 +271,34 @@ async function handleShareResult() {
   const shareText = `
 ✨ AI BEAUTY ORACLE 診断結果 ✨
 
-ラッキーカラー：${result.luckyColor}
-ラッキーストーン：${result.luckyStone}
+${name}さんの今月の開運テーマは
+「${fortune} × ${mood}」
 
-おすすめネイル：
+━━━━━━━━━━━
+
+💎 ラッキーカラー
+${result.luckyColor}
+
+💎 ラッキーストーン
+${result.luckyStone}
+
+💅 おすすめネイル
 ${result.nailTheme}
 
-AIメッセージ：
+━━━━━━━━━━━
+
+🔮 AIメッセージ
+
 ${result.message}
+
+━━━━━━━━━━━
+
+▼ あなたも無料診断する
+https://aily-nail-kartte.vercel.app/customer-app/sanmeigaku
 
 #AI美容
 #開運ネイル
+#算命学
 #NailyAiDOL
 `;
 
