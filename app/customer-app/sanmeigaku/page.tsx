@@ -1,13 +1,22 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type DiagnosisResult = {
   luckyColor: string;
   luckyStone: string;
   nailTheme: string;
   message: string;
+};
+
+type MeResponse = {
+  authenticated: boolean;
+  customer?: {
+    id?: string;
+    salon_id?: string | null;
+    name?: string | null;
+  } | null;
 };
 
 const fortuneOptions = [
@@ -57,17 +66,17 @@ function buildDiagnosis(
   ];
 
   const stones = [
+    "天然ダイヤモンド",
     "ローズクォーツ",
     "シトリン",
     "アメジスト",
     "ムーンストーン",
-    "パール",
     "クリスタル",
   ];
 
   const themes = [
     "やわらかいグラデーションに小粒ストーンを合わせた開運ネイル",
-    "透明感のあるワンカラーにゴールドラインを入れた上品ネイル",
+    "透明感のあるワンカラーに天然ダイヤを一粒合わせた上品ネイル",
     "肌なじみカラーにポイントビジューを置いた大人可愛いネイル",
     "ラメを控えめに重ねた、運気を底上げするきれいめネイル",
     "指先が明るく見えるカラーに天然石風アートを入れたネイル",
@@ -103,6 +112,34 @@ export default function SanmeigakuNailDiagnosisPage() {
   const [fortune, setFortune] = useState(fortuneOptions[0]);
   const [mood, setMood] = useState(moodOptions[0]);
   const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [customerId, setCustomerId] = useState("");
+  const [salonId, setSalonId] = useState("");
+
+  useEffect(() => {
+    async function fetchMe() {
+      try {
+        const res = await fetch("/api/line-login/me", {
+          cache: "no-store",
+        });
+
+        const json = (await res.json()) as MeResponse;
+
+        setCustomerId(json.customer?.id || "");
+        setSalonId(json.customer?.salon_id || "");
+
+        if (!name && json.customer?.name) {
+          setName(json.customer.name);
+        }
+      } catch {
+        setCustomerId("");
+        setSalonId("");
+      }
+    }
+
+    fetchMe();
+  }, [name]);
 
   const result = useMemo(() => {
     return buildDiagnosis(name, birthday, fortune, mood);
@@ -117,7 +154,7 @@ export default function SanmeigakuNailDiagnosisPage() {
     window.setTimeout(() => setMessage(""), 2500);
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!name.trim()) {
       showMessage("お名前を入力してください");
       return;
@@ -128,7 +165,46 @@ export default function SanmeigakuNailDiagnosisPage() {
       return;
     }
 
-    setSubmitted(true);
+    setSaving(true);
+
+    try {
+      const response = await fetch("/api/sanmeigaku-diagnoses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          salonId,
+          customerId,
+          name,
+          birthday,
+          fortune,
+          mood,
+          luckyColor: result.luckyColor,
+          luckyStone: result.luckyStone,
+          nailTheme: result.nailTheme,
+          message: result.message,
+          diagnosisType: "free_nail",
+        }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.ok) {
+        showMessage(json.error || "診断保存に失敗しました");
+        setSubmitted(true);
+        return;
+      }
+
+      setSubmitted(true);
+      showMessage("診断結果を保存しました");
+    } catch (error) {
+      console.error(error);
+      setSubmitted(true);
+      showMessage("診断結果の保存中に通信エラーが発生しました");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -213,9 +289,10 @@ export default function SanmeigakuNailDiagnosisPage() {
             <button
               type="button"
               onClick={handleSubmit}
-              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+              disabled={saving}
+              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
             >
-              診断する
+              {saving ? "診断中..." : "診断する"}
             </button>
           </div>
         </section>

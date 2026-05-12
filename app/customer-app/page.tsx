@@ -536,7 +536,142 @@ export default function CustomerAppPage() {
             次回予約する
           </Link>
         </section>
+<section className="overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-pink-500 p-5 text-white shadow">
+  <div className="flex items-start justify-between gap-3">
+    <div>
+      <div className="text-xs font-bold tracking-[0.2em] text-white/80">
+        AI FORTUNE BEAUTY
+      </div>
 
+      <div className="mt-2 text-2xl font-bold leading-tight">
+        今日の開運ビューティー
+      </div>
+
+      <div className="mt-3 text-sm leading-6 text-white/90">
+        今のあなたは「魅力運」と「人間関係運」を整えるタイミングです。
+        透明感カラーと天然石を取り入れることで、印象運アップが期待できます。
+      </div>
+    </div>
+
+    <div className="rounded-2xl bg-white/15 px-3 py-2 text-right backdrop-blur-sm">
+      <div className="text-[11px] text-white/70">
+        Lucky Stone
+      </div>
+
+      <div className="mt-1 text-sm font-bold">
+        Natural Diamond
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-4 grid grid-cols-2 gap-2">
+    <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
+      <div className="text-[11px] text-white/70">
+        ラッキーカラー
+      </div>
+
+      <div className="mt-1 text-sm font-bold">
+        シャンパンゴールド
+      </div>
+    </div>
+
+    <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
+      <div className="text-[11px] text-white/70">
+        おすすめ運気
+      </div>
+
+      <div className="mt-1 text-sm font-bold">
+        恋愛運・人気運
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-4 grid grid-cols-1 gap-2">
+    <Link
+      href="/customer-app/sanmeigaku"
+      className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-fuchsia-600"
+    >
+      AI算命学ネイル診断をする
+    </Link>
+
+    <Link
+      href="/customer-app/nail-tip-order"
+      className="rounded-2xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
+    >
+      開運ネイルチップを見る
+    </Link>
+  </div>
+</section>
+
+<section className="rounded-3xl border bg-white p-4 shadow-sm">
+  <div className="flex items-center justify-between">
+    <div>
+      <div className="text-sm text-slate-500">
+        BEAUTY STORE
+      </div>
+
+      <div className="mt-1 text-xl font-bold text-slate-900">
+        開運Beauty Store
+      </div>
+    </div>
+
+    <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-bold text-fuchsia-600">
+      Coming Soon
+    </div>
+  </div>
+
+  <div className="mt-4 grid grid-cols-2 gap-3">
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-2xl">💎</div>
+      <div className="mt-2 text-sm font-bold text-slate-900">
+        天然石
+      </div>
+      <div className="mt-1 text-xs leading-5 text-slate-500">
+        天然ダイヤ・開運ストーン
+      </div>
+    </div>
+
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-2xl">🌿</div>
+      <div className="mt-2 text-sm font-bold text-slate-900">
+        アロマ
+      </div>
+      <div className="mt-1 text-xs leading-5 text-slate-500">
+        浄化・リラックス
+      </div>
+    </div>
+
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-2xl">🛁</div>
+      <div className="mt-2 text-sm font-bold text-slate-900">
+        フェムケア
+      </div>
+      <div className="mt-1 text-xs leading-5 text-slate-500">
+        女性向けセルフケア
+      </div>
+    </div>
+
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-2xl">🕯</div>
+      <div className="mt-2 text-sm font-bold text-slate-900">
+        開運雑貨
+      </div>
+      <div className="mt-1 text-xs leading-5 text-slate-500">
+        お守り・空間づくり
+      </div>
+    </div>
+  </div>
+
+  <button
+    type="button"
+    onClick={() =>
+      showMessage("Beauty Store は次段階で公開予定です")
+    }
+    className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+  >
+    ストア情報を見る
+  </button>
+</section>
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="text-base font-bold text-slate-900">前回来店の内容</div>

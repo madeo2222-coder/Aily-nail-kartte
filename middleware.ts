@@ -37,7 +37,9 @@ function isCustomerAllowedApiPath(pathname: string) {
     pathname === "/api/reservations" ||
     pathname.startsWith("/api/reservations/") ||
     pathname === "/api/nail-tip-orders" ||
-    pathname.startsWith("/api/nail-tip-orders/")
+    pathname.startsWith("/api/nail-tip-orders/") ||
+    pathname === "/api/sanmeigaku-diagnoses" ||
+    pathname.startsWith("/api/sanmeigaku-diagnoses/")
   );
 }
 
