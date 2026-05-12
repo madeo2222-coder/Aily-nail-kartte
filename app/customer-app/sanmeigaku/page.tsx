@@ -111,7 +111,23 @@ const luckyDayMessages = [
       "ネイル・美容・自分磨きをすることで、自信と魅力が高まりやすいタイミングです。",
   },
 ];
-
+const weeklyOracleMessages = [
+  {
+    title: "恋愛運メッセージ",
+    message:
+      "今週は“自分を好きになる行動”が恋愛運アップにつながりやすいタイミングです。指先を整えることで魅力が自然と伝わりやすくなります。",
+  },
+  {
+    title: "美容運メッセージ",
+    message:
+      "今週は美容への小さな投資が未来の自信につながりやすい流れです。ネイルや香りの変化が運気の切り替えポイントになります。",
+  },
+  {
+    title: "金運メッセージ",
+    message:
+      "今週は“人とのつながり”が金運を動かしやすい時期です。第一印象を整えることで良い流れを引き寄せやすくなります。",
+  },
+];
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -240,6 +256,15 @@ export default function SanmeigakuNailDiagnosisPage() {
   }, [name, birthday, fortune, mood]);
 
   const selectedLuckyDay = useMemo(() => {
+    const selectedWeeklyOracle = useMemo(() => {
+  const seedText = `${name}-${birthday}-${fortune}-${mood}-weekly`;
+
+  const seed = seedText
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+
+  return weeklyOracleMessages[seed % weeklyOracleMessages.length];
+}, [name, birthday, fortune, mood]);
     const seedText = `${name}-${birthday}-${fortune}-${mood}-luckyday`;
     const seed = seedText
       .split("")
