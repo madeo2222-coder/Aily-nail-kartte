@@ -218,12 +218,11 @@ supabase
   .order("created_at", { ascending: false }),
  
           supabase
-            .from("nail_tip_orders")
-            .select(
-              "id, lucky_color, lucky_stone, nail_theme, design_request, size_status, delivery_request, status, created_at"
-            )
-            .eq("customer_id", currentCustomer.id)
-            .order("created_at", { ascending: false }),
+  .from("nail_tip_orders")
+  .select("*")
+  .eq("customer_id", currentCustomer.id)
+  .order("created_at", { ascending: false }),
+]);
         if (visitResponse.error) {
           setErrorMessage("来店履歴の取得に失敗しました。");
           setLoading(false);
