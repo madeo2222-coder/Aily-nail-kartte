@@ -10,17 +10,18 @@ type Visit = {
   customer_id: string | null;
   visit_date: string | null;
   menu: string | null;
+  menu_name: string | null;
   color: string | null;
   memo: string | null;
   price: number | null;
   payment_method: string | null;
-  photo_urls: string[] | null;
   created_at: string | null;
 };
 
 type Customer = {
   id: string;
   name: string | null;
+  salon_id: string | null;
 };
 
 type VisitPaymentRow = {
@@ -29,6 +30,15 @@ type VisitPaymentRow = {
   payment_method: string | null;
   amount: number | null;
   sort_order: number | null;
+};
+
+type VisitPhotoRow = {
+  id: string;
+  visit_id: string | null;
+  salon_id: string | null;
+  image_url: string | null;
+  photo_type: string | null;
+  created_at: string | null;
 };
 
 type PaymentLine = {
@@ -96,6 +106,12 @@ function formatAmountPreview(value: string) {
   return `${amount.toLocaleString("ja-JP")}`;
 }
 
+function getFileExtension(fileName: string) {
+  const parts = fileName.split(".");
+  const extension = parts.length > 1 ? parts.pop() : "";
+  return extension ? extension.toLowerCase() : "jpg";
+}
+
 export default function EditVisitPage() {
   const params = useParams();
   const router = useRouter();
@@ -109,7 +125,9 @@ export default function EditVisitPage() {
   const [color, setColor] = useState("");
   const [memo, setMemo] = useState("");
   const [price, setPrice] = useState("");
-  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [existingPhotos, setExistingPhotos] = useState<VisitPhotoRow[]>([]);
+  const [removedPhotoIds, setRemovedPhotoIds] = useState<string[]>([]);
+
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([
     createPaymentLine("現金", ""),
   ]);
@@ -154,7 +172,7 @@ export default function EditVisitPage() {
       const { data, error } = await supabase
         .from("visits")
         .select(
-          "id,customer_id,visit_date,menu,color,memo,price,payment_method,photo_urls,created_at"
+          "id,customer_id,visit_date,menu,menu_name,color,memo,price,payment_method,created_at"
         )
         .eq("id", id)
         .single();
@@ -168,7 +186,7 @@ export default function EditVisitPage() {
       const currentVisit = data as Visit;
       setVisit(currentVisit);
       setVisitDate(currentVisit.visit_date || "");
-      setMenu(currentVisit.menu ?? "");
+      setMenu(currentVisit.menu_name ?? currentVisit.menu ?? "");
       setColor(currentVisit.color ?? "");
       setMemo(currentVisit.memo ?? "");
       setPrice(
@@ -176,18 +194,30 @@ export default function EditVisitPage() {
           ? ""
           : String(currentVisit.price)
       );
-      setPhotoUrls(currentVisit.photo_urls ?? []);
 
       if (currentVisit.customer_id) {
         const { data: customerData } = await supabase
           .from("customers")
-          .select("id,name")
+          .select("id,name,salon_id")
           .eq("id", currentVisit.customer_id)
           .single();
 
         if (customerData) {
           setCustomer(customerData as Customer);
         }
+      }
+
+      const { data: photoData, error: photoError } = await supabase
+        .from("visit_photos")
+        .select("id, visit_id, salon_id, image_url, photo_type, created_at")
+        .eq("visit_id", id)
+        .order("created_at", { ascending: true });
+
+      if (photoError) {
+        console.error("visit_photos取得エラー:", photoError);
+        setExistingPhotos([]);
+      } else {
+        setExistingPhotos((photoData ?? []) as VisitPhotoRow[]);
       }
 
       const { data: paymentData, error: paymentError } = await supabase
@@ -208,7 +238,9 @@ export default function EditVisitPage() {
             id: row.id || createLineId(),
             payment_method: row.payment_method || "現金",
             amount:
-              row.amount === null || row.amount === undefined ? "" : String(row.amount),
+              row.amount === null || row.amount === undefined
+                ? ""
+                : String(row.amount),
           }))
         );
       } else {
@@ -240,12 +272,19 @@ export default function EditVisitPage() {
 
     newPreviews.forEach((url) => URL.revokeObjectURL(url));
 
-    setNewFiles(files);
-    setNewPreviews(files.map((file) => URL.createObjectURL(file)));
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+
+    if (imageFiles.length !== files.length) {
+      setErrorMessage("写真ファイルのみ選択できます。");
+    }
+
+    setNewFiles(imageFiles);
+    setNewPreviews(imageFiles.map((file) => URL.createObjectURL(file)));
   }
 
-  function removeExistingPhoto(targetUrl: string) {
-    setPhotoUrls((prev) => prev.filter((url) => url !== targetUrl));
+  function removeExistingPhoto(photoId: string) {
+    setRemovedPhotoIds((prev) => [...prev, photoId]);
+    setExistingPhotos((prev) => prev.filter((photo) => photo.id !== photoId));
   }
 
   function removeNewPhoto(index: number) {
@@ -287,29 +326,51 @@ export default function EditVisitPage() {
   }
 
   async function uploadNewFiles() {
-    const uploadedUrls: string[] = [];
+    const uploadedRows: {
+      visit_id: string;
+      salon_id: string | null;
+      image_url: string;
+      photo_type: string;
+    }[] = [];
 
     for (const file of newFiles) {
-      const ext = file.name.split(".").pop() || "jpg";
-      const filePath = `${visit?.customer_id ?? "unknown"}/${id}/${Date.now()}-${Math.random()
+      const ext = getFileExtension(file.name);
+      const filePath = `${id}/${Date.now()}_${Math.random()
         .toString(36)
-        .slice(2)}.${ext}`;
+        .slice(2, 10)}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, file);
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
 
       if (uploadError) {
-        throw new Error("写真アップロードに失敗しました。");
+        throw new Error(`写真アップロードに失敗しました: ${uploadError.message}`);
       }
 
       const { data } = supabase.storage.from(BUCKET_NAME).getPublicUrl(filePath);
+
       if (data?.publicUrl) {
-        uploadedUrls.push(data.publicUrl);
+        uploadedRows.push({
+          visit_id: id,
+          salon_id: customer?.salon_id || null,
+          image_url: data.publicUrl,
+          photo_type: "after",
+        });
       }
     }
 
-    return uploadedUrls;
+    if (uploadedRows.length > 0) {
+      const { error: insertPhotoError } = await supabase
+        .from("visit_photos")
+        .insert(uploadedRows);
+
+      if (insertPhotoError) {
+        throw new Error(`写真情報の保存に失敗しました: ${insertPhotoError.message}`);
+      }
+    }
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -320,12 +381,6 @@ export default function EditVisitPage() {
     setErrorMessage("");
 
     try {
-      let uploadedUrls: string[] = [];
-
-      if (newFiles.length > 0) {
-        uploadedUrls = await uploadNewFiles();
-      }
-
       const parsedPrice =
         price.trim() === "" ? null : Number(price.replace(/,/g, ""));
 
@@ -397,22 +452,23 @@ export default function EditVisitPage() {
         return;
       }
 
-      const nextPhotoUrls = [...photoUrls, ...uploadedUrls];
       const mainPaymentMethod =
         cleanedPaymentLines.length === 1
           ? cleanedPaymentLines[0].payment_method
           : "複数";
 
+      const normalizedMenu = menu.trim() || null;
+
       const { error: visitUpdateError } = await supabase
         .from("visits")
         .update({
           visit_date: visitDate,
-          menu: menu.trim() || null,
+          menu: normalizedMenu,
+          menu_name: normalizedMenu,
           color: color.trim() || null,
           memo: memo.trim() || null,
           price: parsedPrice,
           payment_method: mainPaymentMethod,
-          photo_urls: nextPhotoUrls,
         })
         .eq("id", visit.id);
 
@@ -420,6 +476,23 @@ export default function EditVisitPage() {
         setErrorMessage("来店履歴の更新に失敗しました。");
         setSaving(false);
         return;
+      }
+
+      if (removedPhotoIds.length > 0) {
+        const { error: photoDeleteError } = await supabase
+          .from("visit_photos")
+          .delete()
+          .in("id", removedPhotoIds);
+
+        if (photoDeleteError) {
+          setErrorMessage("写真の削除に失敗しました。");
+          setSaving(false);
+          return;
+        }
+      }
+
+      if (newFiles.length > 0) {
+        await uploadNewFiles();
       }
 
       const { error: paymentDeleteError } = await supabase
@@ -467,6 +540,17 @@ export default function EditVisitPage() {
 
     setDeleting(true);
     setErrorMessage("");
+
+    const { error: photoDeleteError } = await supabase
+      .from("visit_photos")
+      .delete()
+      .eq("visit_id", visit.id);
+
+    if (photoDeleteError) {
+      setErrorMessage("写真情報の削除に失敗しました。");
+      setDeleting(false);
+      return;
+    }
 
     const { error: paymentDeleteError } = await supabase
       .from("visit_payments")
@@ -698,28 +782,32 @@ export default function EditVisitPage() {
 
           <div>
             <label className="mb-2 block text-sm font-medium">既存写真</label>
-            {photoUrls.length === 0 ? (
+            {existingPhotos.length === 0 ? (
               <div className="rounded-xl border border-dashed px-4 py-6 text-sm text-gray-500">
                 写真はありません。
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {photoUrls.map((url) => (
-                  <div key={url} className="rounded-xl border p-2">
-                    <img
-                      src={url}
-                      alt="visit photo"
-                      className="h-32 w-full rounded-lg object-cover"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeExistingPhoto(url)}
-                      className="mt-2 w-full rounded-lg border px-3 py-2 text-sm"
-                    >
-                      この写真を外す
-                    </button>
-                  </div>
-                ))}
+                {existingPhotos.map((photo) =>
+                  photo.image_url ? (
+                    <div key={photo.id} className="rounded-xl border p-2">
+                      <a href={photo.image_url} target="_blank" rel="noreferrer">
+                        <img
+                          src={photo.image_url}
+                          alt="visit photo"
+                          className="h-32 w-full rounded-lg object-cover"
+                        />
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => removeExistingPhoto(photo.id)}
+                        className="mt-2 w-full rounded-lg border px-3 py-2 text-sm"
+                      >
+                        この写真を外す
+                      </button>
+                    </div>
+                  ) : null
+                )}
               </div>
             )}
           </div>
