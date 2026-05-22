@@ -21,6 +21,14 @@ type VisitRow = {
   created_at: string | null;
 };
 
+type VisitPhotoRow = {
+  id: string;
+  visit_id: string | null;
+  image_url: string | null;
+  photo_type: string | null;
+  created_at: string | null;
+};
+
 type ReservationRow = {
   id: string;
   customer_id: string | null;
@@ -152,6 +160,7 @@ export default function CustomerAppHistoryPage() {
   const [customerName, setCustomerName] = useState("お客様");
 
   const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [visitPhotos, setVisitPhotos] = useState<VisitPhotoRow[]>([]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [diagnoses, setDiagnoses] = useState<DiagnosisRow[]>([]);
@@ -254,7 +263,30 @@ export default function CustomerAppHistoryPage() {
           return;
         }
 
-        setVisits((visitResponse.data || []) as VisitRow[]);
+        const nextVisits = (visitResponse.data || []) as VisitRow[];
+        setVisits(nextVisits);
+
+        const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
+
+        if (visitIds.length > 0) {
+          const { data: photoData, error: photoError } = await supabase
+            .from("visit_photos")
+            .select("id, visit_id, image_url, photo_type, created_at")
+            .in("visit_id", visitIds)
+            .order("created_at", { ascending: true });
+
+          if (photoError) {
+            setErrorMessage("施術写真の取得に失敗しました。");
+            setVisitPhotos([]);
+            setLoading(false);
+            return;
+          }
+
+          setVisitPhotos((photoData || []) as VisitPhotoRow[]);
+        } else {
+          setVisitPhotos([]);
+        }
+
         setReservations((reservationResponse.data || []) as ReservationRow[]);
         setStaffs((staffResponse.data || []) as StaffRow[]);
         setDiagnoses((diagnosisResponse.data || []) as DiagnosisRow[]);
@@ -280,6 +312,20 @@ export default function CustomerAppHistoryPage() {
 
     return map;
   }, [staffs]);
+
+  const visitPhotoMap = useMemo(() => {
+    const map = new Map<string, VisitPhotoRow[]>();
+
+    visitPhotos.forEach((photo) => {
+      if (!photo.visit_id) return;
+
+      const current = map.get(photo.visit_id) || [];
+      current.push(photo);
+      map.set(photo.visit_id, current);
+    });
+
+    return map;
+  }, [visitPhotos]);
 
   const visitCount = visits.length;
 
@@ -348,7 +394,7 @@ export default function CustomerAppHistoryPage() {
           <h1 className="mt-2 text-2xl font-bold leading-tight">来店履歴</h1>
 
           <p className="mt-3 text-sm leading-6 text-white/90">
-            {customerName}様の予約状況・来店履歴を確認できます。
+            {customerName}様の予約状況・来店履歴・施術写真を確認できます。
           </p>
         </section>
 
@@ -662,49 +708,83 @@ export default function CustomerAppHistoryPage() {
               </div>
             </div>
           ) : (
-            visits.map((item) => (
-              <article
-                key={item.id}
-                className="rounded-3xl border bg-white p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-lg font-bold text-slate-900">
-                    {getDisplayMenu(item)}
-                  </div>
+            visits.map((item) => {
+              const photos = visitPhotoMap.get(item.id) || [];
 
-                  <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-                    {formatDate(item.visit_date)}
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-3">
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">
-                      担当スタッフ
+              return (
+                <article
+                  key={item.id}
+                  className="rounded-3xl border bg-white p-4 shadow-sm"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-lg font-bold text-slate-900">
+                      {getDisplayMenu(item)}
                     </div>
-                    <div className="mt-1 text-base font-bold text-slate-900">
-                      {item.staff_name?.trim() ? item.staff_name : "未登録"}
+
+                    <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
+                      {formatDate(item.visit_date)}
                     </div>
                   </div>
 
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">施術メモ</div>
-                    <div className="mt-1 text-sm leading-6 text-slate-700">
-                      {item.memo?.trim() ? item.memo : "メモはまだありません"}
+                  <div className="mt-4 grid grid-cols-1 gap-3">
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <div className="text-xs text-slate-500">
+                        担当スタッフ
+                      </div>
+                      <div className="mt-1 text-base font-bold text-slate-900">
+                        {item.staff_name?.trim() ? item.staff_name : "未登録"}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="rounded-2xl bg-rose-50 p-4">
-                    <div className="text-xs text-rose-500">次回提案</div>
-                    <div className="mt-1 text-sm font-bold leading-6 text-rose-700">
-                      {item.next_proposal?.trim()
-                        ? item.next_proposal
-                        : "次回提案はまだありません"}
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <div className="text-xs text-slate-500">施術メモ</div>
+                      <div className="mt-1 text-sm leading-6 text-slate-700">
+                        {item.memo?.trim() ? item.memo : "メモはまだありません"}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-rose-50 p-4">
+                      <div className="text-xs text-rose-500">次回提案</div>
+                      <div className="mt-1 text-sm font-bold leading-6 text-rose-700">
+                        {item.next_proposal?.trim()
+                          ? item.next_proposal
+                          : "次回提案はまだありません"}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <div className="text-xs text-slate-500">施術写真</div>
+
+                      {photos.length === 0 ? (
+                        <div className="mt-2 text-sm text-slate-500">
+                          写真はまだ登録されていません。
+                        </div>
+                      ) : (
+                        <div className="mt-3 grid grid-cols-2 gap-3">
+                          {photos.map((photo) =>
+                            photo.image_url ? (
+                              <a
+                                key={photo.id}
+                                href={photo.image_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block overflow-hidden rounded-2xl border bg-white shadow-sm"
+                              >
+                                <img
+                                  src={photo.image_url}
+                                  alt="施術写真"
+                                  className="h-32 w-full object-cover"
+                                />
+                              </a>
+                            ) : null
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              </article>
-            ))
+                </article>
+              );
+            })
           )}
         </section>
       </div>
