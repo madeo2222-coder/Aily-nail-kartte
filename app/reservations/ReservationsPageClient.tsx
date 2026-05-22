@@ -57,11 +57,7 @@ type NormalizedReservation = {
   createdAt: string | null;
 };
 
-function pickString(
-  row: ReservationRow,
-  keys: string[],
-  fallback = ""
-): string {
+function pickString(row: ReservationRow, keys: string[], fallback = ""): string {
   for (const key of keys) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) {
@@ -71,10 +67,7 @@ function pickString(
   return fallback;
 }
 
-function pickNullableString(
-  row: ReservationRow,
-  keys: string[]
-): string | null {
+function pickNullableString(row: ReservationRow, keys: string[]): string | null {
   for (const key of keys) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) {
@@ -84,11 +77,7 @@ function pickNullableString(
   return null;
 }
 
-function pickNumber(
-  row: ReservationRow,
-  keys: string[],
-  fallback = 0
-): number {
+function pickNumber(row: ReservationRow, keys: string[], fallback = 0): number {
   for (const key of keys) {
     const value = row[key];
 
@@ -107,14 +96,59 @@ function pickNumber(
   return fallback;
 }
 
+function getJstParts(value: string | null) {
+  if (!value) return null;
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const formatter = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: map.get("year") || "",
+    month: map.get("month") || "",
+    day: map.get("day") || "",
+    hour: map.get("hour") || "",
+    minute: map.get("minute") || "",
+  };
+}
+
 function normalizeDateText(value: string | null) {
   if (!value) return null;
+
+  if (value.includes("T") || value.endsWith("Z")) {
+    const parts = getJstParts(value);
+    if (!parts) return null;
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
   return value.slice(0, 10);
 }
 
 function normalizeTimeText(value: string | null) {
   if (!value) return null;
-  return value.slice(11, 16).length === 5 ? value.slice(11, 16) : value.slice(0, 5);
+
+  if (value.includes("T") || value.endsWith("Z")) {
+    const parts = getJstParts(value);
+    if (!parts) return null;
+    return `${parts.hour}:${parts.minute}`;
+  }
+
+  return value.slice(0, 5);
 }
 
 function formatDateLabel(value: string | null) {
@@ -147,21 +181,30 @@ function formatTimeRange(startTime: string | null, durationMinutes: number) {
 }
 
 function getStatusBadgeClass(status: string) {
-  if (status === "予約受付" || status === "予約") {
-    return "bg-pink-100 text-pink-700";
+  if (status === "予約申請中" || status === "予約受付" || status === "予約") {
+    return "bg-amber-100 text-amber-700";
   }
+
+  if (status === "予約確定" || status === "confirmed") {
+    return "bg-blue-100 text-blue-700";
+  }
+
   if (status === "来店予定" || status === "来店") {
     return "bg-emerald-100 text-emerald-700";
   }
+
   if (status === "完了待ち") {
     return "bg-amber-100 text-amber-700";
   }
-  if (status === "完了") {
+
+  if (status === "完了" || status === "completed") {
     return "bg-slate-100 text-slate-700";
   }
-  if (status === "キャンセル") {
+
+  if (status === "キャンセル" || status === "cancelled") {
     return "bg-rose-100 text-rose-700";
   }
+
   return "bg-gray-100 text-gray-700";
 }
 
@@ -186,7 +229,13 @@ function buildReservationTime(row: ReservationRow) {
 
 function normalizeStatus(row: ReservationRow) {
   const raw = pickString(row, ["status"], "予約");
+
+  if (raw === "requested") return "予約申請中";
+  if (raw === "confirmed") return "予約確定";
+  if (raw === "completed") return "完了";
+  if (raw === "cancelled") return "キャンセル";
   if (raw === "予約") return "予約受付";
+
   return raw;
 }
 
@@ -229,7 +278,7 @@ function normalizeDurationMinutes(row: ReservationRow) {
 
   if (byStartEnd && byStartEnd > 0) return byStartEnd;
 
-  return 60;
+  return 90;
 }
 
 function hasOverlap(a: NormalizedReservation, b: NormalizedReservation) {
@@ -353,9 +402,7 @@ export default function ReservationsPageClient() {
           : null;
 
       const staffId =
-        typeof reservation.staff_id === "string"
-          ? reservation.staff_id
-          : null;
+        typeof reservation.staff_id === "string" ? reservation.staff_id : null;
 
       const customerName = customerId
         ? customerMap[customerId] || "顧客名未設定"
@@ -376,8 +423,8 @@ export default function ReservationsPageClient() {
       return {
         id: reservation.id,
         isAiDiagnosis:
-  normalizeMenuName(reservation) === "開運ネイル相談" ||
-  normalizeMemo(reservation).includes("AI算命学診断経由"),
+          normalizeMenuName(reservation) === "開運ネイル相談" ||
+          normalizeMemo(reservation).includes("AI算命学診断経由"),
         customerId,
         customerName,
         staffId,
@@ -398,15 +445,15 @@ export default function ReservationsPageClient() {
   }, [reservations, customerMap, staffMap]);
 
   useEffect(() => {
-  if (selectedDate) return;
+    if (selectedDate) return;
 
-  const today = new Date();
-  const yyyy = today.getFullYear();
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const dd = String(today.getDate()).padStart(2, "0");
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = String(today.getMonth() + 1).padStart(2, "0");
+    const dd = String(today.getDate()).padStart(2, "0");
 
-  setSelectedDate(`${yyyy}-${mm}-${dd}`);
-}, [selectedDate, reservations]);
+    setSelectedDate(`${yyyy}-${mm}-${dd}`);
+  }, [selectedDate]);
 
   const staffOptions = useMemo(() => {
     const set = new Set<string>();
@@ -421,7 +468,8 @@ export default function ReservationsPageClient() {
   const filteredReservations = useMemo(() => {
     return normalizedReservations.filter((row) => {
       const dateMatch = !selectedDate || row.reservationDate === selectedDate;
-      const staffMatch = selectedStaff === "全員" || row.staffName === selectedStaff;
+      const staffMatch =
+        selectedStaff === "全員" || row.staffName === selectedStaff;
       return dateMatch && staffMatch;
     });
   }, [normalizedReservations, selectedDate, selectedStaff]);
@@ -445,18 +493,19 @@ export default function ReservationsPageClient() {
   }, [filteredReservations, overlapIds]);
 
   const reservationCount = filteredReservations.length;
-const requestedCount = filteredReservations.filter(
-  (item) =>
-    item.status === "予約受付" || item.status === "予約"
-).length;
 
-const aiDiagnosisCount = filteredReservations.filter(
-  (item) => item.isAiDiagnosis
-).length;
+  const requestedCount = filteredReservations.filter(
+    (item) => item.status === "予約申請中" || item.status === "予約受付"
+  ).length;
 
-const completedCount = filteredReservations.filter(
-  (item) => item.status === "完了"
-).length;
+  const aiDiagnosisCount = filteredReservations.filter(
+    (item) => item.isAiDiagnosis
+  ).length;
+
+  const completedCount = filteredReservations.filter(
+    (item) => item.status === "完了"
+  ).length;
+
   async function updateStatus(id: string, status: string) {
     setUpdatingId(id);
 
@@ -528,6 +577,14 @@ const completedCount = filteredReservations.filter(
               >
                 スタッフページへ
               </Link>
+
+              <Link
+                href="/reservations/calendar"
+                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                カレンダー表示
+              </Link>
+
               <Link
                 href="/reservations/new"
                 className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
@@ -538,47 +595,43 @@ const completedCount = filteredReservations.filter(
           </div>
         </div>
 
-       <div className="grid gap-4 md:grid-cols-4">
-  <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
-    <div className="text-sm text-slate-500">本日予約</div>
-    <div className="mt-2 text-2xl font-bold text-slate-900">
-      {reservationCount.toLocaleString()}件
-    </div>
-    <div className="mt-2 text-sm text-slate-500">
-      選択中条件の予約件数
-    </div>
-  </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
+            <div className="text-sm text-slate-500">本日予約</div>
+            <div className="mt-2 text-2xl font-bold text-slate-900">
+              {reservationCount.toLocaleString()}件
+            </div>
+            <div className="mt-2 text-sm text-slate-500">
+              選択中条件の予約件数
+            </div>
+          </div>
 
-  <div className="rounded-3xl border border-amber-100 bg-white p-4 shadow-sm">
-    <div className="text-sm text-slate-500">未確認予約</div>
-    <div className="mt-2 text-2xl font-bold text-amber-500">
-      {requestedCount.toLocaleString()}件
-    </div>
-    <div className="mt-2 text-sm text-slate-500">
-      予約受付ステータス
-    </div>
-  </div>
+          <div className="rounded-3xl border border-amber-100 bg-white p-4 shadow-sm">
+            <div className="text-sm text-slate-500">未確認予約</div>
+            <div className="mt-2 text-2xl font-bold text-amber-500">
+              {requestedCount.toLocaleString()}件
+            </div>
+            <div className="mt-2 text-sm text-slate-500">
+              予約受付ステータス
+            </div>
+          </div>
 
-  <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
-    <div className="text-sm text-slate-500">AI診断予約</div>
-    <div className="mt-2 text-2xl font-bold text-purple-600">
-      {aiDiagnosisCount.toLocaleString()}件
-    </div>
-    <div className="mt-2 text-sm text-slate-500">
-      算命学診断経由
-    </div>
-  </div>
+          <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
+            <div className="text-sm text-slate-500">AI診断予約</div>
+            <div className="mt-2 text-2xl font-bold text-purple-600">
+              {aiDiagnosisCount.toLocaleString()}件
+            </div>
+            <div className="mt-2 text-sm text-slate-500">算命学診断経由</div>
+          </div>
 
-  <div className="rounded-3xl border border-emerald-100 bg-white p-4 shadow-sm">
-    <div className="text-sm text-slate-500">完了件数</div>
-    <div className="mt-2 text-2xl font-bold text-emerald-600">
-      {completedCount.toLocaleString()}件
-    </div>
-    <div className="mt-2 text-sm text-slate-500">
-      来店完了済み
-    </div>
-  </div>
-</div>
+          <div className="rounded-3xl border border-emerald-100 bg-white p-4 shadow-sm">
+            <div className="text-sm text-slate-500">完了件数</div>
+            <div className="mt-2 text-2xl font-bold text-emerald-600">
+              {completedCount.toLocaleString()}件
+            </div>
+            <div className="mt-2 text-sm text-slate-500">来店完了済み</div>
+          </div>
+        </div>
 
         <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="mb-4">
@@ -684,11 +737,12 @@ const completedCount = filteredReservations.filter(
                         <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
                           {item.source || "手入力"}
                         </span>
+
                         {item.isAiDiagnosis ? (
-  <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">
-    ✨ AI診断
-  </span>
-) : null}
+                          <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">
+                            ✨ AI診断
+                          </span>
+                        ) : null}
 
                         {isOverlap ? (
                           <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
@@ -705,7 +759,10 @@ const completedCount = filteredReservations.filter(
 
                         <div>
                           <span className="font-medium">時間:</span>{" "}
-                          {formatTimeRange(item.reservationTime, item.durationMinutes)}
+                          {formatTimeRange(
+                            item.reservationTime,
+                            item.durationMinutes
+                          )}
                         </div>
 
                         <div>
@@ -738,7 +795,9 @@ const completedCount = filteredReservations.filter(
                         編集
                       </Link>
 
-                      {(item.status === "予約受付" || item.status === "予約") && (
+                      {(item.status === "予約申請中" ||
+                        item.status === "予約受付" ||
+                        item.status === "予約") && (
                         <button
                           type="button"
                           onClick={() => handleMarkVisited(item.id)}
