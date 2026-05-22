@@ -82,7 +82,7 @@ const signedInNavItems = [
     href: "/customer-app/sanmeigaku",
   },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
-  { key: "mypage", label: "マイ", icon: "👤", href: "" },
+  { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
 
 function formatDate(value: string | null) {
@@ -130,6 +130,7 @@ function getReservationStatusLabel(status: string | null) {
     case "completed":
       return "来店完了";
     case "cancelled":
+    case "キャンセル":
       return "キャンセル";
     default:
       return status || "未設定";
@@ -157,6 +158,7 @@ export default function CustomerAppHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [noticeMessage, setNoticeMessage] = useState("");
   const [customerName, setCustomerName] = useState("お客様");
 
   const [visits, setVisits] = useState<VisitRow[]>([]);
@@ -170,6 +172,7 @@ export default function CustomerAppHistoryPage() {
     async function fetchHistory() {
       setLoading(true);
       setErrorMessage("");
+      setNoticeMessage("");
 
       try {
         const meRes = await fetch("/api/line-login/me", {
@@ -187,111 +190,105 @@ export default function CustomerAppHistoryPage() {
         setIsLoggedIn(true);
 
         const currentCustomer = meJson.customer;
-
         setCustomerName(currentCustomer.name || "お客様");
 
-        const [
-          visitResponse,
-          reservationResponse,
-          staffResponse,
-          diagnosisResponse,
-          nailTipOrderResponse,
-        ] = await Promise.all([
-          supabase
-            .from("visits")
-            .select(
-              "id, customer_id, visit_date, menu, menu_name, memo, next_proposal, staff_name, created_at"
-            )
-            .eq("customer_id", currentCustomer.id)
-            .order("visit_date", { ascending: false })
-            .order("created_at", { ascending: false }),
-
-          supabase
-            .from("reservations")
-            .select(
-              "id, customer_id, staff_id, menu, memo, status, start_at, end_at, created_at"
-            )
-            .eq("customer_id", currentCustomer.id)
-            .order("start_at", { ascending: false }),
-
-          supabase.from("staffs").select("id, name"),
-
-          supabase
-            .from("sanmeigaku_diagnoses")
-            .select(
-              "id, lucky_color, lucky_stone, nail_theme, diagnosis_message, created_at"
-            )
-            .eq("customer_id", currentCustomer.id)
-            .order("created_at", { ascending: false }),
-
-          supabase
-            .from("nail_tip_orders")
-            .select(
-              "id, lucky_color, lucky_stone, nail_theme, design_request, size_status, delivery_request, status, created_at"
-            )
-            .eq("customer_id", currentCustomer.id)
-            .order("created_at", { ascending: false }),
-        ]);
+        const visitResponse = await supabase
+          .from("visits")
+          .select(
+            "id, customer_id, visit_date, menu, menu_name, memo, next_proposal, staff_name, created_at"
+          )
+          .eq("customer_id", currentCustomer.id)
+          .order("visit_date", { ascending: false })
+          .order("created_at", { ascending: false });
 
         if (visitResponse.error) {
+          console.error("visits取得エラー:", visitResponse.error);
           setErrorMessage("来店履歴の取得に失敗しました。");
-          setLoading(false);
-          return;
+          setVisits([]);
+          setVisitPhotos([]);
+        } else {
+          const nextVisits = (visitResponse.data || []) as VisitRow[];
+          setVisits(nextVisits);
+
+          const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
+
+          if (visitIds.length > 0) {
+            const photoResponse = await supabase
+              .from("visit_photos")
+              .select("id, visit_id, image_url, photo_type, created_at")
+              .in("visit_id", visitIds)
+              .order("created_at", { ascending: true });
+
+            if (photoResponse.error) {
+              console.error("visit_photos取得エラー:", photoResponse.error);
+              setVisitPhotos([]);
+              setNoticeMessage("施術写真の一部取得に失敗しました。");
+            } else {
+              setVisitPhotos((photoResponse.data || []) as VisitPhotoRow[]);
+            }
+          } else {
+            setVisitPhotos([]);
+          }
         }
+
+        const reservationResponse = await supabase
+          .from("reservations")
+          .select(
+            "id, customer_id, staff_id, menu, memo, status, start_at, end_at, created_at"
+          )
+          .eq("customer_id", currentCustomer.id)
+          .order("start_at", { ascending: false });
 
         if (reservationResponse.error) {
-          setErrorMessage("予約履歴の取得に失敗しました。");
-          setLoading(false);
-          return;
+          console.error("reservations取得エラー:", reservationResponse.error);
+          setReservations([]);
+          setNoticeMessage("予約情報の一部取得に失敗しました。");
+        } else {
+          setReservations((reservationResponse.data || []) as ReservationRow[]);
         }
+
+        const staffResponse = await supabase.from("staffs").select("id, name");
 
         if (staffResponse.error) {
-          setErrorMessage("スタッフ情報の取得に失敗しました。");
-          setLoading(false);
-          return;
+          console.error("staffs取得エラー:", staffResponse.error);
+          setStaffs([]);
+        } else {
+          setStaffs((staffResponse.data || []) as StaffRow[]);
         }
+
+        const diagnosisResponse = await supabase
+          .from("sanmeigaku_diagnoses")
+          .select(
+            "id, lucky_color, lucky_stone, nail_theme, diagnosis_message, created_at"
+          )
+          .eq("customer_id", currentCustomer.id)
+          .order("created_at", { ascending: false });
 
         if (diagnosisResponse.error) {
-          setErrorMessage("診断履歴の取得に失敗しました。");
-          setLoading(false);
-          return;
+          console.error("sanmeigaku_diagnoses取得エラー:", diagnosisResponse.error);
+          setDiagnoses([]);
+        } else {
+          setDiagnoses((diagnosisResponse.data || []) as DiagnosisRow[]);
         }
+
+        const nailTipOrderResponse = await supabase
+          .from("nail_tip_orders")
+          .select(
+            "id, lucky_color, lucky_stone, nail_theme, design_request, size_status, delivery_request, status, created_at"
+          )
+          .eq("customer_id", currentCustomer.id)
+          .order("created_at", { ascending: false });
 
         if (nailTipOrderResponse.error) {
-          setErrorMessage("ネイルチップ注文履歴の取得に失敗しました。");
-          setLoading(false);
-          return;
-        }
-
-        const nextVisits = (visitResponse.data || []) as VisitRow[];
-        setVisits(nextVisits);
-
-        const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
-
-        if (visitIds.length > 0) {
-          const { data: photoData, error: photoError } = await supabase
-            .from("visit_photos")
-            .select("id, visit_id, image_url, photo_type, created_at")
-            .in("visit_id", visitIds)
-            .order("created_at", { ascending: true });
-
-          if (photoError) {
-            setErrorMessage("施術写真の取得に失敗しました。");
-            setVisitPhotos([]);
-            setLoading(false);
-            return;
-          }
-
-          setVisitPhotos((photoData || []) as VisitPhotoRow[]);
+          console.error("nail_tip_orders取得エラー:", nailTipOrderResponse.error);
+          setNailTipOrders([]);
         } else {
-          setVisitPhotos([]);
+          setNailTipOrders(
+            (nailTipOrderResponse.data || []) as NailTipOrderRow[]
+          );
         }
-
-        setReservations((reservationResponse.data || []) as ReservationRow[]);
-        setStaffs((staffResponse.data || []) as StaffRow[]);
-        setDiagnoses((diagnosisResponse.data || []) as DiagnosisRow[]);
-        setNailTipOrders((nailTipOrderResponse.data || []) as NailTipOrderRow[]);
-      } catch {
+      } catch (error) {
+        console.error("履歴ページ読み込みエラー:", error);
         setErrorMessage("読み込みに失敗しました。");
       } finally {
         setLoading(false);
@@ -361,9 +358,7 @@ export default function CustomerAppHistoryPage() {
               AILY MY PAGE
             </div>
 
-            <h1 className="mt-2 text-2xl font-bold leading-tight">
-              来店履歴
-            </h1>
+            <h1 className="mt-2 text-2xl font-bold leading-tight">来店履歴</h1>
 
             <p className="mt-3 text-sm leading-6 text-white/90">
               来店履歴はLINEログイン後に確認できます。
@@ -404,6 +399,12 @@ export default function CustomerAppHistoryPage() {
           </section>
         ) : null}
 
+        {noticeMessage ? (
+          <section className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-sm font-bold text-amber-700 shadow-sm">
+            {noticeMessage}
+          </section>
+        ) : null}
+
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">
             履歴サマリー
@@ -431,204 +432,6 @@ export default function CustomerAppHistoryPage() {
               </div>
             </div>
           </div>
-        </section>
-
-        <section className="space-y-3">
-          <div>
-            <div className="text-xs font-black tracking-[0.25em] text-fuchsia-500">
-              AI BEAUTY ORACLE
-            </div>
-
-            <div className="mt-1 text-lg font-black text-slate-900">
-              AI算命学診断履歴
-            </div>
-          </div>
-
-          {diagnoses.length === 0 ? (
-            <div className="rounded-3xl border bg-white p-4 shadow-sm">
-              <div className="text-sm text-slate-500">
-                まだ診断履歴がありません。
-              </div>
-            </div>
-          ) : (
-            diagnoses.map((item) => (
-              <article
-                key={item.id}
-                className="overflow-hidden rounded-[32px] border border-fuchsia-100 bg-gradient-to-br from-white to-fuchsia-50 p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-lg font-bold text-slate-900">
-                    開運ネイル診断
-                  </div>
-
-                  <div className="rounded-full bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-white shadow">
-                    {formatDate(item.created_at)}
-                  </div>
-                </div>
-
-                <div className="mt-3 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-3 text-sm font-black text-white shadow">
-                  ✨ AI BEAUTY ORACLE ANALYSIS
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-3">
-                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-                    <div className="text-xs text-slate-500">
-                      ラッキーカラー
-                    </div>
-                    <div className="mt-1 text-base font-bold text-slate-900">
-                      {item.lucky_color || "未登録"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-                    <div className="text-xs text-slate-500">
-                      ラッキーストーン
-                    </div>
-                    <div className="mt-1 text-base font-bold text-slate-900">
-                      {item.lucky_stone || "未登録"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
-                    <div className="text-xs text-slate-500">
-                      おすすめネイル方向性
-                    </div>
-                    <div className="mt-1 text-sm font-bold leading-6 text-slate-900">
-                      {item.nail_theme || "未登録"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[28px] border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-5">
-                    <div className="text-xs font-black tracking-[0.2em] text-amber-500">
-                      ORACLE MESSAGE
-                    </div>
-                    <div className="mt-2 text-sm leading-6 text-amber-900">
-                      {item.diagnosis_message?.trim()
-                        ? item.diagnosis_message
-                        : "診断メッセージはありません"}
-                    </div>
-                  </div>
-                </div>
-
-                <Link
-                  href="/customer-app/sanmeigaku"
-                  className="mt-5 block w-full rounded-3xl bg-gradient-to-r from-fuchsia-500 via-pink-500 to-rose-500 px-4 py-4 text-center text-sm font-black text-white shadow-xl"
-                >
-                  もう一度診断する
-                </Link>
-              </article>
-            ))
-          )}
-        </section>
-
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="text-lg font-bold text-slate-900">
-              ネイルチップ注文履歴
-            </div>
-
-            <div className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
-              {nailTipOrders.length}件
-            </div>
-          </div>
-
-          {nailTipOrders.length === 0 ? (
-            <div className="rounded-3xl border bg-white p-4 shadow-sm">
-              <div className="text-sm text-slate-500">
-                ネイルチップ注文履歴はまだありません。
-              </div>
-            </div>
-          ) : (
-            nailTipOrders.map((order) => (
-              <article
-                key={order.id}
-                className="rounded-3xl border border-pink-100 bg-white p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-lg font-bold text-slate-900">
-                    開運ネイルチップ相談
-                  </div>
-
-                  <div className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
-                    {getNailTipStatusLabel(order.status)}
-                  </div>
-                </div>
-
-                <div className="mt-3 rounded-2xl bg-pink-50 px-3 py-2 text-sm font-bold text-pink-700">
-                  💎 天然石・開運ネイルチップ
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-3">
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">
-                      ラッキーカラー
-                    </div>
-                    <div className="mt-1 text-base font-bold text-slate-900">
-                      {order.lucky_color || "未登録"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">
-                      ラッキーストーン
-                    </div>
-                    <div className="mt-1 text-base font-bold text-slate-900">
-                      {order.lucky_stone || "未登録"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">
-                      おすすめテーマ
-                    </div>
-                    <div className="mt-1 text-sm font-bold leading-6 text-slate-900">
-                      {order.nail_theme || "未登録"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-pink-50 p-4">
-                    <div className="text-xs text-pink-500">
-                      デザイン希望
-                    </div>
-                    <div className="mt-1 text-sm leading-6 text-pink-900">
-                      {order.design_request?.trim()
-                        ? order.design_request
-                        : "未入力"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">サイズ</div>
-                    <div className="mt-1 text-sm font-bold text-slate-900">
-                      {order.size_status || "未設定"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl bg-slate-50 p-4">
-                    <div className="text-xs text-slate-500">
-                      配送・納期希望
-                    </div>
-                    <div className="mt-1 text-sm leading-6 text-slate-700">
-                      {order.delivery_request?.trim()
-                        ? order.delivery_request
-                        : "未入力"}
-                    </div>
-                  </div>
-
-                  <div className="text-xs text-slate-400">
-                    注文日：{formatDate(order.created_at)}
-                  </div>
-                </div>
-
-                <Link
-                  href="/customer-app/nail-tip-order"
-                  className="mt-4 block w-full rounded-2xl bg-pink-600 px-4 py-3 text-center text-sm font-bold text-white"
-                >
-                  もう一度相談する
-                </Link>
-              </article>
-            ))
-          )}
         </section>
 
         <section className="space-y-3">
@@ -787,6 +590,113 @@ export default function CustomerAppHistoryPage() {
             })
           )}
         </section>
+
+        <section className="space-y-3">
+          <div>
+            <div className="text-xs font-black tracking-[0.25em] text-fuchsia-500">
+              AI BEAUTY ORACLE
+            </div>
+
+            <div className="mt-1 text-lg font-black text-slate-900">
+              AI算命学診断履歴
+            </div>
+          </div>
+
+          {diagnoses.length === 0 ? (
+            <div className="rounded-3xl border bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-500">
+                まだ診断履歴がありません。
+              </div>
+            </div>
+          ) : (
+            diagnoses.map((item) => (
+              <article
+                key={item.id}
+                className="overflow-hidden rounded-[32px] border border-fuchsia-100 bg-gradient-to-br from-white to-fuchsia-50 p-4 shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-lg font-bold text-slate-900">
+                    開運ネイル診断
+                  </div>
+
+                  <div className="rounded-full bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1 text-[10px] font-black tracking-[0.2em] text-white shadow">
+                    {formatDate(item.created_at)}
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3">
+                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
+                    <div className="text-xs text-slate-500">
+                      ラッキーカラー
+                    </div>
+                    <div className="mt-1 text-base font-bold text-slate-900">
+                      {item.lucky_color || "未登録"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
+                    <div className="text-xs text-slate-500">
+                      ラッキーストーン
+                    </div>
+                    <div className="mt-1 text-base font-bold text-slate-900">
+                      {item.lucky_stone || "未登録"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/80 p-4 shadow-sm">
+                    <div className="text-xs text-slate-500">
+                      おすすめネイル方向性
+                    </div>
+                    <div className="mt-1 text-sm font-bold leading-6 text-slate-900">
+                      {item.nail_theme || "未登録"}
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))
+          )}
+        </section>
+
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-bold text-slate-900">
+              ネイルチップ注文履歴
+            </div>
+
+            <div className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
+              {nailTipOrders.length}件
+            </div>
+          </div>
+
+          {nailTipOrders.length === 0 ? (
+            <div className="rounded-3xl border bg-white p-4 shadow-sm">
+              <div className="text-sm text-slate-500">
+                ネイルチップ注文履歴はまだありません。
+              </div>
+            </div>
+          ) : (
+            nailTipOrders.map((order) => (
+              <article
+                key={order.id}
+                className="rounded-3xl border border-pink-100 bg-white p-4 shadow-sm"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-lg font-bold text-slate-900">
+                    開運ネイルチップ相談
+                  </div>
+
+                  <div className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
+                    {getNailTipStatusLabel(order.status)}
+                  </div>
+                </div>
+
+                <div className="mt-3 text-xs text-slate-400">
+                  注文日：{formatDate(order.created_at)}
+                </div>
+              </article>
+            ))
+          )}
+        </section>
       </div>
 
       <nav
@@ -797,32 +707,19 @@ export default function CustomerAppHistoryPage() {
           {signedInNavItems.map((item) => {
             const isActive = item.key === "history";
 
-            if (item.href) {
-              return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={`flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium transition ${
-                    isActive
-                      ? "bg-rose-50 text-rose-500"
-                      : "text-gray-500 hover:text-gray-800"
-                  }`}
-                >
-                  <span className="text-lg leading-none">{item.icon}</span>
-                  <span className="mt-1 leading-none">{item.label}</span>
-                </Link>
-              );
-            }
-
             return (
-              <button
+              <Link
                 key={item.key}
-                type="button"
-                className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
+                href={item.href}
+                className={`flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium transition ${
+                  isActive
+                    ? "bg-rose-50 text-rose-500"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
               >
                 <span className="text-lg leading-none">{item.icon}</span>
                 <span className="mt-1 leading-none">{item.label}</span>
-              </button>
+              </Link>
             );
           })}
         </div>

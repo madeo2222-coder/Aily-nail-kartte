@@ -130,7 +130,7 @@ const signedInNavItems = [
     key: "mypage",
     label: "マイ",
     icon: "👤",
-    href: "",
+    href: "/customer-app/mypage",
   },
 ];
 
@@ -173,7 +173,9 @@ function buildVisitWindowText(lastVisitDate: string | null) {
   const from = addDays(date, 21);
   const to = addDays(date, 35);
 
-  return `${from.getMonth() + 1}/${from.getDate()}〜${to.getMonth() + 1}/${to.getDate()}ごろ`;
+  return `${from.getMonth() + 1}/${from.getDate()}〜${
+    to.getMonth() + 1
+  }/${to.getDate()}ごろ`;
 }
 
 export default function CustomerAppPage() {
@@ -185,7 +187,9 @@ export default function CustomerAppPage() {
   const [customerId, setCustomerId] = useState("");
   const [customerName, setCustomerName] = useState("お客様");
   const [salonName, setSalonName] = useState("Aily Nail Studio");
-  const [nextVisitWindow, setNextVisitWindow] = useState("次回のおすすめ時期を準備中です");
+  const [nextVisitWindow, setNextVisitWindow] = useState(
+    "次回のおすすめ時期を準備中です"
+  );
   const [lastVisitDate, setLastVisitDate] = useState("未登録");
   const [lastMenu, setLastMenu] = useState("来店履歴を確認中です");
   const [lastStaff, setLastStaff] = useState("未登録");
@@ -232,10 +236,12 @@ export default function CustomerAppPage() {
           .order("created_at", { ascending: false })
           .limit(1);
 
-        const latestVisit = ((latestVisitData || [])[0] as VisitRow | undefined) || null;
+        const latestVisit =
+          ((latestVisitData || [])[0] as VisitRow | undefined) || null;
 
         if (latestVisit) {
-          const displayMenu = latestVisit.menu_name || latestVisit.menu || "メニュー未登録";
+          const displayMenu =
+            latestVisit.menu_name || latestVisit.menu || "メニュー未登録";
           setLastVisitDate(formatDate(latestVisit.visit_date));
           setLastMenu(displayMenu);
           setNextVisitWindow(buildVisitWindowText(latestVisit.visit_date));
@@ -257,7 +263,8 @@ export default function CustomerAppPage() {
           .limit(1);
 
         const nextReservation =
-          ((nextReservationData || [])[0] as ReservationRow | undefined) || null;
+          ((nextReservationData || [])[0] as ReservationRow | undefined) ||
+          null;
 
         if (nextReservation) {
           setNextReservedAt(formatDateTime(nextReservation.start_at));
@@ -288,7 +295,8 @@ export default function CustomerAppPage() {
             .limit(1);
 
           const latestReservation =
-            ((latestReservationData || [])[0] as ReservationRow | undefined) || null;
+            ((latestReservationData || [])[0] as ReservationRow | undefined) ||
+            null;
 
           if (latestReservation?.staff_id) {
             const { data: staffData } = await supabase
@@ -337,7 +345,9 @@ export default function CustomerAppPage() {
       <main className="min-h-screen bg-slate-50 pb-24">
         <div className="mx-auto max-w-md px-4 pb-6 pt-4">
           <div className="rounded-3xl border bg-white p-6 shadow-sm">
-            <div className="text-base font-bold text-slate-900">Ailyマイページ</div>
+            <div className="text-base font-bold text-slate-900">
+              Ailyマイページ
+            </div>
             <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
           </div>
         </div>
@@ -378,7 +388,9 @@ export default function CustomerAppPage() {
           </section>
 
           <section className="rounded-3xl border bg-white p-4 shadow-sm">
-            <div className="text-base font-bold text-slate-900">ご利用メニュー</div>
+            <div className="text-base font-bold text-slate-900">
+              ご利用メニュー
+            </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3">
               <Link
@@ -395,7 +407,9 @@ export default function CustomerAppPage() {
                 href="/customer-app/login"
                 className="rounded-2xl bg-slate-50 p-4 transition hover:bg-rose-50"
               >
-                <div className="text-sm font-bold text-slate-900">Ailyマイページへログイン</div>
+                <div className="text-sm font-bold text-slate-900">
+                  Ailyマイページへログイン
+                </div>
                 <div className="mt-2 text-sm leading-6 text-slate-600">
                   LINEログインで来店履歴・次回提案・今後のご予約確認ができます。
                 </div>
@@ -415,7 +429,9 @@ export default function CustomerAppPage() {
 
           <section className="rounded-3xl border bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
-              <div className="text-base font-bold text-slate-900">今月のおすすめ</div>
+              <div className="text-base font-bold text-slate-900">
+                今月のおすすめ
+              </div>
               <div className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-600">
                 おすすめ
               </div>
@@ -451,7 +467,9 @@ export default function CustomerAppPage() {
       <main className="min-h-screen bg-slate-50 pb-24">
         <div className="mx-auto max-w-md px-4 pb-6 pt-4">
           <div className="rounded-3xl border bg-white p-6 shadow-sm">
-            <div className="text-base font-bold text-slate-900">Ailyマイページ</div>
+            <div className="text-base font-bold text-slate-900">
+              Ailyマイページ
+            </div>
             <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
               {errorMessage}
             </div>
@@ -523,7 +541,9 @@ export default function CustomerAppPage() {
           </p>
 
           <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-            <div className="text-sm font-bold text-slate-900">おすすめメニュー</div>
+            <div className="text-sm font-bold text-slate-900">
+              おすすめメニュー
+            </div>
             <div className="mt-2 text-sm text-slate-600">
               フィルインメンテナンス / 季節デザインコース
             </div>
@@ -536,149 +556,130 @@ export default function CustomerAppPage() {
             次回予約する
           </Link>
         </section>
-<section className="overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-pink-500 p-5 text-white shadow">
-  <div className="flex items-start justify-between gap-3">
-    <div>
-      <div className="text-xs font-bold tracking-[0.2em] text-white/80">
-        AI FORTUNE BEAUTY
-      </div>
 
-      <div className="mt-2 text-2xl font-bold leading-tight">
-        今日の開運ビューティー
-      </div>
+        <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-pink-500 p-5 text-white shadow">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold tracking-[0.2em] text-white/80">
+                AI FORTUNE BEAUTY
+              </div>
 
-      <div className="mt-3 text-sm leading-6 text-white/90">
-        今のあなたは「魅力運」と「人間関係運」を整えるタイミングです。
-        透明感カラーと天然石を取り入れることで、印象運アップが期待できます。
-      </div>
-    </div>
+              <div className="mt-2 text-2xl font-bold leading-tight">
+                今日の開運ビューティー
+              </div>
 
-    <div className="rounded-2xl bg-white/15 px-3 py-2 text-right backdrop-blur-sm">
-      <div className="text-[11px] text-white/70">
-        Lucky Stone
-      </div>
+              <div className="mt-3 text-sm leading-6 text-white/90">
+                今のあなたは「魅力運」と「人間関係運」を整えるタイミングです。
+                透明感カラーと天然石を取り入れることで、印象運アップが期待できます。
+              </div>
+            </div>
 
-      <div className="mt-1 text-sm font-bold">
-        Natural Diamond
-      </div>
-    </div>
-  </div>
+            <div className="rounded-2xl bg-white/15 px-3 py-2 text-right backdrop-blur-sm">
+              <div className="text-[11px] text-white/70">Lucky Stone</div>
 
-  <div className="mt-4 grid grid-cols-2 gap-2">
-    <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
-      <div className="text-[11px] text-white/70">
-        ラッキーカラー
-      </div>
+              <div className="mt-1 text-sm font-bold">Natural Diamond</div>
+            </div>
+          </div>
 
-      <div className="mt-1 text-sm font-bold">
-        シャンパンゴールド
-      </div>
-    </div>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
+              <div className="text-[11px] text-white/70">ラッキーカラー</div>
 
-    <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
-      <div className="text-[11px] text-white/70">
-        おすすめ運気
-      </div>
+              <div className="mt-1 text-sm font-bold">シャンパンゴールド</div>
+            </div>
 
-      <div className="mt-1 text-sm font-bold">
-        恋愛運・人気運
-      </div>
-    </div>
-  </div>
+            <div className="rounded-2xl bg-white/15 p-3 backdrop-blur-sm">
+              <div className="text-[11px] text-white/70">おすすめ運気</div>
 
-  <div className="mt-4 grid grid-cols-1 gap-2">
-    <Link
-      href="/customer-app/sanmeigaku"
-      className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-fuchsia-600"
-    >
-      AI算命学ネイル診断をする
-    </Link>
+              <div className="mt-1 text-sm font-bold">恋愛運・人気運</div>
+            </div>
+          </div>
 
-    <Link
-      href="/customer-app/nail-tip-order"
-      className="rounded-2xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
-    >
-      開運ネイルチップを見る
-    </Link>
-  </div>
-</section>
+          <div className="mt-4 grid grid-cols-1 gap-2">
+            <Link
+              href="/customer-app/sanmeigaku"
+              className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-fuchsia-600"
+            >
+              AI算命学ネイル診断をする
+            </Link>
 
-<section className="rounded-3xl border bg-white p-4 shadow-sm">
-  <div className="flex items-center justify-between">
-    <div>
-      <div className="text-sm text-slate-500">
-        BEAUTY STORE
-      </div>
+            <Link
+              href="/customer-app/nail-tip-order"
+              className="rounded-2xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
+            >
+              開運ネイルチップを見る
+            </Link>
+          </div>
+        </section>
 
-      <div className="mt-1 text-xl font-bold text-slate-900">
-        開運Beauty Store
-      </div>
-    </div>
-
-    <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-bold text-fuchsia-600">
-      Coming Soon
-    </div>
-  </div>
-
-  <div className="mt-4 grid grid-cols-2 gap-3">
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <div className="text-2xl">💎</div>
-      <div className="mt-2 text-sm font-bold text-slate-900">
-        天然石
-      </div>
-      <div className="mt-1 text-xs leading-5 text-slate-500">
-        天然ダイヤ・開運ストーン
-      </div>
-    </div>
-
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <div className="text-2xl">🌿</div>
-      <div className="mt-2 text-sm font-bold text-slate-900">
-        アロマ
-      </div>
-      <div className="mt-1 text-xs leading-5 text-slate-500">
-        浄化・リラックス
-      </div>
-    </div>
-
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <div className="text-2xl">🛁</div>
-      <div className="mt-2 text-sm font-bold text-slate-900">
-        フェムケア
-      </div>
-      <div className="mt-1 text-xs leading-5 text-slate-500">
-        女性向けセルフケア
-      </div>
-    </div>
-
-    <div className="rounded-2xl bg-slate-50 p-4">
-      <div className="text-2xl">🕯</div>
-      <div className="mt-2 text-sm font-bold text-slate-900">
-        開運雑貨
-      </div>
-      <div className="mt-1 text-xs leading-5 text-slate-500">
-        お守り・空間づくり
-      </div>
-    </div>
-  </div>
-
-  <button
-    type="button"
-    onClick={() =>
-      showMessage("Beauty Store は次段階で公開予定です")
-    }
-    className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
-  >
-    ストア情報を見る
-  </button>
-</section>
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">前回来店の内容</div>
-            <Link
-              href="/customer-app/history"
-              className="text-sm font-bold text-rose-500"
-            >
+            <div>
+              <div className="text-sm text-slate-500">BEAUTY STORE</div>
+
+              <div className="mt-1 text-xl font-bold text-slate-900">
+                開運Beauty Store
+              </div>
+            </div>
+
+            <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-bold text-fuchsia-600">
+              Coming Soon
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-2xl">💎</div>
+              <div className="mt-2 text-sm font-bold text-slate-900">天然石</div>
+              <div className="mt-1 text-xs leading-5 text-slate-500">
+                天然ダイヤ・開運ストーン
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-2xl">🌿</div>
+              <div className="mt-2 text-sm font-bold text-slate-900">アロマ</div>
+              <div className="mt-1 text-xs leading-5 text-slate-500">
+                浄化・リラックス
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-2xl">🛁</div>
+              <div className="mt-2 text-sm font-bold text-slate-900">
+                フェムケア
+              </div>
+              <div className="mt-1 text-xs leading-5 text-slate-500">
+                女性向けセルフケア
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-2xl">🕯</div>
+              <div className="mt-2 text-sm font-bold text-slate-900">
+                開運雑貨
+              </div>
+              <div className="mt-1 text-xs leading-5 text-slate-500">
+                お守り・空間づくり
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => showMessage("Beauty Store は次段階で公開予定です")}
+            className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+          >
+            ストア情報を見る
+          </button>
+        </section>
+
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="text-base font-bold text-slate-900">
+              前回来店の内容
+            </div>
+            <Link href="/customer-app/history" className="text-sm font-bold text-rose-500">
               履歴を見る
             </Link>
           </div>
@@ -709,7 +710,9 @@ export default function CustomerAppPage() {
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">今月のおすすめ</div>
+            <div className="text-base font-bold text-slate-900">
+              今月のおすすめ
+            </div>
             <div className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-600">
               おすすめ
             </div>
@@ -738,7 +741,9 @@ export default function CustomerAppPage() {
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
-            <div className="text-base font-bold text-slate-900">最新のお知らせ</div>
+            <div className="text-base font-bold text-slate-900">
+              最新のお知らせ
+            </div>
             <button
               type="button"
               onClick={() => showMessage("お知らせ一覧ページは次段階で実装します")}
@@ -804,33 +809,19 @@ export default function CustomerAppPage() {
           {signedInNavItems.map((item) => {
             const isActive = item.key === "home";
 
-            if (item.href) {
-              return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={`flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium transition ${
-                    isActive
-                      ? "bg-rose-50 text-rose-500"
-                      : "text-gray-500 hover:text-gray-800"
-                  }`}
-                >
-                  <span className="text-lg leading-none">{item.icon}</span>
-                  <span className="mt-1 leading-none">{item.label}</span>
-                </Link>
-              );
-            }
-
             return (
-              <button
+              <Link
                 key={item.key}
-                type="button"
-                onClick={() => showMessage(`${item.label} 画面は次段階で実装します`)}
-                className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
+                href={item.href}
+                className={`flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium transition ${
+                  isActive
+                    ? "bg-rose-50 text-rose-500"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
               >
                 <span className="text-lg leading-none">{item.icon}</span>
                 <span className="mt-1 leading-none">{item.label}</span>
-              </button>
+              </Link>
             );
           })}
         </div>
