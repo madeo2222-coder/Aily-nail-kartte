@@ -34,6 +34,15 @@ type VisitPayment = {
   sort_order: number | null;
 };
 
+type VisitPhoto = {
+  id: string;
+  visit_id: string;
+  salon_id: string | null;
+  image_url: string | null;
+  photo_type: string | null;
+  created_at: string | null;
+};
+
 type CustomerIntake = {
   id: number | string;
   customer_id: string | null;
@@ -102,6 +111,7 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
+  const [visitPhotos, setVisitPhotos] = useState<VisitPhoto[]>([]);
   const [intake, setIntake] = useState<CustomerIntake | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -122,6 +132,22 @@ export default function CustomerDetailPage() {
 
     return nextMap;
   }, [visitPayments]);
+
+  const photoMap = useMemo(() => {
+    const nextMap: Record<string, VisitPhoto[]> = {};
+
+    visitPhotos.forEach((row) => {
+      if (!row.visit_id) return;
+
+      if (!nextMap[row.visit_id]) {
+        nextMap[row.visit_id] = [];
+      }
+
+      nextMap[row.visit_id].push(row);
+    });
+
+    return nextMap;
+  }, [visitPhotos]);
 
   async function fetchCustomerDetail() {
     setLoading(true);
@@ -154,6 +180,7 @@ export default function CustomerDetailPage() {
         console.error("visits取得エラー:", visitsError);
         setVisits([]);
         setVisitPayments([]);
+        setVisitPhotos([]);
       } else {
         const nextVisits = (visitsData || []) as Visit[];
         setVisits(nextVisits);
@@ -173,8 +200,22 @@ export default function CustomerDetailPage() {
           } else {
             setVisitPayments((paymentData || []) as VisitPayment[]);
           }
+
+          const { data: photoData, error: photoError } = await supabase
+            .from("visit_photos")
+            .select("id, visit_id, salon_id, image_url, photo_type, created_at")
+            .in("visit_id", visitIds)
+            .order("created_at", { ascending: true });
+
+          if (photoError) {
+            console.error("visit_photos取得エラー:", photoError);
+            setVisitPhotos([]);
+          } else {
+            setVisitPhotos((photoData || []) as VisitPhoto[]);
+          }
         } else {
           setVisitPayments([]);
+          setVisitPhotos([]);
         }
       }
 
@@ -534,7 +575,7 @@ export default function CustomerDetailPage() {
             <div>
               <h2 className="text-lg font-bold text-slate-900">来店履歴</h2>
               <p className="mt-1 text-sm text-slate-500">
-                来店日や売上、次回来店予定を確認できます。
+                来店日や売上、施術後写真、次回来店予定を確認できます。
               </p>
             </div>
 
@@ -552,71 +593,108 @@ export default function CustomerDetailPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {visits.map((visit) => (
-                <div
-                  key={visit.id}
-                  className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="text-base font-bold text-slate-900">
-                        来店日 {formatDateOnly(visit.visit_date)}
+              {visits.map((visit) => {
+                const photos = photoMap[visit.id] ?? [];
+
+                return (
+                  <div
+                    key={visit.id}
+                    className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="text-base font-bold text-slate-900">
+                          来店日 {formatDateOnly(visit.visit_date)}
+                        </div>
+                        <div className="text-sm text-slate-500">
+                          次回の提案やお会計内容も確認できます。
+                        </div>
                       </div>
-                      <div className="text-sm text-slate-500">
-                        次回の提案やお会計内容も確認できます。
+
+                      <Link
+                        href={`/visits/${visit.id}/edit`}
+                        className="shrink-0 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-600"
+                      >
+                        編集
+                      </Link>
+                    </div>
+
+                    <div className="mt-3 grid gap-2 text-sm text-slate-700">
+                      <div>
+                        <span className="font-medium">メニュー:</span>{" "}
+                        {getDisplayMenu(visit)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">カラー:</span>{" "}
+                        {visit.color?.trim() ? visit.color : "-"}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">売上:</span>{" "}
+                        {formatPrice(visit.price)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">支払い方法:</span>{" "}
+                        {visit.payment_method || "未設定"}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">支払い内訳:</span>{" "}
+                        {formatPaymentSummary(visit)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">メモ:</span>{" "}
+                        {visit.memo?.trim() ? visit.memo : "-"}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">次回来店予定:</span>{" "}
+                        {formatDateOnly(visit.next_visit_date)}
+                      </div>
+
+                      <div>
+                        <span className="font-medium">次回提案:</span>{" "}
+                        {visit.next_proposal?.trim() ? visit.next_proposal : "-"}
                       </div>
                     </div>
 
-                    <Link
-                      href={`/visits/${visit.id}/edit`}
-                      className="shrink-0 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-600"
-                    >
-                      編集
-                    </Link>
-                  </div>
+                    <div className="mt-4">
+                      <div className="mb-2 text-sm font-bold text-slate-900">
+                        施術後写真
+                      </div>
 
-                  <div className="mt-3 grid gap-2 text-sm text-slate-700">
-                    <div>
-                      <span className="font-medium">メニュー:</span> {getDisplayMenu(visit)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">カラー:</span>{" "}
-                      {visit.color?.trim() ? visit.color : "-"}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">売上:</span>{" "}
-                      {formatPrice(visit.price)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">支払い方法:</span>{" "}
-                      {visit.payment_method || "未設定"}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">支払い内訳:</span>{" "}
-                      {formatPaymentSummary(visit)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">メモ:</span>{" "}
-                      {visit.memo?.trim() ? visit.memo : "-"}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">次回来店予定:</span>{" "}
-                      {formatDateOnly(visit.next_visit_date)}
-                    </div>
-
-                    <div>
-                      <span className="font-medium">次回提案:</span>{" "}
-                      {visit.next_proposal?.trim() ? visit.next_proposal : "-"}
+                      {photos.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                          {photos.map((photo) =>
+                            photo.image_url ? (
+                              <a
+                                key={photo.id}
+                                href={photo.image_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block overflow-hidden rounded-3xl border border-rose-100 bg-rose-50 shadow-sm"
+                              >
+                                <img
+                                  src={photo.image_url}
+                                  alt="施術後写真"
+                                  className="h-32 w-full object-cover"
+                                />
+                              </a>
+                            ) : null
+                          )}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl bg-rose-50 px-4 py-3 text-xs text-slate-500">
+                          写真はまだ登録されていません。
+                        </div>
+                      )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

@@ -9,12 +9,19 @@ type Customer = {
   id: string;
   name: string;
   phone: string | null;
+  salon_id?: string | null;
 };
 
 type PaymentLine = {
   id: string;
   payment_method: string;
   amount: string;
+};
+
+type PhotoPreview = {
+  id: string;
+  file: File;
+  previewUrl: string;
 };
 
 const PAYMENT_METHOD_OPTIONS = [
@@ -34,8 +41,14 @@ const PAYMENT_METHOD_OPTIONS = [
   "その他",
 ];
 
+const VISIT_PHOTO_BUCKET = "visit-photos";
+
 function createLineId() {
   return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function createPhotoId() {
+  return `photo_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function createPaymentLine(method = "現金", amount = ""): PaymentLine {
@@ -61,6 +74,12 @@ function formatAmountPreview(value: string) {
   const amount = toSafeNumber(value);
   if (!Number.isFinite(amount)) return "未入力";
   return `${amount.toLocaleString("ja-JP")}`;
+}
+
+function getFileExtension(fileName: string) {
+  const parts = fileName.split(".");
+  const extension = parts.length > 1 ? parts.pop() : "";
+  return extension ? extension.toLowerCase() : "jpg";
 }
 
 export default function NewVisitPageClient() {
@@ -93,6 +112,7 @@ export default function NewVisitPageClient() {
     createPaymentLine("現金", ""),
   ]);
 
+  const [visitPhotos, setVisitPhotos] = useState<PhotoPreview[]>([]);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -124,12 +144,20 @@ export default function NewVisitPageClient() {
     prefilledMemo,
   ]);
 
+  useEffect(() => {
+    return () => {
+      visitPhotos.forEach((photo) => {
+        URL.revokeObjectURL(photo.previewUrl);
+      });
+    };
+  }, [visitPhotos]);
+
   async function fetchCustomers() {
     setLoadingCustomers(true);
 
     const { data, error } = await supabase
       .from("customers")
-      .select("id, name, phone")
+      .select("id, name, phone, salon_id")
       .order("name", { ascending: true });
 
     if (error) {
@@ -192,6 +220,97 @@ export default function NewVisitPageClient() {
       }
       return prev.filter((line) => line.id !== lineId);
     });
+  }
+
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+
+    if (files.length === 0) {
+      return;
+    }
+
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+
+    if (imageFiles.length !== files.length) {
+      setMessage("写真ファイルのみ選択できます");
+    } else {
+      setMessage("");
+    }
+
+    const newPhotos = imageFiles.map((file) => ({
+      id: createPhotoId(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+    }));
+
+    setVisitPhotos((prev) => [...prev, ...newPhotos]);
+
+    e.target.value = "";
+  }
+
+  function removePhoto(photoId: string) {
+    setVisitPhotos((prev) => {
+      const target = prev.find((photo) => photo.id === photoId);
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return prev.filter((photo) => photo.id !== photoId);
+    });
+  }
+
+  async function uploadVisitPhotos({
+    visitId,
+    salonId,
+  }: {
+    visitId: string;
+    salonId: string | null;
+  }) {
+    if (visitPhotos.length === 0) {
+      return;
+    }
+
+    const uploadedPhotoRows = [];
+
+    for (const photo of visitPhotos) {
+      const extension = getFileExtension(photo.file.name);
+      const filePath = `${visitId}/${Date.now()}_${Math.random()
+        .toString(36)
+        .slice(2, 10)}.${extension}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from(VISIT_PHOTO_BUCKET)
+        .upload(filePath, photo.file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (uploadError) {
+        throw new Error(`写真アップロード失敗: ${uploadError.message}`);
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from(VISIT_PHOTO_BUCKET)
+        .getPublicUrl(filePath);
+
+      if (!publicUrlData.publicUrl) {
+        throw new Error("写真URLの取得に失敗しました");
+      }
+
+      uploadedPhotoRows.push({
+        visit_id: visitId,
+        salon_id: salonId,
+        image_url: publicUrlData.publicUrl,
+        photo_type: "after",
+      });
+    }
+
+    const { error: photoInsertError } = await supabase
+      .from("visit_photos")
+      .insert(uploadedPhotoRows);
+
+    if (photoInsertError) {
+      throw new Error(`写真情報の保存に失敗しました: ${photoInsertError.message}`);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -322,6 +441,11 @@ export default function NewVisitPageClient() {
         return;
       }
 
+      await uploadVisitPhotos({
+        visitId: insertedVisit.id,
+        salonId: selectedCustomer?.salon_id || null,
+      });
+
       if (prefilledReservationId) {
         const { error: reservationUpdateError } = await supabase
           .from("reservations")
@@ -331,7 +455,7 @@ export default function NewVisitPageClient() {
         if (reservationUpdateError) {
           console.error("reservations update error:", reservationUpdateError);
           setMessage(
-            `来店履歴は登録できましたが、予約ステータス更新に失敗しました: ${reservationUpdateError.message}`
+            `来店履歴と写真は登録できましたが、予約ステータス更新に失敗しました: ${reservationUpdateError.message}`
           );
           setSaving(false);
           return;
@@ -342,7 +466,9 @@ export default function NewVisitPageClient() {
       router.push(`/customers/${customerId}`);
     } catch (error) {
       console.error("来店登録エラー:", error);
-      setMessage("来店履歴の登録に失敗しました");
+      const errorMessage =
+        error instanceof Error ? error.message : "来店履歴の登録に失敗しました";
+      setMessage(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -359,7 +485,7 @@ export default function NewVisitPageClient() {
               </p>
               <h1 className="mt-2 text-2xl font-bold">来店登録ページ</h1>
               <p className="mt-2 text-sm leading-6 text-white/90">
-                来店内容、お会計、次回提案をまとめて入力できるページです。
+                来店内容、お会計、次回提案、施術後写真をまとめて登録できます。
               </p>
             </div>
 
@@ -377,7 +503,7 @@ export default function NewVisitPageClient() {
         <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <h2 className="text-lg font-bold text-slate-900">ご案内</h2>
           <p className="mt-2 text-sm text-slate-600">
-            顧客を選択して、来店内容とお会計、次回提案を登録します。
+            顧客を選択して、来店内容・お会計・施術後写真・次回提案を登録します。
           </p>
 
           {prefilledReservationId ? (
@@ -415,7 +541,8 @@ export default function NewVisitPageClient() {
             {selectedCustomer ? (
               <div className="mt-3 rounded-3xl bg-rose-50 p-4 text-sm text-slate-700">
                 <p>
-                  <span className="font-medium">顧客名:</span> {selectedCustomer.name}
+                  <span className="font-medium">顧客名:</span>{" "}
+                  {selectedCustomer.name}
                 </p>
                 <p className="mt-1">
                   <span className="font-medium">電話番号:</span>{" "}
@@ -550,7 +677,11 @@ export default function NewVisitPageClient() {
                               inputMode="numeric"
                               value={line.amount}
                               onChange={(e) =>
-                                updatePaymentLine(line.id, "amount", e.target.value)
+                                updatePaymentLine(
+                                  line.id,
+                                  "amount",
+                                  e.target.value
+                                )
                               }
                               placeholder={isDiscount ? "例: -1000" : "例: 5000"}
                               className={`w-full rounded-2xl border px-3 py-3 text-sm ${
@@ -643,6 +774,61 @@ export default function NewVisitPageClient() {
                 />
               </div>
             </div>
+          </section>
+
+          <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+            <h2 className="mb-2 text-lg font-bold text-slate-900">
+              施術後写真
+            </h2>
+            <p className="mb-4 text-sm text-slate-600">
+              施術後のネイル写真を登録できます。複数枚選択できます。
+            </p>
+
+            <label className="block cursor-pointer rounded-[28px] border border-dashed border-rose-300 bg-rose-50/50 px-4 py-6 text-center">
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handlePhotoChange}
+                className="hidden"
+              />
+              <div className="text-sm font-bold text-rose-600">
+                写真を選択する
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                iPhoneのカメラロールから選択できます
+              </div>
+            </label>
+
+            {visitPhotos.length > 0 ? (
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                {visitPhotos.map((photo) => (
+                  <div
+                    key={photo.id}
+                    className="overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
+                  >
+                    <img
+                      src={photo.previewUrl}
+                      alt="施術後写真プレビュー"
+                      className="h-36 w-full object-cover"
+                    />
+                    <div className="p-2">
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(photo.id)}
+                        className="w-full rounded-2xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-600"
+                      >
+                        削除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
+                まだ写真は選択されていません。
+              </div>
+            )}
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
