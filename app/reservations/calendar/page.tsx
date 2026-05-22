@@ -45,6 +45,13 @@ type CalendarReservation = {
   durationMinutes: number;
 };
 
+type MonthDay = {
+  dateText: string;
+  day: number;
+  isCurrentMonth: boolean;
+  isToday: boolean;
+};
+
 const DAY_START_HOUR = 10;
 const DAY_END_HOUR = 20;
 const SLOT_MINUTES = 30;
@@ -57,11 +64,30 @@ function getTodayText() {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-function getJstParts(value: string | null) {
+function getMonthText(dateText: string) {
+  return dateText.slice(0, 7);
+}
+
+function parseSupabaseTimestampAsUtc(value: string | null) {
   if (!value) return null;
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const normalized = trimmed.replace(" ", "T");
+  const date = new Date(`${normalized}Z`);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getJstParts(value: string | null) {
+  const date = parseSupabaseTimestampAsUtc(value);
+  if (!date) return null;
 
   const formatter = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -114,6 +140,16 @@ function addDaysText(dateText: string, days: number) {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function addMonthsText(monthText: string, months: number) {
+  const date = new Date(`${monthText}-01T00:00:00+09:00`);
+  date.setMonth(date.getMonth() + months);
+
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+
+  return `${yyyy}-${mm}`;
+}
+
 function formatDateLabel(dateText: string) {
   const date = new Date(`${dateText}T00:00:00+09:00`);
   if (Number.isNaN(date.getTime())) return dateText;
@@ -125,6 +161,11 @@ function formatDateLabel(dateText: string) {
   }）`;
 }
 
+function formatMonthLabel(monthText: string) {
+  const [year, month] = monthText.split("-");
+  return `${year}年${Number(month)}月`;
+}
+
 function normalizeStatus(status: string | null) {
   if (status === "requested") return "予約申請中";
   if (status === "confirmed") return "予約確定";
@@ -132,6 +173,10 @@ function normalizeStatus(status: string | null) {
   if (status === "cancelled") return "キャンセル";
   if (status === "予約") return "予約受付";
   return status || "予約申請中";
+}
+
+function isCancelledStatus(status: string) {
+  return status === "キャンセル" || status === "cancelled";
 }
 
 function getStatusColor(status: string, source: string) {
@@ -185,13 +230,48 @@ function buildTimeSlots() {
 function hasOverlap(a: CalendarReservation, b: CalendarReservation) {
   if (a.id === b.id) return false;
   if (a.staffName !== b.staffName) return false;
-  if (a.status === "キャンセル" || b.status === "キャンセル") return false;
+  if (isCancelledStatus(a.status) || isCancelledStatus(b.status)) return false;
 
   return a.startMinute < b.endMinute && b.startMinute < a.endMinute;
 }
 
+function buildMonthDays(monthText: string) {
+  const [yearText, monthOnlyText] = monthText.split("-");
+  const year = Number(yearText);
+  const monthIndex = Number(monthOnlyText) - 1;
+
+  const firstDate = new Date(year, monthIndex, 1);
+  const startDate = new Date(firstDate);
+  startDate.setDate(firstDate.getDate() - firstDate.getDay());
+
+  const todayText = getTodayText();
+  const days: MonthDay[] = [];
+
+  for (let i = 0; i < 42; i += 1) {
+    const date = new Date(startDate);
+    date.setDate(startDate.getDate() + i);
+
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, "0");
+    const dd = String(date.getDate()).padStart(2, "0");
+    const dateText = `${yyyy}-${mm}-${dd}`;
+
+    days.push({
+      dateText,
+      day: date.getDate(),
+      isCurrentMonth: date.getMonth() === monthIndex,
+      isToday: dateText === todayText,
+    });
+  }
+
+  return days;
+}
+
 export default function ReservationsCalendarPage() {
   const [selectedDate, setSelectedDate] = useState(getTodayText());
+  const [selectedMonth, setSelectedMonth] = useState(
+    getMonthText(getTodayText())
+  );
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
@@ -253,43 +333,62 @@ export default function ReservationsCalendarPage() {
     return map;
   }, [staffs]);
 
+  const allCalendarReservations = useMemo<CalendarReservation[]>(() => {
+    return reservations.map((reservation) => {
+      const date = toJstDateText(reservation.start_at);
+      const startTime = toJstTimeText(reservation.start_at);
+      const endTime = toJstTimeText(reservation.end_at);
+      const startMinute = timeTextToMinute(startTime);
+      const endMinute = timeTextToMinute(endTime);
+
+      const staffId = reservation.staff_id || null;
+      const staffName = staffId ? staffMap.get(staffId) || "未設定" : "指名なし";
+
+      const customerName = reservation.customer_id
+        ? customerMap.get(reservation.customer_id) || "顧客名未設定"
+        : "顧客未設定";
+
+      return {
+        id: reservation.id,
+        customerName,
+        staffId,
+        staffName,
+        menuName: reservation.menu_name || reservation.menu || "未設定",
+        status: normalizeStatus(reservation.status),
+        source: reservation.source || "手入力",
+        memo: reservation.memo || "",
+        date,
+        startTime,
+        endTime,
+        startMinute,
+        endMinute,
+        durationMinutes: Math.max(endMinute - startMinute, SLOT_MINUTES),
+      };
+    });
+  }, [reservations, customerMap, staffMap]);
+
   const calendarReservations = useMemo<CalendarReservation[]>(() => {
-    return reservations
-      .map((reservation) => {
-        const date = toJstDateText(reservation.start_at);
-        const startTime = toJstTimeText(reservation.start_at);
-        const endTime = toJstTimeText(reservation.end_at);
-        const startMinute = timeTextToMinute(startTime);
-        const endMinute = timeTextToMinute(endTime);
+    return allCalendarReservations.filter(
+      (reservation) => reservation.date === selectedDate
+    );
+  }, [allCalendarReservations, selectedDate]);
 
-        const staffId = reservation.staff_id || null;
-        const staffName = staffId
-          ? staffMap.get(staffId) || "未設定"
-          : "指名なし";
+  const reservationCountByDate = useMemo(() => {
+    const map = new Map<string, number>();
 
-        const customerName = reservation.customer_id
-          ? customerMap.get(reservation.customer_id) || "顧客名未設定"
-          : "顧客未設定";
+    allCalendarReservations.forEach((reservation) => {
+      if (!reservation.date) return;
+      if (isCancelledStatus(reservation.status)) return;
 
-        return {
-          id: reservation.id,
-          customerName,
-          staffId,
-          staffName,
-          menuName: reservation.menu_name || reservation.menu || "未設定",
-          status: normalizeStatus(reservation.status),
-          source: reservation.source || "手入力",
-          memo: reservation.memo || "",
-          date,
-          startTime,
-          endTime,
-          startMinute,
-          endMinute,
-          durationMinutes: Math.max(endMinute - startMinute, SLOT_MINUTES),
-        };
-      })
-      .filter((reservation) => reservation.date === selectedDate);
-  }, [reservations, selectedDate, customerMap, staffMap]);
+      map.set(reservation.date, (map.get(reservation.date) || 0) + 1);
+    });
+
+    return map;
+  }, [allCalendarReservations]);
+
+  const monthDays = useMemo(() => {
+    return buildMonthDays(selectedMonth);
+  }, [selectedMonth]);
 
   const staffColumns = useMemo(() => {
     const names = new Set<string>();
@@ -325,6 +424,36 @@ export default function ReservationsCalendarPage() {
 
   const dayStartMinute = DAY_START_HOUR * 60;
   const rowHeight = 56;
+
+  function selectDate(dateText: string) {
+    setSelectedDate(dateText);
+    setSelectedMonth(getMonthText(dateText));
+  }
+
+  function moveMonth(months: number) {
+    const nextMonth = addMonthsText(selectedMonth, months);
+    setSelectedMonth(nextMonth);
+
+    const currentDay = selectedDate.slice(8, 10);
+    const nextCandidate = `${nextMonth}-${currentDay}`;
+    const candidateDate = new Date(`${nextCandidate}T00:00:00+09:00`);
+
+    if (
+      Number.isNaN(candidateDate.getTime()) ||
+      getMonthText(nextCandidate) !== nextMonth
+    ) {
+      setSelectedDate(`${nextMonth}-01`);
+      return;
+    }
+
+    setSelectedDate(nextCandidate);
+  }
+
+  function goToday() {
+    const today = getTodayText();
+    setSelectedDate(today);
+    setSelectedMonth(getMonthText(today));
+  }
 
   function getReservationsForStaff(staffName: string) {
     return calendarReservations.filter(
@@ -371,33 +500,131 @@ export default function ReservationsCalendarPage() {
         </section>
 
         <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => moveMonth(-1)}
+              className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-lg font-black text-rose-500"
+            >
+              ‹
+            </button>
+
+            <div className="text-center">
+              <div className="text-sm font-bold text-slate-500">月表示</div>
+              <div className="mt-1 text-2xl font-black text-slate-900">
+                {formatMonthLabel(selectedMonth)}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => moveMonth(1)}
+              className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-lg font-black text-rose-500"
+            >
+              ›
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-7 gap-1 text-center">
+            {["日", "月", "火", "水", "木", "金", "土"].map((week) => (
+              <div
+                key={week}
+                className={`py-2 text-xs font-bold ${
+                  week === "日"
+                    ? "text-rose-500"
+                    : week === "土"
+                    ? "text-blue-500"
+                    : "text-slate-500"
+                }`}
+              >
+                {week}
+              </div>
+            ))}
+
+            {monthDays.map((day) => {
+              const count = reservationCountByDate.get(day.dateText) || 0;
+              const isSelected = day.dateText === selectedDate;
+
+              return (
+                <button
+                  key={day.dateText}
+                  type="button"
+                  onClick={() => selectDate(day.dateText)}
+                  className={`relative min-h-[64px] rounded-2xl border p-2 text-left transition ${
+                    isSelected
+                      ? "border-rose-400 bg-rose-100 shadow-sm"
+                      : day.isToday
+                      ? "border-blue-200 bg-blue-50"
+                      : "border-slate-100 bg-white hover:bg-rose-50"
+                  } ${day.isCurrentMonth ? "" : "opacity-35"}`}
+                >
+                  <div
+                    className={`text-base font-black ${
+                      isSelected
+                        ? "text-rose-700"
+                        : day.isToday
+                        ? "text-blue-700"
+                        : "text-slate-800"
+                    }`}
+                  >
+                    {day.day}
+                  </div>
+
+                  {count > 0 ? (
+                    <div className="absolute right-1.5 top-1.5 flex h-6 min-w-6 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-black text-white shadow">
+                      {count > 9 ? "9+" : count}
+                    </div>
+                  ) : null}
+
+                  {count > 0 ? (
+                    <div className="mt-2 text-[10px] font-bold text-rose-500">
+                      {count}件
+                    </div>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-bold text-slate-700">
+              選択日：{formatDateLabel(selectedDate)}
+            </div>
+
+            <button
+              type="button"
+              onClick={goToday}
+              className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
+            >
+              今日へ戻る
+            </button>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="text-sm font-bold text-slate-900">対象日</div>
               <div className="mt-1 text-xl font-bold text-slate-900">
                 {formatDateLabel(selectedDate)}
               </div>
+              <div className="mt-1 text-sm text-slate-500">
+                予約件数：{calendarReservations.length}件
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedDate(addDaysText(selectedDate, -1))}
+                onClick={() => selectDate(addDaysText(selectedDate, -1))}
                 className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
               >
                 前日
               </button>
 
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-              />
-
               <button
                 type="button"
-                onClick={() => setSelectedDate(getTodayText())}
+                onClick={goToday}
                 className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
               >
                 今日
@@ -405,7 +632,7 @@ export default function ReservationsCalendarPage() {
 
               <button
                 type="button"
-                onClick={() => setSelectedDate(addDaysText(selectedDate, 1))}
+                onClick={() => selectDate(addDaysText(selectedDate, 1))}
                 className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
               >
                 翌日
