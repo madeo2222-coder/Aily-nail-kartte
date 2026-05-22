@@ -1,6 +1,148 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
+type CustomerRow = {
+  id: string;
+  name: string | null;
+  salon_id: string | null;
+};
+
+type StaffRow = {
+  id: string;
+  name: string | null;
+  salon_id: string | null;
+};
+
+function isCancelledStatus(status: string | null) {
+  return status === "キャンセル" || status === "cancelled";
+}
+
+function formatDateTimeForMail(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+async function sendReservationNoticeMail({
+  customerName,
+  menu,
+  startIso,
+  endIso,
+  staffName,
+  memo,
+}: {
+  customerName: string;
+  menu: string;
+  startIso: string;
+  endIso: string;
+  staffName: string;
+  memo: string;
+}) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  const notifyEmail = process.env.RESERVATION_NOTIFY_EMAIL;
+  const fromEmail =
+    process.env.RESEND_FROM_EMAIL || "Aily Nail Studio <onboarding@resend.dev>";
+
+  if (!resendApiKey || !notifyEmail) {
+    console.log(
+      "予約通知メールはスキップされました: RESEND_API_KEY または RESERVATION_NOTIFY_EMAIL が未設定です"
+    );
+    return;
+  }
+
+  const subject = "【Aily Nail Studio】新しい予約希望が入りました";
+
+  const text = [
+    "新しい予約希望が入りました。",
+    "",
+    `お客様名：${customerName}`,
+    `メニュー：${menu}`,
+    `予約開始：${formatDateTimeForMail(startIso)}`,
+    `予約終了：${formatDateTimeForMail(endIso)}`,
+    `担当者：${staffName}`,
+    `ステータス：予約申請中`,
+    "",
+    "ご要望・備考：",
+    memo || "-",
+    "",
+    "スタッフ予約ページで内容を確認してください。",
+  ].join("\n");
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.8; color: #111827;">
+      <h2>新しい予約希望が入りました</h2>
+      <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">お客様名</th>
+          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${customerName}</td>
+        </tr>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">メニュー</th>
+          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${menu}</td>
+        </tr>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">予約開始</th>
+          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${formatDateTimeForMail(
+            startIso
+          )}</td>
+        </tr>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">予約終了</th>
+          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${formatDateTimeForMail(
+            endIso
+          )}</td>
+        </tr>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">担当者</th>
+          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${staffName}</td>
+        </tr>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">ステータス</th>
+          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">予約申請中</td>
+        </tr>
+      </table>
+
+      <h3 style="margin-top:24px;">ご要望・備考</h3>
+      <div style="white-space:pre-wrap; background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px; padding:12px;">
+        ${memo || "-"}
+      </div>
+
+      <p style="margin-top:24px;">スタッフ予約ページで内容を確認してください。</p>
+    </div>
+  `;
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: fromEmail,
+      to: [notifyEmail],
+      subject,
+      text,
+      html,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("予約通知メール送信エラー:", errorText);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -34,29 +176,13 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!salonId && staffId) {
-      const { data: staffData, error: staffError } = await supabase
-        .from("staffs")
-        .select("salon_id")
-        .eq("id", staffId)
-        .maybeSingle();
+    let customerName = "お客様";
+    let staffName = "指名なし";
 
-      if (staffError) {
-        return NextResponse.json(
-          { ok: false, error: staffError.message },
-          { status: 500 }
-        );
-      }
-
-      if (staffData?.salon_id) {
-        salonId = String(staffData.salon_id);
-      }
-    }
-
-    if (!salonId && customerId) {
+    if (customerId) {
       const { data: customerData, error: customerError } = await supabase
         .from("customers")
-        .select("salon_id")
+        .select("id, name, salon_id")
         .eq("id", customerId)
         .maybeSingle();
 
@@ -67,29 +193,67 @@ export async function POST(request: Request) {
         );
       }
 
-      if (customerData?.salon_id) {
-        salonId = String(customerData.salon_id);
+      const customer = customerData as CustomerRow | null;
+
+      if (customer?.name) {
+        customerName = customer.name;
+      }
+
+      if (!salonId && customer?.salon_id) {
+        salonId = String(customer.salon_id);
+      }
+    }
+
+    if (staffId) {
+      const { data: staffData, error: staffError } = await supabase
+        .from("staffs")
+        .select("id, name, salon_id")
+        .eq("id", staffId)
+        .maybeSingle();
+
+      if (staffError) {
+        return NextResponse.json(
+          { ok: false, error: staffError.message },
+          { status: 500 }
+        );
+      }
+
+      const staff = staffData as StaffRow | null;
+
+      if (staff?.name) {
+        staffName = staff.name;
+      }
+
+      if (!salonId && staff?.salon_id) {
+        salonId = String(staff.salon_id);
       }
     }
 
     const startAt = new Date(`${date}T${time}:00+09:00`);
+
+    if (Number.isNaN(startAt.getTime())) {
+      return NextResponse.json(
+        { ok: false, error: "予約日時が正しくありません" },
+        { status: 400 }
+      );
+    }
+
     const endAt = new Date(startAt.getTime() + 90 * 60 * 1000);
     const startIso = startAt.toISOString();
     const endIso = endAt.toISOString();
 
     let overlapQuery = supabase
       .from("reservations")
-      .select("id, status, staff_id, start_at, end_at")
-      .neq("status", "キャンセル")
+      .select("id, status, staff_id, start_at, end_at, menu")
       .lt("start_at", endIso)
       .gt("end_at", startIso);
 
-    if (staffId) {
-      overlapQuery = overlapQuery.eq("staff_id", staffId);
-    }
-
     if (salonId) {
       overlapQuery = overlapQuery.eq("salon_id", salonId);
+    }
+
+    if (staffId) {
+      overlapQuery = overlapQuery.eq("staff_id", staffId);
     }
 
     const { data: overlapReservations, error: overlapError } =
@@ -102,7 +266,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (overlapReservations && overlapReservations.length > 0) {
+    const activeOverlaps = (overlapReservations || []).filter(
+      (reservation) => !isCancelledStatus(reservation.status)
+    );
+
+    if (activeOverlaps.length > 0) {
       return NextResponse.json(
         {
           ok: false,
@@ -154,6 +322,19 @@ export async function POST(request: Request) {
         { ok: false, error: error.message },
         { status: 500 }
       );
+    }
+
+    try {
+      await sendReservationNoticeMail({
+        customerName,
+        menu,
+        startIso,
+        endIso,
+        staffName,
+        memo,
+      });
+    } catch (mailError) {
+      console.error("予約通知メール処理エラー:", mailError);
     }
 
     return NextResponse.json({
