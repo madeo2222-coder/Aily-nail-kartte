@@ -34,38 +34,86 @@ type ReservationDetail = {
   memo: string | null;
 };
 
+type GalleryReference = {
+  hasGallery: boolean;
+  designId: string;
+  photoUrl: string;
+  menuName: string;
+  color: string;
+};
+
 const STATUS_OPTIONS = ["予約", "来店", "完了", "キャンセル"] as const;
 
+function getJstParts(value: string | null) {
+  if (!value) return null;
+
+  const target = new Date(value);
+
+  if (Number.isNaN(target.getTime())) {
+    return null;
+  }
+
+  const formatter = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(target);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: map.get("year") || "",
+    month: map.get("month") || "",
+    day: map.get("day") || "",
+    hour: map.get("hour") || "",
+    minute: map.get("minute") || "",
+  };
+}
+
 function extractDate(value: string | null) {
-  if (!value) return "";
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!match) return "";
-  const [, y, m, d] = match;
-  return `${y}-${m}-${d}`;
+  const parts = getJstParts(value);
+
+  if (!parts) return "";
+
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function extractTime(value: string | null) {
-  if (!value) return "";
-  const match = value.match(/T(\d{2}):(\d{2})/);
-  if (!match) return "";
-  const [, h, m] = match;
-  return `${h}:${m}`;
+  const parts = getJstParts(value);
+
+  if (!parts) return "";
+
+  return `${parts.hour}:${parts.minute}`;
 }
 
 function buildDateTime(targetDate: string, targetTime: string) {
   if (!targetDate || !targetTime) return null;
-  return `${targetDate}T${targetTime}:00`;
+
+  const date = new Date(`${targetDate}T${targetTime}:00+09:00`);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toISOString();
 }
 
 function normalizeStatus(value: string | null) {
   if (!value) return "予約";
 
   if (value === "pending") return "予約";
+  if (value === "requested") return "予約";
   if (value === "confirmed") return "予約";
   if (value === "completed") return "完了";
   if (value === "cancelled") return "キャンセル";
 
   if (value === "予約受付") return "予約";
+  if (value === "予約申請中") return "予約";
   if (value === "来店予定") return "来店";
   if (value === "完了待ち") return "来店";
 
@@ -79,6 +127,66 @@ function normalizeStatus(value: string | null) {
   }
 
   return "予約";
+}
+
+function extractLineValue(memo: string, label: string) {
+  const line = memo
+    .split("\n")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(label));
+
+  if (!line) return "";
+
+  return line.replace(label, "").trim();
+}
+
+function extractGalleryReference(memo: string): GalleryReference {
+  return {
+    hasGallery: memo.includes("Aily Gallery参考デザインあり"),
+    designId: extractLineValue(memo, "参考デザインID："),
+    photoUrl: extractLineValue(memo, "参考写真URL："),
+    menuName: extractLineValue(memo, "参考メニュー："),
+    color: extractLineValue(memo, "参考カラー："),
+  };
+}
+
+function removeGalleryReferenceLines(memo: string) {
+  if (!memo) return "";
+
+  return memo
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+
+      if (trimmed === "Aily Gallery参考デザインあり") return false;
+      if (trimmed.startsWith("参考デザインID：")) return false;
+      if (trimmed.startsWith("参考写真URL：")) return false;
+      if (trimmed.startsWith("参考メニュー：")) return false;
+      if (trimmed.startsWith("参考カラー：")) return false;
+
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
+function buildMemoForSave(galleryReference: GalleryReference, displayMemo: string) {
+  const galleryLines = galleryReference.hasGallery
+    ? [
+        "Aily Gallery参考デザインあり",
+        galleryReference.designId
+          ? `参考デザインID：${galleryReference.designId}`
+          : "",
+        galleryReference.photoUrl ? `参考写真URL：${galleryReference.photoUrl}` : "",
+        galleryReference.menuName &&
+        !/^\d+$/.test(galleryReference.menuName.trim())
+          ? `参考メニュー：${galleryReference.menuName}`
+          : "",
+        galleryReference.color ? `参考カラー：${galleryReference.color}` : "",
+      ].filter(Boolean)
+    : [];
+
+  return [...galleryLines, displayMemo.trim()].filter(Boolean).join("\n");
 }
 
 export default function EditReservationPage() {
@@ -106,6 +214,13 @@ export default function EditReservationPage() {
   const [status, setStatus] =
     useState<"予約" | "来店" | "完了" | "キャンセル">("予約");
   const [memo, setMemo] = useState("");
+  const [galleryReference, setGalleryReference] = useState<GalleryReference>({
+    hasGallery: false,
+    designId: "",
+    photoUrl: "",
+    menuName: "",
+    color: "",
+  });
 
   async function loadPageData() {
     if (!reservationId) {
@@ -153,6 +268,8 @@ export default function EditReservationPage() {
     }
 
     const reservation = reservationRes.data as ReservationDetail;
+    const rawMemo = reservation.memo ?? "";
+    const nextGalleryReference = extractGalleryReference(rawMemo);
 
     setSalons((salonsRes.data ?? []) as Salon[]);
     setAllCustomers((customersRes.data ?? []) as Customer[]);
@@ -172,13 +289,15 @@ export default function EditReservationPage() {
         | "完了"
         | "キャンセル"
     );
-    setMemo(reservation.memo ?? "");
+    setGalleryReference(nextGalleryReference);
+    setMemo(removeGalleryReferenceLines(rawMemo));
 
     setLoading(false);
   }
 
   useEffect(() => {
     loadPageData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationId]);
 
   const filteredCustomers = useMemo(() => {
@@ -215,6 +334,8 @@ export default function EditReservationPage() {
       return;
     }
 
+    const memoForSave = buildMemoForSave(galleryReference, memo);
+
     setSaving(true);
     setErrorMessage("");
 
@@ -228,7 +349,7 @@ export default function EditReservationPage() {
         start_at: startAt,
         end_at: endAt,
         status,
-        memo: memo || null,
+        memo: memoForSave || null,
       })
       .eq("id", reservationId);
 
@@ -306,6 +427,48 @@ export default function EditReservationPage() {
               </div>
             ) : null}
 
+            {galleryReference.hasGallery ? (
+              <section className="rounded-[28px] border border-pink-100 bg-pink-50 p-4">
+                <div className="text-sm font-bold text-pink-700">
+                  Aily Gallery参考デザイン
+                </div>
+
+                {galleryReference.photoUrl ? (
+                  <a
+                    href={galleryReference.photoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 block overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
+                  >
+                    <img
+                      src={galleryReference.photoUrl}
+                      alt="Aily Gallery参考デザイン"
+                      className="h-72 w-full object-cover"
+                    />
+                  </a>
+                ) : (
+                  <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm text-slate-500">
+                    参考写真URLが保存されていません。
+                  </div>
+                )}
+
+                <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold leading-5 text-pink-800">
+                  {galleryReference.designId ? (
+                    <div>参考デザインID：{galleryReference.designId}</div>
+                  ) : null}
+
+                  {galleryReference.menuName &&
+                  !/^\d+$/.test(galleryReference.menuName.trim()) ? (
+                    <div>参考メニュー：{galleryReference.menuName}</div>
+                  ) : null}
+
+                  {galleryReference.color ? (
+                    <div>参考カラー：{galleryReference.color}</div>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+
             <div className="grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -373,24 +536,41 @@ export default function EditReservationPage() {
               </div>
 
               <div className="grid gap-4 sm:grid-cols-3">
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                />
-                <input
-                  type="time"
-                  value={startTime}
-                  onChange={(e) => setStartTime(e.target.value)}
-                  className="rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                />
-                <input
-                  type="time"
-                  value={endTime}
-                  onChange={(e) => setEndTime(e.target.value)}
-                  className="rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                />
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    日付
+                  </label>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    開始時間
+                  </label>
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    終了時間
+                  </label>
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  />
+                </div>
               </div>
 
               <div>
@@ -423,11 +603,17 @@ export default function EditReservationPage() {
                   メモ
                 </label>
                 <textarea
-                  rows={4}
+                  rows={5}
                   value={memo}
                   onChange={(e) => setMemo(e.target.value)}
+                  placeholder="スタッフ用メモ"
                   className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
                 />
+                {galleryReference.hasGallery ? (
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    参考写真URLは上に画像表示しています。保存時には内部メモとして残ります。
+                  </p>
+                ) : null}
               </div>
             </div>
 
