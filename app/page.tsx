@@ -15,10 +15,6 @@ type Visit = {
   price?: number | null;
 };
 
-function daysBetween(a: Date, b: Date) {
-  return (a.getTime() - b.getTime()) / (1000 * 60 * 60 * 24);
-}
-
 function getMonthStart(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -29,6 +25,10 @@ function getNextMonthStart(date: Date) {
 
 function toDateOnlyString(date: Date) {
   return date.toISOString().split("T")[0];
+}
+
+function formatYen(value: number) {
+  return `¥${Math.round(value).toLocaleString("ja-JP")}`;
 }
 
 export default function HomePage() {
@@ -58,71 +58,159 @@ export default function HomePage() {
 
   const today = toDateOnlyString(new Date());
 
-  const todaySales = visits.reduce((sum, v) => {
-    if (v.visit_date === today) return sum + (v.price || 0);
+  const todaySales = visits.reduce((sum, visit) => {
+    if (visit.visit_date === today) {
+      return sum + (visit.price || 0);
+    }
+
     return sum;
   }, 0);
 
-  const todayCount = visits.filter(v => v.visit_date === today).length;
+  const todayCount = visits.filter((visit) => visit.visit_date === today).length;
 
-  const monthlySales = useMemo(() => {
+  const monthlyStats = useMemo(() => {
     const now = new Date();
     const start = getMonthStart(now);
     const end = getNextMonthStart(now);
 
-    return visits.reduce((sum, v) => {
-      if (!v.visit_date) return sum;
-      const d = new Date(v.visit_date);
-      if (d >= start && d < end) return sum + (v.price || 0);
-      return sum;
+    const monthlyVisits = visits.filter((visit) => {
+      if (!visit.visit_date) return false;
+
+      const visitDate = new Date(visit.visit_date);
+
+      if (Number.isNaN(visitDate.getTime())) return false;
+
+      return visitDate >= start && visitDate < end;
+    });
+
+    const monthlySales = monthlyVisits.reduce((sum, visit) => {
+      return sum + (visit.price || 0);
     }, 0);
+
+    const monthlyCustomerIds = Array.from(
+      new Set(
+        monthlyVisits
+          .map((visit) => visit.customer_id)
+          .filter((customerId) => Boolean(customerId))
+      )
+    );
+
+    const repeatCustomerIds = monthlyCustomerIds.filter((customerId) => {
+      return visits.some((visit) => {
+        if (visit.customer_id !== customerId) return false;
+        if (!visit.visit_date) return false;
+
+        const visitDate = new Date(visit.visit_date);
+
+        if (Number.isNaN(visitDate.getTime())) return false;
+
+        return visitDate < start;
+      });
+    });
+
+    const repeatRate =
+      monthlyCustomerIds.length > 0
+        ? (repeatCustomerIds.length / monthlyCustomerIds.length) * 100
+        : 0;
+
+    return {
+      monthlySales,
+      monthlyVisitCount: monthlyVisits.length,
+      monthlyCustomerCount: monthlyCustomerIds.length,
+      repeatCustomerCount: repeatCustomerIds.length,
+      repeatRate,
+    };
   }, [visits]);
 
-  const totalSales = visits.reduce((sum, v) => sum + (v.price || 0), 0);
+  const totalSales = visits.reduce((sum, visit) => {
+    return sum + (visit.price || 0);
+  }, 0);
+
+  if (loading) {
+    return (
+      <div className="p-4">
+        <div className="rounded-xl bg-white p-4 text-sm text-slate-500 shadow">
+          読み込み中...
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-4 space-y-4">
-
-      {/* header */}
-      <div className="flex justify-between items-center">
+    <div className="space-y-4 p-4">
+      <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">ダッシュボード</h1>
-        <Link href="/visits/new" className="bg-black text-white px-4 py-2 rounded-lg">
+
+        <Link
+          href="/visits/new"
+          className="rounded-lg bg-black px-4 py-2 text-white"
+        >
           来店登録
         </Link>
       </div>
 
-      {/* today */}
-      <div className="bg-white p-4 rounded-xl shadow">
-        <p>今日の売上</p>
-        <p className="text-3xl font-bold">¥{todaySales}</p>
-        <p>来店数: {todayCount}</p>
+      <div className="rounded-xl bg-white p-4 shadow">
+        <p className="text-sm text-slate-600">今日の売上</p>
+        <p className="mt-1 text-3xl font-bold">{formatYen(todaySales)}</p>
+        <p className="mt-2 text-sm text-slate-600">来店数: {todayCount}</p>
       </div>
 
-      {/* month */}
-      <div className="bg-white p-4 rounded-xl shadow">
-        <p>今月の売上</p>
-        <p className="text-3xl font-bold">¥{monthlySales}</p>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl bg-white p-4 shadow">
+          <p className="text-sm text-slate-600">今月の売上</p>
+          <p className="mt-1 text-3xl font-bold">
+            {formatYen(monthlyStats.monthlySales)}
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            今月来店数: {monthlyStats.monthlyVisitCount}件
+          </p>
+        </div>
+
+        <div className="rounded-xl bg-white p-4 shadow">
+          <p className="text-sm text-slate-600">今月リピート率</p>
+          <p className="mt-1 text-3xl font-bold text-rose-600">
+            {monthlyStats.repeatRate.toFixed(1)}%
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            今月来店 {monthlyStats.monthlyCustomerCount}人 / リピート{" "}
+            {monthlyStats.repeatCustomerCount}人
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            今月来店したお客様のうち、過去にも来店履歴がある割合です。
+          </p>
+        </div>
       </div>
 
-      {/* total */}
-      <div className="bg-white p-4 rounded-xl shadow">
-        <p>累計売上</p>
-        <p className="text-3xl font-bold">¥{totalSales}</p>
+      <div className="rounded-xl bg-white p-4 shadow">
+        <p className="text-sm text-slate-600">累計売上</p>
+        <p className="mt-1 text-3xl font-bold">{formatYen(totalSales)}</p>
+        <p className="mt-2 text-sm text-slate-600">
+          顧客数: {customers.length}人
+        </p>
       </div>
 
-      {/* menu */}
-     <div className="grid grid-cols-3 gap-3 mt-4">
-  <Link href="/customers" className="bg-white p-4 rounded-xl shadow text-center font-semibold">
-    👤 顧客
-  </Link>
-  <Link href="/visits" className="bg-white p-4 rounded-xl shadow text-center font-semibold">
-    💅 来店
-  </Link>
-  <Link href="/reports/daily" className="bg-white p-4 rounded-xl shadow text-center font-semibold">
-    📊 日別売上
-  </Link>
-</div>
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <Link
+          href="/customers"
+          className="rounded-xl bg-white p-4 text-center font-semibold shadow"
+        >
+          👤 顧客
+        </Link>
 
+        <Link
+          href="/visits"
+          className="rounded-xl bg-white p-4 text-center font-semibold shadow"
+        >
+          💅 来店
+        </Link>
+
+        <Link
+          href="/reports/daily"
+          className="rounded-xl bg-white p-4 text-center font-semibold shadow"
+        >
+          📊 日別売上
+        </Link>
+      </div>
     </div>
   );
 }

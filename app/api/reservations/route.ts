@@ -34,6 +34,24 @@ function formatDateTimeForMail(value: string) {
   });
 }
 
+function normalizeDurationMinutes(value: unknown) {
+  const minutes = Number(value);
+
+  if (!Number.isFinite(minutes)) {
+    return 90;
+  }
+
+  if (minutes < 30) {
+    return 30;
+  }
+
+  if (minutes > 360) {
+    return 360;
+  }
+
+  return Math.round(minutes);
+}
+
 async function sendReservationNoticeMail({
   customerName,
   menu,
@@ -41,6 +59,7 @@ async function sendReservationNoticeMail({
   endIso,
   staffName,
   memo,
+  durationMinutes,
 }: {
   customerName: string;
   menu: string;
@@ -48,6 +67,7 @@ async function sendReservationNoticeMail({
   endIso: string;
   staffName: string;
   memo: string;
+  durationMinutes: number;
 }) {
   const resendApiKey = process.env.RESEND_API_KEY;
   const notifyEmail = process.env.RESERVATION_NOTIFY_EMAIL;
@@ -70,6 +90,7 @@ async function sendReservationNoticeMail({
     `メニュー：${menu}`,
     `予約開始：${formatDateTimeForMail(startIso)}`,
     `予約終了：${formatDateTimeForMail(endIso)}`,
+    `所要時間：${durationMinutes}分`,
     `担当者：${staffName}`,
     `ステータス：予約申請中`,
     "",
@@ -102,6 +123,10 @@ async function sendReservationNoticeMail({
           <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${formatDateTimeForMail(
             endIso
           )}</td>
+        </tr>
+        <tr>
+          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">所要時間</th>
+          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${durationMinutes}分</td>
         </tr>
         <tr>
           <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">担当者</th>
@@ -154,6 +179,7 @@ export async function POST(request: Request) {
     const staffId = String(body.staffId || "").trim();
     const customerId = String(body.customerId || "").trim();
     let salonId = String(body.salonId || "").trim();
+    const durationMinutes = normalizeDurationMinutes(body.durationMinutes);
 
     if (!menu) {
       return NextResponse.json(
@@ -238,7 +264,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const endAt = new Date(startAt.getTime() + 90 * 60 * 1000);
+    const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
     const startIso = startAt.toISOString();
     const endIso = endAt.toISOString();
 
@@ -332,6 +358,7 @@ export async function POST(request: Request) {
         endIso,
         staffName,
         memo,
+        durationMinutes,
       });
     } catch (mailError) {
       console.error("予約通知メール処理エラー:", mailError);

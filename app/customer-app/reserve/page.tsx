@@ -5,16 +5,90 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-const customMenuOption = "その他・自由入力";
+const customMenuId = "custom";
 
-const menuOptions = [
-  "ワンカラー",
-  "定額デザインコース",
-  "フィルインメンテナンス",
-  "ケアメニュー",
-  "開運ネイル相談",
-  "ネイルチップ相談",
-  customMenuOption,
+const mainMenus = [
+  { id: "one_color", label: "ワンカラー", price: 4500, minutes: 55 },
+  { id: "color_gradation", label: "カラーグラデーション", price: 5000, minutes: 60 },
+  { id: "french", label: "フレンチネイル", price: 6000, minutes: 90 },
+  { id: "magnet_one_color", label: "マグネットワンカラー", price: 5000, minutes: 60 },
+  { id: "free_90", label: "90分やり放題", price: 7700, minutes: 90 },
+  { id: "free_120", label: "120分やり放題", price: 9500, minutes: 120 },
+  {
+    id: "free_120_parts",
+    label: "120分やり放題 パーツ付け放題",
+    price: 11000,
+    minutes: 120,
+  },
+  {
+    id: "length_10_free_120",
+    label: "10本長さだし 120分やり放題",
+    price: 14000,
+    minutes: 180,
+  },
+  {
+    id: "length_10_free_120_parts",
+    label: "10本長さだし 120分やり放題＆パーツ付け放題",
+    price: 15500,
+    minutes: 180,
+  },
+  {
+    id: "one_color_point",
+    label: "ワンカラー＋ポイントアート2本 or ストーン付け放題",
+    price: 5500,
+    minutes: 60,
+  },
+  { id: "simple_fixed", label: "定額シンプル", price: 6000, minutes: 90 },
+  { id: "design_fixed", label: "定額デザイン", price: 7200, minutes: 100 },
+  { id: "own_off_only", label: "【自店】オフのみ", price: 3300, minutes: 45 },
+  { id: "other_off_only", label: "【他店】オフのみ", price: 3900, minutes: 60 },
+  { id: customMenuId, label: "その他・自由入力", price: 0, minutes: 90 },
+];
+
+const offOptions = [
+  { id: "none", label: "オフしない", price: 0, minutes: 0 },
+  {
+    id: "soft_free",
+    label: "【新規＆再来】ソフトジェル☆オフ無料",
+    price: 0,
+    minutes: 30,
+  },
+  {
+    id: "soft_other",
+    label: "【再来】他店ソフトジェルオフ",
+    price: 1100,
+    minutes: 30,
+  },
+  {
+    id: "scalp",
+    label: "【新規】スカルプオフ",
+    price: 1100,
+    minutes: 30,
+  },
+];
+
+const addOnOptions = [
+  {
+    id: "length_1_3",
+    label: "長さだし1〜3本",
+    price: 550,
+    priceSuffix: "〜",
+    minutes: 30,
+  },
+  {
+    id: "length_4_7",
+    label: "長さだし4〜7本",
+    price: 2200,
+    priceSuffix: "〜",
+    minutes: 30,
+  },
+  {
+    id: "length_8_10",
+    label: "長さだし8〜10本",
+    price: 4400,
+    priceSuffix: "〜",
+    minutes: 30,
+  },
 ];
 
 type MeResponse = {
@@ -36,8 +110,35 @@ const signedInNavItems = [
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
   { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
-  { key: "mypage", label: "マイ", icon: "👤", href: "" },
+  { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
+
+function formatYen(value: number) {
+  return `¥${value.toLocaleString("ja-JP")}`;
+}
+
+function formatMinutes(minutes: number) {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+
+  if (hour <= 0) {
+    return `${minute}分`;
+  }
+
+  if (minute === 0) {
+    return `${hour}時間`;
+  }
+
+  return `${hour}時間${minute}分`;
+}
+
+function findInitialMenuId(menuFromQuery: string | null) {
+  if (!menuFromQuery) return mainMenus[0].id;
+
+  const matched = mainMenus.find((menu) => menu.label === menuFromQuery);
+
+  return matched?.id || mainMenus[0].id;
+}
 
 function ReservePageContent() {
   const searchParams = useSearchParams();
@@ -45,16 +146,23 @@ function ReservePageContent() {
 
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
 
   const [customerId, setCustomerId] = useState("");
   const [salonId, setSalonId] = useState("");
 
-  const [selectedMenu, setSelectedMenu] = useState(
-    menuFromQuery || menuOptions[0]
+  const [selectedMenuId, setSelectedMenuId] = useState(
+    findInitialMenuId(menuFromQuery)
   );
   const [customMenu, setCustomMenu] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+  const [customMinutes, setCustomMinutes] = useState("90");
+
+  const [selectedOffId, setSelectedOffId] = useState("none");
+  const [selectedAddOnIds, setSelectedAddOnIds] = useState<string[]>([]);
+
   const [selectedStaffId, setSelectedStaffId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
@@ -94,30 +202,115 @@ function ReservePageContent() {
     checkAuthAndLoadStaffs();
   }, []);
 
+  const selectedMainMenu = useMemo(() => {
+    return mainMenus.find((menu) => menu.id === selectedMenuId) || mainMenus[0];
+  }, [selectedMenuId]);
+
+  const selectedOff = useMemo(() => {
+    return offOptions.find((item) => item.id === selectedOffId) || offOptions[0];
+  }, [selectedOffId]);
+
+  const selectedAddOns = useMemo(() => {
+    return addOnOptions.filter((item) => selectedAddOnIds.includes(item.id));
+  }, [selectedAddOnIds]);
+
   const selectedStaffName = useMemo(() => {
     if (!selectedStaffId) return "指名なし";
     return staffs.find((staff) => staff.id === selectedStaffId)?.name || "未設定";
   }, [selectedStaffId, staffs]);
 
   const reservationMenu = useMemo(() => {
-    if (selectedMenu === customMenuOption) {
-      return customMenu.trim();
+    const mainName =
+      selectedMenuId === customMenuId
+        ? customMenu.trim()
+        : selectedMainMenu.label;
+
+    const parts = [mainName];
+
+    if (selectedOff.id !== "none") {
+      parts.push(`オフ：${selectedOff.label}`);
     }
 
-    return selectedMenu;
-  }, [selectedMenu, customMenu]);
+    selectedAddOns.forEach((addOn) => {
+      parts.push(`追加：${addOn.label}`);
+    });
+
+    return parts.filter(Boolean).join(" / ");
+  }, [
+    selectedMenuId,
+    selectedMainMenu.label,
+    customMenu,
+    selectedOff,
+    selectedAddOns,
+  ]);
+
+  const totalPrice = useMemo(() => {
+    const mainPrice =
+      selectedMenuId === customMenuId ? Number(customPrice || 0) : selectedMainMenu.price;
+
+    const addOnPrice = selectedAddOns.reduce((sum, item) => sum + item.price, 0);
+
+    return mainPrice + selectedOff.price + addOnPrice;
+  }, [
+    selectedMenuId,
+    customPrice,
+    selectedMainMenu.price,
+    selectedOff.price,
+    selectedAddOns,
+  ]);
+
+  const totalMinutes = useMemo(() => {
+    const mainMinutes =
+      selectedMenuId === customMenuId
+        ? Number(customMinutes || 90)
+        : selectedMainMenu.minutes;
+
+    const addOnMinutes = selectedAddOns.reduce(
+      (sum, item) => sum + item.minutes,
+      0
+    );
+
+    const result = mainMinutes + selectedOff.minutes + addOnMinutes;
+
+    if (!Number.isFinite(result) || result < 30) {
+      return 90;
+    }
+
+    return result;
+  }, [
+    selectedMenuId,
+    customMinutes,
+    selectedMainMenu.minutes,
+    selectedOff.minutes,
+    selectedAddOns,
+  ]);
 
   const summaryText = useMemo(() => {
     const dateText = selectedDate || "未選択";
     const timeText = selectedTime || "未選択";
-    return `${dateText} ${timeText} / ${
-      reservationMenu || "メニュー未入力"
-    } / ${selectedStaffName}`;
+
+    return `${dateText} ${timeText} / ${reservationMenu || "メニュー未入力"} / ${selectedStaffName}`;
   }, [selectedDate, selectedTime, reservationMenu, selectedStaffName]);
 
   function showMessage(text: string) {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 2500);
+  }
+
+  function toggleAddOn(addOnId: string) {
+    setSelectedAddOnIds((current) => {
+      if (current.includes(addOnId)) {
+        return current.filter((id) => id !== addOnId);
+      }
+
+      const isLengthAddOn = addOnId.startsWith("length_");
+
+      if (isLengthAddOn) {
+        return [...current.filter((id) => !id.startsWith("length_")), addOnId];
+      }
+
+      return [...current, addOnId];
+    });
   }
 
   async function handleReserveSubmit() {
@@ -132,11 +325,24 @@ function ReservePageContent() {
     }
 
     if (!reservationMenu) {
-      showMessage("メニューを入力してください");
+      showMessage("メニューを選択してください");
       return;
     }
 
+    setSending(true);
+
     try {
+      const memoLines = [
+        selectedMainMenu.label === "開運ネイル相談" ? "AI算命学診断経由" : "",
+        `合計金額目安：${formatYen(totalPrice)}`,
+        `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
+        selectedOff.id !== "none" ? `オフ：${selectedOff.label}` : "オフ：なし",
+        selectedAddOns.length > 0
+          ? `追加：${selectedAddOns.map((item) => item.label).join("、")}`
+          : "追加：なし",
+        note.trim() ? `備考：${note.trim()}` : "",
+      ].filter(Boolean);
+
       const response = await fetch("/api/reservations", {
         method: "POST",
         headers: {
@@ -149,10 +355,8 @@ function ReservePageContent() {
           staffId: selectedStaffId,
           customerId,
           salonId,
-          memo:
-            reservationMenu === "開運ネイル相談"
-              ? `AI算命学診断経由\n${note}`
-              : note,
+          durationMinutes: totalMinutes,
+          memo: memoLines.join("\n"),
         }),
       });
 
@@ -160,15 +364,22 @@ function ReservePageContent() {
 
       if (!response.ok || !json.ok) {
         showMessage(json.error || "予約保存に失敗しました");
+        setSending(false);
         return;
       }
 
       showMessage("予約希望を受け付けました");
       setNote("");
       setCustomMenu("");
+      setCustomPrice("");
+      setCustomMinutes("90");
+      setSelectedOffId("none");
+      setSelectedAddOnIds([]);
     } catch (error) {
       console.error(error);
       showMessage("通信エラーが発生しました");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -227,7 +438,7 @@ function ReservePageContent() {
           </div>
           <h1 className="mt-2 text-2xl font-bold leading-tight">予約する</h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            ご希望の日時・メニューを入力してください。診断結果をもとにした開運ネイル相談も選べます。
+            メニュー・オフ・追加メニューから、目安時間を自動計算します。
           </p>
         </section>
 
@@ -268,34 +479,117 @@ function ReservePageContent() {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                メニュー
+                メインメニュー
               </label>
               <select
-                value={selectedMenu}
-                onChange={(e) => setSelectedMenu(e.target.value)}
+                value={selectedMenuId}
+                onChange={(e) => setSelectedMenuId(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
-                {menuOptions.map((menu) => (
-                  <option key={menu} value={menu}>
-                    {menu}
+                {mainMenus.map((menu) => (
+                  <option key={menu.id} value={menu.id}>
+                    {menu.label} / {formatYen(menu.price)} / {formatMinutes(menu.minutes)}
                   </option>
                 ))}
               </select>
 
-              {selectedMenu === customMenuOption ? (
-                <div>
-                  <label className="mb-2 mt-3 block text-sm font-medium text-slate-700">
-                    メニュー自由入力
-                  </label>
-                  <input
-                    type="text"
-                    value={customMenu}
-                    onChange={(e) => setCustomMenu(e.target.value)}
-                    placeholder="例：持ち込みデザイン、長さ出し相談、ブライダルネイル等"
-                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-                  />
+              {selectedMenuId === customMenuId ? (
+                <div className="mt-3 space-y-3 rounded-2xl bg-slate-50 p-3">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      メニュー自由入力
+                    </label>
+                    <input
+                      type="text"
+                      value={customMenu}
+                      onChange={(e) => setCustomMenu(e.target.value)}
+                      placeholder="例：持ち込みデザイン、長さ出し相談等"
+                      className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        金額目安
+                      </label>
+                      <input
+                        type="number"
+                        value={customPrice}
+                        onChange={(e) => setCustomPrice(e.target.value)}
+                        placeholder="例：7700"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        時間目安
+                      </label>
+                      <input
+                        type="number"
+                        value={customMinutes}
+                        onChange={(e) => setCustomMinutes(e.target.value)}
+                        placeholder="例：90"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
               ) : null}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                オフメニュー
+              </label>
+              <select
+                value={selectedOffId}
+                onChange={(e) => setSelectedOffId(e.target.value)}
+                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+              >
+                {offOptions.map((off) => (
+                  <option key={off.id} value={off.id}>
+                    {off.label} / +{formatYen(off.price)} / +{off.minutes}分
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="mb-2 text-sm font-medium text-slate-700">
+                追加メニュー
+              </div>
+
+              <div className="space-y-2">
+                {addOnOptions.map((addOn) => {
+                  const checked = selectedAddOnIds.includes(addOn.id);
+
+                  return (
+                    <button
+                      key={addOn.id}
+                      type="button"
+                      onClick={() => toggleAddOn(addOn.id)}
+                      className={`w-full rounded-2xl border px-3 py-3 text-left text-sm ${
+                        checked
+                          ? "border-purple-300 bg-purple-50 text-purple-800"
+                          : "border-slate-200 bg-white text-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-bold">{addOn.label}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            +{formatYen(addOn.price)}
+                            {addOn.priceSuffix} / +{addOn.minutes}分
+                          </div>
+                        </div>
+                        <div className="text-lg">{checked ? "☑" : "□"}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div>
@@ -324,7 +618,7 @@ function ReservePageContent() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={4}
-                placeholder="例：診断結果のラッキーカラーを使いたい、爪が薄い、オフィス向けにしたい等"
+                placeholder="例：爪が薄い、オフィス向けにしたい、色味相談したい等"
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               />
             </div>
@@ -334,8 +628,8 @@ function ReservePageContent() {
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div className="text-base font-bold text-slate-900">予約確認</div>
-            <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-600">
-              確認
+            <div className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-600">
+              自動計算
             </div>
           </div>
 
@@ -344,6 +638,28 @@ function ReservePageContent() {
             <div className="mt-2 text-sm font-bold leading-6 text-slate-900">
               {summaryText}
             </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-white p-3">
+                <div className="text-xs text-slate-500">合計金額目安</div>
+                <div className="mt-1 text-lg font-black text-slate-900">
+                  {formatYen(totalPrice)}
+                  {selectedAddOns.some((item) => item.priceSuffix) ? "〜" : ""}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white p-3">
+                <div className="text-xs text-slate-500">所要時間目安</div>
+                <div className="mt-1 text-lg font-black text-slate-900">
+                  {formatMinutes(totalMinutes)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 text-xs leading-5 text-slate-500">
+              カレンダーには、この所要時間で予約枠が反映されます。
+            </div>
+
             {note.trim() ? (
               <div className="mt-3 text-sm leading-6 text-slate-600">
                 {note}
@@ -354,9 +670,10 @@ function ReservePageContent() {
           <button
             type="button"
             onClick={handleReserveSubmit}
-            className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+            disabled={sending}
+            className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
-            この内容で予約希望を送る
+            {sending ? "送信中..." : "この内容で予約希望を送る"}
           </button>
 
           <div className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
@@ -390,33 +707,19 @@ function ReservePageContent() {
           {signedInNavItems.map((item) => {
             const isActive = item.key === "reserve";
 
-            if (item.href) {
-              return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  className={`flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium transition ${
-                    isActive
-                      ? "bg-rose-50 text-rose-500"
-                      : "text-gray-500 hover:text-gray-800"
-                  }`}
-                >
-                  <span className="text-lg leading-none">{item.icon}</span>
-                  <span className="mt-1 leading-none">{item.label}</span>
-                </Link>
-              );
-            }
-
             return (
-              <button
+              <Link
                 key={item.key}
-                type="button"
-                onClick={() => showMessage(`${item.label} 画面は次段階で実装します`)}
-                className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
+                href={item.href}
+                className={`flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium transition ${
+                  isActive
+                    ? "bg-rose-50 text-rose-500"
+                    : "text-gray-500 hover:text-gray-800"
+                }`}
               >
                 <span className="text-lg leading-none">{item.icon}</span>
                 <span className="mt-1 leading-none">{item.label}</span>
-              </button>
+              </Link>
             );
           })}
         </div>
