@@ -40,8 +40,16 @@ type StaffRow = {
   name: string | null;
 };
 
+type GalleryReference = {
+  designId: string | null;
+  photoUrl: string | null;
+  menuName: string | null;
+  color: string | null;
+};
+
 type NormalizedReservation = {
   isAiDiagnosis: boolean;
+  galleryReference: GalleryReference;
   id: string;
   customerId: string | null;
   customerName: string;
@@ -281,6 +289,47 @@ function normalizeDurationMinutes(row: ReservationRow) {
   return 90;
 }
 
+function extractLineValue(memo: string, label: string) {
+  const line = memo
+    .split("\n")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(label));
+
+  if (!line) return null;
+
+  const value = line.replace(label, "").trim();
+
+  return value || null;
+}
+
+function extractGalleryReference(memo: string): GalleryReference {
+  if (!memo.includes("Aily Gallery参考デザインあり")) {
+    return {
+      designId: null,
+      photoUrl: null,
+      menuName: null,
+      color: null,
+    };
+  }
+
+  return {
+    designId: extractLineValue(memo, "参考デザインID："),
+    photoUrl: extractLineValue(memo, "参考写真URL："),
+    menuName: extractLineValue(memo, "参考メニュー："),
+    color: extractLineValue(memo, "参考カラー："),
+  };
+}
+
+function buildDisplayMemo(memo: string) {
+  if (!memo) return "なし";
+
+  return memo
+    .split("\n")
+    .filter((line) => !line.startsWith("参考写真URL："))
+    .join("\n")
+    .trim();
+}
+
 function hasOverlap(a: NormalizedReservation, b: NormalizedReservation) {
   if (a.id === b.id) return false;
   if (!a.reservationDate || !b.reservationDate) return false;
@@ -420,11 +469,15 @@ export default function ReservationsPageClient() {
         ? staffMap[staffId] || "未設定"
         : "未設定";
 
+      const memo = normalizeMemo(reservation);
+      const galleryReference = extractGalleryReference(memo);
+
       return {
         id: reservation.id,
         isAiDiagnosis:
           normalizeMenuName(reservation) === "開運ネイル相談" ||
-          normalizeMemo(reservation).includes("AI算命学診断経由"),
+          memo.includes("AI算命学診断経由"),
+        galleryReference,
         customerId,
         customerName,
         staffId,
@@ -435,7 +488,7 @@ export default function ReservationsPageClient() {
         menuName: normalizeMenuName(reservation),
         durationMinutes: normalizeDurationMinutes(reservation),
         source: normalizeSource(reservation),
-        memo: normalizeMemo(reservation),
+        memo,
         createdAt:
           typeof reservation.created_at === "string"
             ? reservation.created_at
@@ -500,6 +553,10 @@ export default function ReservationsPageClient() {
 
   const aiDiagnosisCount = filteredReservations.filter(
     (item) => item.isAiDiagnosis
+  ).length;
+
+  const galleryReferenceCount = filteredReservations.filter(
+    (item) => item.galleryReference.designId || item.galleryReference.photoUrl
   ).length;
 
   const completedCount = filteredReservations.filter(
@@ -624,12 +681,12 @@ export default function ReservationsPageClient() {
             <div className="mt-2 text-sm text-slate-500">算命学診断経由</div>
           </div>
 
-          <div className="rounded-3xl border border-emerald-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">完了件数</div>
-            <div className="mt-2 text-2xl font-bold text-emerald-600">
-              {completedCount.toLocaleString()}件
+          <div className="rounded-3xl border border-pink-100 bg-white p-4 shadow-sm">
+            <div className="text-sm text-slate-500">Gallery予約</div>
+            <div className="mt-2 text-2xl font-bold text-pink-600">
+              {galleryReferenceCount.toLocaleString()}件
             </div>
-            <div className="mt-2 text-sm text-slate-500">来店完了済み</div>
+            <div className="mt-2 text-sm text-slate-500">参考デザインあり</div>
           </div>
         </div>
 
@@ -709,6 +766,8 @@ export default function ReservationsPageClient() {
             {filteredReservations.map((item) => {
               const isUpdating = updatingId === item.id;
               const isOverlap = overlapIds.has(item.id);
+              const galleryReference = item.galleryReference;
+              const displayMemo = buildDisplayMemo(item.memo);
 
               return (
                 <div
@@ -720,7 +779,7 @@ export default function ReservationsPageClient() {
                   }`}
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <div className="text-lg font-bold text-slate-900">
                           {item.customerName}
@@ -741,6 +800,13 @@ export default function ReservationsPageClient() {
                         {item.isAiDiagnosis ? (
                           <span className="rounded-full bg-purple-100 px-3 py-1 text-xs font-bold text-purple-700">
                             ✨ AI診断
+                          </span>
+                        ) : null}
+
+                        {galleryReference.designId ||
+                        galleryReference.photoUrl ? (
+                          <span className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
+                            💅 Gallery
                           </span>
                         ) : null}
 
@@ -780,9 +846,66 @@ export default function ReservationsPageClient() {
                           {item.durationMinutes}分
                         </div>
 
+                        {galleryReference.designId ||
+                        galleryReference.photoUrl ? (
+                          <div className="rounded-3xl border border-pink-100 bg-pink-50 p-3">
+                            <div className="text-sm font-bold text-pink-700">
+                              Aily Gallery参考デザイン
+                            </div>
+
+                            {galleryReference.photoUrl ? (
+                              <a
+                                href={galleryReference.photoUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-3 block overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
+                              >
+                                <img
+                                  src={galleryReference.photoUrl}
+                                  alt="Aily Gallery参考デザイン"
+                                  className="h-56 w-full object-cover"
+                                />
+                              </a>
+                            ) : (
+                              <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs text-slate-500">
+                                参考写真URLは保存されていません。
+                              </div>
+                            )}
+
+                            <div className="mt-3 grid gap-1 text-xs leading-5 text-pink-800">
+                              {galleryReference.designId ? (
+                                <div>
+                                  <span className="font-bold">
+                                    参考デザインID：
+                                  </span>
+                                  {galleryReference.designId}
+                                </div>
+                              ) : null}
+
+                              {galleryReference.menuName ? (
+                                <div>
+                                  <span className="font-bold">
+                                    参考メニュー：
+                                  </span>
+                                  {galleryReference.menuName}
+                                </div>
+                              ) : null}
+
+                              {galleryReference.color ? (
+                                <div>
+                                  <span className="font-bold">参考カラー：</span>
+                                  {galleryReference.color}
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
+
                         <div>
                           <span className="font-medium">メモ:</span>{" "}
-                          {item.memo || "なし"}
+                          <span className="whitespace-pre-wrap">
+                            {displayMemo || "なし"}
+                          </span>
                         </div>
                       </div>
                     </div>

@@ -105,6 +105,21 @@ type StaffRow = {
   name: string | null;
 };
 
+type GalleryVisitRow = {
+  id: string;
+  menu_name: string | null;
+  menu: string | null;
+  color: string | null;
+  visit_date: string | null;
+};
+
+type GalleryPhotoRow = {
+  id: string;
+  visit_id: string;
+  image_url: string | null;
+  created_at: string | null;
+};
+
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -140,6 +155,13 @@ function findInitialMenuId(menuFromQuery: string | null) {
   return matched?.id || mainMenus[0].id;
 }
 
+function getGalleryMenuName(visit: GalleryVisitRow | null) {
+  if (!visit) return "";
+  if (visit.menu_name?.trim()) return visit.menu_name.trim();
+  if (visit.menu?.trim()) return visit.menu.trim();
+  return "";
+}
+
 function ReservePageContent() {
   const searchParams = useSearchParams();
   const menuFromQuery = searchParams.get("menu");
@@ -153,6 +175,11 @@ function ReservePageContent() {
 
   const [customerId, setCustomerId] = useState("");
   const [salonId, setSalonId] = useState("");
+
+  const [galleryPhotoUrl, setGalleryPhotoUrl] = useState("");
+  const [galleryMenuName, setGalleryMenuName] = useState("");
+  const [galleryColor, setGalleryColor] = useState("");
+  const [galleryLoading, setGalleryLoading] = useState(false);
 
   const [selectedMenuId, setSelectedMenuId] = useState(
     findInitialMenuId(menuFromQuery)
@@ -202,6 +229,62 @@ function ReservePageContent() {
 
     checkAuthAndLoadStaffs();
   }, []);
+
+  useEffect(() => {
+    async function fetchGalleryReference() {
+      if (!designId) {
+        setGalleryPhotoUrl("");
+        setGalleryMenuName("");
+        setGalleryColor("");
+        return;
+      }
+
+      setGalleryLoading(true);
+
+      try {
+        const { data: photoData, error: photoError } = await supabase
+          .from("visit_photos")
+          .select("id, visit_id, image_url, created_at")
+          .eq("visit_id", designId)
+          .not("image_url", "is", null)
+          .order("created_at", { ascending: true })
+          .limit(1);
+
+        if (photoError) {
+          console.error("gallery photo fetch error:", photoError.message);
+          setGalleryPhotoUrl("");
+        } else {
+          const firstPhoto = ((photoData || []) as GalleryPhotoRow[])[0] || null;
+          setGalleryPhotoUrl(firstPhoto?.image_url || "");
+        }
+
+        const { data: visitData, error: visitError } = await supabase
+          .from("visits")
+          .select("id, menu_name, menu, color, visit_date")
+          .eq("id", designId)
+          .maybeSingle();
+
+        if (visitError) {
+          console.error("gallery visit fetch error:", visitError.message);
+          setGalleryMenuName("");
+          setGalleryColor("");
+        } else {
+          const visit = (visitData as GalleryVisitRow | null) || null;
+          setGalleryMenuName(getGalleryMenuName(visit));
+          setGalleryColor(visit?.color?.trim() || "");
+        }
+      } catch (error) {
+        console.error("gallery reference fetch error:", error);
+        setGalleryPhotoUrl("");
+        setGalleryMenuName("");
+        setGalleryColor("");
+      } finally {
+        setGalleryLoading(false);
+      }
+    }
+
+    fetchGalleryReference();
+  }, [designId]);
 
   const selectedMainMenu = useMemo(() => {
     return mainMenus.find((menu) => menu.id === selectedMenuId) || mainMenus[0];
@@ -346,8 +429,16 @@ function ReservePageContent() {
   const galleryReferenceText = useMemo(() => {
     if (!designId) return "";
 
-    return `Aily Gallery参考デザインあり\n参考デザインID：${designId}`;
-  }, [designId]);
+    return [
+      "Aily Gallery参考デザインあり",
+      `参考デザインID：${designId}`,
+      galleryPhotoUrl ? `参考写真URL：${galleryPhotoUrl}` : "",
+      galleryMenuName ? `参考メニュー：${galleryMenuName}` : "",
+      galleryColor ? `参考カラー：${galleryColor}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }, [designId, galleryPhotoUrl, galleryMenuName, galleryColor]);
 
   const summaryText = useMemo(() => {
     const dateText = selectedDate || "未選択";
@@ -523,11 +614,47 @@ function ReservePageContent() {
               Aily Galleryから選択したデザインがあります
             </div>
             <p className="mt-2 text-sm leading-6 text-rose-700">
-              この予約には、ギャラリーで選んだ参考デザインIDを自動で残します。
-              当日スタッフが確認できるようになります。
+              この予約には、ギャラリーで選んだ参考デザインを自動で残します。
+              当日スタッフが写真を確認できます。
             </p>
-            <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold text-slate-600">
+
+            {galleryLoading ? (
+              <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold text-slate-500">
+                参考写真を読み込み中...
+              </div>
+            ) : galleryPhotoUrl ? (
+              <a
+                href={galleryPhotoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 block overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
+              >
+                <img
+                  src={galleryPhotoUrl}
+                  alt="Aily Gallery参考デザイン"
+                  className="h-64 w-full object-cover"
+                />
+              </a>
+            ) : (
+              <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold text-slate-500">
+                参考写真が見つかりませんでした。
+              </div>
+            )}
+
+            <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold leading-5 text-slate-600">
               参考デザインID：{designId}
+              {galleryMenuName ? (
+                <>
+                  <br />
+                  参考メニュー：{galleryMenuName}
+                </>
+              ) : null}
+              {galleryColor ? (
+                <>
+                  <br />
+                  参考カラー：{galleryColor}
+                </>
+              ) : null}
             </div>
           </section>
         ) : null}
@@ -739,6 +866,12 @@ function ReservePageContent() {
                 Aily Gallery参考デザインあり
                 <br />
                 参考デザインID：{designId}
+                {galleryPhotoUrl ? (
+                  <>
+                    <br />
+                    参考写真URL：予約メモに保存されます
+                  </>
+                ) : null}
               </div>
             ) : null}
 
