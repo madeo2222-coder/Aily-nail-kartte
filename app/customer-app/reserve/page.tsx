@@ -219,13 +219,39 @@ function ReservePageContent() {
     return staffs.find((staff) => staff.id === selectedStaffId)?.name || "未設定";
   }, [selectedStaffId, staffs]);
 
-  const reservationMenu = useMemo(() => {
-    const mainName =
-      selectedMenuId === customMenuId
-        ? customMenu.trim()
-        : selectedMainMenu.label;
+  const mainMenuName = useMemo(() => {
+    if (selectedMenuId === customMenuId) {
+      return customMenu.trim();
+    }
 
-    const parts = [mainName];
+    return selectedMainMenu.label;
+  }, [selectedMenuId, selectedMainMenu.label, customMenu]);
+
+  const mainMenuPrice = useMemo(() => {
+    if (selectedMenuId === customMenuId) {
+      const price = Number(customPrice || 0);
+      return Number.isFinite(price) ? price : 0;
+    }
+
+    return selectedMainMenu.price;
+  }, [selectedMenuId, customPrice, selectedMainMenu.price]);
+
+  const mainMenuMinutes = useMemo(() => {
+    if (selectedMenuId === customMenuId) {
+      const minutes = Number(customMinutes || 90);
+
+      if (!Number.isFinite(minutes) || minutes < 30) {
+        return 90;
+      }
+
+      return minutes;
+    }
+
+    return selectedMainMenu.minutes;
+  }, [selectedMenuId, customMinutes, selectedMainMenu.minutes]);
+
+  const reservationMenu = useMemo(() => {
+    const parts = [mainMenuName];
 
     if (selectedOff.id !== "none") {
       parts.push(`オフ：${selectedOff.label}`);
@@ -236,60 +262,93 @@ function ReservePageContent() {
     });
 
     return parts.filter(Boolean).join(" / ");
-  }, [
-    selectedMenuId,
-    selectedMainMenu.label,
-    customMenu,
-    selectedOff,
-    selectedAddOns,
-  ]);
+  }, [mainMenuName, selectedOff, selectedAddOns]);
 
   const totalPrice = useMemo(() => {
-    const mainPrice =
-      selectedMenuId === customMenuId ? Number(customPrice || 0) : selectedMainMenu.price;
-
     const addOnPrice = selectedAddOns.reduce((sum, item) => sum + item.price, 0);
 
-    return mainPrice + selectedOff.price + addOnPrice;
-  }, [
-    selectedMenuId,
-    customPrice,
-    selectedMainMenu.price,
-    selectedOff.price,
-    selectedAddOns,
-  ]);
+    return mainMenuPrice + selectedOff.price + addOnPrice;
+  }, [mainMenuPrice, selectedOff.price, selectedAddOns]);
 
   const totalMinutes = useMemo(() => {
-    const mainMinutes =
-      selectedMenuId === customMenuId
-        ? Number(customMinutes || 90)
-        : selectedMainMenu.minutes;
-
     const addOnMinutes = selectedAddOns.reduce(
       (sum, item) => sum + item.minutes,
       0
     );
 
-    const result = mainMinutes + selectedOff.minutes + addOnMinutes;
+    const result = mainMenuMinutes + selectedOff.minutes + addOnMinutes;
 
     if (!Number.isFinite(result) || result < 30) {
       return 90;
     }
 
     return result;
-  }, [
-    selectedMenuId,
-    customMinutes,
-    selectedMainMenu.minutes,
-    selectedOff.minutes,
-    selectedAddOns,
-  ]);
+  }, [mainMenuMinutes, selectedOff.minutes, selectedAddOns]);
+
+  const timeBreakdown = useMemo(() => {
+    const items = [
+      {
+        label: mainMenuName || "メインメニュー未入力",
+        minutes: mainMenuMinutes,
+      },
+    ];
+
+    if (selectedOff.id !== "none") {
+      items.push({
+        label: selectedOff.label,
+        minutes: selectedOff.minutes,
+      });
+    }
+
+    selectedAddOns.forEach((addOn) => {
+      items.push({
+        label: addOn.label,
+        minutes: addOn.minutes,
+      });
+    });
+
+    return items.filter((item) => item.minutes > 0);
+  }, [mainMenuName, mainMenuMinutes, selectedOff, selectedAddOns]);
+
+  const priceBreakdown = useMemo(() => {
+    const items = [
+      {
+        label: mainMenuName || "メインメニュー未入力",
+        price: mainMenuPrice,
+        priceSuffix: "",
+      },
+    ];
+
+    if (selectedOff.id !== "none") {
+      items.push({
+        label: selectedOff.label,
+        price: selectedOff.price,
+        priceSuffix: "",
+      });
+    }
+
+    selectedAddOns.forEach((addOn) => {
+      items.push({
+        label: addOn.label,
+        price: addOn.price,
+        priceSuffix: addOn.priceSuffix,
+      });
+    });
+
+    return items;
+  }, [mainMenuName, mainMenuPrice, selectedOff, selectedAddOns]);
+
+  const hasPriceSuffix = useMemo(() => {
+    return priceBreakdown.some((item) => item.priceSuffix);
+  }, [priceBreakdown]);
 
   const summaryText = useMemo(() => {
     const dateText = selectedDate || "未選択";
     const timeText = selectedTime || "未選択";
 
-    return `${dateText} ${timeText} / ${reservationMenu || "メニュー未入力"} / ${selectedStaffName}`;
+    return `${dateText} ${timeText} / ${
+      reservationMenu || "メニュー未入力"
+    } / ${selectedStaffName}`;
   }, [selectedDate, selectedTime, reservationMenu, selectedStaffName]);
 
   function showMessage(text: string) {
@@ -332,15 +391,24 @@ function ReservePageContent() {
     setSending(true);
 
     try {
+      const timeLines = timeBreakdown.map(
+        (item) => `・${item.label}：${item.minutes}分`
+      );
+
+      const priceLines = priceBreakdown.map(
+        (item) =>
+          `・${item.label}：${formatYen(item.price)}${item.priceSuffix || ""}`
+      );
+
       const memoLines = [
-  `合計金額目安：${formatYen(totalPrice)}`,
-  `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
-  selectedOff.id !== "none" ? `オフ：${selectedOff.label}` : "オフ：なし",
-  selectedAddOns.length > 0
-    ? `追加：${selectedAddOns.map((item) => item.label).join("、")}`
-    : "追加：なし",
-  note.trim() ? `備考：${note.trim()}` : "",
-].filter(Boolean);
+        `合計金額目安：${formatYen(totalPrice)}${hasPriceSuffix ? "〜" : ""}`,
+        `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
+        "時間内訳",
+        ...timeLines,
+        "金額内訳",
+        ...priceLines,
+        note.trim() ? `備考：${note.trim()}` : "",
+      ].filter(Boolean);
 
       const response = await fetch("/api/reservations", {
         method: "POST",
@@ -643,7 +711,7 @@ function ReservePageContent() {
                 <div className="text-xs text-slate-500">合計金額目安</div>
                 <div className="mt-1 text-lg font-black text-slate-900">
                   {formatYen(totalPrice)}
-                  {selectedAddOns.some((item) => item.priceSuffix) ? "〜" : ""}
+                  {hasPriceSuffix ? "〜" : ""}
                 </div>
               </div>
 
@@ -652,6 +720,48 @@ function ReservePageContent() {
                 <div className="mt-1 text-lg font-black text-slate-900">
                   {formatMinutes(totalMinutes)}
                 </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-white p-3">
+              <div className="text-sm font-bold text-slate-900">時間内訳</div>
+              <div className="mt-2 space-y-1 text-sm text-slate-600">
+                {timeBreakdown.map((item) => (
+                  <div
+                    key={`${item.label}-${item.minutes}`}
+                    className="flex justify-between gap-3"
+                  >
+                    <span>{item.label}</span>
+                    <span className="font-bold text-slate-900">
+                      {item.minutes}分
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-2xl bg-rose-50/70 p-3">
+              <div className="text-sm font-bold text-slate-900">金額内訳</div>
+              <div className="mt-2 space-y-1 text-sm text-slate-600">
+                {priceBreakdown.map((item) => (
+                  <div
+                    key={`${item.label}-${item.price}`}
+                    className="flex justify-between gap-3"
+                  >
+                    <span>{item.label}</span>
+                    <span className="font-bold text-slate-900">
+                      {formatYen(item.price)}
+                      {item.priceSuffix}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex justify-between border-t border-rose-100 pt-3 text-sm font-bold text-slate-900">
+                <span>合計金額目安</span>
+                <span>
+                  {formatYen(totalPrice)}
+                  {hasPriceSuffix ? "〜" : ""}
+                </span>
               </div>
             </div>
 
