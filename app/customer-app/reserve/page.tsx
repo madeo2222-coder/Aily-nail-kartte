@@ -108,8 +108,8 @@ type StaffRow = {
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
+  { key: "gallery", label: "ギャラリー", icon: "💅", href: "/customer-app/gallery" },
   { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
-  { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
   { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
 
