@@ -333,15 +333,14 @@ function ReservePageContent() {
 
     try {
       const memoLines = [
-        selectedMainMenu.label === "開運ネイル相談" ? "AI算命学診断経由" : "",
-        `合計金額目安：${formatYen(totalPrice)}`,
-        `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
-        selectedOff.id !== "none" ? `オフ：${selectedOff.label}` : "オフ：なし",
-        selectedAddOns.length > 0
-          ? `追加：${selectedAddOns.map((item) => item.label).join("、")}`
-          : "追加：なし",
-        note.trim() ? `備考：${note.trim()}` : "",
-      ].filter(Boolean);
+  `合計金額目安：${formatYen(totalPrice)}`,
+  `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
+  selectedOff.id !== "none" ? `オフ：${selectedOff.label}` : "オフ：なし",
+  selectedAddOns.length > 0
+    ? `追加：${selectedAddOns.map((item) => item.label).join("、")}`
+    : "追加：なし",
+  note.trim() ? `備考：${note.trim()}` : "",
+].filter(Boolean);
 
       const response = await fetch("/api/reservations", {
         method: "POST",
