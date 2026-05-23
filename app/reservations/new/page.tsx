@@ -347,6 +347,83 @@ export default function ReservationNewPage() {
     return total;
   }, [normalMenuMinutes, selectedOff.minutes, selectedAddOn.minutes]);
 
+  const timeBreakdown = useMemo(() => {
+    const mainLabel =
+      selectedMenuId === CUSTOM_MENU_ID
+        ? customMenu.trim() || "その他・自由入力"
+        : selectedMainMenu.label;
+
+    const items = [
+      {
+        label: mainLabel,
+        minutes: normalMenuMinutes,
+      },
+    ];
+
+    if (selectedOff.id !== "none") {
+      items.push({
+        label: selectedOff.label,
+        minutes: selectedOff.minutes,
+      });
+    }
+
+    if (selectedAddOn.id !== "none") {
+      items.push({
+        label: selectedAddOn.label,
+        minutes: selectedAddOn.minutes,
+      });
+    }
+
+    return items.filter((item) => item.minutes > 0);
+  }, [
+    selectedMenuId,
+    customMenu,
+    selectedMainMenu.label,
+    normalMenuMinutes,
+    selectedOff,
+    selectedAddOn,
+  ]);
+
+  const priceBreakdown = useMemo(() => {
+    const mainLabel =
+      selectedMenuId === CUSTOM_MENU_ID
+        ? customMenu.trim() || "その他・自由入力"
+        : selectedMainMenu.label;
+
+    const items = [
+      {
+        label: mainLabel,
+        price: normalMenuPrice,
+        priceSuffix: "",
+      },
+    ];
+
+    if (selectedOff.id !== "none") {
+      items.push({
+        label: selectedOff.label,
+        price: selectedOff.price,
+        priceSuffix: "",
+      });
+    }
+
+    if (selectedAddOn.id !== "none") {
+      items.push({
+        label: selectedAddOn.label,
+        price: selectedAddOn.price,
+        priceSuffix: selectedAddOn.priceSuffix,
+      });
+    }
+
+    return items;
+  }, [
+    selectedMenuId,
+    customMenu,
+    selectedMainMenu.label,
+    normalMenuPrice,
+    selectedOff,
+    selectedAddOn,
+  ]);
+
   useEffect(() => {
     if (reservationMode === "normal") {
       setDurationMinutes(calculatedMinutes);
@@ -388,13 +465,24 @@ export default function ReservationNewPage() {
       return memo.trim() || null;
     }
 
+    const timeLines = timeBreakdown.map(
+      (item) => `・${item.label}：${item.minutes}分`
+    );
+
+    const priceLines = priceBreakdown.map(
+      (item) =>
+        `・${item.label}：${formatYen(item.price)}${item.priceSuffix || ""}`
+    );
+
     const lines = [
       `合計金額目安：${formatYen(calculatedPrice)}${
         selectedAddOn.priceSuffix ? selectedAddOn.priceSuffix : ""
       }`,
       `所要時間目安：${formatMinutes(calculatedMinutes)}（${calculatedMinutes}分）`,
-      selectedOff.id !== "none" ? `オフ：${selectedOff.label}` : "オフ：なし",
-      selectedAddOn.id !== "none" ? `追加：${selectedAddOn.label}` : "追加：なし",
+      "時間内訳",
+      ...timeLines,
+      "金額内訳",
+      ...priceLines,
       memo.trim() ? `補足メモ：${memo.trim()}` : "",
     ].filter(Boolean);
 
@@ -404,8 +492,9 @@ export default function ReservationNewPage() {
     memo,
     calculatedPrice,
     calculatedMinutes,
-    selectedOff,
-    selectedAddOn,
+    selectedAddOn.priceSuffix,
+    timeBreakdown,
+    priceBreakdown,
   ]);
 
   function handleSalonChange(nextSalonId: string) {
@@ -981,13 +1070,57 @@ export default function ReservationNewPage() {
                   <div>メニュー/ブロック：{displayMenu || "未入力"}</div>
                   <div>日付：{date || "未選択"}</div>
                   <div>開始：{startTime}</div>
-                  <div>所要時間：{formatMinutes(durationMinutes)}</div>
+                  <div>
+                    所要時間：{formatMinutes(durationMinutes)}（
+                    {durationMinutes}分）
+                  </div>
+
                   {reservationMode === "normal" ? (
-                    <div>
-                      合計金額目安：{formatYen(calculatedPrice)}
-                      {selectedAddOn.priceSuffix}
-                    </div>
+                    <>
+                      <div className="mt-3 rounded-2xl bg-slate-50 p-3">
+                        <div className="font-bold text-slate-900">時間内訳</div>
+                        <div className="mt-2 space-y-1">
+                          {timeBreakdown.map((item) => (
+                            <div
+                              key={`${item.label}-${item.minutes}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span>{item.label}</span>
+                              <span className="font-bold text-slate-900">
+                                {item.minutes}分
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-2 rounded-2xl bg-rose-50/60 p-3">
+                        <div className="font-bold text-slate-900">金額内訳</div>
+                        <div className="mt-2 space-y-1">
+                          {priceBreakdown.map((item) => (
+                            <div
+                              key={`${item.label}-${item.price}`}
+                              className="flex justify-between gap-3"
+                            >
+                              <span>{item.label}</span>
+                              <span className="font-bold text-slate-900">
+                                {formatYen(item.price)}
+                                {item.priceSuffix}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 flex justify-between border-t border-rose-100 pt-3 font-bold text-slate-900">
+                          <span>合計金額目安</span>
+                          <span>
+                            {formatYen(calculatedPrice)}
+                            {selectedAddOn.priceSuffix}
+                          </span>
+                        </div>
+                      </div>
+                    </>
                   ) : null}
+
                   <div>
                     登録元：
                     {reservationMode === "external" ? externalSource : "手入力"}
