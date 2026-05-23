@@ -115,16 +115,16 @@ const signedInNavItems = [
     href: "/customer-app/reserve",
   },
   {
+    key: "gallery",
+    label: "ギャラリー",
+    icon: "💅",
+    href: "/customer-app/gallery",
+  },
+  {
     key: "diagnosis",
     label: "診断",
     icon: "✨",
     href: "/customer-app/sanmeigaku",
-  },
-  {
-    key: "history",
-    label: "履歴",
-    icon: "📝",
-    href: "/customer-app/history",
   },
   {
     key: "mypage",
