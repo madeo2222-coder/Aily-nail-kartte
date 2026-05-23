@@ -143,6 +143,7 @@ function findInitialMenuId(menuFromQuery: string | null) {
 function ReservePageContent() {
   const searchParams = useSearchParams();
   const menuFromQuery = searchParams.get("menu");
+  const designId = searchParams.get("design");
 
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -342,6 +343,12 @@ function ReservePageContent() {
     return priceBreakdown.some((item) => item.priceSuffix);
   }, [priceBreakdown]);
 
+  const galleryReferenceText = useMemo(() => {
+    if (!designId) return "";
+
+    return `Aily Gallery参考デザインあり\n参考デザインID：${designId}`;
+  }, [designId]);
+
   const summaryText = useMemo(() => {
     const dateText = selectedDate || "未選択";
     const timeText = selectedTime || "未選択";
@@ -401,6 +408,7 @@ function ReservePageContent() {
       );
 
       const memoLines = [
+        galleryReferenceText,
         `合計金額目安：${formatYen(totalPrice)}${hasPriceSuffix ? "〜" : ""}`,
         `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
         "時間内訳",
@@ -509,6 +517,21 @@ function ReservePageContent() {
           </p>
         </section>
 
+        {designId ? (
+          <section className="rounded-3xl border border-rose-100 bg-rose-50 p-4 shadow-sm">
+            <div className="text-sm font-bold text-rose-700">
+              Aily Galleryから選択したデザインがあります
+            </div>
+            <p className="mt-2 text-sm leading-6 text-rose-700">
+              この予約には、ギャラリーで選んだ参考デザインIDを自動で残します。
+              当日スタッフが確認できるようになります。
+            </p>
+            <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-xs font-bold text-slate-600">
+              参考デザインID：{designId}
+            </div>
+          </section>
+        ) : null}
+
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">予約内容</div>
 
@@ -555,7 +578,8 @@ function ReservePageContent() {
               >
                 {mainMenus.map((menu) => (
                   <option key={menu.id} value={menu.id}>
-                    {menu.label} / {formatYen(menu.price)} / {formatMinutes(menu.minutes)}
+                    {menu.label} / {formatYen(menu.price)} /{" "}
+                    {formatMinutes(menu.minutes)}
                   </option>
                 ))}
               </select>
@@ -685,7 +709,11 @@ function ReservePageContent() {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 rows={4}
-                placeholder="例：爪が薄い、オフィス向けにしたい、色味相談したい等"
+                placeholder={
+                  designId
+                    ? "例：ギャラリーの雰囲気に近づけたい、色味を変えたい等"
+                    : "例：爪が薄い、オフィス向けにしたい、色味相談したい等"
+                }
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               />
             </div>
@@ -705,6 +733,14 @@ function ReservePageContent() {
             <div className="mt-2 text-sm font-bold leading-6 text-slate-900">
               {summaryText}
             </div>
+
+            {designId ? (
+              <div className="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold leading-5 text-rose-700">
+                Aily Gallery参考デザインあり
+                <br />
+                参考デザインID：{designId}
+              </div>
+            ) : null}
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               <div className="rounded-2xl bg-white p-3">
