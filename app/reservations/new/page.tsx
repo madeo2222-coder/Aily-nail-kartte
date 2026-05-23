@@ -37,7 +37,94 @@ const EXTERNAL_SOURCE_OPTIONS = [
   "その他ブロック",
 ] as const;
 
-const DURATION_OPTIONS = [30, 45, 60, 75, 90, 120, 150, 180];
+const DURATION_OPTIONS = [30, 45, 60, 75, 90, 120, 150, 180, 210, 240];
+
+const CUSTOM_MENU_ID = "custom";
+
+const MAIN_MENU_OPTIONS = [
+  { id: "one_color", label: "ワンカラー", price: 4500, minutes: 55 },
+  { id: "color_gradation", label: "カラーグラデーション", price: 5000, minutes: 60 },
+  { id: "french", label: "フレンチネイル", price: 6000, minutes: 90 },
+  { id: "magnet_one_color", label: "マグネットワンカラー", price: 5000, minutes: 60 },
+  { id: "free_90", label: "90分やり放題", price: 7700, minutes: 90 },
+  { id: "free_120", label: "120分やり放題", price: 9500, minutes: 120 },
+  {
+    id: "free_120_parts",
+    label: "120分やり放題 パーツ付け放題",
+    price: 11000,
+    minutes: 120,
+  },
+  {
+    id: "length_10_free_120",
+    label: "10本長さだし 120分やり放題",
+    price: 14000,
+    minutes: 180,
+  },
+  {
+    id: "length_10_free_120_parts",
+    label: "10本長さだし 120分やり放題＆パーツ付け放題",
+    price: 15500,
+    minutes: 180,
+  },
+  {
+    id: "one_color_point",
+    label: "ワンカラー＋ポイントアート2本 or ストーン付け放題",
+    price: 5500,
+    minutes: 60,
+  },
+  { id: "simple_fixed", label: "定額シンプル", price: 6000, minutes: 90 },
+  { id: "design_fixed", label: "定額デザイン", price: 7200, minutes: 100 },
+  { id: "own_off_only", label: "【自店】オフのみ", price: 3300, minutes: 45 },
+  { id: "other_off_only", label: "【他店】オフのみ", price: 3900, minutes: 60 },
+  { id: CUSTOM_MENU_ID, label: "その他・自由入力", price: 0, minutes: 90 },
+];
+
+const OFF_OPTIONS = [
+  { id: "none", label: "オフしない", price: 0, minutes: 0 },
+  {
+    id: "soft_free",
+    label: "【新規＆再来】ソフトジェル☆オフ無料",
+    price: 0,
+    minutes: 30,
+  },
+  {
+    id: "soft_other",
+    label: "【再来】他店ソフトジェルオフ",
+    price: 1100,
+    minutes: 30,
+  },
+  {
+    id: "scalp",
+    label: "【新規】スカルプオフ",
+    price: 1100,
+    minutes: 30,
+  },
+];
+
+const ADD_ON_OPTIONS = [
+  { id: "none", label: "追加なし", price: 0, priceSuffix: "", minutes: 0 },
+  {
+    id: "length_1_3",
+    label: "長さだし1〜3本",
+    price: 550,
+    priceSuffix: "〜",
+    minutes: 30,
+  },
+  {
+    id: "length_4_7",
+    label: "長さだし4〜7本",
+    price: 2200,
+    priceSuffix: "〜",
+    minutes: 30,
+  },
+  {
+    id: "length_8_10",
+    label: "長さだし8〜10本",
+    price: 4400,
+    priceSuffix: "〜",
+    minutes: 30,
+  },
+];
 
 function buildUtcIsoFromJst(targetDate: string, targetTime: string) {
   if (!targetDate || !targetTime) return null;
@@ -69,6 +156,20 @@ function isCancelledStatus(status: string | null | undefined) {
   return status === "キャンセル" || status === "cancelled";
 }
 
+function formatYen(value: number) {
+  return `¥${value.toLocaleString("ja-JP")}`;
+}
+
+function formatMinutes(minutes: number) {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+
+  if (hour <= 0) return `${minute}分`;
+  if (minute === 0) return `${hour}時間`;
+
+  return `${hour}時間${minute}分`;
+}
+
 export default function ReservationNewPage() {
   const router = useRouter();
 
@@ -85,7 +186,14 @@ export default function ReservationNewPage() {
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("10:00");
   const [durationMinutes, setDurationMinutes] = useState(90);
-  const [menu, setMenu] = useState("");
+
+  const [selectedMenuId, setSelectedMenuId] = useState("one_color");
+  const [customMenu, setCustomMenu] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+  const [customMinutes, setCustomMinutes] = useState("90");
+  const [selectedOffId, setSelectedOffId] = useState("none");
+  const [selectedAddOnId, setSelectedAddOnId] = useState("none");
+
   const [memo, setMemo] = useState("");
   const [status, setStatus] = useState<(typeof STATUS_OPTIONS)[number]>("予約");
 
@@ -121,7 +229,12 @@ export default function ReservationNewPage() {
         setErrorMessage("サロン一覧の取得に失敗しました");
         setSalons([]);
       } else {
-        setSalons((salonsRes.data as Salon[]) || []);
+        const salonRows = (salonsRes.data as Salon[]) || [];
+        setSalons(salonRows);
+
+        if (salonRows.length === 1) {
+          setSalonId(salonRows[0].id);
+        }
       }
 
       if (customersRes.error) {
@@ -144,17 +257,101 @@ export default function ReservationNewPage() {
     fetchMasterData();
   }, []);
 
+  const isSingleSalonMode = salons.length <= 1;
+
   const filteredCustomers = useMemo(() => {
-    return allCustomers.filter((item) =>
-      salonId ? item.salon_id === salonId : true
-    );
-  }, [allCustomers, salonId]);
+    if (isSingleSalonMode) {
+      return allCustomers;
+    }
+
+    if (!salonId) {
+      return [];
+    }
+
+    return allCustomers.filter((item) => item.salon_id === salonId);
+  }, [allCustomers, salonId, isSingleSalonMode]);
 
   const filteredStaffs = useMemo(() => {
-    return allStaffs.filter((item) =>
-      salonId ? item.salon_id === salonId : true
+    if (isSingleSalonMode) {
+      return allStaffs;
+    }
+
+    if (!salonId) {
+      return [];
+    }
+
+    return allStaffs.filter((item) => item.salon_id === salonId);
+  }, [allStaffs, salonId, isSingleSalonMode]);
+
+  const selectedMainMenu = useMemo(() => {
+    return (
+      MAIN_MENU_OPTIONS.find((item) => item.id === selectedMenuId) ||
+      MAIN_MENU_OPTIONS[0]
     );
-  }, [allStaffs, salonId]);
+  }, [selectedMenuId]);
+
+  const selectedOff = useMemo(() => {
+    return OFF_OPTIONS.find((item) => item.id === selectedOffId) || OFF_OPTIONS[0];
+  }, [selectedOffId]);
+
+  const selectedAddOn = useMemo(() => {
+    return (
+      ADD_ON_OPTIONS.find((item) => item.id === selectedAddOnId) ||
+      ADD_ON_OPTIONS[0]
+    );
+  }, [selectedAddOnId]);
+
+  const normalMenuName = useMemo(() => {
+    if (selectedMenuId === CUSTOM_MENU_ID) {
+      return customMenu.trim();
+    }
+
+    return selectedMainMenu.label;
+  }, [selectedMenuId, selectedMainMenu.label, customMenu]);
+
+  const normalMenuPrice = useMemo(() => {
+    if (selectedMenuId === CUSTOM_MENU_ID) {
+      const price = Number(customPrice || 0);
+      return Number.isFinite(price) ? price : 0;
+    }
+
+    return selectedMainMenu.price;
+  }, [selectedMenuId, selectedMainMenu.price, customPrice]);
+
+  const normalMenuMinutes = useMemo(() => {
+    if (selectedMenuId === CUSTOM_MENU_ID) {
+      const minutes = Number(customMinutes || 90);
+
+      if (!Number.isFinite(minutes) || minutes < 30) {
+        return 90;
+      }
+
+      return minutes;
+    }
+
+    return selectedMainMenu.minutes;
+  }, [selectedMenuId, selectedMainMenu.minutes, customMinutes]);
+
+  const calculatedPrice = useMemo(() => {
+    return normalMenuPrice + selectedOff.price + selectedAddOn.price;
+  }, [normalMenuPrice, selectedOff.price, selectedAddOn.price]);
+
+  const calculatedMinutes = useMemo(() => {
+    const total =
+      normalMenuMinutes + selectedOff.minutes + selectedAddOn.minutes;
+
+    if (!Number.isFinite(total) || total < 30) {
+      return 90;
+    }
+
+    return total;
+  }, [normalMenuMinutes, selectedOff.minutes, selectedAddOn.minutes]);
+
+  useEffect(() => {
+    if (reservationMode === "normal") {
+      setDurationMinutes(calculatedMinutes);
+    }
+  }, [reservationMode, calculatedMinutes]);
 
   const displayMenu = useMemo(() => {
     if (reservationMode === "external") {
@@ -166,28 +363,63 @@ export default function ReservationNewPage() {
       return `${externalSource}予約`;
     }
 
-    return menu.trim();
-  }, [reservationMode, menu, externalSource, externalTitle]);
+    const parts = [normalMenuName];
+
+    if (selectedOff.id !== "none") {
+      parts.push(`オフ：${selectedOff.label}`);
+    }
+
+    if (selectedAddOn.id !== "none") {
+      parts.push(`追加：${selectedAddOn.label}`);
+    }
+
+    return parts.filter(Boolean).join(" / ");
+  }, [
+    reservationMode,
+    externalTitle,
+    externalSource,
+    normalMenuName,
+    selectedOff,
+    selectedAddOn,
+  ]);
+
+  const combinedMemo = useMemo(() => {
+    if (reservationMode === "external") {
+      return memo.trim() || null;
+    }
+
+    const lines = [
+      `合計金額目安：${formatYen(calculatedPrice)}${
+        selectedAddOn.priceSuffix ? selectedAddOn.priceSuffix : ""
+      }`,
+      `所要時間目安：${formatMinutes(calculatedMinutes)}（${calculatedMinutes}分）`,
+      selectedOff.id !== "none" ? `オフ：${selectedOff.label}` : "オフ：なし",
+      selectedAddOn.id !== "none" ? `追加：${selectedAddOn.label}` : "追加：なし",
+      memo.trim() ? `補足メモ：${memo.trim()}` : "",
+    ].filter(Boolean);
+
+    return lines.join("\n");
+  }, [
+    reservationMode,
+    memo,
+    calculatedPrice,
+    calculatedMinutes,
+    selectedOff,
+    selectedAddOn,
+  ]);
 
   function handleSalonChange(nextSalonId: string) {
     setSalonId(nextSalonId);
-
-    const nextCustomers = allCustomers.filter((item) =>
-      nextSalonId ? item.salon_id === nextSalonId : true
-    );
-    const nextStaffs = allStaffs.filter((item) =>
-      nextSalonId ? item.salon_id === nextSalonId : true
-    );
-
-    const customerExists = nextCustomers.some((item) => item.id === customerId);
-    const staffExists = nextStaffs.some((item) => item.id === staffId);
-
-    setCustomerId(customerExists ? customerId : nextCustomers[0]?.id ?? "");
-    setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
+    setCustomerId("");
+    setStaffId("");
   }
 
   function handleCustomerChange(nextCustomerId: string) {
     setCustomerId(nextCustomerId);
+
+    if (isSingleSalonMode) {
+      return;
+    }
 
     const selectedCustomer =
       allCustomers.find((item) => item.id === nextCustomerId) ?? null;
@@ -195,22 +427,14 @@ export default function ReservationNewPage() {
     if (!selectedCustomer?.salon_id) return;
 
     if (!salonId) {
-      const nextSalonId = selectedCustomer.salon_id;
-      setSalonId(nextSalonId);
-
-      const nextStaffs = allStaffs.filter((item) => item.salon_id === nextSalonId);
-      const staffExists = nextStaffs.some((item) => item.id === staffId);
-      setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
+      setSalonId(selectedCustomer.salon_id);
+      setStaffId("");
       return;
     }
 
     if (selectedCustomer.salon_id !== salonId) {
-      const nextSalonId = selectedCustomer.salon_id;
-      setSalonId(nextSalonId);
-
-      const nextStaffs = allStaffs.filter((item) => item.salon_id === nextSalonId);
-      const staffExists = nextStaffs.some((item) => item.id === staffId);
-      setStaffId(staffExists ? staffId : nextStaffs[0]?.id ?? "");
+      setSalonId(selectedCustomer.salon_id);
+      setStaffId("");
     }
   }
 
@@ -224,6 +448,10 @@ export default function ReservationNewPage() {
       if (!durationMinutes) {
         setDurationMinutes(90);
       }
+    }
+
+    if (nextMode === "normal") {
+      setDurationMinutes(calculatedMinutes);
     }
   }
 
@@ -330,7 +558,7 @@ export default function ReservationNewPage() {
         start_at: startAt,
         end_at: endAt,
         status: reservationMode === "external" ? "予約確定" : status,
-        memo: memo.trim() || null,
+        memo: combinedMemo,
         source: reservationMode === "external" ? externalSource : "手入力",
       };
 
@@ -435,7 +663,7 @@ export default function ReservationNewPage() {
             <div className="rounded-3xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
               {reservationMode === "external"
                 ? "ホットペッパー・ミニモ・電話予約・休憩などをブロックとして登録します。顧客マイページ予約との重複防止に使います。"
-                : "店舗側で通常予約を手入力します。"}
+                : "店舗側で通常予約を手入力します。メニュー・オフ・追加内容から所要時間を自動計算します。"}
             </div>
 
             <div className="grid gap-4">
@@ -456,6 +684,11 @@ export default function ReservationNewPage() {
                     </option>
                   ))}
                 </select>
+                {isSingleSalonMode ? (
+                  <p className="mt-2 text-xs text-slate-500">
+                    1店舗運用のため、顧客・スタッフは全件表示します。
+                  </p>
+                ) : null}
               </div>
 
               {reservationMode === "normal" ? (
@@ -537,19 +770,113 @@ export default function ReservationNewPage() {
                   </div>
                 </>
               ) : (
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    メニュー
-                  </label>
-                  <input
-                    type="text"
-                    value={menu}
-                    onChange={(e) => setMenu(e.target.value)}
-                    placeholder="例: ワンカラー"
-                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                    suppressHydrationWarning
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      メインメニュー
+                    </label>
+                    <select
+                      value={selectedMenuId}
+                      onChange={(e) => setSelectedMenuId(e.target.value)}
+                      className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                      suppressHydrationWarning
+                    >
+                      {MAIN_MENU_OPTIONS.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label} / {formatYen(item.price)} /{" "}
+                          {formatMinutes(item.minutes)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedMenuId === CUSTOM_MENU_ID ? (
+                    <div className="rounded-3xl border border-slate-100 bg-slate-50 p-4">
+                      <div className="grid gap-4">
+                        <div>
+                          <label className="mb-2 block text-sm font-medium text-slate-700">
+                            自由入力メニュー名
+                          </label>
+                          <input
+                            type="text"
+                            value={customMenu}
+                            onChange={(e) => setCustomMenu(e.target.value)}
+                            placeholder="例：持ち込みデザイン"
+                            className="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                            suppressHydrationWarning
+                          />
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              金額目安
+                            </label>
+                            <input
+                              type="number"
+                              value={customPrice}
+                              onChange={(e) => setCustomPrice(e.target.value)}
+                              placeholder="例：7700"
+                              className="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                              suppressHydrationWarning
+                            />
+                          </div>
+
+                          <div>
+                            <label className="mb-2 block text-sm font-medium text-slate-700">
+                              時間目安
+                            </label>
+                            <input
+                              type="number"
+                              value={customMinutes}
+                              onChange={(e) => setCustomMinutes(e.target.value)}
+                              placeholder="例：90"
+                              className="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                              suppressHydrationWarning
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      オフメニュー
+                    </label>
+                    <select
+                      value={selectedOffId}
+                      onChange={(e) => setSelectedOffId(e.target.value)}
+                      className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                      suppressHydrationWarning
+                    >
+                      {OFF_OPTIONS.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label} / +{formatYen(item.price)} / +{item.minutes}分
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      追加メニュー
+                    </label>
+                    <select
+                      value={selectedAddOnId}
+                      onChange={(e) => setSelectedAddOnId(e.target.value)}
+                      className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                      suppressHydrationWarning
+                    >
+                      {ADD_ON_OPTIONS.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.label} / +{formatYen(item.price)}
+                          {item.priceSuffix} / +{item.minutes}分
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
               )}
 
               <div className="grid gap-4 sm:grid-cols-3">
@@ -583,18 +910,24 @@ export default function ReservationNewPage() {
                   <label className="mb-2 block text-sm font-medium text-slate-700">
                     所要時間
                   </label>
-                  <select
-                    value={durationMinutes}
-                    onChange={(e) => setDurationMinutes(Number(e.target.value))}
-                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                    suppressHydrationWarning
-                  >
-                    {DURATION_OPTIONS.map((minutes) => (
-                      <option key={minutes} value={minutes}>
-                        {minutes}分
-                      </option>
-                    ))}
-                  </select>
+                  {reservationMode === "external" ? (
+                    <select
+                      value={durationMinutes}
+                      onChange={(e) => setDurationMinutes(Number(e.target.value))}
+                      className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                      suppressHydrationWarning
+                    >
+                      {DURATION_OPTIONS.map((minutes) => (
+                        <option key={minutes} value={minutes}>
+                          {minutes}分
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="rounded-2xl border border-rose-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-900">
+                      {formatMinutes(durationMinutes)}（{durationMinutes}分）
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -641,12 +974,24 @@ export default function ReservationNewPage() {
               <div className="rounded-3xl border border-slate-100 bg-white p-4">
                 <div className="text-sm font-bold text-slate-900">登録内容確認</div>
                 <div className="mt-3 grid gap-2 text-sm text-slate-600">
-                  <div>種別：{reservationMode === "external" ? "外部予約ブロック" : "通常予約"}</div>
+                  <div>
+                    種別：
+                    {reservationMode === "external" ? "外部予約ブロック" : "通常予約"}
+                  </div>
                   <div>メニュー/ブロック：{displayMenu || "未入力"}</div>
                   <div>日付：{date || "未選択"}</div>
                   <div>開始：{startTime}</div>
-                  <div>所要時間：{durationMinutes}分</div>
-                  <div>登録元：{reservationMode === "external" ? externalSource : "手入力"}</div>
+                  <div>所要時間：{formatMinutes(durationMinutes)}</div>
+                  {reservationMode === "normal" ? (
+                    <div>
+                      合計金額目安：{formatYen(calculatedPrice)}
+                      {selectedAddOn.priceSuffix}
+                    </div>
+                  ) : null}
+                  <div>
+                    登録元：
+                    {reservationMode === "external" ? externalSource : "手入力"}
+                  </div>
                 </div>
               </div>
             </div>
