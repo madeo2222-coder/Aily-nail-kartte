@@ -44,10 +44,33 @@ type GalleryReference = {
 
 const STATUS_OPTIONS = ["予約", "来店", "完了", "キャンセル"] as const;
 
-function getJstParts(value: string | null) {
+function normalizeSupabaseDateTime(value: string | null) {
   if (!value) return null;
 
-  const target = new Date(value);
+  const trimmed = value.trim();
+
+  if (!trimmed) return null;
+
+  // すでに Z や +00:00 などタイムゾーン情報がある場合はそのまま使う
+  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Supabase の timestamp without time zone で
+  // "2026-05-31 02:00:00" のように返ってきた場合はUTCとして読む
+  const isoLike = trimmed.includes("T")
+    ? trimmed
+    : trimmed.replace(" ", "T");
+
+  return `${isoLike}Z`;
+}
+
+function getJstParts(value: string | null) {
+  const normalizedValue = normalizeSupabaseDateTime(value);
+
+  if (!normalizedValue) return null;
+
+  const target = new Date(normalizedValue);
 
   if (Number.isNaN(target.getTime())) {
     return null;
