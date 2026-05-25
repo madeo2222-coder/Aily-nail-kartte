@@ -127,6 +127,25 @@ const signedInNavItems = [
   { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
   { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
+const reservationTimeOptions = [
+  "10:00",
+  "10:30",
+  "11:00",
+  "11:30",
+  "12:00",
+  "12:30",
+  "13:00",
+  "13:30",
+  "14:00",
+  "14:30",
+  "15:00",
+  "15:30",
+  "16:00",
+  "16:30",
+  "17:00",
+  "17:30",
+  "18:00",
+];
 
 function formatYen(value: number) {
   return `¥${value.toLocaleString("ja-JP")}`;
@@ -684,13 +703,12 @@ function ReservePageContent() {
                 onChange={(e) => setSelectedTime(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
-                <option value="">選択してください</option>
-                <option value="10:00">10:00</option>
-                <option value="11:00">11:00</option>
-                <option value="13:00">13:00</option>
-                <option value="14:00">14:00</option>
-                <option value="15:00">15:00</option>
-                <option value="16:00">16:00</option>
+               <option value="">選択してください</option>
+{reservationTimeOptions.map((time) => (
+  <option key={time} value={time}>
+    {time}
+  </option>
+))}
               </select>
             </div>
 
