@@ -573,7 +573,56 @@ export default function ReservationsPageClient() {
     (item) => item.galleryReference.designId || item.galleryReference.photoUrl
   ).length;
 
-  async function updateStatus(id: string, status: string) {
+  async function sendReservationConfirmedEmail(id: string) {
+    try {
+      const response = await fetch("/api/send-reservation-confirmed-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reservationId: id,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        sent?: boolean;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        console.error("予約確定メール送信エラー:", result);
+        alert(
+          "予約は確定しましたが、メール送信に失敗しました。顧客メールアドレスやResend設定を確認してください。"
+        );
+        return;
+      }
+
+      if (result.sent === false) {
+        alert(
+          result.message ||
+            "予約は確定しましたが、顧客メールアドレスが未登録のためメールは送信していません。"
+        );
+        return;
+      }
+
+      alert("予約を確定し、予約確定メールを送信しました。");
+    } catch (error) {
+      console.error("予約確定メールAPIエラー:", error);
+      alert(
+        "予約は確定しましたが、メール送信処理でエラーが発生しました。"
+      );
+    }
+  }
+
+  async function updateStatus(
+    id: string,
+    status: string,
+    options?: {
+      sendConfirmedEmail?: boolean;
+    }
+  ) {
     setUpdatingId(id);
 
     const { error } = await supabase
@@ -588,13 +637,20 @@ export default function ReservationsPageClient() {
       return;
     }
 
+    if (options?.sendConfirmedEmail) {
+      await sendReservationConfirmedEmail(id);
+    }
+
     await fetchReservations();
   }
 
   async function handleConfirmReservation(id: string) {
-    const ok = window.confirm("この予約を『予約確定』に変更しますか？");
+    const ok = window.confirm("この予約を『予約確定』に変更し、メールを送信しますか？");
     if (!ok) return;
-    await updateStatus(id, "confirmed");
+
+    await updateStatus(id, "confirmed", {
+      sendConfirmedEmail: true,
+    });
   }
 
   async function handleMarkVisited(id: string) {
@@ -942,7 +998,7 @@ export default function ReservationsPageClient() {
                           className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                           suppressHydrationWarning
                         >
-                          {isUpdating ? "更新中..." : "予約確定にする"}
+                          {isUpdating ? "更新中..." : "予約確定・メール送信"}
                         </button>
                       ) : null}
 
