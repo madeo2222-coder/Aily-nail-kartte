@@ -34,6 +34,14 @@ type ReservationDetail = {
   memo: string | null;
 };
 
+type OverlapReservation = {
+  id: string;
+  status: string | null;
+  menu: string | null;
+  start_at: string | null;
+  end_at: string | null;
+};
+
 type GalleryReference = {
   hasGallery: boolean;
   designId: string;
@@ -51,13 +59,10 @@ function normalizeSupabaseDateTime(value: string | null) {
 
   if (!trimmed) return null;
 
-  // すでに Z や +00:00 などタイムゾーン情報がある場合はそのまま使う
   if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
     return trimmed;
   }
 
-  // Supabase の timestamp without time zone で
-  // "2026-05-31 02:00:00" のように返ってきた場合はUTCとして読む
   const isoLike = trimmed.includes("T")
     ? trimmed
     : trimmed.replace(" ", "T");
@@ -150,6 +155,10 @@ function normalizeStatus(value: string | null) {
   }
 
   return "予約";
+}
+
+function isCancelledStatus(value: string | null | undefined) {
+  return value === "キャンセル" || value === "cancelled";
 }
 
 function extractLineValue(memo: string, label: string) {
@@ -339,6 +348,41 @@ export default function EditReservationPage() {
     setSalonId(nextSalonId);
   }
 
+  async function checkOverlap({
+    startAt,
+    endAt,
+  }: {
+    startAt: string;
+    endAt: string;
+  }) {
+    let query = supabase
+      .from("reservations")
+      .select("id, status, menu, start_at, end_at")
+      .neq("id", reservationId)
+      .lt("start_at", endAt)
+      .gt("end_at", startAt);
+
+    if (salonId) {
+      query = query.eq("salon_id", salonId);
+    }
+
+    if (staffId) {
+      query = query.eq("staff_id", staffId);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const activeOverlaps = ((data || []) as OverlapReservation[]).filter(
+      (item) => !isCancelledStatus(item.status)
+    );
+
+    return activeOverlaps;
+  }
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
@@ -362,28 +406,50 @@ export default function EditReservationPage() {
     setSaving(true);
     setErrorMessage("");
 
-    const { error } = await supabase
-      .from("reservations")
-      .update({
-        salon_id: salonId,
-        customer_id: customerId,
-        staff_id: staffId,
-        menu: menu || null,
-        start_at: startAt,
-        end_at: endAt,
-        status,
-        memo: memoForSave || null,
-      })
-      .eq("id", reservationId);
+    try {
+      if (!isCancelledStatus(status)) {
+        const overlaps = await checkOverlap({
+          startAt,
+          endAt,
+        });
 
-    setSaving(false);
+        if (overlaps.length > 0) {
+          setSaving(false);
+          setErrorMessage(
+            "この時間帯はすでに予約またはブロックがあります。カレンダーで確認してください。"
+          );
+          return;
+        }
+      }
 
-    if (error) {
-      setErrorMessage("予約の更新に失敗しました");
-      return;
+      const { error } = await supabase
+        .from("reservations")
+        .update({
+          salon_id: salonId,
+          customer_id: customerId,
+          staff_id: staffId,
+          menu: menu || null,
+          start_at: startAt,
+          end_at: endAt,
+          status,
+          memo: memoForSave || null,
+        })
+        .eq("id", reservationId);
+
+      setSaving(false);
+
+      if (error) {
+        setErrorMessage("予約の更新に失敗しました");
+        return;
+      }
+
+      router.push(customerId ? `/customers/${customerId}` : "/reservations");
+    } catch (error) {
+      setSaving(false);
+      const message =
+        error instanceof Error ? error.message : "予約の更新に失敗しました";
+      setErrorMessage(message);
     }
-
-    router.push(customerId ? `/customers/${customerId}` : "/reservations");
   }
 
   async function handleDelete() {
