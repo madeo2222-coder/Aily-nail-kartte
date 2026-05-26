@@ -27,9 +27,19 @@ type VisitRow = {
 
 type ReservationRow = {
   id: string;
+  customer_id: string | null;
+  staff_id: string | null;
   menu: string | null;
   start_at: string | null;
+  end_at: string | null;
   status: string | null;
+  memo: string | null;
+  created_at: string | null;
+};
+
+type StaffRow = {
+  id: string;
+  name: string | null;
 };
 
 type MeResponse = {
@@ -40,38 +50,88 @@ type MeResponse = {
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
+  { key: "gallery", label: "ギャラリー", icon: "💅", href: "/customer-app/gallery" },
   {
     key: "diagnosis",
     label: "診断",
     icon: "✨",
     href: "/customer-app/sanmeigaku",
   },
-  { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
   { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
 
+function normalizeSupabaseDateTime(value: string | null) {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const isoLike = trimmed.includes("T")
+    ? trimmed
+    : trimmed.replace(" ", "T");
+
+  return `${isoLike}Z`;
+}
+
+function getJstParts(value: string | null) {
+  const normalizedValue = normalizeSupabaseDateTime(value);
+
+  if (!normalizedValue) return null;
+
+  const target = new Date(normalizedValue);
+
+  if (Number.isNaN(target.getTime())) {
+    return null;
+  }
+
+  const formatter = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(target);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: map.get("year") || "",
+    month: map.get("month") || "",
+    day: map.get("day") || "",
+    hour: map.get("hour") || "",
+    minute: map.get("minute") || "",
+  };
+}
+
 function formatDate(value: string | null) {
-  if (!value) return "未登録";
+  const parts = getJstParts(value);
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "未登録";
+  if (!parts) return "未登録";
 
-  return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+  return `${Number(parts.year)}/${Number(parts.month)}/${Number(parts.day)}`;
 }
 
 function formatDateTime(value: string | null) {
-  if (!value) return "未登録";
+  const parts = getJstParts(value);
 
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "未登録";
+  if (!parts) return "未登録";
 
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mi = String(date.getMinutes()).padStart(2, "0");
+  return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
 
-  return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
+function formatTime(value: string | null) {
+  const parts = getJstParts(value);
+
+  if (!parts) return "";
+
+  return `${parts.hour}:${parts.minute}`;
 }
 
 function getDisplayMenu(visit: VisitRow | null) {
@@ -96,9 +156,71 @@ function getReservationStatusLabel(status: string | null) {
     case "cancelled":
     case "キャンセル":
       return "キャンセル";
+    case "予約":
+      return "予約受付";
+    case "来店":
+      return "来店予定";
+    case "完了":
+      return "来店完了";
     default:
       return status || "未設定";
   }
+}
+
+function getReservationStatusClass(status: string | null) {
+  const label = getReservationStatusLabel(status);
+
+  if (label === "予約申請中" || label === "予約受付") {
+    return "bg-amber-100 text-amber-700";
+  }
+
+  if (label === "予約確定") {
+    return "bg-blue-100 text-blue-700";
+  }
+
+  if (label === "来店予定") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+
+  if (label === "来店完了") {
+    return "bg-slate-100 text-slate-700";
+  }
+
+  if (label === "キャンセル") {
+    return "bg-rose-100 text-rose-700";
+  }
+
+  return "bg-slate-100 text-slate-700";
+}
+
+function hasGalleryReference(memo: string | null) {
+  return String(memo || "").includes("Aily Gallery参考デザインあり");
+}
+
+function extractCustomerMemo(memo: string | null) {
+  if (!memo) return "";
+
+  return memo
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim();
+
+      if (trimmed === "Aily Gallery参考デザインあり") return false;
+      if (trimmed.startsWith("参考デザインID：")) return false;
+      if (trimmed.startsWith("参考写真URL：")) return false;
+      if (trimmed.startsWith("参考メニュー：")) return false;
+      if (trimmed.startsWith("参考カラー：")) return false;
+      if (trimmed.startsWith("合計金額目安：")) return false;
+      if (trimmed.startsWith("所要時間目安：")) return false;
+      if (trimmed === "時間内訳") return false;
+      if (trimmed === "金額内訳") return false;
+      if (trimmed.startsWith("・")) return false;
+
+      return true;
+    })
+    .join("\n")
+    .replace(/^備考：/, "")
+    .trim();
 }
 
 export default function CustomerAppMyPage() {
@@ -107,11 +229,8 @@ export default function CustomerAppMyPage() {
   const [customer, setCustomer] = useState<CustomerRow | null>(null);
   const [salonName, setSalonName] = useState("Aily Nail Studio");
   const [latestVisit, setLatestVisit] = useState<VisitRow | null>(null);
-  const [nextReservation, setNextReservation] = useState<ReservationRow | null>(
-    null
-  );
-  const [latestReservation, setLatestReservation] =
-    useState<ReservationRow | null>(null);
+  const [reservations, setReservations] = useState<ReservationRow[]>([]);
+  const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
@@ -158,43 +277,32 @@ export default function CustomerAppMyPage() {
 
         setLatestVisit(((visitData || [])[0] as VisitRow | undefined) || null);
 
-        const now = new Date();
-
         const { data: reservationData, error: reservationError } = await supabase
           .from("reservations")
-          .select("id, menu, start_at, status")
+          .select(
+            "id, customer_id, staff_id, menu, start_at, end_at, status, memo, created_at"
+          )
           .eq("customer_id", meJson.customer.id)
-          .order("start_at", { ascending: false })
-          .limit(30);
+          .order("start_at", { ascending: true })
+          .limit(50);
 
         if (reservationError) {
           console.error("reservations取得エラー:", reservationError);
-          setNextReservation(null);
-          setLatestReservation(null);
+          setReservations([]);
         } else {
-          const activeReservations = ((reservationData || []) as ReservationRow[])
-            .filter((item) => !isCancelled(item.status))
-            .filter((item) => item.start_at);
+          setReservations((reservationData || []) as ReservationRow[]);
+        }
 
-          const futureReservations = activeReservations
-            .filter((item) => {
-              const date = new Date(item.start_at || "");
-              return !Number.isNaN(date.getTime()) && date >= now;
-            })
-            .sort((a, b) => {
-              const aTime = new Date(a.start_at || "").getTime();
-              const bTime = new Date(b.start_at || "").getTime();
-              return aTime - bTime;
-            });
+        const { data: staffData, error: staffError } = await supabase
+          .from("staffs")
+          .select("id, name")
+          .order("name", { ascending: true });
 
-          const pastAndAllReservations = [...activeReservations].sort((a, b) => {
-            const aTime = new Date(a.start_at || "").getTime();
-            const bTime = new Date(b.start_at || "").getTime();
-            return bTime - aTime;
-          });
-
-          setNextReservation(futureReservations[0] || null);
-          setLatestReservation(pastAndAllReservations[0] || null);
+        if (staffError) {
+          console.error("staffs取得エラー:", staffError);
+          setStaffs([]);
+        } else {
+          setStaffs((staffData || []) as StaffRow[]);
         }
       } catch (error) {
         console.error("mypage取得エラー:", error);
@@ -211,9 +319,51 @@ export default function CustomerAppMyPage() {
     return customer?.name || "お客様";
   }, [customer]);
 
-  const displayReservation = nextReservation || latestReservation;
+  const staffMap = useMemo(() => {
+    const map = new Map<string, string>();
 
-  const reservationTitle = nextReservation ? "次回予約" : "直近の予約履歴";
+    staffs.forEach((staff) => {
+      if (staff.id) {
+        map.set(staff.id, staff.name || "未設定");
+      }
+    });
+
+    return map;
+  }, [staffs]);
+
+  const nowTime = useMemo(() => Date.now(), []);
+
+  const activeReservations = useMemo(() => {
+    return reservations.filter((item) => !isCancelled(item.status));
+  }, [reservations]);
+
+  const upcomingReservations = useMemo(() => {
+    return activeReservations
+      .filter((item) => {
+        const normalizedValue = normalizeSupabaseDateTime(item.start_at);
+        if (!normalizedValue) return false;
+
+        const target = new Date(normalizedValue).getTime();
+
+        return Number.isFinite(target) && target >= nowTime;
+      })
+      .sort((a, b) => {
+        const aTime = new Date(normalizeSupabaseDateTime(a.start_at) || "").getTime();
+        const bTime = new Date(normalizeSupabaseDateTime(b.start_at) || "").getTime();
+
+        return aTime - bTime;
+      });
+  }, [activeReservations, nowTime]);
+
+  const latestReservation = useMemo(() => {
+    return [...activeReservations]
+      .sort((a, b) => {
+        const aTime = new Date(normalizeSupabaseDateTime(a.start_at) || "").getTime();
+        const bTime = new Date(normalizeSupabaseDateTime(b.start_at) || "").getTime();
+
+        return bTime - aTime;
+      })[0] || null;
+  }, [activeReservations]);
 
   async function handleLogout() {
     await fetch("/api/line-login/logout", {
@@ -275,7 +425,7 @@ export default function CustomerAppMyPage() {
             {customerName}様のマイページ
           </h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            登録情報、前回来店、予約情報を確認できます。
+            登録情報、前回来店、予約状況を確認できます。
           </p>
         </section>
 
@@ -334,45 +484,131 @@ export default function CustomerAppMyPage() {
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-base font-bold text-slate-900">
-              {displayReservation ? reservationTitle : "予約情報"}
-            </div>
-
-            {displayReservation ? (
-              <div className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">
-                {getReservationStatusLabel(displayReservation.status)}
+            <div>
+              <div className="text-base font-bold text-slate-900">
+                予約状況
               </div>
-            ) : null}
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-3">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">予約日時</div>
-              <div className="mt-1 text-lg font-bold text-slate-900">
-                {formatDateTime(displayReservation?.start_at || null)}
+              <div className="mt-1 text-xs text-slate-500">
+                予約申請中・予約確定の内容を確認できます。
               </div>
             </div>
 
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-xs text-slate-500">メニュー</div>
-              <div className="mt-1 text-lg font-bold text-slate-900">
-                {displayReservation?.menu || "未登録"}
-              </div>
+            <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
+              {upcomingReservations.length}件
             </div>
           </div>
 
-          {!nextReservation && latestReservation ? (
-            <div className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-700">
-              現在、未来の予約はありません。直近の予約履歴を表示しています。
-            </div>
-          ) : null}
+          {upcomingReservations.length === 0 ? (
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+              <div className="text-sm font-bold text-slate-700">
+                現在、未来の予約はありません。
+              </div>
 
-          <Link
-            href="/customer-app/reserve"
-            className="mt-4 block w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-center text-sm font-bold text-slate-700"
-          >
-            予約ページへ
-          </Link>
+              {latestReservation ? (
+                <div className="mt-3 rounded-2xl bg-white p-3">
+                  <div className="text-xs text-slate-500">直近の予約履歴</div>
+                  <div className="mt-1 text-sm font-bold leading-6 text-slate-900">
+                    {formatDateTime(latestReservation.start_at)}
+                    <br />
+                    {latestReservation.menu || "メニュー未登録"}
+                  </div>
+                </div>
+              ) : null}
+
+              <Link
+                href="/customer-app/reserve"
+                className="mt-4 block w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                予約する
+              </Link>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {upcomingReservations.slice(0, 3).map((reservation) => {
+                const staffName = reservation.staff_id
+                  ? staffMap.get(reservation.staff_id) || "未設定"
+                  : "指名なし";
+
+                const customerMemo = extractCustomerMemo(reservation.memo);
+
+                return (
+                  <article
+                    key={reservation.id}
+                    className="rounded-3xl border border-rose-100 bg-rose-50/40 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-rose-500">
+                          次回予約
+                        </div>
+                        <div className="mt-1 text-lg font-black text-slate-900">
+                          {formatDateTime(reservation.start_at)}
+                        </div>
+                        <div className="mt-1 text-sm font-bold text-slate-700">
+                          〜{formatTime(reservation.end_at)}
+                        </div>
+                      </div>
+
+                      <div
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${getReservationStatusClass(
+                          reservation.status
+                        )}`}
+                      >
+                        {getReservationStatusLabel(reservation.status)}
+                      </div>
+                    </div>
+
+                    {hasGalleryReference(reservation.memo) ? (
+                      <div className="mt-3 rounded-2xl bg-pink-100 px-3 py-2 text-xs font-bold text-pink-700">
+                        💅 Aily Gallery参考デザインあり
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid grid-cols-1 gap-3">
+                      <div className="rounded-2xl bg-white p-3">
+                        <div className="text-xs text-slate-500">メニュー</div>
+                        <div className="mt-1 text-sm font-bold leading-6 text-slate-900">
+                          {reservation.menu || "メニュー未登録"}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-white p-3">
+                        <div className="text-xs text-slate-500">担当スタッフ</div>
+                        <div className="mt-1 text-sm font-bold text-slate-900">
+                          {staffName}
+                        </div>
+                      </div>
+
+                      {customerMemo ? (
+                        <div className="rounded-2xl bg-white p-3">
+                          <div className="text-xs text-slate-500">備考</div>
+                          <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                            {customerMemo}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+
+              {upcomingReservations.length > 3 ? (
+                <Link
+                  href="/customer-app/history"
+                  className="block w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-center text-sm font-bold text-slate-700"
+                >
+                  すべての予約を見る
+                </Link>
+              ) : null}
+
+              <Link
+                href="/customer-app/reserve"
+                className="block w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                追加で予約する
+              </Link>
+            </div>
+          )}
         </section>
 
         <button
