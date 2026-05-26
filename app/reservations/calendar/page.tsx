@@ -45,6 +45,12 @@ type CalendarReservation = {
   durationMinutes: number;
 };
 
+type StaffColumn = {
+  key: string;
+  staffId: string | null;
+  staffName: string;
+};
+
 type MonthDay = {
   dateText: string;
   day: number;
@@ -229,7 +235,7 @@ function buildTimeSlots() {
 
 function hasOverlap(a: CalendarReservation, b: CalendarReservation) {
   if (a.id === b.id) return false;
-  if (a.staffName !== b.staffName) return false;
+  if (a.staffId !== b.staffId) return false;
   if (isCancelledStatus(a.status) || isCancelledStatus(b.status)) return false;
 
   return a.startMinute < b.endMinute && b.startMinute < a.endMinute;
@@ -272,6 +278,8 @@ export default function ReservationsCalendarPage() {
   const [selectedMonth, setSelectedMonth] = useState(
     getMonthText(getTodayText())
   );
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState("all");
+
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
@@ -367,16 +375,32 @@ export default function ReservationsCalendarPage() {
     });
   }, [reservations, customerMap, staffMap]);
 
-  const calendarReservations = useMemo<CalendarReservation[]>(() => {
+  const staffFilteredReservations = useMemo(() => {
+    if (selectedStaffFilter === "all") {
+      return allCalendarReservations;
+    }
+
+    if (selectedStaffFilter === "no_staff") {
+      return allCalendarReservations.filter(
+        (reservation) => reservation.staffId === null
+      );
+    }
+
     return allCalendarReservations.filter(
+      (reservation) => reservation.staffId === selectedStaffFilter
+    );
+  }, [allCalendarReservations, selectedStaffFilter]);
+
+  const calendarReservations = useMemo<CalendarReservation[]>(() => {
+    return staffFilteredReservations.filter(
       (reservation) => reservation.date === selectedDate
     );
-  }, [allCalendarReservations, selectedDate]);
+  }, [staffFilteredReservations, selectedDate]);
 
   const reservationCountByDate = useMemo(() => {
     const map = new Map<string, number>();
 
-    allCalendarReservations.forEach((reservation) => {
+    staffFilteredReservations.forEach((reservation) => {
       if (!reservation.date) return;
       if (isCancelledStatus(reservation.status)) return;
 
@@ -384,27 +408,63 @@ export default function ReservationsCalendarPage() {
     });
 
     return map;
-  }, [allCalendarReservations]);
+  }, [staffFilteredReservations]);
 
   const monthDays = useMemo(() => {
     return buildMonthDays(selectedMonth);
   }, [selectedMonth]);
 
-  const staffColumns = useMemo(() => {
-    const names = new Set<string>();
+  const staffColumns = useMemo<StaffColumn[]>(() => {
+    if (selectedStaffFilter === "no_staff") {
+      return [
+        {
+          key: "no_staff",
+          staffId: null,
+          staffName: "指名なし",
+        },
+      ];
+    }
 
-    staffs.forEach((staff) => {
-      if (staff.name) names.add(staff.name);
-    });
+    if (selectedStaffFilter !== "all") {
+      const staff = staffs.find((item) => item.id === selectedStaffFilter);
 
-    calendarReservations.forEach((reservation) => {
-      if (reservation.staffName) names.add(reservation.staffName);
-    });
+      return [
+        {
+          key: selectedStaffFilter,
+          staffId: selectedStaffFilter,
+          staffName: staff?.name || "名前未設定",
+        },
+      ];
+    }
 
-    const result = Array.from(names);
+    const columns: StaffColumn[] = staffs.map((staff) => ({
+      key: staff.id,
+      staffId: staff.id,
+      staffName: staff.name || "名前未設定",
+    }));
 
-    return result.length > 0 ? result : ["未設定"];
-  }, [staffs, calendarReservations]);
+    const hasNoStaffReservation = calendarReservations.some(
+      (reservation) => reservation.staffId === null
+    );
+
+    if (hasNoStaffReservation) {
+      columns.push({
+        key: "no_staff",
+        staffId: null,
+        staffName: "指名なし",
+      });
+    }
+
+    return columns.length > 0
+      ? columns
+      : [
+          {
+            key: "no_staff",
+            staffId: null,
+            staffName: "指名なし",
+          },
+        ];
+  }, [staffs, selectedStaffFilter, calendarReservations]);
 
   const overlapIds = useMemo(() => {
     const ids = new Set<string>();
@@ -455,11 +515,19 @@ export default function ReservationsCalendarPage() {
     setSelectedMonth(getMonthText(today));
   }
 
-  function getReservationsForStaff(staffName: string) {
+  function getReservationsForStaff(column: StaffColumn) {
     return calendarReservations.filter(
-      (reservation) => reservation.staffName === staffName
+      (reservation) => reservation.staffId === column.staffId
     );
   }
+
+  const selectedStaffLabel = useMemo(() => {
+    if (selectedStaffFilter === "all") return "全スタッフ";
+    if (selectedStaffFilter === "no_staff") return "指名なし";
+
+    const staff = staffs.find((item) => item.id === selectedStaffFilter);
+    return staff?.name || "名前未設定";
+  }, [selectedStaffFilter, staffs]);
 
   return (
     <main className="min-h-screen bg-rose-50/40">
@@ -602,42 +670,62 @@ export default function ReservationsCalendarPage() {
         </section>
 
         <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div className="grid gap-4 md:grid-cols-[1fr_280px] md:items-end">
             <div>
               <div className="text-sm font-bold text-slate-900">対象日</div>
               <div className="mt-1 text-xl font-bold text-slate-900">
                 {formatDateLabel(selectedDate)}
               </div>
               <div className="mt-1 text-sm text-slate-500">
-                予約件数：{calendarReservations.length}件
+                表示：{selectedStaffLabel} / 予約件数：
+                {calendarReservations.length}件
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => selectDate(addDaysText(selectedDate, -1))}
-                className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                スタッフ表示
+              </label>
+              <select
+                value={selectedStaffFilter}
+                onChange={(e) => setSelectedStaffFilter(e.target.value)}
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm font-bold text-slate-700"
               >
-                前日
-              </button>
-
-              <button
-                type="button"
-                onClick={goToday}
-                className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
-              >
-                今日
-              </button>
-
-              <button
-                type="button"
-                onClick={() => selectDate(addDaysText(selectedDate, 1))}
-                className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
-              >
-                翌日
-              </button>
+                <option value="all">全スタッフ</option>
+                <option value="no_staff">指名なし</option>
+                {staffs.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.name || "名前未設定"}
+                  </option>
+                ))}
+              </select>
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => selectDate(addDaysText(selectedDate, -1))}
+              className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
+            >
+              前日
+            </button>
+
+            <button
+              type="button"
+              onClick={goToday}
+              className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
+            >
+              今日
+            </button>
+
+            <button
+              type="button"
+              onClick={() => selectDate(addDaysText(selectedDate, 1))}
+              className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
+            >
+              翌日
+            </button>
           </div>
         </section>
 
@@ -676,12 +764,12 @@ export default function ReservationsCalendarPage() {
                   時間
                 </div>
 
-                {staffColumns.map((staffName) => (
+                {staffColumns.map((column) => (
                   <div
-                    key={staffName}
+                    key={column.key}
                     className="border-b border-r bg-rose-50 p-3 text-center text-sm font-bold text-slate-900"
                   >
-                    {staffName}
+                    {column.staffName}
                   </div>
                 ))}
 
@@ -697,18 +785,18 @@ export default function ReservationsCalendarPage() {
                   ))}
                 </div>
 
-                {staffColumns.map((staffName) => {
-                  const staffReservations = getReservationsForStaff(staffName);
+                {staffColumns.map((column) => {
+                  const staffReservations = getReservationsForStaff(column);
 
                   return (
                     <div
-                      key={staffName}
+                      key={column.key}
                       className="relative border-r bg-white"
                       style={{ height: rowHeight * timeSlots.length }}
                     >
                       {timeSlots.map((slot) => (
                         <div
-                          key={`${staffName}-${slot}`}
+                          key={`${column.key}-${slot}`}
                           className="border-b border-slate-100"
                           style={{ height: rowHeight }}
                         />
