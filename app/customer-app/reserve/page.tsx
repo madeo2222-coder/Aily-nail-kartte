@@ -125,6 +125,14 @@ type StaffRow = {
   name: string | null;
 };
 
+type ReservationBlockRow = {
+  id: string;
+  staff_id: string | null;
+  status: string | null;
+  start_at: string | null;
+  end_at: string | null;
+};
+
 type GalleryVisitRow = {
   id: string;
   menu_name: string | null;
@@ -175,15 +183,99 @@ function findInitialMenuId(menuFromQuery: string | null) {
   return matched?.id || mainMenus[0].id;
 }
 
+function buildUtcIsoFromJst(targetDate: string, targetTime: string) {
+  if (!targetDate || !targetTime) return null;
+
+  const date = new Date(`${targetDate}T${targetTime}:00+09:00`);
+
+  if (Number.isNaN(date.getTime())) return null;
+
+  return date.toISOString();
+}
+
+function addMinutesToUtcIso(
+  targetDate: string,
+  targetTime: string,
+  minutes: number
+) {
+  const startIso = buildUtcIsoFromJst(targetDate, targetTime);
+  if (!startIso) return null;
+
+  const start = new Date(startIso);
+  const end = new Date(start.getTime() + minutes * 60 * 1000);
+
+  if (Number.isNaN(end.getTime())) return null;
+
+  return end.toISOString();
+}
+
+function parseSupabaseTimestampAsUtc(value: string | null) {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const date = new Date(trimmed);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const normalized = trimmed.replace(" ", "T");
+  const date = new Date(`${normalized}Z`);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isCancelledStatus(status: string | null | undefined) {
+  return status === "キャンセル" || status === "cancelled";
+}
+
+function hasReservationOverlap({
+  targetDate,
+  targetTime,
+  minutes,
+  reservations,
+}: {
+  targetDate: string;
+  targetTime: string;
+  minutes: number;
+  reservations: ReservationBlockRow[];
+}) {
+  const startIso = buildUtcIsoFromJst(targetDate, targetTime);
+  const endIso = addMinutesToUtcIso(targetDate, targetTime, minutes);
+
+  if (!startIso || !endIso) return false;
+
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return false;
+  }
+
+  return reservations.some((reservation) => {
+    if (isCancelledStatus(reservation.status)) return false;
+
+    const reservationStart = parseSupabaseTimestampAsUtc(
+      reservation.start_at
+    )?.getTime();
+    const reservationEnd = parseSupabaseTimestampAsUtc(
+      reservation.end_at
+    )?.getTime();
+
+    if (!reservationStart || !reservationEnd) return false;
+
+    return start < reservationEnd && reservationStart < end;
+  });
+}
+
 function isUsefulGalleryText(value: string | null | undefined) {
   const text = String(value || "").trim();
 
   if (!text) return false;
 
-  // 「90」「120」など数字だけの値は参考メニューとして表示しない
   if (/^\d+$/.test(text)) return false;
 
-  // 「90分」など時間だけっぽい値も参考メニューとして表示しない
   if (/^\d+\s*分$/.test(text)) return false;
 
   return true;
@@ -213,6 +305,10 @@ function ReservePageContent() {
   const [sending, setSending] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
+  const [reservationBlocks, setReservationBlocks] = useState<
+    ReservationBlockRow[]
+  >([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
 
   const [customerId, setCustomerId] = useState("");
   const [salonId, setSalonId] = useState("");
@@ -410,6 +506,81 @@ function ReservePageContent() {
     return result;
   }, [mainMenuMinutes, selectedOff.minutes, selectedAddOns]);
 
+  useEffect(() => {
+    async function fetchReservationBlocks() {
+      if (!isLoggedIn || !selectedDate) {
+        setReservationBlocks([]);
+        return;
+      }
+
+      setAvailabilityLoading(true);
+
+      const dayStart = buildUtcIsoFromJst(selectedDate, "00:00");
+      const dayEnd = buildUtcIsoFromJst(selectedDate, "23:59");
+
+      if (!dayStart || !dayEnd) {
+        setReservationBlocks([]);
+        setAvailabilityLoading(false);
+        return;
+      }
+
+      try {
+        let query = supabase
+          .from("reservations")
+          .select("id, staff_id, status, start_at, end_at")
+          .lt("start_at", dayEnd)
+          .gt("end_at", dayStart);
+
+        if (salonId) {
+          query = query.eq("salon_id", salonId);
+        }
+
+        if (selectedStaffId) {
+          query = query.eq("staff_id", selectedStaffId);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          console.error("reservation blocks fetch error:", error.message);
+          setReservationBlocks([]);
+        } else {
+          setReservationBlocks((data || []) as ReservationBlockRow[]);
+        }
+      } catch (error) {
+        console.error("reservation blocks fetch error:", error);
+        setReservationBlocks([]);
+      } finally {
+        setAvailabilityLoading(false);
+      }
+    }
+
+    fetchReservationBlocks();
+  }, [isLoggedIn, selectedDate, selectedStaffId, salonId]);
+
+  const availableTimeOptions = useMemo(() => {
+    if (!selectedDate) {
+      return reservationTimeOptions;
+    }
+
+    return reservationTimeOptions.filter((time) => {
+      return !hasReservationOverlap({
+        targetDate: selectedDate,
+        targetTime: time,
+        minutes: totalMinutes,
+        reservations: reservationBlocks,
+      });
+    });
+  }, [selectedDate, totalMinutes, reservationBlocks]);
+
+  useEffect(() => {
+    if (!selectedTime) return;
+    if (!selectedDate) return;
+    if (availableTimeOptions.includes(selectedTime)) return;
+
+    setSelectedTime("");
+  }, [selectedTime, selectedDate, availableTimeOptions]);
+
   const timeBreakdown = useMemo(() => {
     const items = [
       {
@@ -522,6 +693,11 @@ function ReservePageContent() {
       return;
     }
 
+    if (!availableTimeOptions.includes(selectedTime)) {
+      showMessage("選択した時間は埋まりました。別の時間を選択してください");
+      return;
+    }
+
     if (!reservationMenu) {
       showMessage("メニューを選択してください");
       return;
@@ -582,6 +758,7 @@ function ReservePageContent() {
       setCustomMinutes("90");
       setSelectedOffId("none");
       setSelectedAddOnIds([]);
+      setSelectedTime("");
     } catch (error) {
       console.error(error);
       showMessage("通信エラーが発生しました");
@@ -724,14 +901,34 @@ function ReservePageContent() {
                 value={selectedTime}
                 onChange={(e) => setSelectedTime(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                disabled={availabilityLoading || !selectedDate}
               >
-                <option value="">選択してください</option>
-                {reservationTimeOptions.map((time) => (
+                <option value="">
+                  {!selectedDate
+                    ? "先に希望日を選択してください"
+                    : availabilityLoading
+                    ? "空き時間を確認中..."
+                    : "選択してください"}
+                </option>
+                {availableTimeOptions.map((time) => (
                   <option key={time} value={time}>
                     {time}
                   </option>
                 ))}
               </select>
+
+              {selectedDate && !availabilityLoading ? (
+                availableTimeOptions.length > 0 ? (
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    選択中のメニュー所要時間で空いている時間だけ表示しています。
+                  </p>
+                ) : (
+                  <p className="mt-2 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold leading-5 text-rose-700">
+                    この日は選択中のメニュー時間で空きがありません。
+                    別の日付・担当者・メニューを選択してください。
+                  </p>
+                )
+              ) : null}
             </div>
 
             <div>
@@ -866,6 +1063,10 @@ function ReservePageContent() {
                   </option>
                 ))}
               </select>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                担当者を選ぶと、そのスタッフの空き時間だけ表示します。
+                指名なしの場合は店舗全体の空き時間で確認します。
+              </p>
             </div>
 
             <div>
@@ -988,7 +1189,7 @@ function ReservePageContent() {
           <button
             type="button"
             onClick={handleReserveSubmit}
-            disabled={sending}
+            disabled={sending || availabilityLoading || !selectedTime}
             className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
             {sending ? "送信中..." : "この内容で予約希望を送る"}
