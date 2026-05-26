@@ -91,6 +91,26 @@ const addOnOptions = [
   },
 ];
 
+const reservationTimeOptions = [
+  "10:00",
+  "10:30",
+  "11:00",
+  "11:30",
+  "12:00",
+  "12:30",
+  "13:00",
+  "13:30",
+  "14:00",
+  "14:30",
+  "15:00",
+  "15:30",
+  "16:00",
+  "16:30",
+  "17:00",
+  "17:30",
+  "18:00",
+];
+
 type MeResponse = {
   authenticated: boolean;
   customer?: {
@@ -127,25 +147,6 @@ const signedInNavItems = [
   { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
   { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
-const reservationTimeOptions = [
-  "10:00",
-  "10:30",
-  "11:00",
-  "11:30",
-  "12:00",
-  "12:30",
-  "13:00",
-  "13:30",
-  "14:00",
-  "14:30",
-  "15:00",
-  "15:30",
-  "16:00",
-  "16:30",
-  "17:00",
-  "17:30",
-  "18:00",
-];
 
 function formatYen(value: number) {
   return `¥${value.toLocaleString("ja-JP")}`;
@@ -174,10 +175,31 @@ function findInitialMenuId(menuFromQuery: string | null) {
   return matched?.id || mainMenus[0].id;
 }
 
+function isUsefulGalleryText(value: string | null | undefined) {
+  const text = String(value || "").trim();
+
+  if (!text) return false;
+
+  // 「90」「120」など数字だけの値は参考メニューとして表示しない
+  if (/^\d+$/.test(text)) return false;
+
+  // 「90分」など時間だけっぽい値も参考メニューとして表示しない
+  if (/^\d+\s*分$/.test(text)) return false;
+
+  return true;
+}
+
 function getGalleryMenuName(visit: GalleryVisitRow | null) {
   if (!visit) return "";
-  if (visit.menu_name?.trim()) return visit.menu_name.trim();
-  if (visit.menu?.trim()) return visit.menu.trim();
+
+  if (isUsefulGalleryText(visit.menu_name)) {
+    return String(visit.menu_name).trim();
+  }
+
+  if (isUsefulGalleryText(visit.menu)) {
+    return String(visit.menu).trim();
+  }
+
   return "";
 }
 
@@ -703,12 +725,12 @@ function ReservePageContent() {
                 onChange={(e) => setSelectedTime(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
-               <option value="">選択してください</option>
-{reservationTimeOptions.map((time) => (
-  <option key={time} value={time}>
-    {time}
-  </option>
-))}
+                <option value="">選択してください</option>
+                {reservationTimeOptions.map((time) => (
+                  <option key={time} value={time}>
+                    {time}
+                  </option>
+                ))}
               </select>
             </div>
 
