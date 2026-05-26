@@ -378,6 +378,20 @@ function buildVisitLink(item: NormalizedReservation) {
   return `/visits/new?${params.toString()}`;
 }
 
+function canConfirmReservation(status: string) {
+  return status === "予約申請中" || status === "予約受付" || status === "予約";
+}
+
+function canMarkVisited(status: string) {
+  return (
+    status === "予約確定" ||
+    status === "confirmed" ||
+    status === "予約申請中" ||
+    status === "予約受付" ||
+    status === "予約"
+  );
+}
+
 export default function ReservationsPageClient() {
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
@@ -559,10 +573,6 @@ export default function ReservationsPageClient() {
     (item) => item.galleryReference.designId || item.galleryReference.photoUrl
   ).length;
 
-  const completedCount = filteredReservations.filter(
-    (item) => item.status === "完了"
-  ).length;
-
   async function updateStatus(id: string, status: string) {
     setUpdatingId(id);
 
@@ -579,6 +589,12 @@ export default function ReservationsPageClient() {
     }
 
     await fetchReservations();
+  }
+
+  async function handleConfirmReservation(id: string) {
+    const ok = window.confirm("この予約を『予約確定』に変更しますか？");
+    if (!ok) return;
+    await updateStatus(id, "confirmed");
   }
 
   async function handleMarkVisited(id: string) {
@@ -623,7 +639,7 @@ export default function ReservationsPageClient() {
               </p>
               <h1 className="mt-2 text-2xl font-bold text-white">予約ページ</h1>
               <p className="mt-2 text-sm leading-6 text-white/90">
-                ご予約の確認や変更、重複チェックを見やすくまとめたページです。
+                ご予約の確認・確定・来店変更・重複チェックをまとめたページです。
               </p>
             </div>
 
@@ -669,7 +685,7 @@ export default function ReservationsPageClient() {
               {requestedCount.toLocaleString()}件
             </div>
             <div className="mt-2 text-sm text-slate-500">
-              予約受付ステータス
+              予約確定前の予約
             </div>
           </div>
 
@@ -918,9 +934,19 @@ export default function ReservationsPageClient() {
                         編集
                       </Link>
 
-                      {(item.status === "予約申請中" ||
-                        item.status === "予約受付" ||
-                        item.status === "予約") && (
+                      {canConfirmReservation(item.status) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmReservation(item.id)}
+                          disabled={isUpdating}
+                          className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                          suppressHydrationWarning
+                        >
+                          {isUpdating ? "更新中..." : "予約確定にする"}
+                        </button>
+                      ) : null}
+
+                      {canMarkVisited(item.status) ? (
                         <button
                           type="button"
                           onClick={() => handleMarkVisited(item.id)}
@@ -930,7 +956,7 @@ export default function ReservationsPageClient() {
                         >
                           {isUpdating ? "更新中..." : "来店にする"}
                         </button>
-                      )}
+                      ) : null}
 
                       {(item.status === "来店予定" || item.status === "来店") && (
                         <button
