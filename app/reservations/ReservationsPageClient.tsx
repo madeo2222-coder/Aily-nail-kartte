@@ -573,9 +573,9 @@ export default function ReservationsPageClient() {
     (item) => item.galleryReference.designId || item.galleryReference.photoUrl
   ).length;
 
-  async function sendReservationConfirmedEmail(id: string) {
+  async function sendReservationConfirmedLine(id: string) {
     try {
-      const response = await fetch("/api/send-reservation-confirmed-email", {
+      const response = await fetch("/api/send-reservation-confirmed-line", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -592,9 +592,9 @@ export default function ReservationsPageClient() {
       };
 
       if (!response.ok || !result.ok) {
-        console.error("予約確定メール送信エラー:", result);
+        console.error("予約確定LINE通知エラー:", result);
         alert(
-          "予約は確定しましたが、メール送信に失敗しました。顧客メールアドレスやResend設定を確認してください。"
+          "予約は確定しましたが、LINE通知に失敗しました。LINE_CHANNEL_ACCESS_TOKENやline_user_idを確認してください。"
         );
         return;
       }
@@ -602,17 +602,15 @@ export default function ReservationsPageClient() {
       if (result.sent === false) {
         alert(
           result.message ||
-            "予約は確定しましたが、顧客メールアドレスが未登録のためメールは送信していません。"
+            "予約は確定しましたが、顧客のLINE連携が未登録のためLINE通知は送信していません。"
         );
         return;
       }
 
-      alert("予約を確定し、予約確定メールを送信しました。");
+      alert("予約を確定し、LINE通知を送信しました。");
     } catch (error) {
-      console.error("予約確定メールAPIエラー:", error);
-      alert(
-        "予約は確定しましたが、メール送信処理でエラーが発生しました。"
-      );
+      console.error("予約確定LINE通知APIエラー:", error);
+      alert("予約は確定しましたが、LINE通知処理でエラーが発生しました。");
     }
   }
 
@@ -620,7 +618,7 @@ export default function ReservationsPageClient() {
     id: string,
     status: string,
     options?: {
-      sendConfirmedEmail?: boolean;
+      sendConfirmedLine?: boolean;
     }
   ) {
     setUpdatingId(id);
@@ -637,19 +635,21 @@ export default function ReservationsPageClient() {
       return;
     }
 
-    if (options?.sendConfirmedEmail) {
-      await sendReservationConfirmedEmail(id);
+    if (options?.sendConfirmedLine) {
+      await sendReservationConfirmedLine(id);
     }
 
     await fetchReservations();
   }
 
   async function handleConfirmReservation(id: string) {
-    const ok = window.confirm("この予約を『予約確定』に変更し、メールを送信しますか？");
+    const ok = window.confirm(
+      "この予約を『予約確定』に変更し、LINE通知を送信しますか？"
+    );
     if (!ok) return;
 
     await updateStatus(id, "confirmed", {
-      sendConfirmedEmail: true,
+      sendConfirmedLine: true,
     });
   }
 
@@ -695,7 +695,7 @@ export default function ReservationsPageClient() {
               </p>
               <h1 className="mt-2 text-2xl font-bold text-white">予約ページ</h1>
               <p className="mt-2 text-sm leading-6 text-white/90">
-                ご予約の確認・確定・来店変更・重複チェックをまとめたページです。
+                ご予約の確認・確定・LINE通知・来店変更・重複チェックをまとめたページです。
               </p>
             </div>
 
@@ -998,7 +998,7 @@ export default function ReservationsPageClient() {
                           className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                           suppressHydrationWarning
                         >
-                          {isUpdating ? "更新中..." : "予約確定・メール送信"}
+                          {isUpdating ? "更新中..." : "予約確定・LINE送信"}
                         </button>
                       ) : null}
 
