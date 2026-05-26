@@ -50,7 +50,20 @@ type GalleryReference = {
   color: string;
 };
 
-const STATUS_OPTIONS = ["予約", "来店", "完了", "キャンセル"] as const;
+type ReservationStatus =
+  | "予約"
+  | "confirmed"
+  | "来店"
+  | "完了"
+  | "キャンセル";
+
+const STATUS_OPTIONS: { value: ReservationStatus; label: string }[] = [
+  { value: "予約", label: "予約申請中" },
+  { value: "confirmed", label: "予約確定" },
+  { value: "来店", label: "来店" },
+  { value: "完了", label: "完了" },
+  { value: "キャンセル", label: "キャンセル" },
+];
 
 function normalizeSupabaseDateTime(value: string | null) {
   if (!value) return null;
@@ -131,17 +144,18 @@ function buildDateTime(targetDate: string, targetTime: string) {
   return date.toISOString();
 }
 
-function normalizeStatus(value: string | null) {
+function normalizeStatus(value: string | null): ReservationStatus {
   if (!value) return "予約";
 
   if (value === "pending") return "予約";
   if (value === "requested") return "予約";
-  if (value === "confirmed") return "予約";
+  if (value === "confirmed") return "confirmed";
   if (value === "completed") return "完了";
   if (value === "cancelled") return "キャンセル";
 
   if (value === "予約受付") return "予約";
   if (value === "予約申請中") return "予約";
+  if (value === "予約確定") return "confirmed";
   if (value === "来店予定") return "来店";
   if (value === "完了待ち") return "来店";
 
@@ -155,6 +169,12 @@ function normalizeStatus(value: string | null) {
   }
 
   return "予約";
+}
+
+function getStatusLabel(value: ReservationStatus) {
+  if (value === "confirmed") return "予約確定";
+  if (value === "予約") return "予約申請中";
+  return value;
 }
 
 function isCancelledStatus(value: string | null | undefined) {
@@ -229,8 +249,10 @@ export default function EditReservationPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
   const [salons, setSalons] = useState<Salon[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -243,8 +265,7 @@ export default function EditReservationPage() {
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [status, setStatus] =
-    useState<"予約" | "来店" | "完了" | "キャンセル">("予約");
+  const [status, setStatus] = useState<ReservationStatus>("予約");
   const [memo, setMemo] = useState("");
   const [galleryReference, setGalleryReference] = useState<GalleryReference>({
     hasGallery: false,
@@ -263,6 +284,7 @@ export default function EditReservationPage() {
 
     setLoading(true);
     setErrorMessage("");
+    setSuccessMessage("");
 
     const [reservationRes, salonsRes, customersRes, staffsRes] =
       await Promise.all([
@@ -314,13 +336,7 @@ export default function EditReservationPage() {
     setDate(extractDate(reservation.start_at));
     setStartTime(extractTime(reservation.start_at));
     setEndTime(extractTime(reservation.end_at));
-    setStatus(
-      normalizeStatus(reservation.status) as
-        | "予約"
-        | "来店"
-        | "完了"
-        | "キャンセル"
-    );
+    setStatus(normalizeStatus(reservation.status));
     setGalleryReference(nextGalleryReference);
     setMemo(removeGalleryReferenceLines(rawMemo));
 
@@ -383,14 +399,10 @@ export default function EditReservationPage() {
     return activeOverlaps;
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    if (!reservationId) return;
-
+  function validateRequiredFields() {
     if (!salonId || !customerId || !staffId || !date || !startTime || !endTime) {
       setErrorMessage("必要項目を入力してください");
-      return;
+      return null;
     }
 
     const startAt = buildDateTime(date, startTime);
@@ -398,19 +410,82 @@ export default function EditReservationPage() {
 
     if (!startAt || !endAt || startAt >= endAt) {
       setErrorMessage("日時を正しく入力してください");
-      return;
+      return null;
     }
+
+    return { startAt, endAt };
+  }
+
+  async function handleConfirmReservation() {
+    if (!reservationId) return;
+
+    const confirmed = window.confirm("この予約を『予約確定』にしますか？");
+    if (!confirmed) return;
+
+    const dateTime = validateRequiredFields();
+    if (!dateTime) return;
+
+    setConfirming(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const overlaps = await checkOverlap({
+        startAt: dateTime.startAt,
+        endAt: dateTime.endAt,
+      });
+
+      if (overlaps.length > 0) {
+        setConfirming(false);
+        setErrorMessage(
+          "この時間帯はすでに予約またはブロックがあります。カレンダーで確認してください。"
+        );
+        return;
+      }
+
+      const { error } = await supabase
+        .from("reservations")
+        .update({
+          status: "confirmed",
+        })
+        .eq("id", reservationId);
+
+      setConfirming(false);
+
+      if (error) {
+        setErrorMessage("予約確定に失敗しました");
+        return;
+      }
+
+      setStatus("confirmed");
+      setSuccessMessage("予約確定に変更しました。顧客マイページにも反映されます。");
+    } catch (error) {
+      setConfirming(false);
+      const message =
+        error instanceof Error ? error.message : "予約確定に失敗しました";
+      setErrorMessage(message);
+    }
+  }
+
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    if (!reservationId) return;
+
+    const dateTime = validateRequiredFields();
+    if (!dateTime) return;
 
     const memoForSave = buildMemoForSave(galleryReference, memo);
 
     setSaving(true);
     setErrorMessage("");
+    setSuccessMessage("");
 
     try {
       if (!isCancelledStatus(status)) {
         const overlaps = await checkOverlap({
-          startAt,
-          endAt,
+          startAt: dateTime.startAt,
+          endAt: dateTime.endAt,
         });
 
         if (overlaps.length > 0) {
@@ -429,8 +504,8 @@ export default function EditReservationPage() {
           customer_id: customerId,
           staff_id: staffId,
           menu: menu || null,
-          start_at: startAt,
-          end_at: endAt,
+          start_at: dateTime.startAt,
+          end_at: dateTime.endAt,
           status,
           memo: memoForSave || null,
         })
@@ -459,6 +534,8 @@ export default function EditReservationPage() {
     if (!confirmed) return;
 
     setDeleting(true);
+    setErrorMessage("");
+    setSuccessMessage("");
 
     const { error } = await supabase
       .from("reservations")
@@ -476,6 +553,7 @@ export default function EditReservationPage() {
   }
 
   const backHref = customerId ? `/customers/${customerId}` : "/reservations";
+  const isAlreadyConfirmed = status === "confirmed";
 
   return (
     <main className="min-h-screen bg-rose-50/40">
@@ -488,7 +566,7 @@ export default function EditReservationPage() {
               </p>
               <h1 className="mt-2 text-2xl font-bold">予約編集ページ</h1>
               <p className="mt-2 text-sm leading-6 text-white/90">
-                ご予約内容の変更・削除ができるページです。
+                ご予約内容の変更・削除・予約確定ができるページです。
               </p>
             </div>
 
@@ -515,6 +593,45 @@ export default function EditReservationPage() {
                 {errorMessage}
               </div>
             ) : null}
+
+            {successMessage ? (
+              <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">
+                {successMessage}
+              </div>
+            ) : null}
+
+            <section className="rounded-[28px] border border-blue-100 bg-blue-50 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-bold text-blue-800">
+                    現在の予約状態
+                  </div>
+                  <div className="mt-1 text-2xl font-black text-blue-900">
+                    {getStatusLabel(status)}
+                  </div>
+                  <div className="mt-2 text-xs leading-5 text-blue-700">
+                    予約確定にすると、顧客マイページにも「予約確定」と表示されます。
+                  </div>
+                </div>
+
+                {!isAlreadyConfirmed && status !== "キャンセル" ? (
+                  <button
+                    type="button"
+                    onClick={handleConfirmReservation}
+                    disabled={confirming || saving || deleting}
+                    className="rounded-2xl bg-blue-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
+                  >
+                    {confirming ? "確定中..." : "予約確定にする"}
+                  </button>
+                ) : (
+                  <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
+                    {isAlreadyConfirmed
+                      ? "予約確定済み"
+                      : "キャンセル中の予約です"}
+                  </div>
+                )}
+              </div>
+            </section>
 
             {galleryReference.hasGallery ? (
               <section className="rounded-[28px] border border-pink-100 bg-pink-50 p-4">
@@ -668,23 +785,18 @@ export default function EditReservationPage() {
                 </label>
                 <select
                   value={status}
-                  onChange={(e) =>
-                    setStatus(
-                      e.target.value as
-                        | "予約"
-                        | "来店"
-                        | "完了"
-                        | "キャンセル"
-                    )
-                  }
+                  onChange={(e) => setStatus(e.target.value as ReservationStatus)}
                   className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
                 >
                   {STATUS_OPTIONS.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
+                    <option key={item.value} value={item.value}>
+                      {item.label}
                     </option>
                   ))}
                 </select>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  「予約確定」はデータ上は confirmed として保存され、顧客マイページでは予約確定と表示されます。
+                </p>
               </div>
 
               <div>
@@ -709,7 +821,7 @@ export default function EditReservationPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || confirming}
                 className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
               >
                 {saving ? "更新中..." : "更新する"}
@@ -718,7 +830,7 @@ export default function EditReservationPage() {
               <button
                 type="button"
                 onClick={handleDelete}
-                disabled={deleting}
+                disabled={deleting || confirming || saving}
                 className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
               >
                 {deleting ? "削除中..." : "削除する"}
