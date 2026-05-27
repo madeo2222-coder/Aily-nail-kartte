@@ -58,13 +58,13 @@ const MAIN_MENU_OPTIONS = [
     id: "length_10_free_120",
     label: "10本長さだし 120分やり放題",
     price: 14000,
-    minutes: 180,
+    minutes: 150,
   },
   {
     id: "length_10_free_120_parts",
     label: "10本長さだし 120分やり放題＆パーツ付け放題",
     price: 15500,
-    minutes: 180,
+    minutes: 150,
   },
   {
     id: "one_color_point",
@@ -72,9 +72,9 @@ const MAIN_MENU_OPTIONS = [
     price: 5500,
     minutes: 60,
   },
-  { id: "simple_fixed", label: "定額シンプル", price: 6000, minutes: 90 },
-  { id: "design_fixed", label: "定額デザイン", price: 7200, minutes: 100 },
-  { id: "own_off_only", label: "【自店】オフのみ", price: 3300, minutes: 45 },
+  { id: "simple_fixed", label: "定額シンプル", price: 6000, minutes: 60 },
+  { id: "design_fixed", label: "定額デザイン", price: 7200, minutes: 90 },
+  { id: "own_off_only", label: "【自店】オフのみ", price: 3300, minutes: 60 },
   { id: "other_off_only", label: "【他店】オフのみ", price: 3900, minutes: 60 },
   { id: CUSTOM_MENU_ID, label: "その他・自由入力", price: 0, minutes: 90 },
 ];
@@ -108,7 +108,7 @@ const ADD_ON_OPTIONS = [
     label: "長さだし1〜3本",
     price: 550,
     priceSuffix: "〜",
-    minutes: 30,
+    minutes: 0,
   },
   {
     id: "length_4_7",
