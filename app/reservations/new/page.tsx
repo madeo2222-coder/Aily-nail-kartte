@@ -639,7 +639,6 @@ export default function ReservationNewPage() {
         end_at: string;
         status: string;
         memo: string | null;
-        source: string;
       } = {
         salon_id: salonId,
         staff_id: staffId,
@@ -648,7 +647,6 @@ export default function ReservationNewPage() {
         end_at: endAt,
         status: reservationMode === "external" ? "予約確定" : status,
         memo: combinedMemo,
-        source: reservationMode === "external" ? externalSource : "手入力",
       };
 
       if (reservationMode === "normal" && customerId) {
