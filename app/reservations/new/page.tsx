@@ -553,7 +553,7 @@ export default function ReservationNewPage() {
   }) {
     let query = supabase
       .from("reservations")
-      .select("id, status, menu, source, start_at, end_at")
+      .select("id, status, menu, start_at, end_at")
       .lt("start_at", endAt)
       .gt("end_at", startAt);
 
