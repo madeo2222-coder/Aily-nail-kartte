@@ -146,7 +146,15 @@ function formatDate(value: string | null) {
 function formatDateTime(value: string | null) {
   if (!value) return "";
 
-  const date = new Date(value);
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const normalized =
+    trimmed.endsWith("Z") || /[+-]\\d{2}:\\d{2}$/.test(trimmed)
+      ? trimmed
+      : `${trimmed.replace(" ", "T")}Z`;
+
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return "";
 
   const formatter = new Intl.DateTimeFormat("ja-JP", {
