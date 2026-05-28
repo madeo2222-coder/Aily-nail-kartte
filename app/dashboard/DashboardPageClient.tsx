@@ -231,6 +231,9 @@ export default function DashboardPageClient() {
   const [monthSales, setMonthSales] = useState(0);
   const [previousMonthSales, setPreviousMonthSales] = useState(0);
   const [monthReceivables, setMonthReceivables] = useState(0);
+  const [repeatRate, setRepeatRate] = useState(0);
+  const [repeatCustomerCount, setRepeatCustomerCount] = useState(0);
+  const [visitedCustomerCount, setVisitedCustomerCount] = useState(0);
   const [nextVisitCount, setNextVisitCount] = useState(0);
   const [todayReservations, setTodayReservations] = useState<TodayReservation[]>([]);
 
@@ -322,6 +325,22 @@ export default function DashboardPageClient() {
       .filter((row) => row.status !== "paid")
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
 
+    const visitCountByCustomer = new Map<string, number>();
+
+    visits.forEach((row) => {
+      if (!row.customer_id) return;
+
+      const currentCount = visitCountByCustomer.get(row.customer_id) || 0;
+      visitCountByCustomer.set(row.customer_id, currentCount + 1);
+    });
+
+    const visitedCustomers = Array.from(visitCountByCustomer.entries());
+    const repeatCustomers = visitedCustomers.filter(([, count]) => count >= 2);
+    const repeatRateValue =
+      visitedCustomers.length > 0
+        ? (repeatCustomers.length / visitedCustomers.length) * 100
+        : 0;
+
     const nextVisits = currentMonthVisits.filter(
       (row) => typeof row.next_visit_date === "string" && row.next_visit_date.trim() !== ""
     );
@@ -362,6 +381,9 @@ export default function DashboardPageClient() {
     setMonthSales(currentMonthSales);
     setPreviousMonthSales(previousSales);
     setMonthReceivables(unpaidTotal);
+    setRepeatRate(repeatRateValue);
+    setRepeatCustomerCount(repeatCustomers.length);
+    setVisitedCustomerCount(visitedCustomers.length);
     setNextVisitCount(nextVisits.length);
     setTodayReservations(normalizedTodayReservations);
 
@@ -471,11 +493,13 @@ export default function DashboardPageClient() {
         </div>
 
         <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
-          <div className="text-sm text-gray-500">未収</div>
-          <div className="mt-2 text-2xl font-bold text-gray-900">
-            {formatYen(monthReceivables)}
+          <div className="text-sm text-gray-500">リピート率</div>
+          <div className="mt-2 text-2xl font-bold text-pink-600">
+            {Math.round(repeatRate)}%
           </div>
-          <div className="mt-2 text-sm text-gray-500">確認しておきたい金額</div>
+          <div className="mt-2 text-sm text-gray-500">
+            2回来店以上 {repeatCustomerCount}人 / 来店あり {visitedCustomerCount}人
+          </div>
         </div>
 
         <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
