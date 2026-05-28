@@ -24,6 +24,13 @@ type Staff = {
 
 type ReservationMode = "normal" | "external";
 
+type ExternalShortcut = {
+  label: string;
+  source: (typeof EXTERNAL_SOURCE_OPTIONS)[number];
+  title: string;
+  minutes: number;
+};
+
 const STATUS_OPTIONS = ["予約", "来店", "完了", "キャンセル"] as const;
 
 const EXTERNAL_SOURCE_OPTIONS = [
@@ -38,6 +45,45 @@ const EXTERNAL_SOURCE_OPTIONS = [
 ] as const;
 
 const DURATION_OPTIONS = [30, 45, 60, 75, 90, 120, 150, 180, 210, 240];
+
+const EXTERNAL_SHORTCUTS: ExternalShortcut[] = [
+  {
+    label: "ホットペッパー",
+    source: "ホットペッパー",
+    title: "ホットペッパー予約",
+    minutes: 90,
+  },
+  {
+    label: "ミニモ",
+    source: "ミニモ",
+    title: "ミニモ予約",
+    minutes: 90,
+  },
+  {
+    label: "電話予約",
+    source: "電話予約",
+    title: "電話予約",
+    minutes: 90,
+  },
+  {
+    label: "Instagram",
+    source: "Instagram DM",
+    title: "Instagram予約",
+    minutes: 90,
+  },
+  {
+    label: "休憩60分",
+    source: "休憩",
+    title: "休憩",
+    minutes: 60,
+  },
+  {
+    label: "店休日",
+    source: "店休日",
+    title: "店休日",
+    minutes: 240,
+  },
+];
 
 const CUSTOM_MENU_ID = "custom";
 
@@ -544,6 +590,16 @@ export default function ReservationNewPage() {
     }
   }
 
+  function handleExternalShortcut(shortcut: ExternalShortcut) {
+    setReservationMode("external");
+    setErrorMessage("");
+    setStatus("予約");
+    setCustomerId("");
+    setExternalSource(shortcut.source);
+    setExternalTitle(shortcut.title);
+    setDurationMinutes(shortcut.minutes);
+  }
+
   async function checkOverlap({
     startAt,
     endAt,
@@ -751,6 +807,29 @@ export default function ReservationNewPage() {
               {reservationMode === "external"
                 ? "ホットペッパー・ミニモ・電話予約・休憩などをブロックとして登録します。顧客マイページ予約との重複防止に使います。"
                 : "店舗側で通常予約を手入力します。メニュー・オフ・追加内容から所要時間を自動計算します。"}
+            </div>
+
+            <div className="rounded-3xl border border-purple-100 bg-purple-50/40 p-4">
+              <div className="text-sm font-bold text-slate-900">
+                外部予約ショートカット
+              </div>
+              <div className="mt-2 text-xs leading-5 text-slate-500">
+                HPB・ミニモ・休憩などをワンタップで外部予約ブロックに切り替えます。
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {EXTERNAL_SHORTCUTS.map((shortcut) => (
+                  <button
+                    key={shortcut.label}
+                    type="button"
+                    onClick={() => handleExternalShortcut(shortcut)}
+                    className="rounded-2xl border border-purple-200 bg-white px-3 py-3 text-sm font-bold text-purple-700 shadow-sm"
+                    suppressHydrationWarning
+                  >
+                    {shortcut.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="grid gap-4">
