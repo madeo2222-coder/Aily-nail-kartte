@@ -40,6 +40,8 @@ type TaskItem = {
   minimoText: string;
 };
 
+type ChannelFilter = "both" | "hpb" | "minimo";
+
 type DoneMap = Record<
   string,
   {
@@ -172,6 +174,9 @@ export default function ExternalCalendarTasksPage() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [doneMap, setDoneMap] = useState<DoneMap>({});
   const [copiedId, setCopiedId] = useState("");
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>("both");
+  const [staffFilter, setStaffFilter] = useState("all");
 
   useEffect(() => {
     const saved = window.localStorage.getItem("naily_external_calendar_done");
@@ -279,12 +284,50 @@ export default function ExternalCalendarTasksPage() {
     setLoading(false);
   }
 
+  const staffOptions = useMemo(() => {
+    return Array.from(new Set(tasks.map((task) => task.staffName))).sort((a, b) =>
+      a.localeCompare(b, "ja")
+    );
+  }, [tasks]);
+
   const pendingTasks = useMemo(() => {
     return tasks.filter((task) => {
       const done = doneMap[task.id] || {};
+
+      if (channelFilter === "hpb") {
+        return !done.hpb;
+      }
+
+      if (channelFilter === "minimo") {
+        return !done.minimo;
+      }
+
       return !done.hpb || !done.minimo;
     });
-  }, [tasks, doneMap]);
+  }, [tasks, doneMap, channelFilter]);
+
+  const visibleTasks = useMemo(() => {
+    return tasks.filter((task) => {
+      const done = doneMap[task.id] || {};
+
+      const isDoneForChannel =
+        channelFilter === "hpb"
+          ? Boolean(done.hpb)
+          : channelFilter === "minimo"
+          ? Boolean(done.minimo)
+          : Boolean(done.hpb && done.minimo);
+
+      if (!showCompleted && isDoneForChannel) {
+        return false;
+      }
+
+      if (staffFilter !== "all" && task.staffName !== staffFilter) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [tasks, doneMap, showCompleted, channelFilter, staffFilter]);
 
   function updateDone(taskId: string, key: "hpb" | "minimo", value: boolean) {
     const next = {
@@ -368,6 +411,73 @@ export default function ExternalCalendarTasksPage() {
           </div>
         </section>
 
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                表示
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCompleted(false)}
+                  className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+                    !showCompleted
+                      ? "border-rose-300 bg-rose-100 text-rose-700"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  反映待ちのみ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCompleted(true)}
+                  className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+                    showCompleted
+                      ? "border-rose-300 bg-rose-100 text-rose-700"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  すべて
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                媒体
+              </label>
+              <select
+                value={channelFilter}
+                onChange={(e) => setChannelFilter(e.target.value as ChannelFilter)}
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                <option value="both">HPB＋ミニモ</option>
+                <option value="hpb">HPBのみ</option>
+                <option value="minimo">ミニモのみ</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-700">
+                担当スタッフ
+              </label>
+              <select
+                value={staffFilter}
+                onChange={(e) => setStaffFilter(e.target.value)}
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                <option value="all">全スタッフ</option>
+                {staffOptions.map((staffName) => (
+                  <option key={staffName} value={staffName}>
+                    {staffName}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </section>
+
         {loading ? (
           <section className="rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
             読み込み中...
@@ -376,11 +486,23 @@ export default function ExternalCalendarTasksPage() {
           <section className="rounded-[28px] border border-rose-100 bg-white p-6 text-sm text-slate-500 shadow-sm">
             外部カレンダーへ反映が必要な予約はありません。
           </section>
+        ) : visibleTasks.length === 0 ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-6 text-sm text-slate-500 shadow-sm">
+            条件に合う反映待ち予約はありません。
+          </section>
         ) : (
           <section className="space-y-4">
-            {tasks.map((task) => {
+            {visibleTasks.map((task) => {
               const done = doneMap[task.id] || {};
-              const isDoneAll = Boolean(done.hpb && done.minimo);
+              const showHpb = channelFilter === "both" || channelFilter === "hpb";
+              const showMinimo =
+                channelFilter === "both" || channelFilter === "minimo";
+              const isDoneAll =
+                channelFilter === "hpb"
+                  ? Boolean(done.hpb)
+                  : channelFilter === "minimo"
+                  ? Boolean(done.minimo)
+                  : Boolean(done.hpb && done.minimo);
 
               return (
                 <div
@@ -415,7 +537,12 @@ export default function ExternalCalendarTasksPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div
+                    className={`mt-4 grid gap-3 ${
+                      showHpb && showMinimo ? "sm:grid-cols-2" : "sm:grid-cols-1"
+                    }`}
+                  >
+                    {showHpb ? (
                     <div className="rounded-3xl border border-orange-100 bg-orange-50 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-bold text-orange-800">
@@ -445,7 +572,9 @@ export default function ExternalCalendarTasksPage() {
                           : "HPB用をコピー"}
                       </button>
                     </div>
+                    ) : null}
 
+                    {showMinimo ? (
                     <div className="rounded-3xl border border-purple-100 bg-purple-50 p-4">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-bold text-purple-800">
@@ -479,6 +608,7 @@ export default function ExternalCalendarTasksPage() {
                           : "ミニモ用をコピー"}
                       </button>
                     </div>
+                    ) : null}
                   </div>
                 </div>
               );
