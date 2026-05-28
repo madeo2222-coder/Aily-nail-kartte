@@ -186,7 +186,7 @@ function isCancelledStatus(status: string) {
 }
 
 function getStatusColor(status: string, menuName: string, memo: string) {
-  const checkText = ` `;
+  const checkText = `${menuName || ""} ${memo || ""}`;
 
   if (checkText.includes("ホットペッパー") || checkText.includes("HPB")) {
     return "border-orange-200 bg-orange-100 text-orange-800";
@@ -208,7 +208,11 @@ function getStatusColor(status: string, menuName: string, memo: string) {
     return "border-emerald-200 bg-emerald-100 text-emerald-800";
   }
 
-  if (checkText.includes("休憩") || checkText.includes("店休日") || checkText.includes("ブロック")) {
+  if (
+    checkText.includes("休憩") ||
+    checkText.includes("店休日") ||
+    checkText.includes("ブロック")
+  ) {
     return "border-zinc-300 bg-zinc-100 text-zinc-800";
   }
 
