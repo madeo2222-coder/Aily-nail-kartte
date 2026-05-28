@@ -185,16 +185,31 @@ function isCancelledStatus(status: string) {
   return status === "キャンセル" || status === "cancelled";
 }
 
-function getStatusColor(status: string, source: string) {
-  const sourceText = source || "";
+function getStatusColor(status: string, menuName: string, memo: string) {
+  const checkText = ` `;
 
-  if (
-    sourceText.includes("ホットペッパー") ||
-    sourceText.includes("HPB") ||
-    sourceText.includes("ミニモ") ||
-    sourceText.includes("外部")
-  ) {
+  if (checkText.includes("ホットペッパー") || checkText.includes("HPB")) {
+    return "border-orange-200 bg-orange-100 text-orange-800";
+  }
+
+  if (checkText.includes("ミニモ")) {
     return "border-purple-200 bg-purple-100 text-purple-800";
+  }
+
+  if (checkText.includes("電話")) {
+    return "border-slate-300 bg-slate-100 text-slate-800";
+  }
+
+  if (checkText.includes("Instagram") || checkText.includes("インスタ")) {
+    return "border-pink-200 bg-pink-100 text-pink-800";
+  }
+
+  if (checkText.includes("LINE") || checkText.includes("ライン")) {
+    return "border-emerald-200 bg-emerald-100 text-emerald-800";
+  }
+
+  if (checkText.includes("休憩") || checkText.includes("店休日") || checkText.includes("ブロック")) {
+    return "border-zinc-300 bg-zinc-100 text-zinc-800";
   }
 
   if (status === "予約申請中" || status === "予約受付") {
@@ -816,7 +831,8 @@ export default function ReservationsCalendarPage() {
 
                         const colorClass = getStatusColor(
                           reservation.status,
-                          reservation.source
+                          reservation.menuName,
+                          reservation.memo
                         );
 
                         return (
