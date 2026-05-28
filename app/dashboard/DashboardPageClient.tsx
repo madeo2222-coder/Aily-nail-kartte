@@ -688,6 +688,14 @@ export default function DashboardPageClient() {
             <div className="text-2xl">🔗</div>
             <div className="mt-2 text-sm font-bold text-gray-900">外部連携</div>
           </Link>
+
+          <Link
+            href="/external-calendar-tasks"
+            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
+          >
+            <div className="text-2xl">🗓️</div>
+            <div className="mt-2 text-sm font-bold text-gray-900">外部反映</div>
+          </Link>
         </div>
       </div>
 
