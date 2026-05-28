@@ -241,6 +241,65 @@ function buildMemoForSave(galleryReference: GalleryReference, displayMemo: strin
   return [...galleryLines, displayMemo.trim()].filter(Boolean).join("\n");
 }
 
+function getExternalBlockLabel(menu: string, memo: string) {
+  const checkText = `${menu}\n${memo}`;
+
+  if (checkText.includes("ホットペッパー") || checkText.includes("HPB")) {
+    return "ホットペッパー予約";
+  }
+
+  if (checkText.includes("ミニモ")) {
+    return "ミニモ予約";
+  }
+
+  if (checkText.includes("電話")) {
+    return "電話予約";
+  }
+
+  if (checkText.includes("Instagram") || checkText.includes("インスタ")) {
+    return "Instagram予約";
+  }
+
+  if (checkText.includes("LINE") || checkText.includes("ライン")) {
+    return "LINE予約";
+  }
+
+  if (checkText.includes("休憩")) {
+    return "休憩";
+  }
+
+  if (checkText.includes("店休日")) {
+    return "店休日";
+  }
+
+  if (checkText.includes("ブロック")) {
+    return "外部予約ブロック";
+  }
+
+  return "";
+}
+
+function getDurationLabel(date: string, startTime: string, endTime: string) {
+  const startAt = buildDateTime(date, startTime);
+  const endAt = buildDateTime(date, endTime);
+
+  if (!startAt || !endAt) return "未設定";
+
+  const diffMinutes = Math.round(
+    (new Date(endAt).getTime() - new Date(startAt).getTime()) / 60000
+  );
+
+  if (!Number.isFinite(diffMinutes) || diffMinutes <= 0) return "未設定";
+
+  const hour = Math.floor(diffMinutes / 60);
+  const minute = diffMinutes % 60;
+
+  if (hour <= 0) return `${minute}分`;
+  if (minute === 0) return `${hour}時間`;
+
+  return `${hour}時間${minute}分`;
+}
+
 export default function EditReservationPage() {
   const router = useRouter();
   const params = useParams();
@@ -360,6 +419,16 @@ export default function EditReservationPage() {
     );
   }, [allStaffs, salonId]);
 
+  const externalBlockLabel = useMemo(() => {
+    return getExternalBlockLabel(menu, memo);
+  }, [menu, memo]);
+
+  const isExternalBlock = Boolean(externalBlockLabel) && !customerId;
+
+  const durationLabel = useMemo(() => {
+    return getDurationLabel(date, startTime, endTime);
+  }, [date, startTime, endTime]);
+
   function handleSalonChange(nextSalonId: string) {
     setSalonId(nextSalonId);
   }
@@ -400,8 +469,13 @@ export default function EditReservationPage() {
   }
 
   function validateRequiredFields() {
-    if (!salonId || !customerId || !staffId || !date || !startTime || !endTime) {
+    if (!salonId || !staffId || !date || !startTime || !endTime) {
       setErrorMessage("必要項目を入力してください");
+      return null;
+    }
+
+    if (!isExternalBlock && !customerId) {
+      setErrorMessage("顧客を選択してください");
       return null;
     }
 
@@ -501,7 +575,7 @@ export default function EditReservationPage() {
         .from("reservations")
         .update({
           salon_id: salonId,
-          customer_id: customerId,
+          customer_id: isExternalBlock ? null : customerId,
           staff_id: staffId,
           menu: menu || null,
           start_at: dateTime.startAt,
@@ -518,7 +592,7 @@ export default function EditReservationPage() {
         return;
       }
 
-      router.push(customerId ? `/customers/${customerId}` : "/reservations");
+      router.push(isExternalBlock ? "/reservations/calendar" : customerId ? `/customers/${customerId}` : "/reservations");
     } catch (error) {
       setSaving(false);
       const message =
@@ -549,10 +623,14 @@ export default function EditReservationPage() {
       return;
     }
 
-    router.push(customerId ? `/customers/${customerId}` : "/reservations");
+    router.push(isExternalBlock ? "/reservations/calendar" : customerId ? `/customers/${customerId}` : "/reservations");
   }
 
-  const backHref = customerId ? `/customers/${customerId}` : "/reservations";
+  const backHref = isExternalBlock
+    ? "/reservations/calendar"
+    : customerId
+    ? `/customers/${customerId}`
+    : "/reservations";
   const isAlreadyConfirmed = status === "confirmed";
 
   return (
@@ -564,9 +642,13 @@ export default function EditReservationPage() {
               <p className="text-xs font-bold tracking-[0.25em] text-white/80">
                 NAILY AIDOL
               </p>
-              <h1 className="mt-2 text-2xl font-bold">予約編集ページ</h1>
+              <h1 className="mt-2 text-2xl font-bold">
+                {isExternalBlock ? "外部予約ブロック編集" : "予約編集ページ"}
+              </h1>
               <p className="mt-2 text-sm leading-6 text-white/90">
-                ご予約内容の変更・削除・予約確定ができるページです。
+                {isExternalBlock
+                  ? "HPB・ミニモ・休憩・店休日などのブロックを変更できます。"
+                  : "ご予約内容の変更・削除・予約確定ができるページです。"}
               </p>
             </div>
 
@@ -610,7 +692,9 @@ export default function EditReservationPage() {
                     {getStatusLabel(status)}
                   </div>
                   <div className="mt-2 text-xs leading-5 text-blue-700">
-                    予約確定にすると、顧客マイページにも「予約確定」と表示されます。
+                    {isExternalBlock
+                      ? `${externalBlockLabel}です。所要時間：${durationLabel}`
+                      : "予約確定にすると、顧客マイページにも「予約確定」と表示されます。"}
                   </div>
                 </div>
 
@@ -694,23 +778,37 @@ export default function EditReservationPage() {
                 </select>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  顧客
-                </label>
-                <select
-                  value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                >
-                  <option value="">選択してください</option>
-                  {filteredCustomers.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name || "名前未登録"}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {isExternalBlock ? (
+                <section className="rounded-[28px] border border-purple-100 bg-purple-50 p-4">
+                  <div className="text-sm font-bold text-purple-800">
+                    外部予約ブロック
+                  </div>
+                  <div className="mt-1 text-2xl font-black text-purple-900">
+                    {externalBlockLabel}
+                  </div>
+                  <div className="mt-2 text-xs leading-5 text-purple-700">
+                    顧客に紐づかないブロックとして保存します。HPB・ミニモ・休憩・店休日などの重複防止用です。
+                  </div>
+                </section>
+              ) : (
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    顧客
+                  </label>
+                  <select
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                  >
+                    <option value="">選択してください</option>
+                    {filteredCustomers.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name || "名前未登録"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -833,7 +931,7 @@ export default function EditReservationPage() {
                 disabled={deleting || confirming || saving}
                 className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
               >
-                {deleting ? "削除中..." : "削除する"}
+                {deleting ? "削除中..." : isExternalBlock ? "ブロックを削除する" : "削除する"}
               </button>
 
               <Link
