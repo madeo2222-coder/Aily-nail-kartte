@@ -168,6 +168,86 @@ async function sendReservationNoticeMail({
   }
 }
 
+async function sendReservationNoticeLine({
+  reservationId,
+  customerName,
+  menu,
+  startIso,
+  endIso,
+  staffName,
+  memo,
+  durationMinutes,
+}: {
+  reservationId: string;
+  customerName: string;
+  menu: string;
+  startIso: string;
+  endIso: string;
+  staffName: string;
+  memo: string;
+  durationMinutes: number;
+}) {
+  const lineAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  const adminUserId = process.env.LINE_ADMIN_USER_ID;
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+
+  if (!lineAccessToken || !adminUserId) {
+    console.log(
+      "予約LINE通知はスキップされました: LINE_CHANNEL_ACCESS_TOKEN または LINE_ADMIN_USER_ID が未設定です"
+    );
+    return;
+  }
+
+  const calendarUrl = baseUrl
+    ? `${baseUrl.replace(/\/$/, "")}/reservations/calendar`
+    : "";
+  const reservationUrl = baseUrl
+    ? `${baseUrl.replace(/\/$/, "")}/reservations/edit/${reservationId}`
+    : "";
+
+  const text = [
+    "💅 新しい予約希望が入りました",
+    "",
+    `お客様名：${customerName}`,
+    `メニュー：${menu}`,
+    `予約開始：${formatDateTimeForMail(startIso)}`,
+    `予約終了：${formatDateTimeForMail(endIso)}`,
+    `所要時間：${durationMinutes}分`,
+    `担当者：${staffName}`,
+    `ステータス：予約申請中`,
+    "",
+    "ご要望・備考：",
+    memo || "-",
+    "",
+    reservationUrl ? `予約確認：${reservationUrl}` : "",
+    calendarUrl ? `カレンダー：${calendarUrl}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${lineAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      to: adminUserId,
+      messages: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("予約LINE通知送信エラー:", errorText);
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -362,6 +442,21 @@ export async function POST(request: Request) {
       });
     } catch (mailError) {
       console.error("予約通知メール処理エラー:", mailError);
+    }
+
+    try {
+      await sendReservationNoticeLine({
+        reservationId: String(data.id),
+        customerName,
+        menu,
+        startIso,
+        endIso,
+        staffName,
+        memo,
+        durationMinutes,
+      });
+    } catch (lineError) {
+      console.error("予約LINE通知処理エラー:", lineError);
     }
 
     return NextResponse.json({
