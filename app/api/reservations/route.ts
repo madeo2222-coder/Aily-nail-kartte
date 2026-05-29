@@ -37,17 +37,9 @@ function formatDateTimeForMail(value: string) {
 function normalizeDurationMinutes(value: unknown) {
   const minutes = Number(value);
 
-  if (!Number.isFinite(minutes)) {
-    return 90;
-  }
-
-  if (minutes < 30) {
-    return 30;
-  }
-
-  if (minutes > 360) {
-    return 360;
-  }
+  if (!Number.isFinite(minutes)) return 90;
+  if (minutes < 30) return 30;
+  if (minutes > 360) return 360;
 
   return Math.round(minutes);
 }
@@ -104,45 +96,20 @@ async function sendReservationNoticeMail({
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; line-height: 1.8; color: #111827;">
       <h2>新しい予約希望が入りました</h2>
       <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">お客様名</th>
-          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${customerName}</td>
-        </tr>
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">メニュー</th>
-          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${menu}</td>
-        </tr>
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">予約開始</th>
-          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${formatDateTimeForMail(
-            startIso
-          )}</td>
-        </tr>
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">予約終了</th>
-          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${formatDateTimeForMail(
-            endIso
-          )}</td>
-        </tr>
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">所要時間</th>
-          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${durationMinutes}分</td>
-        </tr>
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">担当者</th>
-          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">${staffName}</td>
-        </tr>
-        <tr>
-          <th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">ステータス</th>
-          <td style="padding:8px; border-bottom:1px solid #e5e7eb;">予約申請中</td>
-        </tr>
+        <tr><th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">お客様名</th><td style="padding:8px; border-bottom:1px solid #e5e7eb;">${customerName}</td></tr>
+        <tr><th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">メニュー</th><td style="padding:8px; border-bottom:1px solid #e5e7eb;">${menu}</td></tr>
+        <tr><th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">予約開始</th><td style="padding:8px; border-bottom:1px solid #e5e7eb;">${formatDateTimeForMail(
+          startIso
+        )}</td></tr>
+        <tr><th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">予約終了</th><td style="padding:8px; border-bottom:1px solid #e5e7eb;">${formatDateTimeForMail(
+          endIso
+        )}</td></tr>
+        <tr><th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">所要時間</th><td style="padding:8px; border-bottom:1px solid #e5e7eb;">${durationMinutes}分</td></tr>
+        <tr><th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">担当者</th><td style="padding:8px; border-bottom:1px solid #e5e7eb;">${staffName}</td></tr>
+        <tr><th style="text-align:left; padding:8px; border-bottom:1px solid #e5e7eb;">ステータス</th><td style="padding:8px; border-bottom:1px solid #e5e7eb;">予約申請中</td></tr>
       </table>
-
       <h3 style="margin-top:24px;">ご要望・備考</h3>
-      <div style="white-space:pre-wrap; background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px; padding:12px;">
-        ${memo || "-"}
-      </div>
-
+      <div style="white-space:pre-wrap; background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px; padding:12px;">${memo || "-"}</div>
       <p style="margin-top:24px;">スタッフ予約ページで内容を確認してください。</p>
     </div>
   `;
@@ -187,9 +154,15 @@ async function sendReservationNoticeLine({
   memo: string;
   durationMinutes: number;
 }) {
+  console.log("予約LINE通知処理開始");
+
   const lineAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const adminUserId = process.env.LINE_ADMIN_USER_ID;
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "";
+
+  console.log("LINE_CHANNEL_ACCESS_TOKEN exists:", !!lineAccessToken);
+  console.log("LINE_ADMIN_USER_ID exists:", !!adminUserId);
+  console.log("NEXT_PUBLIC_BASE_URL exists:", !!baseUrl);
 
   if (!lineAccessToken || !adminUserId) {
     console.log(
@@ -225,6 +198,8 @@ async function sendReservationNoticeLine({
     .filter(Boolean)
     .join("\n");
 
+  console.log("LINE push送信前");
+
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {
@@ -233,19 +208,21 @@ async function sendReservationNoticeLine({
     },
     body: JSON.stringify({
       to: adminUserId,
-      messages: [
-        {
-          type: "text",
-          text,
-        },
-      ],
+      messages: [{ type: "text", text }],
     }),
   });
 
+  console.log("LINE API status:", response.status);
+
+  const responseText = await response.text();
+  console.log("LINE API response:", responseText || "no response body");
+
   if (!response.ok) {
-    const errorText = await response.text();
-    console.error("予約LINE通知送信エラー:", errorText);
+    console.error("予約LINE通知送信エラー:", responseText);
+    return;
   }
+
+  console.log("予約LINE通知成功");
 }
 
 export async function POST(request: Request) {
@@ -301,13 +278,8 @@ export async function POST(request: Request) {
 
       const customer = customerData as CustomerRow | null;
 
-      if (customer?.name) {
-        customerName = customer.name;
-      }
-
-      if (!salonId && customer?.salon_id) {
-        salonId = String(customer.salon_id);
-      }
+      if (customer?.name) customerName = customer.name;
+      if (!salonId && customer?.salon_id) salonId = String(customer.salon_id);
     }
 
     if (staffId) {
@@ -326,13 +298,8 @@ export async function POST(request: Request) {
 
       const staff = staffData as StaffRow | null;
 
-      if (staff?.name) {
-        staffName = staff.name;
-      }
-
-      if (!salonId && staff?.salon_id) {
-        salonId = String(staff.salon_id);
-      }
+      if (staff?.name) staffName = staff.name;
+      if (!salonId && staff?.salon_id) salonId = String(staff.salon_id);
     }
 
     const startAt = new Date(`${date}T${time}:00+09:00`);
@@ -354,13 +321,8 @@ export async function POST(request: Request) {
       .lt("start_at", endIso)
       .gt("end_at", startIso);
 
-    if (salonId) {
-      overlapQuery = overlapQuery.eq("salon_id", salonId);
-    }
-
-    if (staffId) {
-      overlapQuery = overlapQuery.eq("staff_id", staffId);
-    }
+    if (salonId) overlapQuery = overlapQuery.eq("salon_id", salonId);
+    if (staffId) overlapQuery = overlapQuery.eq("staff_id", staffId);
 
     const { data: overlapReservations, error: overlapError } =
       await overlapQuery;
@@ -405,17 +367,9 @@ export async function POST(request: Request) {
       memo,
     };
 
-    if (staffId) {
-      insertData.staff_id = staffId;
-    }
-
-    if (customerId) {
-      insertData.customer_id = customerId;
-    }
-
-    if (salonId) {
-      insertData.salon_id = salonId;
-    }
+    if (staffId) insertData.staff_id = staffId;
+    if (customerId) insertData.customer_id = customerId;
+    if (salonId) insertData.salon_id = salonId;
 
     const { data, error } = await supabase
       .from("reservations")
