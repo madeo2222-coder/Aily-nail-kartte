@@ -69,9 +69,9 @@ export async function GET(request: NextRequest) {
 
     const { data: customer, error } = await supabase
       .from("customers")
-      .select("id, name, salon_id, line_user_id")
+      .select("id, name, salon_id, line_user_id, line_login_id")
       .eq("id", session.customer_id)
-      .eq("line_user_id", session.line_user_id)
+      .eq("line_login_id", session.line_user_id)
       .maybeSingle();
 
     if (error || !customer) {
