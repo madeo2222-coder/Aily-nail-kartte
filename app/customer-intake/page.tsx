@@ -4,8 +4,28 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+type MeResponse = {
+  authenticated: boolean;
+  customer?: {
+    id?: string;
+    name?: string | null;
+    salon_id?: string | null;
+    line_user_id?: string | null;
+  } | null;
+  pending?: {
+    displayName: string;
+    pictureUrl: string;
+  } | null;
+};
+
 export default function CustomerIntakePage() {
   const [mounted, setMounted] = useState(false);
+
+  const [lineLoading, setLineLoading] = useState(true);
+  const [isLineAuthenticated, setIsLineAuthenticated] = useState(false);
+  const [pendingLineName, setPendingLineName] = useState("");
+  const [authenticatedCustomerName, setAuthenticatedCustomerName] =
+    useState("");
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -34,6 +54,29 @@ export default function CustomerIntakePage() {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    async function checkLineStatus() {
+      try {
+        const res = await fetch("/api/line-login/me", {
+          cache: "no-store",
+        });
+        const json = (await res.json()) as MeResponse;
+
+        setIsLineAuthenticated(!!json.authenticated);
+        setPendingLineName(json.pending?.displayName || "");
+        setAuthenticatedCustomerName(json.customer?.name || "");
+      } catch {
+        setIsLineAuthenticated(false);
+        setPendingLineName("");
+        setAuthenticatedCustomerName("");
+      } finally {
+        setLineLoading(false);
+      }
+    }
+
+    checkLineStatus();
   }, []);
 
   useEffect(() => {
@@ -159,6 +202,48 @@ export default function CustomerIntakePage() {
     return canvas.toDataURL("image/png");
   }
 
+  async function linkLineAfterCustomerCreated() {
+    if (!pendingLineName) {
+      return { linked: false, message: "" };
+    }
+
+    try {
+      const res = await fetch("/api/line-login/link", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+        }),
+      });
+
+      const json = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        redirectTo?: string;
+      };
+
+      if (!res.ok || !json.ok) {
+        return {
+          linked: false,
+          message: json.error || "LINE連携に失敗しました",
+        };
+      }
+
+      return {
+        linked: true,
+        message: json.redirectTo || "/customer-app",
+      };
+    } catch {
+      return {
+        linked: false,
+        message: "LINE連携処理で通信エラーが発生しました",
+      };
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage("");
@@ -239,7 +324,25 @@ export default function CustomerIntakePage() {
         return;
       }
 
-      setMessage("送信が完了しました。ありがとうございました。");
+      const lineResult = await linkLineAfterCustomerCreated();
+
+      if (lineResult.linked) {
+        setMessage("送信とLINE連携が完了しました。マイページへ移動します。");
+
+        window.setTimeout(() => {
+          window.location.href = lineResult.message || "/customer-app";
+        }, 800);
+
+        return;
+      }
+
+      if (lineResult.message) {
+        setMessage(
+          `送信は完了しました。ただしLINE連携は未完了です: ${lineResult.message}`
+        );
+      } else {
+        setMessage("送信が完了しました。ありがとうございました。");
+      }
 
       setName("");
       setPhone("");
@@ -274,7 +377,8 @@ export default function CustomerIntakePage() {
           </p>
           <h1 className="mt-3 text-3xl font-bold">初回来店受付フォーム</h1>
           <p className="mt-4 text-base leading-8 text-white/90">
-            LINEからご来店ありがとうございます。初めてのお客様は、施術を安全に行うため必要事項の入力とご署名をお願いします。
+            初めてのお客様は、LINE認証後に必要事項の入力とご署名をお願いします。
+            LINE認証しておくと、予約確認・予約確定・マイページ利用がスムーズになります。
           </p>
 
           <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -291,6 +395,43 @@ export default function CustomerIntakePage() {
               会員の方はこちら
             </Link>
           </div>
+        </section>
+
+        <section className="rounded-[24px] border bg-white p-6 shadow-sm">
+          <h2 className="text-2xl font-bold text-slate-900">LINE認証</h2>
+          <p className="mt-3 text-base leading-7 text-slate-600">
+            予約通知・予約確定通知・マイページ利用のため、最初にLINE認証をお願いします。
+          </p>
+
+          {lineLoading ? (
+            <div className="mt-4 rounded-[20px] bg-slate-50 px-5 py-4 text-base font-bold text-slate-600">
+              LINE状態を確認中...
+            </div>
+          ) : isLineAuthenticated ? (
+            <div className="mt-4 rounded-[20px] border border-green-200 bg-green-50 px-5 py-4 text-base font-bold text-green-700">
+              LINEログイン済みです
+              {authenticatedCustomerName ? `：${authenticatedCustomerName} 様` : ""}
+            </div>
+          ) : pendingLineName ? (
+            <div className="mt-4 rounded-[20px] border border-green-200 bg-green-50 px-5 py-4 text-base font-bold text-green-700">
+              LINE認証済みです：{pendingLineName} さん
+              <div className="mt-2 text-sm font-medium leading-6">
+                このまま受付フォームを送信すると、LINEと顧客情報を自動で紐付けます。
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 space-y-3">
+              <a
+                href="/api/line-login/session?mode=start&next=/customer-intake"
+                className="block w-full rounded-[20px] bg-green-500 px-5 py-4 text-center text-lg font-bold text-white"
+              >
+                LINEで認証する
+              </a>
+              <p className="text-sm leading-6 text-slate-500">
+                認証後、この受付フォームに戻ります。認証せずに送信することもできますが、LINE通知やマイページ連携は後から必要になります。
+              </p>
+            </div>
+          )}
         </section>
 
         <form onSubmit={handleSubmit} className="space-y-6">

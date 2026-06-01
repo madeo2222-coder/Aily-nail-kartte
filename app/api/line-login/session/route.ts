@@ -89,12 +89,20 @@ function clearCookie(response: NextResponse, name: string) {
   });
 }
 
+function getSafeNextPath(value: string | null) {
+  if (!value) return "/customer-app";
+  if (!value.startsWith("/")) return "/customer-app";
+  if (value.startsWith("//")) return "/customer-app";
+
+  return value;
+}
+
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const mode = url.searchParams.get("mode");
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  const nextPath = url.searchParams.get("next") || "/customer-app";
+  const nextPath = getSafeNextPath(url.searchParams.get("next"));
 
   if (mode === "start") {
     try {
@@ -111,6 +119,7 @@ export async function GET(request: NextRequest) {
       authUrl.searchParams.set("prompt", "consent");
 
       const response = NextResponse.redirect(authUrl);
+
       setCookie(
         response,
         LINE_STATE_COOKIE,
@@ -126,6 +135,7 @@ export async function GET(request: NextRequest) {
       const response = NextResponse.redirect(
         new URL("/customer-app/login?error=LINE設定が不足しています", request.url)
       );
+
       clearCookie(response, LINE_STATE_COOKIE);
       return response;
     }
@@ -146,6 +156,7 @@ export async function GET(request: NextRequest) {
       const response = NextResponse.redirect(
         new URL("/customer-app/login?error=LINEログイン状態の確認に失敗しました", request.url)
       );
+
       clearCookie(response, LINE_STATE_COOKIE);
       return response;
     }
@@ -231,8 +242,14 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    const linkUrl = new URL("/customer-app/link", request.url);
-    const response = NextResponse.redirect(linkUrl);
+    const pendingNext = getSafeNextPath(savedState.next || "/customer-app");
+    const pendingRedirectPath = pendingNext.startsWith("/customer-intake")
+      ? pendingNext
+      : "/customer-app/link";
+
+    const response = NextResponse.redirect(
+      new URL(pendingRedirectPath, request.url)
+    );
 
     setCookie(
       response,
@@ -241,7 +258,7 @@ export async function GET(request: NextRequest) {
         line_user_id: verified.sub,
         display_name: verified.name || "",
         picture_url: verified.picture || "",
-        next: savedState.next || "/customer-app",
+        next: pendingNext,
       }),
       60 * 10
     );
@@ -253,15 +270,18 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "LINEログイン処理に失敗しました";
+
     const response = NextResponse.redirect(
       new URL(
         `/customer-app/login?error=${encodeURIComponent(message)}`,
         request.url
       )
     );
+
     clearCookie(response, LINE_STATE_COOKIE);
     clearCookie(response, LINE_PENDING_COOKIE);
     clearCookie(response, LINE_SESSION_COOKIE);
+
     return response;
   }
 }
