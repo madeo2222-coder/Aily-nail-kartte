@@ -89,7 +89,7 @@ function clearCookie(response: NextResponse, name: string) {
   });
 }
 
-function getSafeNextPath(value: string | null) {
+function getSafeNextPath(value: string | null | undefined) {
   if (!value) return "/customer-app";
   if (!value.startsWith("/")) return "/customer-app";
   if (value.startsWith("//")) return "/customer-app";
@@ -143,7 +143,10 @@ export async function GET(request: NextRequest) {
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL("/customer-app/login?error=LINEログインの開始に失敗しました", request.url)
+      new URL(
+        "/customer-app/login?error=LINEログインの開始に失敗しました",
+        request.url
+      )
     );
   }
 
@@ -154,7 +157,10 @@ export async function GET(request: NextRequest) {
 
     if (!savedState || savedState.state !== state) {
       const response = NextResponse.redirect(
-        new URL("/customer-app/login?error=LINEログイン状態の確認に失敗しました", request.url)
+        new URL(
+          "/customer-app/login?error=LINEログイン状態の確認に失敗しました",
+          request.url
+        )
       );
 
       clearCookie(response, LINE_STATE_COOKIE);
@@ -215,8 +221,8 @@ export async function GET(request: NextRequest) {
 
     const { data: customer, error: customerError } = await supabase
       .from("customers")
-      .select("id, name, salon_id, line_user_id")
-      .eq("line_user_id", verified.sub)
+      .select("id, name, salon_id, line_user_id, line_login_id")
+      .eq("line_login_id", verified.sub)
       .maybeSingle();
 
     if (customerError) {
@@ -224,7 +230,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (customer) {
-      const redirectTo = new URL(savedState.next || "/customer-app", request.url);
+      const redirectTo = new URL(
+        getSafeNextPath(savedState.next || "/customer-app"),
+        request.url
+      );
+
       const response = NextResponse.redirect(redirectTo);
 
       setCookie(
@@ -239,6 +249,7 @@ export async function GET(request: NextRequest) {
 
       clearCookie(response, LINE_STATE_COOKIE);
       clearCookie(response, LINE_PENDING_COOKIE);
+
       return response;
     }
 
