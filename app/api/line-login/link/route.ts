@@ -16,6 +16,7 @@ type CustomerRow = {
   name: string | null;
   phone: string | null;
   line_user_id: string | null;
+  line_login_id: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -66,9 +67,7 @@ function buildPhoneCandidates(value: string) {
   const international = toInternationalPhone(value);
 
   return Array.from(
-    new Set(
-      [value, local, international].map(normalizePhone).filter(Boolean)
-    )
+    new Set([value, local, international].map(normalizePhone).filter(Boolean))
   );
 }
 
@@ -140,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     const { data, error } = await supabase
       .from("customers")
-      .select("id, name, phone, line_user_id")
+      .select("id, name, phone, line_user_id, line_login_id")
       .in("phone", phoneCandidates);
 
     if (error) {
@@ -182,7 +181,7 @@ export async function POST(request: NextRequest) {
     const { error: updateError } = await supabase
       .from("customers")
       .update({
-        line_user_id: pending.line_user_id,
+        line_login_id: pending.line_user_id,
       })
       .eq("id", customer.id);
 
@@ -199,8 +198,10 @@ export async function POST(request: NextRequest) {
       ok: true,
       redirectTo,
       replaced: Boolean(
-        customer.line_user_id && customer.line_user_id !== pending.line_user_id
+        customer.line_login_id &&
+          customer.line_login_id !== pending.line_user_id
       ),
+      hasMessagingLineUserId: Boolean(customer.line_user_id),
     });
 
     response.cookies.set(
