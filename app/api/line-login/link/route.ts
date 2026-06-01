@@ -11,6 +11,13 @@ type PendingPayload = {
   next?: string;
 };
 
+type CustomerRow = {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  line_user_id: string | null;
+};
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -79,6 +86,14 @@ function safeDecodeJson<T>(value: string | undefined): T | null {
   }
 }
 
+function getSafeRedirectPath(value: string | undefined) {
+  if (!value) return "/customer-app";
+  if (!value.startsWith("/")) return "/customer-app";
+  if (value.startsWith("//")) return "/customer-app";
+
+  return value;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const pending = safeDecodeJson<PendingPayload>(
@@ -87,7 +102,11 @@ export async function POST(request: NextRequest) {
 
     if (!pending?.line_user_id) {
       return NextResponse.json(
-        { ok: false, error: "LINE連携セッションが切れています。もう一度ログインしてください。" },
+        {
+          ok: false,
+          error:
+            "LINE連携セッションが切れています。もう一度ログインしてください。",
+        },
         { status: 400 }
       );
     }
@@ -131,7 +150,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const matched = (data || []).filter((row) => {
+    const matched = ((data || []) as CustomerRow[]).filter((row) => {
       const dbName = normalizeName(row.name || "");
       return dbName === normalizedInputName;
     });
@@ -160,20 +179,6 @@ export async function POST(request: NextRequest) {
 
     const customer = matched[0];
 
-    if (
-      customer.line_user_id &&
-      customer.line_user_id !== pending.line_user_id
-    ) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error:
-            "この顧客データはすでに別のLINEアカウントに紐づいています。店舗に確認してください。",
-        },
-        { status: 409 }
-      );
-    }
-
     const { error: updateError } = await supabase
       .from("customers")
       .update({
@@ -188,9 +193,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const redirectTo = getSafeRedirectPath(pending.next);
+
     const response = NextResponse.json({
       ok: true,
-      redirectTo: pending.next || "/customer-app",
+      redirectTo,
+      replaced: Boolean(
+        customer.line_user_id && customer.line_user_id !== pending.line_user_id
+      ),
     });
 
     response.cookies.set(
