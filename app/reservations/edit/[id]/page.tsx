@@ -491,55 +491,84 @@ export default function EditReservationPage() {
   }
 
   async function handleConfirmReservation() {
-    if (!reservationId) return;
+  if (!reservationId) return;
 
-    const confirmed = window.confirm("この予約を『予約確定』にしますか？");
-    if (!confirmed) return;
+  const confirmed = window.confirm("この予約を『予約確定』にしますか？");
+  if (!confirmed) return;
 
-    const dateTime = validateRequiredFields();
-    if (!dateTime) return;
+  const dateTime = validateRequiredFields();
+  if (!dateTime) return;
 
-    setConfirming(true);
-    setErrorMessage("");
-    setSuccessMessage("");
+  setConfirming(true);
+  setErrorMessage("");
+  setSuccessMessage("");
+
+  try {
+    const overlaps = await checkOverlap({
+      startAt: dateTime.startAt,
+      endAt: dateTime.endAt,
+    });
+
+    if (overlaps.length > 0) {
+      setConfirming(false);
+      setErrorMessage(
+        "この時間帯はすでに予約またはブロックがあります。カレンダーで確認してください。"
+      );
+      return;
+    }
+
+    const { error } = await supabase
+      .from("reservations")
+      .update({
+        status: "confirmed",
+      })
+      .eq("id", reservationId);
+
+    if (error) {
+      setConfirming(false);
+      setErrorMessage("予約確定に失敗しました");
+      return;
+    }
+
+    let lineNoticeMessage = "";
 
     try {
-      const overlaps = await checkOverlap({
-        startAt: dateTime.startAt,
-        endAt: dateTime.endAt,
+      const lineRes = await fetch("/api/send-reservation-confirmed-line", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reservationId,
+        }),
       });
 
-      if (overlaps.length > 0) {
-        setConfirming(false);
-        setErrorMessage(
-          "この時間帯はすでに予約またはブロックがあります。カレンダーで確認してください。"
-        );
-        return;
+      const lineData = await lineRes.json();
+
+      if (lineData?.sent) {
+        lineNoticeMessage = " 顧客へLINE通知も送信しました。";
+      } else if (lineData?.message) {
+        lineNoticeMessage = ` LINE通知：${lineData.message}`;
+      } else {
+        lineNoticeMessage = " LINE通知は送信されませんでした。";
       }
-
-      const { error } = await supabase
-        .from("reservations")
-        .update({
-          status: "confirmed",
-        })
-        .eq("id", reservationId);
-
-      setConfirming(false);
-
-      if (error) {
-        setErrorMessage("予約確定に失敗しました");
-        return;
-      }
-
-      setStatus("confirmed");
-      setSuccessMessage("予約確定に変更しました。顧客マイページにも反映されます。");
-    } catch (error) {
-      setConfirming(false);
-      const message =
-        error instanceof Error ? error.message : "予約確定に失敗しました";
-      setErrorMessage(message);
+    } catch (lineError) {
+      console.error("予約確定LINE通知エラー:", lineError);
+      lineNoticeMessage = " LINE通知処理でエラーが発生しました。";
     }
+
+    setConfirming(false);
+    setStatus("confirmed");
+    setSuccessMessage(
+      `予約確定に変更しました。顧客マイページにも反映されます。${lineNoticeMessage}`
+    );
+  } catch (error) {
+    setConfirming(false);
+    const message =
+      error instanceof Error ? error.message : "予約確定に失敗しました";
+    setErrorMessage(message);
   }
+}
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
