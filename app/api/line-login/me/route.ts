@@ -37,11 +37,22 @@ function safeDecodeJson<T>(value: string | undefined): T | null {
   }
 }
 
+function buildPendingResponse(pending: PendingPayload | null) {
+  if (!pending) return null;
+
+  return {
+    lineUserId: pending.line_user_id || "",
+    displayName: pending.display_name || "",
+    pictureUrl: pending.picture_url || "",
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const session = safeDecodeJson<LineSessionPayload>(
       request.cookies.get(LINE_SESSION_COOKIE)?.value
     );
+
     const pending = safeDecodeJson<PendingPayload>(
       request.cookies.get(LINE_PENDING_COOKIE)?.value
     );
@@ -49,12 +60,8 @@ export async function GET(request: NextRequest) {
     if (!session?.customer_id || !session.line_user_id) {
       return NextResponse.json({
         authenticated: false,
-        pending: pending
-          ? {
-              displayName: pending.display_name || "",
-              pictureUrl: pending.picture_url || "",
-            }
-          : null,
+        customer: null,
+        pending: buildPendingResponse(pending),
       });
     }
 
@@ -70,12 +77,8 @@ export async function GET(request: NextRequest) {
     if (error || !customer) {
       const response = NextResponse.json({
         authenticated: false,
-        pending: pending
-          ? {
-              displayName: pending.display_name || "",
-              pictureUrl: pending.picture_url || "",
-            }
-          : null,
+        customer: null,
+        pending: buildPendingResponse(pending),
       });
 
       response.cookies.set(LINE_SESSION_COOKIE, "", {
@@ -97,6 +100,7 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.json({
       authenticated: false,
+      customer: null,
       pending: null,
     });
   }

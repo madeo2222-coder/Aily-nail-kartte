@@ -13,6 +13,7 @@ type MeResponse = {
     line_user_id?: string | null;
   } | null;
   pending?: {
+    lineUserId: string;
     displayName: string;
     pictureUrl: string;
   } | null;
@@ -23,7 +24,9 @@ export default function CustomerIntakePage() {
 
   const [lineLoading, setLineLoading] = useState(true);
   const [isLineAuthenticated, setIsLineAuthenticated] = useState(false);
+  const [pendingLineUserId, setPendingLineUserId] = useState("");
   const [pendingLineName, setPendingLineName] = useState("");
+  const [authenticatedLineUserId, setAuthenticatedLineUserId] = useState("");
   const [authenticatedCustomerName, setAuthenticatedCustomerName] =
     useState("");
 
@@ -65,11 +68,15 @@ export default function CustomerIntakePage() {
         const json = (await res.json()) as MeResponse;
 
         setIsLineAuthenticated(!!json.authenticated);
+        setPendingLineUserId(json.pending?.lineUserId || "");
         setPendingLineName(json.pending?.displayName || "");
+        setAuthenticatedLineUserId(json.customer?.line_user_id || "");
         setAuthenticatedCustomerName(json.customer?.name || "");
       } catch {
         setIsLineAuthenticated(false);
+        setPendingLineUserId("");
         setPendingLineName("");
+        setAuthenticatedLineUserId("");
         setAuthenticatedCustomerName("");
       } finally {
         setLineLoading(false);
@@ -100,7 +107,9 @@ export default function CustomerIntakePage() {
     const displayWidth = Math.max(rect.width, 280);
     const displayHeight = 220;
 
-    const previousImage = hasDrawnRef.current ? canvas.toDataURL("image/png") : null;
+    const previousImage = hasDrawnRef.current
+      ? canvas.toDataURL("image/png")
+      : null;
 
     canvas.width = displayWidth * ratio;
     canvas.height = displayHeight * ratio;
@@ -203,7 +212,7 @@ export default function CustomerIntakePage() {
   }
 
   async function linkLineAfterCustomerCreated() {
-    if (!pendingLineName) {
+    if (!pendingLineName && !pendingLineUserId) {
       return { linked: false, message: "" };
     }
 
@@ -277,12 +286,16 @@ export default function CustomerIntakePage() {
     setIsSubmitting(true);
 
     try {
+      const lineUserIdForInsert =
+        pendingLineUserId || authenticatedLineUserId || null;
+
       const { data: customer, error: customerError } = await supabase
         .from("customers")
         .insert([
           {
             name: name.trim(),
             phone: phone.trim(),
+            line_user_id: lineUserIdForInsert,
           },
         ])
         .select("id")
@@ -319,12 +332,26 @@ export default function CustomerIntakePage() {
 
       if (intakeError) {
         console.error("customer_intakes insert error:", intakeError);
-        setMessage(`初回カウンセリング登録に失敗しました: ${intakeError.message}`);
+        setMessage(
+          `初回カウンセリング登録に失敗しました: ${intakeError.message}`
+        );
         setIsSubmitting(false);
         return;
       }
 
       const lineResult = await linkLineAfterCustomerCreated();
+
+      if (lineUserIdForInsert) {
+        setMessage("送信とLINE連携が完了しました。マイページへ移動します。");
+
+        window.setTimeout(() => {
+          window.location.href = lineResult.linked
+            ? lineResult.message || "/customer-app"
+            : "/customer-app";
+        }, 800);
+
+        return;
+      }
 
       if (lineResult.linked) {
         setMessage("送信とLINE連携が完了しました。マイページへ移動します。");
@@ -362,7 +389,9 @@ export default function CustomerIntakePage() {
       clearSignature();
     } catch (error) {
       console.error("submit error:", error);
-      setMessage("送信に失敗しました。通信状況をご確認のうえ、もう一度お試しください。");
+      setMessage(
+        "送信に失敗しました。通信状況をご確認のうえ、もう一度お試しください。"
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -410,7 +439,9 @@ export default function CustomerIntakePage() {
           ) : isLineAuthenticated ? (
             <div className="mt-4 rounded-[20px] border border-green-200 bg-green-50 px-5 py-4 text-base font-bold text-green-700">
               LINEログイン済みです
-              {authenticatedCustomerName ? `：${authenticatedCustomerName} 様` : ""}
+              {authenticatedCustomerName
+                ? `：${authenticatedCustomerName} 様`
+                : ""}
             </div>
           ) : pendingLineName ? (
             <div className="mt-4 rounded-[20px] border border-green-200 bg-green-50 px-5 py-4 text-base font-bold text-green-700">
