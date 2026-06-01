@@ -34,13 +34,14 @@ function isStaticAsset(pathname: string) {
 function isCustomerAllowedApiPath(pathname: string) {
   return (
     pathname.startsWith("/api/line-login/") ||
+    pathname === "/api/line/webhook" ||
+    pathname.startsWith("/api/line/webhook/") ||
     pathname === "/api/reservations" ||
     pathname.startsWith("/api/reservations/") ||
     pathname === "/api/nail-tip-orders" ||
-pathname.startsWith("/api/nail-tip-orders/") ||
-
-pathname === "/api/sanmeigaku-diagnoses" ||
-pathname.startsWith("/api/sanmeigaku-diagnoses/")
+    pathname.startsWith("/api/nail-tip-orders/") ||
+    pathname === "/api/sanmeigaku-diagnoses" ||
+    pathname.startsWith("/api/sanmeigaku-diagnoses/")
   );
 }
 
