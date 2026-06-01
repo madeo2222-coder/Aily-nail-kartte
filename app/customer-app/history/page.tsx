@@ -90,9 +90,7 @@ function formatDate(value: string | null) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "未登録";
-  }
+  if (Number.isNaN(date.getTime())) return "未登録";
 
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
 }
@@ -102,9 +100,7 @@ function formatDateTime(value: string | null) {
 
   const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
-    return "未登録";
-  }
+  if (Number.isNaN(date.getTime())) return "未登録";
 
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -116,19 +112,19 @@ function formatDateTime(value: string | null) {
 }
 
 function getDisplayMenu(visit: VisitRow) {
-  if (visit.menu_name?.trim()) return visit.menu_name;
-  if (visit.menu?.trim()) return visit.menu;
+  if (visit.menu_name?.trim()) return visit.menu_name.trim();
+  if (visit.menu?.trim()) return visit.menu.trim();
   return "メニュー未登録";
 }
 
-function buildRepeatReserveHref(visit: VisitRow) {
+function buildRepeatReservationHref(visit: VisitRow) {
   const params = new URLSearchParams();
 
   params.set("design", visit.id);
 
-  const menuName = getDisplayMenu(visit);
-  if (menuName && menuName !== "メニュー未登録") {
-    params.set("menu", menuName);
+  const menu = getDisplayMenu(visit);
+  if (menu && menu !== "メニュー未登録") {
+    params.set("menu", menu);
   }
 
   return `/customer-app/reserve?${params.toString()}`;
@@ -526,6 +522,7 @@ export default function CustomerAppHistoryPage() {
           ) : (
             visits.map((item) => {
               const photos = visitPhotoMap.get(item.id) || [];
+              const repeatHref = buildRepeatReservationHref(item);
 
               return (
                 <article
@@ -599,8 +596,8 @@ export default function CustomerAppHistoryPage() {
                     </div>
 
                     <Link
-                      href={buildRepeatReserveHref(item)}
-                      className="block rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+                      href={repeatHref}
+                      className="block rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white shadow-sm"
                     >
                       このデザインで再予約する
                     </Link>
