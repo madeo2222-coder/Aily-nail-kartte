@@ -121,6 +121,19 @@ function getDisplayMenu(visit: VisitRow) {
   return "メニュー未登録";
 }
 
+function buildRepeatReserveHref(visit: VisitRow) {
+  const params = new URLSearchParams();
+
+  params.set("design", visit.id);
+
+  const menuName = getDisplayMenu(visit);
+  if (menuName && menuName !== "メニュー未登録") {
+    params.set("menu", menuName);
+  }
+
+  return `/customer-app/reserve?${params.toString()}`;
+}
+
 function getReservationStatusLabel(status: string | null) {
   switch (status) {
     case "requested":
@@ -584,6 +597,13 @@ export default function CustomerAppHistoryPage() {
                         </div>
                       )}
                     </div>
+
+                    <Link
+                      href={buildRepeatReserveHref(item)}
+                      className="block rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+                    >
+                      このデザインで再予約する
+                    </Link>
                   </div>
                 </article>
               );
