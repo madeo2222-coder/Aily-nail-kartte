@@ -98,17 +98,23 @@ function formatDate(value: string | null) {
 function formatDateTime(value: string | null) {
   if (!value) return "未登録";
 
-  const date = new Date(value);
+  const normalizedValue =
+    value.includes("Z") || value.includes("+")
+      ? value
+      : `${value}Z`;
+
+  const date = new Date(normalizedValue);
 
   if (Number.isNaN(date.getTime())) return "未登録";
 
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const mi = String(date.getMinutes()).padStart(2, "0");
-
-  return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
+  return date.toLocaleString("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function getDisplayMenu(visit: VisitRow) {
