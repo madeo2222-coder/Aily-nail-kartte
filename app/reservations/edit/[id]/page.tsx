@@ -407,11 +407,7 @@ export default function EditReservationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationId]);
 
-  const filteredCustomers = useMemo(() => {
-    return allCustomers.filter((item) =>
-      salonId ? item.salon_id === salonId : true
-    );
-  }, [allCustomers, salonId]);
+  const filteredCustomers = allCustomers;
 
   const filteredStaffs = useMemo(() => {
     return allStaffs.filter((item) =>
