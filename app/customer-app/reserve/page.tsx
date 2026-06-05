@@ -156,6 +156,31 @@ const signedInNavItems = [
   { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
 
+function getTodayText() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function addDaysText(dateText: string, days: number) {
+  const date = new Date(`${dateText}T00:00:00+09:00`);
+  date.setDate(date.getDate() + days);
+
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getNominationFee(staffName: string) {
+  if (staffName.includes("あかね") || staffName.includes("茜")) return 550;
+  if (staffName.includes("まりな") || staffName.includes("マリナ")) return 330;
+  return 0;
+}
+
 function formatYen(value: number) {
   return `¥${value.toLocaleString("ja-JP")}`;
 }
@@ -333,6 +358,9 @@ function ReservePageContent() {
   const [selectedTime, setSelectedTime] = useState("");
   const [note, setNote] = useState("");
 
+  const todayText = useMemo(() => getTodayText(), []);
+  const maxReservationDate = useMemo(() => addDaysText(todayText, 40), [todayText]);
+
   useEffect(() => {
     async function checkAuthAndLoadStaffs() {
       try {
@@ -440,6 +468,11 @@ function ReservePageContent() {
     return staffs.find((staff) => staff.id === selectedStaffId)?.name || "未設定";
   }, [selectedStaffId, staffs]);
 
+  const selectedStaffFee = useMemo(() => {
+    if (!selectedStaffId) return 0;
+    return getNominationFee(selectedStaffName);
+  }, [selectedStaffId, selectedStaffName]);
+
   const mainMenuName = useMemo(() => {
     if (selectedMenuId === customMenuId) {
       return customMenu.trim();
@@ -488,8 +521,8 @@ function ReservePageContent() {
   const totalPrice = useMemo(() => {
     const addOnPrice = selectedAddOns.reduce((sum, item) => sum + item.price, 0);
 
-    return mainMenuPrice + selectedOff.price + addOnPrice;
-  }, [mainMenuPrice, selectedOff.price, selectedAddOns]);
+    return mainMenuPrice + selectedOff.price + addOnPrice + selectedStaffFee;
+  }, [mainMenuPrice, selectedOff.price, selectedAddOns, selectedStaffFee]);
 
   const totalMinutes = useMemo(() => {
     const addOnMinutes = selectedAddOns.reduce(
@@ -631,8 +664,23 @@ function ReservePageContent() {
       });
     });
 
+    if (selectedStaffFee > 0) {
+      items.push({
+        label: `指名料：${selectedStaffName}`,
+        price: selectedStaffFee,
+        priceSuffix: "",
+      });
+    }
+
     return items;
-  }, [mainMenuName, mainMenuPrice, selectedOff, selectedAddOns]);
+  }, [
+    mainMenuName,
+    mainMenuPrice,
+    selectedOff,
+    selectedAddOns,
+    selectedStaffFee,
+    selectedStaffName,
+  ]);
 
   const hasPriceSuffix = useMemo(() => {
     return priceBreakdown.some((item) => item.priceSuffix);
@@ -688,6 +736,16 @@ function ReservePageContent() {
       return;
     }
 
+    if (selectedDate > maxReservationDate) {
+      showMessage("予約は本日から40日先まで選択できます");
+      return;
+    }
+
+    if (selectedDate < todayText) {
+      showMessage("過去の日付は選択できません");
+      return;
+    }
+
     if (!selectedTime) {
       showMessage("希望時間を選択してください");
       return;
@@ -717,6 +775,9 @@ function ReservePageContent() {
 
       const memoLines = [
         galleryReferenceText,
+        selectedStaffFee > 0
+          ? `指名料：${selectedStaffName} ${formatYen(selectedStaffFee)}`
+          : "指名料：なし",
         `合計金額目安：${formatYen(totalPrice)}${hasPriceSuffix ? "〜" : ""}`,
         `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
         "時間内訳",
@@ -882,22 +943,28 @@ function ReservePageContent() {
 
           <div className="mt-4 space-y-4">
             <div>
-  <label className="mb-2 block text-sm font-medium text-slate-700">
-    希望日
-  </label>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                希望日
+              </label>
 
-  <div className="w-full overflow-hidden rounded-2xl border border-slate-300 bg-white">
-    <input
-      type="date"
-      value={selectedDate}
-      onChange={(e) => setSelectedDate(e.target.value)}
-      className="block w-full border-0 bg-transparent px-4 py-3 text-sm outline-none"
-      style={{
-        minHeight: "52px",
-      }}
-    />
-  </div>
-</div>
+              <div className="w-full overflow-hidden rounded-2xl border border-slate-300 bg-white">
+                <input
+                  type="date"
+                  value={selectedDate}
+                  min={todayText}
+                  max={maxReservationDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="block w-full border-0 bg-transparent px-4 py-3 text-sm outline-none"
+                  style={{
+                    minHeight: "52px",
+                  }}
+                />
+              </div>
+
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                予約可能期間：本日から40日先まで
+              </p>
+            </div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -1062,12 +1129,18 @@ function ReservePageContent() {
                 onChange={(e) => setSelectedStaffId(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
-                <option value="">指名なし</option>
-                {staffs.map((staff) => (
-                  <option key={staff.id} value={staff.id}>
-                    {staff.name || "名前未設定"}
-                  </option>
-                ))}
+                <option value="">指名なし / 指名料なし</option>
+                {staffs.map((staff) => {
+                  const name = staff.name || "名前未設定";
+                  const fee = getNominationFee(name);
+
+                  return (
+                    <option key={staff.id} value={staff.id}>
+                      {name}
+                      {fee > 0 ? ` / 指名料 ${formatYen(fee)}` : ""}
+                    </option>
+                  );
+                })}
               </select>
               <p className="mt-2 text-xs leading-5 text-slate-500">
                 担当者を選ぶと、そのスタッフの空き時間だけ表示します。
@@ -1107,6 +1180,12 @@ function ReservePageContent() {
             <div className="mt-2 text-sm font-bold leading-6 text-slate-900">
               {summaryText}
             </div>
+
+            {selectedStaffFee > 0 ? (
+              <div className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
+                指名料：{selectedStaffName} {formatYen(selectedStaffFee)}
+              </div>
+            ) : null}
 
             {designId ? (
               <div className="mt-3 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold leading-5 text-rose-700">
