@@ -882,16 +882,22 @@ function ReservePageContent() {
 
           <div className="mt-4 space-y-4">
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                希望日
-              </label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-              />
-            </div>
+  <label className="mb-2 block text-sm font-medium text-slate-700">
+    希望日
+  </label>
+
+  <div className="w-full overflow-hidden rounded-2xl border border-slate-300 bg-white">
+    <input
+      type="date"
+      value={selectedDate}
+      onChange={(e) => setSelectedDate(e.target.value)}
+      className="block w-full border-0 bg-transparent px-4 py-3 text-sm outline-none"
+      style={{
+        minHeight: "52px",
+      }}
+    />
+  </div>
+</div>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
