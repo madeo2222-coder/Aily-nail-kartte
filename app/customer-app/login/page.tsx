@@ -92,25 +92,31 @@ function CustomerAppLoginPageContent() {
           <div className="text-xs font-bold tracking-wide opacity-90">
             AILY MY PAGE
           </div>
+
           <h1 className="mt-2 text-2xl font-bold leading-tight">
             会員のお客様ログイン
           </h1>
+
           <p className="mt-3 text-sm leading-6 text-white/90">
             これからはLINEアカウントでログインします。初回のみ、お客様情報との連携確認が入る場合があります。
           </p>
 
-          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Link
-              href="/customer-app"
-              className="rounded-xl bg-white px-4 py-2 text-center text-sm font-bold text-slate-900"
-            >
-              入口ページへ戻る
-            </Link>
+          <div className="mt-5 space-y-3">
             <Link
               href="/customer-intake"
-              className="rounded-xl border border-white/30 px-4 py-2 text-center text-sm font-bold text-white"
+              className="block rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-orange-400 px-4 py-4 text-center text-base font-black text-white shadow-lg shadow-rose-200"
             >
-              初めての方はこちら
+              🌸 新規会員登録（無料）はこちら
+              <div className="mt-1 text-xs font-bold text-white/95">
+                登録1分・デザインギャラリー閲覧・予約OK
+              </div>
+            </Link>
+
+            <Link
+              href="/customer-app"
+              className="block rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-slate-900"
+            >
+              入口ページへ戻る
             </Link>
           </div>
         </section>
@@ -119,8 +125,9 @@ function CustomerAppLoginPageContent() {
           <div className="text-base font-bold text-slate-900">
             LINEでログイン
           </div>
+
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            公式LINEからご利用のお客様は、このままLINEログインへ進んでください。
+            すでにマイページ登録済みのお客様は、このままLINEログインへ進んでください。
           </p>
 
           {pendingDisplayName ? (
@@ -164,6 +171,15 @@ function CustomerAppLoginPageContent() {
 
           <div className="mt-4 grid grid-cols-1 gap-3">
             <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-sm font-bold text-slate-900">
+                デザインギャラリー
+              </div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">
+                いろいろなネイルデザインを見ながら、気に入ったデザインで予約できます。
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-sm font-bold text-slate-900">次回予約</div>
               <div className="mt-2 text-sm leading-6 text-slate-600">
                 ご自身の顧客情報に紐づいた状態で予約できます。
@@ -172,19 +188,10 @@ function CustomerAppLoginPageContent() {
 
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-sm font-bold text-slate-900">
-                来店履歴確認
+                来店履歴・施術写真
               </div>
               <div className="mt-2 text-sm leading-6 text-slate-600">
-                前回メニューや担当者、次回提案を確認できます。
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-sm font-bold text-slate-900">
-                お知らせ確認
-              </div>
-              <div className="mt-2 text-sm leading-6 text-slate-600">
-                最新キャンペーンや再来提案を見られます。
+                前回メニューや担当者、施術写真を確認できます。
               </div>
             </div>
           </div>
