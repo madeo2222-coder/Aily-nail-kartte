@@ -15,20 +15,55 @@ type Visit = {
   price?: number | null;
 };
 
-function getMonthStart(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), 1);
-}
-
-function getNextMonthStart(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth() + 1, 1);
-}
-
 function toDateOnlyString(date: Date) {
-  return date.toISOString().split("T")[0];
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getMonthStartText(date: Date) {
+  return toDateOnlyString(new Date(date.getFullYear(), date.getMonth(), 1));
+}
+
+function getPreviousMonthStartText(date: Date) {
+  return toDateOnlyString(new Date(date.getFullYear(), date.getMonth() - 1, 1));
+}
+
+function getPreviousMonthSameDayText(date: Date) {
+  const currentDay = date.getDate();
+  const previousMonthLastDay = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    0
+  ).getDate();
+
+  const targetDay = Math.min(currentDay, previousMonthLastDay);
+
+  return toDateOnlyString(
+    new Date(date.getFullYear(), date.getMonth() - 1, targetDay)
+  );
 }
 
 function formatYen(value: number) {
   return `¥${Math.round(value).toLocaleString("ja-JP")}`;
+}
+
+function formatDiffYen(value: number) {
+  const prefix = value > 0 ? "+" : value < 0 ? "-" : "±";
+  return `${prefix}${formatYen(Math.abs(value))}`;
+}
+
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) return "±0.0%";
+  const prefix = value > 0 ? "+" : value < 0 ? "" : "±";
+  return `${prefix}${value.toFixed(1)}%`;
+}
+
+function isDateInRange(dateText: string | null | undefined, start: string, end: string) {
+  if (!dateText) return false;
+  const normalized = dateText.slice(0, 10);
+  return normalized >= start && normalized <= end;
 }
 
 export default function HomePage() {
@@ -70,26 +105,44 @@ export default function HomePage() {
 
   const monthlyStats = useMemo(() => {
     const now = new Date();
-    const start = getMonthStart(now);
-    const end = getNextMonthStart(now);
 
-    const monthlyVisits = visits.filter((visit) => {
-      if (!visit.visit_date) return false;
+    const currentMonthStart = getMonthStartText(now);
+    const currentSameDayEnd = toDateOnlyString(now);
 
-      const visitDate = new Date(visit.visit_date);
+    const previousMonthStart = getPreviousMonthStartText(now);
+    const previousMonthSameDayEnd = getPreviousMonthSameDayText(now);
 
-      if (Number.isNaN(visitDate.getTime())) return false;
+    const currentMonthToDateVisits = visits.filter((visit) =>
+      isDateInRange(visit.visit_date, currentMonthStart, currentSameDayEnd)
+    );
 
-      return visitDate >= start && visitDate < end;
-    });
+    const previousMonthSameDayVisits = visits.filter((visit) =>
+      isDateInRange(visit.visit_date, previousMonthStart, previousMonthSameDayEnd)
+    );
 
-    const monthlySales = monthlyVisits.reduce((sum, visit) => {
+    const monthlySales = currentMonthToDateVisits.reduce((sum, visit) => {
       return sum + (visit.price || 0);
     }, 0);
 
+    const previousSameDaySales = previousMonthSameDayVisits.reduce(
+      (sum, visit) => {
+        return sum + (visit.price || 0);
+      },
+      0
+    );
+
+    const salesDiff = monthlySales - previousSameDaySales;
+
+    const salesDiffRate =
+      previousSameDaySales > 0
+        ? (salesDiff / previousSameDaySales) * 100
+        : monthlySales > 0
+        ? 100
+        : 0;
+
     const monthlyCustomerIds = Array.from(
       new Set(
-        monthlyVisits
+        currentMonthToDateVisits
           .map((visit) => visit.customer_id)
           .filter((customerId) => Boolean(customerId))
       )
@@ -100,11 +153,7 @@ export default function HomePage() {
         if (visit.customer_id !== customerId) return false;
         if (!visit.visit_date) return false;
 
-        const visitDate = new Date(visit.visit_date);
-
-        if (Number.isNaN(visitDate.getTime())) return false;
-
-        return visitDate < start;
+        return visit.visit_date.slice(0, 10) < currentMonthStart;
       });
     });
 
@@ -115,7 +164,15 @@ export default function HomePage() {
 
     return {
       monthlySales,
-      monthlyVisitCount: monthlyVisits.length,
+      previousSameDaySales,
+      salesDiff,
+      salesDiffRate,
+      currentMonthStart,
+      currentSameDayEnd,
+      previousMonthStart,
+      previousMonthSameDayEnd,
+      monthlyVisitCount: currentMonthToDateVisits.length,
+      previousSameDayVisitCount: previousMonthSameDayVisits.length,
       monthlyCustomerCount: monthlyCustomerIds.length,
       repeatCustomerCount: repeatCustomerIds.length,
       repeatRate,
@@ -161,8 +218,32 @@ export default function HomePage() {
           <p className="mt-1 text-3xl font-bold">
             {formatYen(monthlyStats.monthlySales)}
           </p>
+
+          <div className="mt-3 rounded-2xl bg-slate-50 p-3">
+            <p className="text-xs font-bold text-slate-500">前月同日比</p>
+            <p
+              className={`mt-1 text-lg font-black ${
+                monthlyStats.salesDiff >= 0 ? "text-emerald-600" : "text-rose-600"
+              }`}
+            >
+              {formatPercent(monthlyStats.salesDiffRate)}
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              差額: {formatDiffYen(monthlyStats.salesDiff)}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              今月 {monthlyStats.currentMonthStart}〜
+              {monthlyStats.currentSameDayEnd} / 前月{" "}
+              {monthlyStats.previousMonthStart}〜
+              {monthlyStats.previousMonthSameDayEnd}
+            </p>
+          </div>
+
           <p className="mt-2 text-sm text-slate-600">
             今月来店数: {monthlyStats.monthlyVisitCount}件
+          </p>
+          <p className="mt-1 text-xs text-slate-400">
+            前月同日来店数: {monthlyStats.previousSameDayVisitCount}件
           </p>
         </div>
 
