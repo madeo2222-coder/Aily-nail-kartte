@@ -104,10 +104,39 @@ function pickNumber(row: ReservationRow, keys: string[], fallback = 0): number {
   return fallback;
 }
 
-function getJstParts(value: string | null) {
+function normalizeSupabaseDateTime(value: string | null) {
   if (!value) return null;
 
-  const date = new Date(value);
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const isoLike = trimmed.includes("T")
+    ? trimmed
+    : trimmed.replace(" ", "T");
+
+  return `${isoLike}Z`;
+}
+
+function isDateTimeText(value: string | null) {
+  if (!value) return false;
+  return (
+    value.includes("T") ||
+    value.includes(" ") ||
+    /[zZ]$/.test(value) ||
+    /[+-]\d{2}:\d{2}$/.test(value)
+  );
+}
+
+function getJstParts(value: string | null) {
+  const normalizedValue = normalizeSupabaseDateTime(value);
+
+  if (!normalizedValue) return null;
+
+  const date = new Date(normalizedValue);
 
   if (Number.isNaN(date.getTime())) {
     return null;
@@ -138,7 +167,7 @@ function getJstParts(value: string | null) {
 function normalizeDateText(value: string | null) {
   if (!value) return null;
 
-  if (value.includes("T") || value.endsWith("Z")) {
+  if (isDateTimeText(value)) {
     const parts = getJstParts(value);
     if (!parts) return null;
     return `${parts.year}-${parts.month}-${parts.day}`;
@@ -150,7 +179,7 @@ function normalizeDateText(value: string | null) {
 function normalizeTimeText(value: string | null) {
   if (!value) return null;
 
-  if (value.includes("T") || value.endsWith("Z")) {
+  if (isDateTimeText(value)) {
     const parts = getJstParts(value);
     if (!parts) return null;
     return `${parts.hour}:${parts.minute}`;
@@ -260,10 +289,13 @@ function normalizeMemo(row: ReservationRow) {
 }
 
 function diffMinutes(startAt: string | null, endAt: string | null) {
-  if (!startAt || !endAt) return null;
+  const normalizedStartAt = normalizeSupabaseDateTime(startAt);
+  const normalizedEndAt = normalizeSupabaseDateTime(endAt);
 
-  const start = new Date(startAt);
-  const end = new Date(endAt);
+  if (!normalizedStartAt || !normalizedEndAt) return null;
+
+  const start = new Date(normalizedStartAt);
+  const end = new Date(normalizedEndAt);
 
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     return null;
