@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+const AILY_LINE_URL = "https://line.me/R/ti/p/@688dggzt";
+
 type MeResponse = {
   authenticated: boolean;
   customer?: {
@@ -52,6 +54,7 @@ export default function CustomerIntakePage() {
 
   const [completedCustomerId, setCompletedCustomerId] = useState("");
   const [completedCustomerName, setCompletedCustomerName] = useState("");
+  const [copyMessage, setCopyMessage] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -212,9 +215,15 @@ export default function CustomerIntakePage() {
     return canvas.toDataURL("image/png");
   }
 
-  function buildLineMessageUrl(customerId: string) {
-    const text = `Aily Nail Studio 会員番号\n${customerId}`;
-    return `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+  async function copyCustomerId() {
+    if (!completedCustomerId) return;
+
+    try {
+      await navigator.clipboard.writeText(completedCustomerId);
+      setCopyMessage("会員番号をコピーしました。公式LINEを開いて貼り付けて送信してください。");
+    } catch {
+      setCopyMessage("コピーできない場合は、会員番号を長押ししてコピーしてください。");
+    }
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -305,7 +314,7 @@ export default function CustomerIntakePage() {
       setCompletedCustomerId(customer.id);
       setCompletedCustomerName(name.trim());
       setMessage(
-        "送信が完了しました。予約確定LINEを受け取るため、下の会員番号を公式LINEに送信してください。"
+        "送信が完了しました。予約確定LINEを受け取るため、会員番号をコピーして公式LINEに送信してください。"
       );
 
       setName("");
@@ -411,7 +420,7 @@ export default function CustomerIntakePage() {
 
             <p className="mt-3 text-base leading-7 text-green-700">
               {completedCustomerName ? `${completedCustomerName} 様、` : ""}
-              予約確定LINEを受け取るため、下の会員番号を公式LINEに送信してください。
+              予約確定LINEを受け取るため、会員番号をコピーして公式LINEに送信してください。
             </p>
 
             <div className="mt-5 rounded-[20px] bg-white p-5">
@@ -421,17 +430,31 @@ export default function CustomerIntakePage() {
               </div>
             </div>
 
-            <a
-              href={buildLineMessageUrl(completedCustomerId)}
-              className="mt-5 block rounded-[20px] bg-green-500 px-5 py-4 text-center text-lg font-bold text-white"
+            <button
+              type="button"
+              onClick={copyCustomerId}
+              className="mt-5 block w-full rounded-[20px] bg-slate-900 px-5 py-4 text-center text-lg font-bold text-white"
             >
-              公式LINEに会員番号を送る
+              ① 会員番号をコピー
+            </button>
+
+            {copyMessage ? (
+              <div className="mt-3 rounded-[18px] bg-white px-4 py-3 text-sm font-bold text-green-700">
+                {copyMessage}
+              </div>
+            ) : null}
+
+            <a
+              href={AILY_LINE_URL}
+              className="mt-4 block rounded-[20px] bg-green-500 px-5 py-4 text-center text-lg font-bold text-white"
+            >
+              ② Aily公式LINEを開く
             </a>
 
-            <p className="mt-3 text-sm leading-6 text-green-700">
-              LINEが開いたら、Aily Nail Studio公式LINEのトークを選んで送信してください。
+            <div className="mt-4 rounded-[18px] bg-white px-4 py-3 text-sm leading-6 text-green-800">
+              LINEが開いたら、コピーした会員番号をトークに貼り付けて送信してください。
               送信後、LINE通知連携完了メッセージが届きます。
-            </p>
+            </div>
 
             <Link
               href="/customer-app"
