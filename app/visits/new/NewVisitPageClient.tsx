@@ -42,6 +42,7 @@ const PAYMENT_METHOD_OPTIONS = [
 ];
 
 const VISIT_PHOTO_BUCKET = "visit-photos";
+const DEFAULT_SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
 
 function createLineId() {
   return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -121,21 +122,11 @@ export default function NewVisitPageClient() {
   }, []);
 
   useEffect(() => {
-    if (preselectedCustomerId) {
-      setCustomerId(preselectedCustomerId);
-    }
-    if (prefilledVisitDate) {
-      setVisitDate(prefilledVisitDate);
-    }
-    if (prefilledMenuName) {
-      setMenuName(prefilledMenuName);
-    }
-    if (prefilledStaffName) {
-      setStaffName(prefilledStaffName);
-    }
-    if (prefilledMemo) {
-      setMemo(prefilledMemo);
-    }
+    if (preselectedCustomerId) setCustomerId(preselectedCustomerId);
+    if (prefilledVisitDate) setVisitDate(prefilledVisitDate);
+    if (prefilledMenuName) setMenuName(prefilledMenuName);
+    if (prefilledStaffName) setStaffName(prefilledStaffName);
+    if (prefilledMemo) setMemo(prefilledMemo);
   }, [
     preselectedCustomerId,
     prefilledVisitDate,
@@ -175,6 +166,8 @@ export default function NewVisitPageClient() {
     return customers.find((customer) => customer.id === customerId) || null;
   }, [customers, customerId]);
 
+  const resolvedSalonId = selectedCustomer?.salon_id || DEFAULT_SALON_ID;
+
   const totalPrice = useMemo(() => {
     return toSafeNumber(price);
   }, [price]);
@@ -199,12 +192,7 @@ export default function NewVisitPageClient() {
   ) {
     setPaymentLines((prev) =>
       prev.map((line) =>
-        line.id === lineId
-          ? {
-              ...line,
-              [key]: value,
-            }
-          : line
+        line.id === lineId ? { ...line, [key]: value } : line
       )
     );
   }
@@ -215,19 +203,14 @@ export default function NewVisitPageClient() {
 
   function removePaymentLine(lineId: string) {
     setPaymentLines((prev) => {
-      if (prev.length === 1) {
-        return [createPaymentLine("現金", "")];
-      }
+      if (prev.length === 1) return [createPaymentLine("現金", "")];
       return prev.filter((line) => line.id !== lineId);
     });
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
-
-    if (files.length === 0) {
-      return;
-    }
+    if (files.length === 0) return;
 
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
 
@@ -244,16 +227,13 @@ export default function NewVisitPageClient() {
     }));
 
     setVisitPhotos((prev) => [...prev, ...newPhotos]);
-
     e.target.value = "";
   }
 
   function removePhoto(photoId: string) {
     setVisitPhotos((prev) => {
       const target = prev.find((photo) => photo.id === photoId);
-      if (target) {
-        URL.revokeObjectURL(target.previewUrl);
-      }
+      if (target) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((photo) => photo.id !== photoId);
     });
   }
@@ -263,11 +243,9 @@ export default function NewVisitPageClient() {
     salonId,
   }: {
     visitId: string;
-    salonId: string | null;
+    salonId: string;
   }) {
-    if (visitPhotos.length === 0) {
-      return;
-    }
+    if (visitPhotos.length === 0) return;
 
     const uploadedPhotoRows = [];
 
@@ -350,29 +328,25 @@ export default function NewVisitPageClient() {
       return;
     }
 
-    const hasInvalidPaymentAmount = cleanedPaymentLines.some(
-      (line) => !Number.isFinite(line.amount)
-    );
-
-    if (hasInvalidPaymentAmount) {
+    if (cleanedPaymentLines.some((line) => !Number.isFinite(line.amount))) {
       setMessage("支払い内訳の金額を正しく入力してください");
       return;
     }
 
-    const hasDiscountPositive = cleanedPaymentLines.some(
-      (line) => isDiscountMethod(line.payment_method) && line.amount > 0
-    );
-
-    if (hasDiscountPositive) {
+    if (
+      cleanedPaymentLines.some(
+        (line) => isDiscountMethod(line.payment_method) && line.amount > 0
+      )
+    ) {
       setMessage("割引はマイナス金額で入力してください");
       return;
     }
 
-    const hasNonDiscountNegative = cleanedPaymentLines.some(
-      (line) => !isDiscountMethod(line.payment_method) && line.amount < 0
-    );
-
-    if (hasNonDiscountNegative) {
+    if (
+      cleanedPaymentLines.some(
+        (line) => !isDiscountMethod(line.payment_method) && line.amount < 0
+      )
+    ) {
       setMessage("割引以外の支払い方法はマイナスにできません");
       return;
     }
@@ -394,6 +368,7 @@ export default function NewVisitPageClient() {
 
       const visitPayload = {
         customer_id: customerId,
+        salon_id: resolvedSalonId,
         visit_date: visitDate,
         menu_name: normalizedMenuName,
         menu: normalizedMenuName,
@@ -443,7 +418,7 @@ export default function NewVisitPageClient() {
 
       await uploadVisitPhotos({
         visitId: insertedVisit.id,
-        salonId: selectedCustomer?.salon_id || null,
+        salonId: resolvedSalonId,
       });
 
       if (prefilledReservationId) {
@@ -478,311 +453,143 @@ export default function NewVisitPageClient() {
     <main className="min-h-screen bg-rose-50/40">
       <div className="mx-auto max-w-xl space-y-4 p-4 pb-24">
         <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-xs font-bold tracking-[0.25em] text-white/80">
-                NAILY AIDOL
-              </p>
-              <h1 className="mt-2 text-2xl font-bold">来店登録ページ</h1>
-              <p className="mt-2 text-sm leading-6 text-white/90">
-                来店内容、お会計、次回提案、施術後写真をまとめて登録できます。
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href="/visits"
-                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
-              >
-                来店ページへ
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900">ご案内</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            顧客を選択して、来店内容・お会計・施術後写真・次回提案を登録します。
+          <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+            NAILY AIDOL
           </p>
-
-          {prefilledReservationId ? (
-            <div className="mt-3 rounded-2xl border border-pink-200 bg-pink-50 px-4 py-3 text-sm text-pink-700">
-              予約から引き継いでいます。顧客・来店日・メニュー・担当者・メモを初期表示しています。
-            </div>
-          ) : null}
+          <h1 className="mt-2 text-2xl font-bold">来店登録ページ</h1>
+          <p className="mt-2 text-sm leading-6 text-white/90">
+            来店内容、お会計、次回提案、施術後写真をまとめて登録できます。
+          </p>
         </section>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-900">顧客情報</h2>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                顧客 <span className="text-rose-500">*</span>
-              </label>
-              <select
-                value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
-                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-              >
-                <option value="">
-                  {loadingCustomers ? "読み込み中..." : "顧客を選択してください"}
+            <select
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+              className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+            >
+              <option value="">
+                {loadingCustomers ? "読み込み中..." : "顧客を選択してください"}
+              </option>
+              {customers.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.name}
+                  {customer.phone ? ` / ${customer.phone}` : ""}
                 </option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.name}
-                    {customer.phone ? ` / ${customer.phone}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {selectedCustomer ? (
-              <div className="mt-3 rounded-3xl bg-rose-50 p-4 text-sm text-slate-700">
-                <p>
-                  <span className="font-medium">顧客名:</span>{" "}
-                  {selectedCustomer.name}
-                </p>
-                <p className="mt-1">
-                  <span className="font-medium">電話番号:</span>{" "}
-                  {selectedCustomer.phone || "-"}
-                </p>
-              </div>
-            ) : null}
+              ))}
+            </select>
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-900">来店情報</h2>
 
             <div className="space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  来店日 <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={visitDate}
-                  onChange={(e) => setVisitDate(e.target.value)}
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-              </div>
+              <input
+                type="date"
+                value={visitDate}
+                onChange={(e) => setVisitDate(e.target.value)}
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+              />
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  メニュー
-                </label>
-                <input
-                  type="text"
-                  value={menuName}
-                  onChange={(e) => setMenuName(e.target.value)}
-                  placeholder="例: ワンカラー / 定額デザイン"
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-              </div>
+              <input
+                type="text"
+                value={menuName}
+                onChange={(e) => setMenuName(e.target.value)}
+                placeholder="メニュー"
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+              />
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  カラー
-                </label>
-                <input
-                  type="text"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  placeholder="例: ピンクベージュ / マグネット / ぷるマグ"
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-              </div>
+              <input
+                type="text"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                placeholder="カラー"
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+              />
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  売上金額 <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  placeholder="例: 5000"
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-                <p className="mt-2 text-xs text-slate-500">
-                  割引後の最終売上金額を入力してください。
-                </p>
-              </div>
+              <input
+                type="number"
+                inputMode="numeric"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="売上金額"
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+              />
 
-              <div className="rounded-[28px] border border-rose-100 bg-rose-50/50 p-4">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-bold text-slate-900">
-                      支払い内訳
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      例: 現金 6000 / 割引 -1000 → 売上金額 5000
-                    </div>
-                  </div>
+              <input
+                type="text"
+                value={staffName}
+                onChange={(e) => setStaffName(e.target.value)}
+                placeholder="担当者"
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+              />
 
-                  <button
-                    type="button"
-                    onClick={addPaymentLine}
-                    className="rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-600"
-                  >
-                    ＋行追加
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {paymentLines.map((line, index) => {
-                    const isDiscount = isDiscountMethod(line.payment_method);
-
-                    return (
-                      <div
-                        key={line.id}
-                        className="rounded-[28px] border border-rose-100 bg-white p-3"
-                      >
-                        <div className="mb-3 text-xs font-bold text-slate-500">
-                          内訳 {index + 1}
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_160px_auto]">
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-700">
-                              支払い方法
-                            </label>
-                            <select
-                              value={line.payment_method}
-                              onChange={(e) =>
-                                updatePaymentLine(
-                                  line.id,
-                                  "payment_method",
-                                  e.target.value
-                                )
-                              }
-                              className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                            >
-                              {PAYMENT_METHOD_OPTIONS.map((option) => (
-                                <option key={option} value={option}>
-                                  {option}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-700">
-                              金額
-                            </label>
-                            <input
-                              type="number"
-                              inputMode="numeric"
-                              value={line.amount}
-                              onChange={(e) =>
-                                updatePaymentLine(
-                                  line.id,
-                                  "amount",
-                                  e.target.value
-                                )
-                              }
-                              placeholder={isDiscount ? "例: -1000" : "例: 5000"}
-                              className={`w-full rounded-2xl border px-3 py-3 text-sm ${
-                                isDiscount
-                                  ? "border-rose-300 bg-rose-50"
-                                  : "border-rose-200 bg-rose-50/40"
-                              }`}
-                            />
-                            {isDiscount ? (
-                              <p className="mt-1 text-[11px] text-rose-600">
-                                割引はマイナスで入力
-                              </p>
-                            ) : null}
-                          </div>
-
-                          <div className="flex items-end">
-                            <button
-                              type="button"
-                              onClick={() => removePaymentLine(line.id)}
-                              className="w-full rounded-2xl border border-rose-200 bg-white px-3 py-3 text-sm font-bold text-rose-600"
-                            >
-                              削除
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="mt-2 text-xs text-slate-500">
-                          入力値: {formatAmountPreview(line.amount)}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="rounded-3xl bg-white p-3 text-sm shadow-sm">
-                    <div className="text-slate-500">売上金額</div>
-                    <div className="mt-1 font-bold text-slate-900">
-                      {Number.isFinite(totalPrice)
-                        ? totalPrice.toLocaleString("ja-JP")
-                        : "-"}
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl bg-white p-3 text-sm shadow-sm">
-                    <div className="text-slate-500">内訳合計</div>
-                    <div className="mt-1 font-bold text-slate-900">
-                      {paymentTotal.toLocaleString("ja-JP")}
-                    </div>
-                  </div>
-
-                  <div className="rounded-3xl bg-white p-3 text-sm shadow-sm">
-                    <div className="text-slate-500">差額</div>
-                    <div
-                      className={`mt-1 font-bold ${
-                        paymentDiff === 0 ? "text-emerald-600" : "text-rose-600"
-                      }`}
-                    >
-                      {Number.isFinite(paymentDiff)
-                        ? paymentDiff.toLocaleString("ja-JP")
-                        : "-"}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  担当者
-                </label>
-                <input
-                  type="text"
-                  value={staffName}
-                  onChange={(e) => setStaffName(e.target.value)}
-                  placeholder="例: 山田"
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  メモ
-                </label>
-                <textarea
-                  value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
-                  placeholder="施術内容や補足メモ"
-                  rows={4}
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-              </div>
+              <textarea
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="メモ"
+                rows={4}
+                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+              />
             </div>
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-2 text-lg font-bold text-slate-900">
-              施術後写真
-            </h2>
-            <p className="mb-4 text-sm text-slate-600">
-              施術後のネイル写真を登録できます。複数枚選択できます。
-            </p>
+            <h2 className="mb-4 text-lg font-bold text-slate-900">支払い内訳</h2>
+
+            <div className="space-y-3">
+              {paymentLines.map((line) => {
+                const isDiscount = isDiscountMethod(line.payment_method);
+
+                return (
+                  <div key={line.id} className="rounded-[28px] border border-rose-100 bg-white p-3">
+                    <select
+                      value={line.payment_method}
+                      onChange={(e) =>
+                        updatePaymentLine(line.id, "payment_method", e.target.value)
+                      }
+                      className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+                    >
+                      {PAYMENT_METHOD_OPTIONS.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={line.amount}
+                      onChange={(e) =>
+                        updatePaymentLine(line.id, "amount", e.target.value)
+                      }
+                      placeholder={isDiscount ? "例: -1000" : "例: 5000"}
+                      className="mt-3 w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+                    />
+
+                    <div className="mt-2 text-xs text-slate-500">
+                      入力値: {formatAmountPreview(line.amount)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={addPaymentLine}
+              className="mt-3 rounded-2xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-600"
+            >
+              ＋行追加
+            </button>
+          </section>
+
+          <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+            <h2 className="mb-2 text-lg font-bold text-slate-900">施術後写真</h2>
 
             <label className="block cursor-pointer rounded-[28px] border border-dashed border-rose-300 bg-rose-50/50 px-4 py-6 text-center">
               <input
@@ -792,21 +599,13 @@ export default function NewVisitPageClient() {
                 onChange={handlePhotoChange}
                 className="hidden"
               />
-              <div className="text-sm font-bold text-rose-600">
-                写真を選択する
-              </div>
-              <div className="mt-1 text-xs text-slate-500">
-                iPhoneのカメラロールから選択できます
-              </div>
+              <div className="text-sm font-bold text-rose-600">写真を選択する</div>
             </label>
 
             {visitPhotos.length > 0 ? (
               <div className="mt-4 grid grid-cols-2 gap-3">
                 {visitPhotos.map((photo) => (
-                  <div
-                    key={photo.id}
-                    className="overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
-                  >
+                  <div key={photo.id} className="overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm">
                     <img
                       src={photo.previewUrl}
                       alt="施術後写真プレビュー"
@@ -824,42 +623,26 @@ export default function NewVisitPageClient() {
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                まだ写真は選択されていません。
-              </div>
-            )}
+            ) : null}
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-900">次回提案</h2>
 
-            <div className="space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  次回来店予定日
-                </label>
-                <input
-                  type="date"
-                  value={nextVisitDate}
-                  onChange={(e) => setNextVisitDate(e.target.value)}
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-              </div>
+            <input
+              type="date"
+              value={nextVisitDate}
+              onChange={(e) => setNextVisitDate(e.target.value)}
+              className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+            />
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  次回提案
-                </label>
-                <textarea
-                  value={nextProposal}
-                  onChange={(e) => setNextProposal(e.target.value)}
-                  placeholder="例: 次回はフィルイン＋初夏カラー提案"
-                  rows={3}
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-                />
-              </div>
-            </div>
+            <textarea
+              value={nextProposal}
+              onChange={(e) => setNextProposal(e.target.value)}
+              placeholder="次回提案"
+              rows={3}
+              className="mt-3 w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+            />
           </section>
 
           {message ? (
@@ -876,6 +659,13 @@ export default function NewVisitPageClient() {
             {saving ? "登録中..." : "登録する"}
           </button>
         </form>
+
+        <Link
+          href="/visits"
+          className="block rounded-2xl border border-rose-200 bg-white px-4 py-3 text-center text-sm font-bold text-rose-600"
+        >
+          来店ページへ
+        </Link>
       </div>
     </main>
   );
