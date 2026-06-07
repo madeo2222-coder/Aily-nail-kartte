@@ -59,7 +59,7 @@ type MonthDay = {
 };
 
 const DAY_START_HOUR = 10;
-const DAY_END_HOUR = 20;
+const DAY_END_HOUR = 19;
 const SLOT_MINUTES = 30;
 
 function getTodayText() {

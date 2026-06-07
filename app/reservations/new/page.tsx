@@ -81,7 +81,7 @@ const EXTERNAL_SHORTCUTS: ExternalShortcut[] = [
     label: "店休日",
     source: "店休日",
     title: "店休日",
-    minutes: 240,
+    minutes: 540,
   },
 ];
 
@@ -591,14 +591,19 @@ export default function ReservationNewPage() {
   }
 
   function handleExternalShortcut(shortcut: ExternalShortcut) {
-    setReservationMode("external");
-    setErrorMessage("");
-    setStatus("予約");
-    setCustomerId("");
-    setExternalSource(shortcut.source);
-    setExternalTitle(shortcut.title);
-    setDurationMinutes(shortcut.minutes);
+  setReservationMode("external");
+  setErrorMessage("");
+  setStatus("予約");
+  setCustomerId("");
+  setExternalSource(shortcut.source);
+  setExternalTitle(shortcut.title);
+  setDurationMinutes(shortcut.minutes);
+
+  if (shortcut.source === "店休日") {
+    setStartTime("10:00");
+    setDurationMinutes(540);
   }
+}
 
   async function checkOverlap({
     startAt,
