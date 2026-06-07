@@ -43,6 +43,23 @@ type VisitPhoto = {
   created_at: string | null;
 };
 
+type Reservation = {
+  id: string;
+  customer_id: string | null;
+  status: string | null;
+  start_at: string | null;
+  reservation_date: string | null;
+  reservation_time: string | null;
+  date: string | null;
+  time: string | null;
+  visit_date: string | null;
+  reserved_at: string | null;
+  menu_name: string | null;
+  menu: string | null;
+  staff_name: string | null;
+  staff: string | null;
+};
+
 type CustomerIntake = {
   id: number | string;
   customer_id: string | null;
@@ -103,6 +120,114 @@ function yesNo(value: boolean | null) {
   return value ? "確認済み" : "未確認";
 }
 
+function toDateOnlyString(date: Date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function normalizeSupabaseDateTime(value: string | null | undefined) {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const isoLike = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
+  return `${isoLike}Z`;
+}
+
+function isDateTimeText(value: string | null | undefined) {
+  if (!value) return false;
+  return (
+    value.includes("T") ||
+    value.includes(" ") ||
+    /[zZ]$/.test(value) ||
+    /[+-]\d{2}:\d{2}$/.test(value)
+  );
+}
+
+function getJstParts(value: string | null | undefined) {
+  const normalizedValue = normalizeSupabaseDateTime(value);
+  if (!normalizedValue) return null;
+
+  const date = new Date(normalizedValue);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const formatter = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: map.get("year") || "",
+    month: map.get("month") || "",
+    day: map.get("day") || "",
+    hour: map.get("hour") || "",
+    minute: map.get("minute") || "",
+  };
+}
+
+function normalizeDateText(value: string | null | undefined) {
+  if (!value) return null;
+
+  if (isDateTimeText(value)) {
+    const parts = getJstParts(value);
+    if (!parts) return null;
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
+  return value.slice(0, 10);
+}
+
+function normalizeTimeText(value: string | null | undefined) {
+  if (!value) return null;
+
+  if (isDateTimeText(value)) {
+    const parts = getJstParts(value);
+    if (!parts) return null;
+    return `${parts.hour}:${parts.minute}`;
+  }
+
+  return value.slice(0, 5);
+}
+
+function getReservationDate(reservation: Reservation) {
+  return normalizeDateText(
+    reservation.start_at ||
+      reservation.reservation_date ||
+      reservation.date ||
+      reservation.visit_date ||
+      reservation.reserved_at ||
+      null
+  );
+}
+
+function getReservationTime(reservation: Reservation) {
+  return normalizeTimeText(
+    reservation.start_at ||
+      reservation.reservation_time ||
+      reservation.time ||
+      null
+  );
+}
+
+function isActiveReservation(status: string | null) {
+  return status !== "キャンセル" && status !== "cancelled" && status !== "完了" && status !== "completed";
+}
+
 function getPointBenefitText(visitCount: number) {
   if (visitCount >= 10) {
     return "10回来店達成：1,000円OFF対象";
@@ -130,6 +255,7 @@ export default function CustomerDetailPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
   const [visitPhotos, setVisitPhotos] = useState<VisitPhoto[]>([]);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [intake, setIntake] = useState<CustomerIntake | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -167,6 +293,37 @@ export default function CustomerDetailPage() {
     return nextMap;
   }, [visitPhotos]);
 
+  const latestVisit = useMemo(() => {
+    return visits[0] || null;
+  }, [visits]);
+
+  const latestVisitPhotos = useMemo(() => {
+    if (!latestVisit) return [];
+    return photoMap[latestVisit.id] || [];
+  }, [latestVisit, photoMap]);
+
+  const nextReservation = useMemo(() => {
+    const today = toDateOnlyString(new Date());
+
+    return reservations
+      .filter((reservation) => {
+        if (!isActiveReservation(reservation.status)) return false;
+        const reservationDate = getReservationDate(reservation);
+        if (!reservationDate) return false;
+        return reservationDate >= today;
+      })
+      .sort((a, b) => {
+        const aDate = getReservationDate(a) || "9999-99-99";
+        const bDate = getReservationDate(b) || "9999-99-99";
+        const dateDiff = aDate.localeCompare(bDate);
+        if (dateDiff !== 0) return dateDiff;
+
+        const aTime = getReservationTime(a) || "99:99";
+        const bTime = getReservationTime(b) || "99:99";
+        return aTime.localeCompare(bTime);
+      })[0] || null;
+  }, [reservations]);
+
   const customerStats = useMemo(() => {
     const visitCount = visits.length;
 
@@ -176,12 +333,6 @@ export default function CustomerDetailPage() {
 
     const averageUnitPrice = visitCount > 0 ? totalSales / visitCount : 0;
 
-    const latestVisit = visits
-      .filter((visit) => visit.visit_date)
-      .sort((a, b) => {
-        return String(b.visit_date).localeCompare(String(a.visit_date));
-      })[0];
-
     return {
       visitCount,
       totalSales,
@@ -190,7 +341,7 @@ export default function CustomerDetailPage() {
       pointBenefitText: getPointBenefitText(visitCount),
       pointBenefitClass: getPointBenefitClass(visitCount),
     };
-  }, [visits]);
+  }, [visits, latestVisit]);
 
   async function fetchCustomerDetail() {
     setLoading(true);
@@ -262,6 +413,20 @@ export default function CustomerDetailPage() {
         }
       }
 
+      const { data: reservationData, error: reservationError } = await supabase
+        .from("reservations")
+        .select(
+          "id, customer_id, status, start_at, reservation_date, reservation_time, date, time, visit_date, reserved_at, menu_name, menu, staff_name, staff"
+        )
+        .eq("customer_id", customerId);
+
+      if (reservationError) {
+        console.error("reservations取得エラー:", reservationError);
+        setReservations([]);
+      } else {
+        setReservations((reservationData || []) as Reservation[]);
+      }
+
       try {
         const intakeRes = await supabase
           .from("customer_intakes")
@@ -270,10 +435,6 @@ export default function CustomerDetailPage() {
 
         if (intakeRes.error) {
           console.error("customer_intakes取得エラー:", intakeRes.error);
-          console.error(
-            "customer_intakes取得エラー詳細:",
-            JSON.stringify(intakeRes.error, null, 2)
-          );
           setIntake(null);
         } else {
           const intakeRows = ((intakeRes.data || []) as any[])
@@ -397,6 +558,20 @@ export default function CustomerDetailPage() {
     return "-";
   }
 
+  function getReservationMenu(reservation: Reservation | null) {
+    if (!reservation) return "-";
+    if (reservation.menu_name?.trim()) return reservation.menu_name;
+    if (reservation.menu?.trim()) return reservation.menu;
+    return "-";
+  }
+
+  function getReservationStaff(reservation: Reservation | null) {
+    if (!reservation) return "-";
+    if (reservation.staff_name?.trim()) return reservation.staff_name;
+    if (reservation.staff?.trim()) return reservation.staff;
+    return "-";
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-rose-50/40">
@@ -490,6 +665,94 @@ export default function CustomerDetailPage() {
                 {customer.phone || "-"}
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold text-slate-900">
+              次回来店前チェック
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              前回の会話・施術内容・写真・次回予約をすぐ確認できます。
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">前回来店日</div>
+              <div className="mt-2 text-base font-bold text-slate-900">
+                {formatDateOnly(latestVisit?.visit_date || null)}
+              </div>
+
+              <div className="mt-4 text-xs text-slate-500">前回メニュー</div>
+              <div className="mt-2 text-base font-bold text-slate-900">
+                {latestVisit ? getDisplayMenu(latestVisit) : "-"}
+              </div>
+
+              <div className="mt-4 text-xs text-slate-500">前回カラー</div>
+              <div className="mt-2 text-base font-bold text-slate-900">
+                {latestVisit?.color?.trim() ? latestVisit.color : "-"}
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">前回メモ</div>
+              <div className="mt-2 whitespace-pre-wrap rounded-2xl bg-white p-3 text-sm leading-6 text-slate-800">
+                {latestVisit?.memo?.trim() ? latestVisit.memo : "-"}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-3xl bg-blue-50 p-4">
+            <div className="text-sm font-bold text-blue-700">次回予約</div>
+            {nextReservation ? (
+              <div className="mt-2 space-y-1 text-sm text-slate-700">
+                <div>
+                  日時: {formatDateOnly(getReservationDate(nextReservation))}{" "}
+                  {getReservationTime(nextReservation) || ""}
+                </div>
+                <div>メニュー: {getReservationMenu(nextReservation)}</div>
+                <div>担当: {getReservationStaff(nextReservation)}</div>
+                <div>ステータス: {nextReservation.status || "-"}</div>
+              </div>
+            ) : (
+              <div className="mt-2 text-sm text-slate-600">
+                次回予約は未登録です。
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3">
+            <div className="mb-2 text-sm font-bold text-slate-900">
+              前回施術写真
+            </div>
+
+            {latestVisitPhotos.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {latestVisitPhotos.map((photo) =>
+                  photo.image_url ? (
+                    <a
+                      key={photo.id}
+                      href={photo.image_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block overflow-hidden rounded-3xl border border-rose-100 bg-rose-50 shadow-sm"
+                    >
+                      <img
+                        src={photo.image_url}
+                        alt="前回施術写真"
+                        className="h-32 w-full object-cover"
+                      />
+                    </a>
+                  ) : null
+                )}
+              </div>
+            ) : (
+              <div className="rounded-2xl bg-rose-50 px-4 py-3 text-xs text-slate-500">
+                前回写真はまだ登録されていません。
+              </div>
+            )}
           </div>
         </section>
 
