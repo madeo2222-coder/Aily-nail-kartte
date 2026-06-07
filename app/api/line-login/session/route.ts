@@ -27,6 +27,11 @@ type LineVerifyResponse = {
   email?: string;
 };
 
+type StatePayload = {
+  token: string;
+  next: string;
+};
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -59,6 +64,22 @@ function safeDecodeJson<T>(value: string | undefined): T | null {
 
   try {
     return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+function encodeState(payload: StatePayload) {
+  return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+}
+
+function decodeState(value: string | null) {
+  if (!value) return null;
+
+  try {
+    return JSON.parse(
+      Buffer.from(value, "base64url").toString("utf8")
+    ) as StatePayload;
   } catch {
     return null;
   }
@@ -109,12 +130,16 @@ export async function GET(request: NextRequest) {
       const { channelId } = getLineConfig();
       const redirectUri = buildRedirectUri(request);
       const stateValue = randomUUID();
+      const encodedState = encodeState({
+        token: stateValue,
+        next: nextPath,
+      });
 
       const authUrl = new URL("https://access.line.me/oauth2/v2.1/authorize");
       authUrl.searchParams.set("response_type", "code");
       authUrl.searchParams.set("client_id", channelId);
       authUrl.searchParams.set("redirect_uri", redirectUri);
-      authUrl.searchParams.set("state", stateValue);
+      authUrl.searchParams.set("state", encodedState);
       authUrl.searchParams.set("scope", "openid profile");
       authUrl.searchParams.set("prompt", "consent");
 
@@ -151,11 +176,32 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const decodedState = decodeState(state);
+
+    if (!decodedState?.token) {
+      const response = NextResponse.redirect(
+        new URL(
+          "/customer-app/login?error=LINEログイン状態の確認に失敗しました",
+          request.url
+        )
+      );
+
+      clearCookie(response, LINE_STATE_COOKIE);
+      return response;
+    }
+
     const savedState = safeDecodeJson<{ state: string; next: string }>(
       request.cookies.get(LINE_STATE_COOKIE)?.value
     );
 
-    if (!savedState || savedState.state !== state) {
+    const cookieStateMatched =
+      Boolean(savedState?.state) && savedState?.state === decodedState.token;
+
+    const resolvedNextPath = getSafeNextPath(
+      savedState?.next || decodedState.next || "/customer-app"
+    );
+
+    if (savedState && !cookieStateMatched) {
       const response = NextResponse.redirect(
         new URL(
           "/customer-app/login?error=LINEログイン状態の確認に失敗しました",
@@ -230,11 +276,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (customer) {
-      const redirectTo = new URL(
-        getSafeNextPath(savedState.next || "/customer-app"),
-        request.url
-      );
-
+      const redirectTo = new URL(resolvedNextPath, request.url);
       const response = NextResponse.redirect(redirectTo);
 
       setCookie(
@@ -253,9 +295,8 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    const pendingNext = getSafeNextPath(savedState.next || "/customer-app");
-    const pendingRedirectPath = pendingNext.startsWith("/customer-intake")
-      ? pendingNext
+    const pendingRedirectPath = resolvedNextPath.startsWith("/customer-intake")
+      ? resolvedNextPath
       : "/customer-app/link";
 
     const response = NextResponse.redirect(
@@ -269,7 +310,7 @@ export async function GET(request: NextRequest) {
         line_user_id: verified.sub,
         display_name: verified.name || "",
         picture_url: verified.picture || "",
-        next: pendingNext,
+        next: resolvedNextPath,
       }),
       60 * 10
     );
