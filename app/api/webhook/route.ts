@@ -12,15 +12,40 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-function normalizePhone(value: string) {
-  return value.replace(/[^\d]/g, "");
+function extractCustomerIdFromText(text: string) {
+  const match = text.match(
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
+  );
+
+  return match ? match[0] : "";
 }
 
-function extractPhoneFromText(text: string) {
-  const normalized = normalizePhone(text);
+async function replyLineMessage(replyToken: string, text: string) {
+  const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
-  const match = normalized.match(/0\d{9,10}/);
-  return match ? match[0] : "";
+  if (!accessToken || !replyToken) return;
+
+  const res = await fetch("https://api.line.me/v2/bot/message/reply", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      replyToken,
+      messages: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    console.error("LINE返信エラー:", errorText);
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -36,39 +61,48 @@ export async function POST(req: NextRequest) {
     for (const event of events) {
       const lineUserId = event.source?.userId || "";
       const messageText = event.message?.text || "";
+      const replyToken = event.replyToken || "";
 
       if (!lineUserId) continue;
 
-      console.log("LINE USER ID:", lineUserId);
+      const customerId = extractCustomerIdFromText(messageText);
 
-      const phone = extractPhoneFromText(messageText);
+      if (!customerId) {
+        console.log("会員番号が含まれていないため保存スキップ");
 
-      if (!phone) {
-        console.log("電話番号が含まれていないため保存スキップ");
+        if (replyToken) {
+          await replyLineMessage(
+            replyToken,
+            "Aily Nail Studioです。\n予約確定LINEを受け取るには、初回登録完了画面に表示された会員番号をそのまま送信してください。"
+          );
+        }
+
         continue;
       }
 
-      const { data: customers, error: selectError } = await supabase
+      const { data: customer, error: selectError } = await supabase
         .from("customers")
-        .select("id, name, phone, line_user_id")
-        .eq("phone", phone);
+        .select("id, name, line_user_id")
+        .eq("id", customerId)
+        .maybeSingle();
 
       if (selectError) {
         console.error("customers検索エラー:", selectError);
         continue;
       }
 
-      if (!customers || customers.length === 0) {
-        console.log("該当顧客なし:", phone);
+      if (!customer) {
+        console.log("該当顧客なし:", customerId);
+
+        if (replyToken) {
+          await replyLineMessage(
+            replyToken,
+            "会員番号を確認できませんでした。\n初回登録完了画面に表示された会員番号を、そのまま送信してください。"
+          );
+        }
+
         continue;
       }
-
-      if (customers.length > 1) {
-        console.log("同一電話番号の顧客が複数あります:", phone);
-        continue;
-      }
-
-      const customer = customers[0];
 
       const { error: updateError } = await supabase
         .from("customers")
@@ -79,15 +113,29 @@ export async function POST(req: NextRequest) {
 
       if (updateError) {
         console.error("line_user_id保存エラー:", updateError);
+
+        if (replyToken) {
+          await replyLineMessage(
+            replyToken,
+            "LINE通知連携に失敗しました。\nお手数ですが、店舗スタッフへお声がけください。"
+          );
+        }
+
         continue;
       }
 
       console.log("line_user_id保存完了:", {
         customerId: customer.id,
         name: customer.name,
-        phone,
         lineUserId,
       });
+
+      if (replyToken) {
+        await replyLineMessage(
+          replyToken,
+          `${customer.name || "お客様"}のLINE通知連携が完了しました。\n予約確定やお知らせをこちらのLINEにお送りします。`
+        );
+      }
     }
 
     return NextResponse.json({ ok: true });

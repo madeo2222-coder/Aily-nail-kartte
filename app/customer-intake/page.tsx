@@ -11,6 +11,7 @@ type MeResponse = {
     name?: string | null;
     salon_id?: string | null;
     line_user_id?: string | null;
+    line_login_id?: string | null;
   } | null;
   pending?: {
     lineUserId: string;
@@ -26,7 +27,6 @@ export default function CustomerIntakePage() {
   const [isLineAuthenticated, setIsLineAuthenticated] = useState(false);
   const [pendingLineUserId, setPendingLineUserId] = useState("");
   const [pendingLineName, setPendingLineName] = useState("");
-  const [authenticatedLineUserId, setAuthenticatedLineUserId] = useState("");
   const [authenticatedCustomerName, setAuthenticatedCustomerName] =
     useState("");
 
@@ -50,6 +50,9 @@ export default function CustomerIntakePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
+  const [completedCustomerId, setCompletedCustomerId] = useState("");
+  const [completedCustomerName, setCompletedCustomerName] = useState("");
+
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const isDrawingRef = useRef(false);
@@ -70,13 +73,11 @@ export default function CustomerIntakePage() {
         setIsLineAuthenticated(!!json.authenticated);
         setPendingLineUserId(json.pending?.lineUserId || "");
         setPendingLineName(json.pending?.displayName || "");
-        setAuthenticatedLineUserId(json.customer?.line_user_id || "");
         setAuthenticatedCustomerName(json.customer?.name || "");
       } catch {
         setIsLineAuthenticated(false);
         setPendingLineUserId("");
         setPendingLineName("");
-        setAuthenticatedLineUserId("");
         setAuthenticatedCustomerName("");
       } finally {
         setLineLoading(false);
@@ -211,46 +212,9 @@ export default function CustomerIntakePage() {
     return canvas.toDataURL("image/png");
   }
 
-  async function linkLineAfterCustomerCreated() {
-    if (!pendingLineName && !pendingLineUserId) {
-      return { linked: false, message: "" };
-    }
-
-    try {
-      const res = await fetch("/api/line-login/link", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          phone: phone.trim(),
-        }),
-      });
-
-      const json = (await res.json()) as {
-        ok: boolean;
-        error?: string;
-        redirectTo?: string;
-      };
-
-      if (!res.ok || !json.ok) {
-        return {
-          linked: false,
-          message: json.error || "LINE連携に失敗しました",
-        };
-      }
-
-      return {
-        linked: true,
-        message: json.redirectTo || "/customer-app",
-      };
-    } catch {
-      return {
-        linked: false,
-        message: "LINE連携処理で通信エラーが発生しました",
-      };
-    }
+  function buildLineMessageUrl(customerId: string) {
+    const text = `Aily Nail Studio 会員番号\n${customerId}`;
+    return `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -286,8 +250,7 @@ export default function CustomerIntakePage() {
     setIsSubmitting(true);
 
     try {
-      const lineUserIdForInsert =
-        pendingLineUserId || authenticatedLineUserId || null;
+      const lineLoginIdForInsert = pendingLineUserId || null;
 
       const { data: customer, error: customerError } = await supabase
         .from("customers")
@@ -295,7 +258,7 @@ export default function CustomerIntakePage() {
           {
             name: name.trim(),
             phone: phone.trim(),
-            line_user_id: lineUserIdForInsert,
+            line_login_id: lineLoginIdForInsert,
           },
         ])
         .select("id")
@@ -339,37 +302,11 @@ export default function CustomerIntakePage() {
         return;
       }
 
-      const lineResult = await linkLineAfterCustomerCreated();
-
-      if (lineUserIdForInsert) {
-        setMessage("送信とLINE連携が完了しました。マイページへ移動します。");
-
-        window.setTimeout(() => {
-          window.location.href = lineResult.linked
-            ? lineResult.message || "/customer-app"
-            : "/customer-app";
-        }, 800);
-
-        return;
-      }
-
-      if (lineResult.linked) {
-        setMessage("送信とLINE連携が完了しました。マイページへ移動します。");
-
-        window.setTimeout(() => {
-          window.location.href = lineResult.message || "/customer-app";
-        }, 800);
-
-        return;
-      }
-
-      if (lineResult.message) {
-        setMessage(
-          `送信は完了しました。ただしLINE連携は未完了です: ${lineResult.message}`
-        );
-      } else {
-        setMessage("送信が完了しました。ありがとうございました。");
-      }
+      setCompletedCustomerId(customer.id);
+      setCompletedCustomerName(name.trim());
+      setMessage(
+        "送信が完了しました。予約確定LINEを受け取るため、下の会員番号を公式LINEに送信してください。"
+      );
 
       setName("");
       setPhone("");
@@ -407,7 +344,7 @@ export default function CustomerIntakePage() {
           <h1 className="mt-3 text-3xl font-bold">初回来店受付フォーム</h1>
           <p className="mt-4 text-base leading-8 text-white/90">
             初めてのお客様は、LINE認証後に必要事項の入力とご署名をお願いします。
-            LINE認証しておくと、予約確認・予約確定・マイページ利用がスムーズになります。
+            LINE認証しておくと、マイページ利用がスムーズになります。
           </p>
 
           <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -429,7 +366,8 @@ export default function CustomerIntakePage() {
         <section className="rounded-[24px] border bg-white p-6 shadow-sm">
           <h2 className="text-2xl font-bold text-slate-900">LINE認証</h2>
           <p className="mt-3 text-base leading-7 text-slate-600">
-            予約通知・予約確定通知・マイページ利用のため、最初にLINE認証をお願いします。
+            マイページ利用のため、最初にLINE認証をお願いします。
+            予約確定LINEは、登録完了後に公式LINEへ会員番号を送信すると受け取れるようになります。
           </p>
 
           {lineLoading ? (
@@ -447,7 +385,7 @@ export default function CustomerIntakePage() {
             <div className="mt-4 rounded-[20px] border border-green-200 bg-green-50 px-5 py-4 text-base font-bold text-green-700">
               LINE認証済みです：{pendingLineName} さん
               <div className="mt-2 text-sm font-medium leading-6">
-                このまま受付フォームを送信すると、LINEと顧客情報を自動で紐付けます。
+                このまま受付フォームを送信すると、LINEログインと顧客情報を紐付けます。
               </div>
             </div>
           ) : (
@@ -459,263 +397,278 @@ export default function CustomerIntakePage() {
                 LINEで認証する
               </a>
               <p className="text-sm leading-6 text-slate-500">
-                認証後、この受付フォームに戻ります。認証せずに送信することもできますが、LINE通知やマイページ連携は後から必要になります。
+                認証後、この受付フォームに戻ります。認証せずに送信することもできますが、マイページ連携は後から必要になります。
               </p>
             </div>
           )}
         </section>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="rounded-[24px] border bg-white p-6 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900">お客様情報</h2>
+        {completedCustomerId ? (
+          <section className="rounded-[24px] border border-green-200 bg-green-50 p-6 shadow-sm">
+            <h2 className="text-2xl font-bold text-green-800">
+              登録が完了しました
+            </h2>
 
-            <div className="mt-6 space-y-5">
-              <div>
-                <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  お名前 カナ<span className="text-red-500">*</span>
-                </label>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="山田 花子　ヤマダ　ハナコ"
-                  className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
-                />
-              </div>
+            <p className="mt-3 text-base leading-7 text-green-700">
+              {completedCustomerName ? `${completedCustomerName} 様、` : ""}
+              予約確定LINEを受け取るため、下の会員番号を公式LINEに送信してください。
+            </p>
 
-              <div>
-                <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  電話番号 <span className="text-red-500">*</span>
-                </label>
-                <input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  inputMode="tel"
-                  placeholder="090-1234-5678"
-                  className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  生年月日
-                </label>
-                <input
-                  type="date"
-                  value={birthDate}
-                  onChange={(e) => setBirthDate(e.target.value)}
-                  className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
-                />
+            <div className="mt-5 rounded-[20px] bg-white p-5">
+              <div className="text-sm font-bold text-slate-500">会員番号</div>
+              <div className="mt-2 break-all text-lg font-black text-slate-900">
+                {completedCustomerId}
               </div>
             </div>
-          </div>
 
-          <div className="rounded-[24px] border bg-white p-6 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900">事前確認</h2>
+            <a
+              href={buildLineMessageUrl(completedCustomerId)}
+              className="mt-5 block rounded-[20px] bg-green-500 px-5 py-4 text-center text-lg font-bold text-white"
+            >
+              公式LINEに会員番号を送る
+            </a>
 
-            <div className="mt-6 space-y-5">
-              <div>
-                <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  アレルギー・皮膚トラブル・体質について
-                </label>
+            <p className="mt-3 text-sm leading-6 text-green-700">
+              LINEが開いたら、Aily Nail Studio公式LINEのトークを選んで送信してください。
+              送信後、LINE通知連携完了メッセージが届きます。
+            </p>
+
+            <Link
+              href="/customer-app"
+              className="mt-4 block rounded-[20px] border border-green-300 bg-white px-5 py-4 text-center text-base font-bold text-green-700"
+            >
+              マイページ入口へ進む
+            </Link>
+          </section>
+        ) : null}
+
+        {!completedCustomerId ? (
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="rounded-[24px] border bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-bold text-slate-900">お客様情報</h2>
+
+              <div className="mt-6 space-y-5">
+                <div>
+                  <label className="mb-2 block text-lg font-semibold text-slate-700">
+                    お名前 カナ<span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="山田 花子　ヤマダ　ハナコ"
+                    className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-lg font-semibold text-slate-700">
+                    電話番号 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    inputMode="tel"
+                    placeholder="090-1234-5678"
+                    className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-lg font-semibold text-slate-700">
+                    生年月日
+                  </label>
+                  <input
+                    type="date"
+                    value={birthDate}
+                    onChange={(e) => setBirthDate(e.target.value)}
+                    className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[24px] border bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-bold text-slate-900">事前確認</h2>
+
+              <div className="mt-6 space-y-5">
                 <textarea
                   value={allergy}
                   onChange={(e) => setAllergy(e.target.value)}
                   rows={4}
-                  placeholder="例：アセトンで赤くなりやすい／金属アレルギーあり／特になし"
+                  placeholder="アレルギー・皮膚トラブル・体質について"
                   className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
                 />
-              </div>
 
-              <div>
-                <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  皮膚トラブル
-                </label>
                 <textarea
                   value={skinTrouble}
                   onChange={(e) => setSkinTrouble(e.target.value)}
                   rows={3}
-                  placeholder="例：手荒れしやすい／爪まわりが敏感"
+                  placeholder="皮膚トラブル"
                   className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
                 />
-              </div>
 
-              <div>
-                <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  体質
-                </label>
                 <textarea
                   value={constitution}
                   onChange={(e) => setConstitution(e.target.value)}
                   rows={3}
-                  placeholder="例：乾燥しやすい／汗をかきやすい"
+                  placeholder="体質"
                   className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
                 />
-              </div>
 
-              <div>
-                <label className="mb-2 block text-lg font-semibold text-slate-700">
-                  施術NG項目・避けてほしいこと
-                </label>
                 <textarea
                   value={avoidItems}
                   onChange={(e) => setAvoidItems(e.target.value)}
                   rows={4}
-                  placeholder="例：強い摩擦が苦手／オフ時に痛みが出やすい／長時間同じ姿勢がつらい"
+                  placeholder="施術NG項目・避けてほしいこと"
                   className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
                 />
               </div>
             </div>
-          </div>
 
-          <div className="rounded-[24px] border bg-white p-6 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900">注意事項確認</h2>
-            <p className="mt-3 text-lg leading-8 text-slate-600">
-              内容をご確認のうえ、すべてチェックをお願いします。
-            </p>
+            <div className="rounded-[24px] border bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-bold text-slate-900">注意事項確認</h2>
 
-            <div className="mt-6 space-y-4">
-              <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={checks.health}
-                  onChange={(e) =>
-                    setChecks({ ...checks, health: e.target.checked })
-                  }
-                  className="mt-1 h-7 w-7"
-                />
-                <span>
-                  体調不良・感染症の疑い・発熱・皮膚トラブルがある場合は施術をお断りすることがあります。
-                </span>
-              </label>
+              <div className="mt-6 space-y-4">
+                <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={checks.health}
+                    onChange={(e) =>
+                      setChecks({ ...checks, health: e.target.checked })
+                    }
+                    className="mt-1 h-7 w-7"
+                  />
+                  <span>
+                    体調不良・感染症の疑い・発熱・皮膚トラブルがある場合は施術をお断りすることがあります。
+                  </span>
+                </label>
 
-              <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={checks.reaction}
-                  onChange={(e) =>
-                    setChecks({ ...checks, reaction: e.target.checked })
-                  }
-                  className="mt-1 h-7 w-7"
-                />
-                <span>
-                  ジェル・溶剤・消毒液・ダスト等により、かゆみ・赤み・腫れなどの反応が出る可能性があります。
-                </span>
-              </label>
+                <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={checks.reaction}
+                    onChange={(e) =>
+                      setChecks({ ...checks, reaction: e.target.checked })
+                    }
+                    className="mt-1 h-7 w-7"
+                  />
+                  <span>
+                    ジェル・溶剤・消毒液・ダスト等により、かゆみ・赤み・腫れなどの反応が出る可能性があります。
+                  </span>
+                </label>
 
-              <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={checks.refund}
-                  onChange={(e) =>
-                    setChecks({ ...checks, refund: e.target.checked })
-                  }
-                  className="mt-1 h-7 w-7"
-                />
-                <span>
-                  施術後の仕上がり確認後は、原則として返金対応はできません。必要に応じてお直し対応をご案内します。
-                </span>
-              </label>
+                <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={checks.refund}
+                    onChange={(e) =>
+                      setChecks({ ...checks, refund: e.target.checked })
+                    }
+                    className="mt-1 h-7 w-7"
+                  />
+                  <span>
+                    施術後の仕上がり確認後は、原則として返金対応はできません。必要に応じてお直し対応をご案内します。
+                  </span>
+                </label>
 
-              <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={checks.condition}
-                  onChange={(e) =>
-                    setChecks({ ...checks, condition: e.target.checked })
-                  }
-                  className="mt-1 h-7 w-7"
-                />
-                <span>
-                  持病・通院・妊娠中・服薬中など、施術に影響する事項がある場合は事前申告します。
-                </span>
-              </label>
+                <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={checks.condition}
+                    onChange={(e) =>
+                      setChecks({ ...checks, condition: e.target.checked })
+                    }
+                    className="mt-1 h-7 w-7"
+                  />
+                  <span>
+                    持病・通院・妊娠中・服薬中など、施術に影響する事項がある場合は事前申告します。
+                  </span>
+                </label>
 
-              <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={checks.photo}
-                  onChange={(e) =>
-                    setChecks({ ...checks, photo: e.target.checked })
-                  }
-                  className="mt-1 h-7 w-7"
-                />
-                <span>
-                  施術記録のため手元写真を撮影する場合があります。公開可否はスタッフ確認時に申告できます。
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <div className="rounded-[24px] border bg-white p-6 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-900">ご署名</h2>
-            <p className="mt-3 text-lg leading-8 text-slate-600">
-              指またはタッチペンでサインしてください。
-            </p>
-
-            <div className="mt-6">
-              <label className="mb-2 block text-lg font-semibold text-slate-700">
-                署名者名 <span className="text-red-500">*</span>
-              </label>
-              <input
-                value={signerName}
-                onChange={(e) => setSignerName(e.target.value)}
-                placeholder="山田 花子"
-                className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
-              />
+                <label className="flex gap-4 rounded-[20px] border p-5 text-lg leading-8 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={checks.photo}
+                    onChange={(e) =>
+                      setChecks({ ...checks, photo: e.target.checked })
+                    }
+                    className="mt-1 h-7 w-7"
+                  />
+                  <span>
+                    施術記録のため手元写真を撮影する場合があります。公開可否はスタッフ確認時に申告できます。
+                  </span>
+                </label>
+              </div>
             </div>
 
-            <div
-              ref={wrapperRef}
-              className="mt-6 overflow-hidden rounded-[20px] border border-dashed bg-slate-50"
-            >
-              {mounted ? (
-                <canvas
-                  ref={canvasRef}
-                  onMouseDown={startDrawing}
-                  onMouseMove={draw}
-                  onMouseUp={stopDrawing}
-                  onMouseLeave={stopDrawing}
-                  onTouchStart={startDrawing}
-                  onTouchMove={draw}
-                  onTouchEnd={stopDrawing}
-                  className="block touch-none bg-white"
-                />
-              ) : (
-                <div className="h-[220px] bg-white" />
-              )}
-            </div>
+            <div className="rounded-[24px] border bg-white p-6 shadow-sm">
+              <h2 className="text-2xl font-bold text-slate-900">ご署名</h2>
 
-            <div className="mt-4 flex justify-end">
-              <button
-                type="button"
-                onClick={clearSignature}
-                className="rounded-[20px] border px-6 py-4 text-lg"
+              <div className="mt-6">
+                <label className="mb-2 block text-lg font-semibold text-slate-700">
+                  署名者名 <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={signerName}
+                  onChange={(e) => setSignerName(e.target.value)}
+                  placeholder="山田 花子"
+                  className="w-full rounded-[20px] border px-5 py-5 text-xl outline-none"
+                />
+              </div>
+
+              <div
+                ref={wrapperRef}
+                className="mt-6 overflow-hidden rounded-[20px] border border-dashed bg-slate-50"
               >
-                署名を消去
-              </button>
+                {mounted ? (
+                  <canvas
+                    ref={canvasRef}
+                    onMouseDown={startDrawing}
+                    onMouseMove={draw}
+                    onMouseUp={stopDrawing}
+                    onMouseLeave={stopDrawing}
+                    onTouchStart={startDrawing}
+                    onTouchMove={draw}
+                    onTouchEnd={stopDrawing}
+                    className="block touch-none bg-white"
+                  />
+                ) : (
+                  <div className="h-[220px] bg-white" />
+                )}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={clearSignature}
+                  className="rounded-[20px] border px-6 py-4 text-lg"
+                >
+                  署名を消去
+                </button>
+              </div>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-[24px] bg-orange-500 px-6 py-5 text-2xl font-bold text-white disabled:opacity-50"
-          >
-            {isSubmitting ? "送信中..." : "内容を送信する"}
-          </button>
-
-          {message ? (
-            <div
-              className={`rounded-[20px] p-5 text-lg ${
-                message.includes("完了")
-                  ? "bg-green-50 text-green-700"
-                  : "bg-red-50 text-red-700"
-              }`}
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-[24px] bg-orange-500 px-6 py-5 text-2xl font-bold text-white disabled:opacity-50"
             >
-              {message}
-            </div>
-          ) : null}
-        </form>
+              {isSubmitting ? "送信中..." : "内容を送信する"}
+            </button>
+          </form>
+        ) : null}
+
+        {message ? (
+          <div
+            className={`rounded-[20px] p-5 text-lg ${
+              message.includes("完了")
+                ? "bg-green-50 text-green-700"
+                : "bg-red-50 text-red-700"
+            }`}
+          >
+            {message}
+          </div>
+        ) : null}
       </div>
     </main>
   );
