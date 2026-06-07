@@ -77,14 +77,13 @@ function getMonthKey(date: Date) {
 }
 
 function toDateOnlyString(date: Date) {
-  return date.toISOString().split("T")[0];
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-function pickString(
-  row: ReservationRow,
-  keys: string[],
-  fallback = ""
-): string {
+function pickString(row: ReservationRow, keys: string[], fallback = ""): string {
   for (const key of keys) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) {
@@ -94,10 +93,7 @@ function pickString(
   return fallback;
 }
 
-function pickNullableString(
-  row: ReservationRow,
-  keys: string[]
-): string | null {
+function pickNullableString(row: ReservationRow, keys: string[]): string | null {
   for (const key of keys) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) {
@@ -107,17 +103,78 @@ function pickNullableString(
   return null;
 }
 
+function normalizeSupabaseDateTime(value: string | null) {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const isoLike = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
+  return `${isoLike}Z`;
+}
+
+function isDateTimeText(value: string | null) {
+  if (!value) return false;
+  return (
+    value.includes("T") ||
+    value.includes(" ") ||
+    /[zZ]$/.test(value) ||
+    /[+-]\d{2}:\d{2}$/.test(value)
+  );
+}
+
+function getJstParts(value: string | null) {
+  const normalizedValue = normalizeSupabaseDateTime(value);
+  if (!normalizedValue) return null;
+
+  const date = new Date(normalizedValue);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const formatter = new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(date);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: map.get("year") || "",
+    month: map.get("month") || "",
+    day: map.get("day") || "",
+    hour: map.get("hour") || "",
+    minute: map.get("minute") || "",
+  };
+}
+
 function normalizeDateText(value: string | null) {
   if (!value) return null;
+
+  if (isDateTimeText(value)) {
+    const parts = getJstParts(value);
+    if (!parts) return null;
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
   return value.slice(0, 10);
 }
 
 function normalizeTimeText(value: string | null) {
   if (!value) return null;
 
-  if (value.includes("T")) {
-    const sliced = value.slice(11, 16);
-    return sliced.length === 5 ? sliced : null;
+  if (isDateTimeText(value)) {
+    const parts = getJstParts(value);
+    if (!parts) return null;
+    return `${parts.hour}:${parts.minute}`;
   }
 
   return value.slice(0, 5);
@@ -143,7 +200,13 @@ function buildReservationTime(row: ReservationRow) {
 
 function normalizeStatus(row: ReservationRow) {
   const raw = pickString(row, ["status"], "予約");
+
+  if (raw === "requested") return "予約申請中";
+  if (raw === "confirmed") return "予約確定";
+  if (raw === "completed") return "完了";
+  if (raw === "cancelled") return "キャンセル";
   if (raw === "予約") return "予約受付";
+
   return raw;
 }
 
@@ -156,8 +219,11 @@ function normalizeMemo(row: ReservationRow) {
 }
 
 function getStatusBadgeClass(status: string) {
-  if (status === "予約受付" || status === "予約") {
+  if (status === "予約申請中" || status === "予約受付" || status === "予約") {
     return "bg-pink-100 text-pink-700";
+  }
+  if (status === "予約確定" || status === "confirmed") {
+    return "bg-blue-100 text-blue-700";
   }
   if (status === "来店予定" || status === "来店") {
     return "bg-emerald-100 text-emerald-700";
@@ -165,10 +231,10 @@ function getStatusBadgeClass(status: string) {
   if (status === "完了待ち") {
     return "bg-amber-100 text-amber-700";
   }
-  if (status === "完了") {
+  if (status === "完了" || status === "completed") {
     return "bg-slate-100 text-slate-700";
   }
-  if (status === "キャンセル") {
+  if (status === "キャンセル" || status === "cancelled") {
     return "bg-rose-100 text-rose-700";
   }
   return "bg-gray-100 text-gray-700";
@@ -181,11 +247,13 @@ function sortByTime(a: TodayReservation, b: TodayReservation) {
 }
 
 function getStatusOrder(status: string) {
-  if (status === "予約受付" || status === "予約") return 1;
-  if (status === "来店予定" || status === "来店") return 2;
-  if (status === "完了待ち") return 3;
-  if (status === "完了") return 4;
-  if (status === "キャンセル") return 5;
+  if (status === "予約申請中" || status === "予約受付" || status === "予約")
+    return 1;
+  if (status === "予約確定" || status === "confirmed") return 2;
+  if (status === "来店予定" || status === "来店") return 3;
+  if (status === "完了待ち") return 4;
+  if (status === "完了" || status === "completed") return 5;
+  if (status === "キャンセル" || status === "cancelled") return 6;
   return 9;
 }
 
@@ -230,15 +298,16 @@ export default function DashboardPageClient() {
   const [todayCount, setTodayCount] = useState(0);
   const [monthSales, setMonthSales] = useState(0);
   const [previousMonthSales, setPreviousMonthSales] = useState(0);
-  const [monthReceivables, setMonthReceivables] = useState(0);
   const [repeatRate, setRepeatRate] = useState(0);
   const [repeatCustomerCount, setRepeatCustomerCount] = useState(0);
   const [visitedCustomerCount, setVisitedCustomerCount] = useState(0);
   const [nextVisitCount, setNextVisitCount] = useState(0);
-  const [todayReservations, setTodayReservations] = useState<TodayReservation[]>([]);
+  const [todayReservations, setTodayReservations] = useState<TodayReservation[]>(
+    []
+  );
 
   useEffect(() => {
-    fetchDashboardData();
+    void fetchDashboardData();
   }, []);
 
   async function handleStaffLogout() {
@@ -258,7 +327,11 @@ export default function DashboardPageClient() {
     const todayText = toDateOnlyString(today);
     const currentMonthKey = getMonthKey(today);
 
-    const previousMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const previousMonthDate = new Date(
+      today.getFullYear(),
+      today.getMonth() - 1,
+      1
+    );
     const previousMonthKey = getMonthKey(previousMonthDate);
 
     const [
@@ -275,7 +348,9 @@ export default function DashboardPageClient() {
         .select("id, price, visit_date, customer_id, next_visit_date")
         .order("visit_date", { ascending: false }),
       supabase.from("receivables").select("id, amount, status"),
-      supabase.from("reservations").select("*").order("created_at", { ascending: false }),
+      supabase.from("reservations").select("*").order("created_at", {
+        ascending: false,
+      }),
     ]);
 
     const customers = (customersResult.data || []) as CustomerRow[];
@@ -321,10 +396,6 @@ export default function DashboardPageClient() {
       0
     );
 
-    const unpaidTotal = receivables
-      .filter((row) => row.status !== "paid")
-      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
-
     const visitCountByCustomer = new Map<string, number>();
 
     visits.forEach((row) => {
@@ -342,7 +413,9 @@ export default function DashboardPageClient() {
         : 0;
 
     const nextVisits = currentMonthVisits.filter(
-      (row) => typeof row.next_visit_date === "string" && row.next_visit_date.trim() !== ""
+      (row) =>
+        typeof row.next_visit_date === "string" &&
+        row.next_visit_date.trim() !== ""
     );
 
     const normalizedTodayReservations = reservations
@@ -350,8 +423,7 @@ export default function DashboardPageClient() {
         const customerId =
           typeof row.customer_id === "string" ? row.customer_id : null;
 
-        const staffId =
-          typeof row.staff_id === "string" ? row.staff_id : null;
+        const staffId = typeof row.staff_id === "string" ? row.staff_id : null;
 
         const directStaffName = pickString(row, ["staff_name", "staff"], "");
         const resolvedStaffName = directStaffName
@@ -380,7 +452,6 @@ export default function DashboardPageClient() {
     setTodayCount(todayVisitRows.length);
     setMonthSales(currentMonthSales);
     setPreviousMonthSales(previousSales);
-    setMonthReceivables(unpaidTotal);
     setRepeatRate(repeatRateValue);
     setRepeatCustomerCount(repeatCustomers.length);
     setVisitedCustomerCount(visitedCustomers.length);
@@ -403,7 +474,11 @@ export default function DashboardPageClient() {
   }, [monthSales, previousMonthSales]);
 
   const monthDiffLabel =
-    monthDiff > 0 ? "先月よりアップ" : monthDiff < 0 ? "先月よりダウン" : "先月と同じくらい";
+    monthDiff > 0
+      ? "先月よりアップ"
+      : monthDiff < 0
+      ? "先月よりダウン"
+      : "先月と同じくらい";
 
   const reservationGroups = useMemo<ReservationGroup[]>(() => {
     const map = new Map<string, TodayReservation[]>();
@@ -620,103 +695,6 @@ export default function DashboardPageClient() {
             ))}
           </div>
         )}
-      </div>
-
-      <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <div className="text-lg font-bold text-gray-900">店舗メニュー</div>
-            <div className="mt-1 text-sm text-gray-500">
-              お店でよく使うメニューをまとめています。
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <Link
-            href="/customers"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">👤</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">顧客</div>
-          </Link>
-
-          <Link
-            href="/visits"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">💅</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">来店</div>
-          </Link>
-
-          <Link
-            href="/receivables"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">💰</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">未収</div>
-          </Link>
-
-          <Link
-            href="/staff"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">🧑‍🤝‍🧑</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">スタッフ</div>
-          </Link>
-
-          <Link
-            href="/customer-intake/list"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">📝</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">初回入力</div>
-          </Link>
-
-          <Link
-            href="/reports/daily"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">📊</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">日別売上</div>
-          </Link>
-
-          <Link
-            href="/settings/external-connections"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">🔗</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">外部連携</div>
-          </Link>
-
-          <Link
-            href="/external-calendar-tasks"
-            className="rounded-3xl bg-rose-50 p-4 text-center shadow-sm transition hover:bg-rose-100"
-          >
-            <div className="text-2xl">🗓️</div>
-            <div className="mt-2 text-sm font-bold text-gray-900">外部反映</div>
-          </Link>
-        </div>
-      </div>
-
-      <div className="rounded-[28px] border border-rose-100 bg-gradient-to-r from-rose-50 to-orange-50 p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="text-base font-bold text-slate-900">
-              オーナー向け経営ボード
-            </div>
-            <div className="mt-1 text-sm text-slate-600">
-              経営や収支の確認は別ページに分けています。
-            </div>
-          </div>
-
-          <Link
-            href="/owner-dashboard"
-            className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
-          >
-            経営ボードへ
-          </Link>
-        </div>
       </div>
     </div>
   );
