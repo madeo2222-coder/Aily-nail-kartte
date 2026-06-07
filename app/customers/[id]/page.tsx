@@ -103,6 +103,24 @@ function yesNo(value: boolean | null) {
   return value ? "確認済み" : "未確認";
 }
 
+function getPointBenefitText(visitCount: number) {
+  if (visitCount >= 10) {
+    return "10回来店達成：1,000円OFF対象";
+  }
+
+  if (visitCount >= 5) {
+    return `5回来店達成：500円OFF対象 / 10回まであと${10 - visitCount}回`;
+  }
+
+  return `500円OFFまであと${5 - visitCount}回`;
+}
+
+function getPointBenefitClass(visitCount: number) {
+  if (visitCount >= 10) return "bg-purple-50 text-purple-700";
+  if (visitCount >= 5) return "bg-amber-50 text-amber-700";
+  return "bg-rose-50 text-rose-700";
+}
+
 export default function CustomerDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -148,6 +166,31 @@ export default function CustomerDetailPage() {
 
     return nextMap;
   }, [visitPhotos]);
+
+  const customerStats = useMemo(() => {
+    const visitCount = visits.length;
+
+    const totalSales = visits.reduce((sum, visit) => {
+      return sum + Number(visit.price || 0);
+    }, 0);
+
+    const averageUnitPrice = visitCount > 0 ? totalSales / visitCount : 0;
+
+    const latestVisit = visits
+      .filter((visit) => visit.visit_date)
+      .sort((a, b) => {
+        return String(b.visit_date).localeCompare(String(a.visit_date));
+      })[0];
+
+    return {
+      visitCount,
+      totalSales,
+      averageUnitPrice,
+      latestVisitDate: latestVisit?.visit_date || null,
+      pointBenefitText: getPointBenefitText(visitCount),
+      pointBenefitClass: getPointBenefitClass(visitCount),
+    };
+  }, [visits]);
 
   async function fetchCustomerDetail() {
     setLoading(true);
@@ -447,6 +490,53 @@ export default function CustomerDetailPage() {
                 {customer.phone || "-"}
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <div className="mb-3">
+            <h2 className="text-lg font-bold text-slate-900">
+              来店・ポイント情報
+            </h2>
+            <p className="mt-1 text-sm text-slate-500">
+              LINE公式リッチメニューの来店ポイント運用に合わせた確認用です。
+            </p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">来店回数</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">
+                {customerStats.visitCount}回
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">累計売上</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">
+                {formatPrice(customerStats.totalSales)}
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">平均単価</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">
+                {formatPrice(customerStats.averageUnitPrice)}
+              </div>
+            </div>
+
+            <div className="rounded-3xl bg-rose-50 p-4">
+              <div className="text-xs text-slate-500">最終来店日</div>
+              <div className="mt-2 text-base font-bold text-slate-900">
+                {formatDateOnly(customerStats.latestVisitDate)}
+              </div>
+            </div>
+          </div>
+
+          <div
+            className={`mt-3 rounded-3xl p-4 text-sm font-bold ${customerStats.pointBenefitClass}`}
+          >
+            ポイント特典：{customerStats.pointBenefitText}
           </div>
         </section>
 
