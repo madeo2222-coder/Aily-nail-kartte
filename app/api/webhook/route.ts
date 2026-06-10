@@ -33,12 +33,7 @@ async function replyLineMessage(replyToken: string, text: string) {
     },
     body: JSON.stringify({
       replyToken,
-      messages: [
-        {
-          type: "text",
-          text,
-        },
-      ],
+      messages: [{ type: "text", text }],
     }),
   });
 
@@ -51,10 +46,6 @@ async function replyLineMessage(replyToken: string, text: string) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-
-    console.log("LINE WEBHOOK");
-    console.log(JSON.stringify(body, null, 2));
-
     const events = body.events || [];
     const supabase = getSupabaseAdmin();
 
@@ -63,20 +54,13 @@ export async function POST(req: NextRequest) {
       const messageText = event.message?.text || "";
       const replyToken = event.replyToken || "";
 
-      if (!lineUserId) continue;
+      if (!lineUserId || !messageText) continue;
 
       const customerId = extractCustomerIdFromText(messageText);
 
+      // 会員番号が入っていない普通の会話には絶対に返信しない
       if (!customerId) {
-        console.log("会員番号が含まれていないため保存スキップ");
-
-        if (replyToken) {
-          await replyLineMessage(
-            replyToken,
-            "Aily Nail Studioです。\n予約確定LINEを受け取るには、初回登録完了画面に表示された会員番号をそのまま送信してください。"
-          );
-        }
-
+        console.log("通常メッセージのためスキップ");
         continue;
       }
 
@@ -93,14 +77,6 @@ export async function POST(req: NextRequest) {
 
       if (!customer) {
         console.log("該当顧客なし:", customerId);
-
-        if (replyToken) {
-          await replyLineMessage(
-            replyToken,
-            "会員番号を確認できませんでした。\n初回登録完了画面に表示された会員番号を、そのまま送信してください。"
-          );
-        }
-
         continue;
       }
 
@@ -113,14 +89,6 @@ export async function POST(req: NextRequest) {
 
       if (updateError) {
         console.error("line_user_id保存エラー:", updateError);
-
-        if (replyToken) {
-          await replyLineMessage(
-            replyToken,
-            "LINE通知連携に失敗しました。\nお手数ですが、店舗スタッフへお声がけください。"
-          );
-        }
-
         continue;
       }
 
@@ -141,7 +109,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("LINE WEBHOOK ERROR", error);
-
     return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
