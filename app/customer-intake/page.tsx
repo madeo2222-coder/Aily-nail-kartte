@@ -220,9 +220,13 @@ export default function CustomerIntakePage() {
 
     try {
       await navigator.clipboard.writeText(completedCustomerId);
-      setCopyMessage("会員番号をコピーしました。公式LINEを開いて貼り付けて送信してください。");
+      setCopyMessage(
+        "会員番号をコピーしました。公式LINEを開いて貼り付けて送信してください。"
+      );
     } catch {
-      setCopyMessage("コピーできない場合は、会員番号を長押ししてコピーしてください。");
+      setCopyMessage(
+        "コピーできない場合は、会員番号を長押ししてコピーしてください。"
+      );
     }
   }
 
@@ -314,7 +318,7 @@ export default function CustomerIntakePage() {
       setCompletedCustomerId(customer.id);
       setCompletedCustomerName(name.trim());
       setMessage(
-        "送信が完了しました。予約確定LINEを受け取るため、会員番号をコピーして公式LINEに送信してください。"
+        "送信が完了しました。無料マイページで施術写真や前回デザインを確認できます。"
       );
 
       setName("");
@@ -352,8 +356,8 @@ export default function CustomerIntakePage() {
           </p>
           <h1 className="mt-3 text-3xl font-bold">初回来店受付フォーム</h1>
           <p className="mt-4 text-base leading-8 text-white/90">
-            初めてのお客様は、LINE認証後に必要事項の入力とご署名をお願いします。
-            LINE認証しておくと、マイページ利用がスムーズになります。
+            初めてのお客様は、必要事項の入力とご署名をお願いします。
+            登録後は無料マイページで施術写真や前回デザインを確認できます。
           </p>
 
           <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -373,10 +377,10 @@ export default function CustomerIntakePage() {
         </section>
 
         <section className="rounded-[24px] border bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-bold text-slate-900">LINE認証</h2>
+          <h2 className="text-2xl font-bold text-slate-900">無料マイページ登録</h2>
           <p className="mt-3 text-base leading-7 text-slate-600">
-            マイページ利用のため、最初にLINE認証をお願いします。
-            予約確定LINEは、登録完了後に公式LINEへ会員番号を送信すると受け取れるようになります。
+            LINE認証をしておくと、施術写真アルバム・前回デザイン確認・
+            デザインギャラリー・次回予約がスムーズに使えます。
           </p>
 
           {lineLoading ? (
@@ -394,7 +398,7 @@ export default function CustomerIntakePage() {
             <div className="mt-4 rounded-[20px] border border-green-200 bg-green-50 px-5 py-4 text-base font-bold text-green-700">
               LINE認証済みです：{pendingLineName} さん
               <div className="mt-2 text-sm font-medium leading-6">
-                このまま受付フォームを送信すると、LINEログインと顧客情報を紐付けます。
+                このまま受付フォームを送信すると、無料マイページと顧客情報を紐付けます。
               </div>
             </div>
           ) : (
@@ -403,10 +407,11 @@ export default function CustomerIntakePage() {
                 href="/api/line-login/session?mode=start&next=/customer-intake"
                 className="block w-full rounded-[20px] bg-green-500 px-5 py-4 text-center text-lg font-bold text-white"
               >
-                LINEで認証する
+                LINEで無料マイページ登録
               </a>
               <p className="text-sm leading-6 text-slate-500">
-                認証後、この受付フォームに戻ります。認証せずに送信することもできますが、マイページ連携は後から必要になります。
+                登録は無料です。施術写真の確認や次回予約に利用できます。
+                認証せずに受付フォームだけ送信することもできます。
               </p>
             </div>
           )}
@@ -415,16 +420,32 @@ export default function CustomerIntakePage() {
         {completedCustomerId ? (
           <section className="rounded-[24px] border border-green-200 bg-green-50 p-6 shadow-sm">
             <h2 className="text-2xl font-bold text-green-800">
-              登録が完了しました
+              🌸 マイページ登録ありがとうございます
             </h2>
 
             <p className="mt-3 text-base leading-7 text-green-700">
               {completedCustomerName ? `${completedCustomerName} 様、` : ""}
-              予約確定LINEを受け取るため、会員番号をコピーして公式LINEに送信してください。
+              無料マイページで、施術写真や前回デザインをいつでも確認できます。
             </p>
 
+            <div className="mt-5 rounded-[22px] bg-white p-5 shadow-sm">
+              <div className="text-base font-black text-slate-900">
+                マイページでできること
+              </div>
+
+              <div className="mt-4 space-y-3 text-sm leading-6 text-slate-700">
+                <div>✅ 施術写真を自分専用アルバムで見返せます</div>
+                <div>✅ 前回・前々回のネイルデザインを確認できます</div>
+                <div>✅ デザインギャラリーからお気に入りを探せます</div>
+                <div>✅ 気に入ったデザインから次回予約できます</div>
+                <div>✅ 予約確認・前日リマインドLINEを受け取れます</div>
+              </div>
+            </div>
+
             <div className="mt-5 rounded-[20px] bg-white p-5">
-              <div className="text-sm font-bold text-slate-500">会員番号</div>
+              <div className="text-sm font-bold text-slate-500">
+                LINE通知連携用の会員番号
+              </div>
               <div className="mt-2 break-all text-lg font-black text-slate-900">
                 {completedCustomerId}
               </div>
@@ -452,7 +473,8 @@ export default function CustomerIntakePage() {
             </a>
 
             <div className="mt-4 rounded-[18px] bg-white px-4 py-3 text-sm leading-6 text-green-800">
-              LINEが開いたら、コピーした会員番号をトークに貼り付けて送信してください。
+              予約確認や前日リマインドLINEを受け取る方は、コピーした会員番号を
+              Aily公式LINEのトークに貼り付けて送信してください。
               送信後、LINE通知連携完了メッセージが届きます。
             </div>
 
