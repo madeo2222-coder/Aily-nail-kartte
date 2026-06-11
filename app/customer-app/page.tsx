@@ -55,6 +55,14 @@ type StaffRow = {
   name: string | null;
 };
 
+type LatestPhoto = {
+  id: string;
+  visitId: string;
+  imageUrl: string;
+  visitDate: string;
+  menuName: string;
+};
+
 type MeResponse = {
   authenticated: boolean;
   customer?: CustomerRow | null;
@@ -102,44 +110,17 @@ const recommendedMenus: MenuItem[] = [
 ];
 
 const signedInNavItems = [
-  {
-    key: "home",
-    label: "ホーム",
-    icon: "🏠",
-    href: "/customer-app",
-  },
-  {
-    key: "reserve",
-    label: "予約",
-    icon: "📅",
-    href: "/customer-app/reserve",
-  },
-  {
-    key: "gallery",
-    label: "ギャラリー",
-    icon: "💅",
-    href: "/customer-app/gallery",
-  },
-  {
-    key: "diagnosis",
-    label: "診断",
-    icon: "✨",
-    href: "/customer-app/sanmeigaku",
-  },
-  {
-    key: "mypage",
-    label: "マイ",
-    icon: "👤",
-    href: "/customer-app/mypage",
-  },
+  { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
+  { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
+  { key: "gallery", label: "ギャラリー", icon: "💅", href: "/customer-app/gallery" },
+  { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
+  { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
 
 function formatDate(value: string | null) {
   if (!value) return "未登録";
-
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "未登録";
-
   return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
 }
 
@@ -150,7 +131,7 @@ function formatDateTime(value: string | null) {
   if (!trimmed) return "";
 
   const normalized =
-    trimmed.endsWith("Z") || /[+-]\\d{2}:\\d{2}$/.test(trimmed)
+    trimmed.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(trimmed)
       ? trimmed
       : `${trimmed.replace(" ", "T")}Z`;
 
@@ -209,6 +190,7 @@ export default function CustomerAppPage() {
   const [lastMenu, setLastMenu] = useState("来店履歴を確認中です");
   const [lastStaff, setLastStaff] = useState("未登録");
   const [nextReservedAt, setNextReservedAt] = useState("");
+  const [latestPhoto, setLatestPhoto] = useState<LatestPhoto | null>(null);
 
   useEffect(() => {
     async function fetchPageData() {
@@ -257,13 +239,44 @@ export default function CustomerAppPage() {
         if (latestVisit) {
           const displayMenu =
             latestVisit.menu_name || latestVisit.menu || "メニュー未登録";
+
           setLastVisitDate(formatDate(latestVisit.visit_date));
           setLastMenu(displayMenu);
           setNextVisitWindow(buildVisitWindowText(latestVisit.visit_date));
+
+          const { data: latestPhotoData } = await supabase
+            .from("visit_photos")
+            .select("id, visit_id, image_url, created_at")
+            .eq("visit_id", latestVisit.id)
+            .not("image_url", "is", null)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+          const photo = (latestPhotoData || [])[0] as
+            | {
+                id: string;
+                visit_id: string;
+                image_url: string | null;
+                created_at: string | null;
+              }
+            | undefined;
+
+          if (photo?.image_url) {
+            setLatestPhoto({
+              id: photo.id,
+              visitId: photo.visit_id,
+              imageUrl: photo.image_url,
+              visitDate: formatDate(latestVisit.visit_date),
+              menuName: displayMenu,
+            });
+          } else {
+            setLatestPhoto(null);
+          }
         } else {
           setLastVisitDate("未登録");
           setLastMenu("まだ来店履歴がありません");
           setNextVisitWindow("初回ご予約をお待ちしています");
+          setLatestPhoto(null);
         }
 
         const nowIso = new Date().toISOString();
@@ -571,6 +584,56 @@ export default function CustomerAppPage() {
             次回予約する
           </Link>
         </section>
+
+        {latestPhoto ? (
+          <section className="overflow-hidden rounded-3xl border bg-white shadow-sm">
+            <div className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-slate-500">最新施術写真</div>
+                  <div className="mt-1 text-xl font-bold text-slate-900">
+                    前回のネイルデザイン
+                  </div>
+                </div>
+
+                <Link
+                  href="/customer-app/gallery"
+                  className="text-sm font-bold text-rose-500"
+                >
+                  写真一覧
+                </Link>
+              </div>
+
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                前回の施術写真を確認できます。次回デザインの参考にしてください。
+              </p>
+            </div>
+
+            <Link href="/customer-app/gallery" className="block">
+              <img
+                src={latestPhoto.imageUrl}
+                alt="最新施術写真"
+                className="h-64 w-full object-cover"
+              />
+            </Link>
+
+            <div className="space-y-2 p-4">
+              <div className="text-sm font-bold text-slate-900">
+                {latestPhoto.menuName}
+              </div>
+              <div className="text-xs text-slate-500">
+                施術日：{latestPhoto.visitDate}
+              </div>
+
+              <Link
+                href="/customer-app/gallery"
+                className="mt-3 block rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                施術写真を見る
+              </Link>
+            </div>
+          </section>
+        ) : null}
 
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-pink-500 p-5 text-white shadow">
           <div className="flex items-start justify-between gap-3">
