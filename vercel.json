@@ -7,6 +7,10 @@
     {
       "path": "/api/send-review-request-line",
       "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/send-google-review-line",
+      "schedule": "0 12 * * *"
     }
   ]
 }
