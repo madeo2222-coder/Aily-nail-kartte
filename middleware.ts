@@ -40,6 +40,12 @@ function isCustomerAllowedApiPath(pathname: string) {
     pathname.startsWith("/api/webhook/") ||
     pathname === "/api/reservations" ||
     pathname.startsWith("/api/reservations/") ||
+    pathname === "/api/send-reservation-confirmed-line" ||
+    pathname.startsWith("/api/send-reservation-confirmed-line/") ||
+    pathname === "/api/send-reservation-reminder-line" ||
+    pathname.startsWith("/api/send-reservation-reminder-line/") ||
+    pathname === "/api/send-review-request-line" ||
+    pathname.startsWith("/api/send-review-request-line/") ||
     pathname === "/api/nail-tip-orders" ||
     pathname.startsWith("/api/nail-tip-orders/") ||
     pathname === "/api/sanmeigaku-diagnoses" ||
