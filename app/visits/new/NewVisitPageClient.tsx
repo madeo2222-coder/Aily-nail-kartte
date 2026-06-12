@@ -433,7 +433,19 @@ if (visitCount) {
         setSaving(false);
         return;
       }
+      const discountTotal = cleanedPaymentLines
+        .filter((line) => isDiscountMethod(line.payment_method))
+        .reduce((sum, line) => sum + Math.abs(line.amount), 0);
 
+      if (discountTotal >= 1000) {
+        await supabase.rpc("decrement_coupon_1000", {
+          customer_id_input: customerId,
+        });
+      } else if (discountTotal >= 500) {
+        await supabase.rpc("decrement_coupon_500", {
+          customer_id_input: customerId,
+        });
+      }
       await uploadVisitPhotos({
         visitId: insertedVisit.id,
         salonId: resolvedSalonId,
