@@ -397,7 +397,25 @@ export default function NewVisitPageClient() {
         setSaving(false);
         return;
       }
+const { count: visitCount } = await supabase
+  .from("visits")
+  .select("*", {
+    count: "exact",
+    head: true,
+  })
+  .eq("customer_id", customerId);
 
+if (visitCount) {
+  if (visitCount % 12 === 0) {
+    await supabase.rpc("increment_coupon_1000", {
+      customer_id_input: customerId,
+    });
+  } else if (visitCount % 6 === 0) {
+    await supabase.rpc("increment_coupon_500", {
+      customer_id_input: customerId,
+    });
+  }
+}
       const visitPaymentsPayload = cleanedPaymentLines.map((line) => ({
         visit_id: insertedVisit.id,
         payment_method: line.payment_method,
