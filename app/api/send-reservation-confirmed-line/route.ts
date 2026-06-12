@@ -77,7 +77,24 @@ function formatDateTime(value: string | null) {
     hour12: false,
   }).format(date);
 }
+function formatTimeOnly(value: string | null) {
+  const normalizedValue = normalizeSupabaseDateTime(value);
 
+  if (!normalizedValue) return "";
+
+  const date = new Date(normalizedValue);
+
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
 function buildLineMessage(params: {
   customerName: string;
   salonName: string;
@@ -92,7 +109,7 @@ function buildLineMessage(params: {
 
 【予約内容】
 サロン：${params.salonName}
-日時：${params.startAt} 〜 ${params.endAt}
+日時：${params.startAt}
 メニュー：${params.menuName}
 担当：${params.staffName}
 
@@ -195,8 +212,11 @@ export async function POST(request: Request) {
     const menuName =
       getString(reservationRow, ["menu", "menu_name"]) || "メニュー未設定";
 
-    const startAt = formatDateTime(getString(reservationRow, ["start_at"]));
-    const endAt = formatDateTime(getString(reservationRow, ["end_at"]));
+    const startAtText = formatDateTime(getString(reservationRow, ["start_at"]));
+const endAtText = formatTimeOnly(getString(reservationRow, ["end_at"]));
+
+const startAt = endAtText ? `${startAtText} 〜 ${endAtText}` : startAtText;
+const endAt = "";
 
     const messageText = buildLineMessage({
       customerName,
