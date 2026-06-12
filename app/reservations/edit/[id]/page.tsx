@@ -516,8 +516,15 @@ export default function EditReservationPage() {
     const { error } = await supabase
       .from("reservations")
       .update({
-        status: "confirmed",
-      })
+  salon_id: salonId,
+  customer_id: isExternalBlock ? null : customerId,
+  staff_id: staffId,
+  menu: menu || null,
+  start_at: dateTime.startAt,
+  end_at: dateTime.endAt,
+  status: "confirmed",
+  memo: buildMemoForSave(galleryReference, memo) || null,
+})
       .eq("id", reservationId);
 
     if (error) {
