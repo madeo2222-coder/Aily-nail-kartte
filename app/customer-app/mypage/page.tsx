@@ -10,6 +10,8 @@ type CustomerRow = {
   salon_id: string | null;
   phone?: string | null;
   line_name?: string | null;
+  coupon_500_count?: number | null;
+  coupon_1000_count?: number | null;
 };
 
 type SalonRow = {
@@ -490,7 +492,60 @@ setVisitCount(count || 0);
         公式LINEポイントカードと同じ特典内容です。
       </div>
     </div>
+<section className="rounded-3xl border bg-white p-4 shadow-sm">
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <div className="text-base font-bold text-slate-900">
+        利用可能クーポン
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        来店ポイント達成で自動付与されます。
+      </div>
+    </div>
 
+    <div className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
+      {(customer?.coupon_500_count || 0) +
+        (customer?.coupon_1000_count || 0)}
+      枚
+    </div>
+  </div>
+
+  <div className="mt-4 grid grid-cols-1 gap-3">
+    <div className="flex items-center justify-between rounded-2xl bg-pink-50 px-4 py-4">
+      <div>
+        <div className="text-sm font-bold text-slate-900">
+          500円OFFクーポン
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          6回来店ごとに付与
+        </div>
+      </div>
+
+      <div className="text-2xl font-black text-pink-600">
+        ×{customer?.coupon_500_count || 0}
+      </div>
+    </div>
+
+    <div className="flex items-center justify-between rounded-2xl bg-orange-50 px-4 py-4">
+      <div>
+        <div className="text-sm font-bold text-slate-900">
+          1,000円OFFクーポン
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          12回来店ごとに付与
+        </div>
+      </div>
+
+      <div className="text-2xl font-black text-orange-600">
+        ×{customer?.coupon_1000_count || 0}
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-3 text-xs leading-5 text-slate-500">
+    クーポン利用時はスタッフが会計時に適用します。
+  </div>
+</section>
     <div className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
       {visitCount}回来店
     </div>
