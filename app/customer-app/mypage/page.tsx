@@ -133,7 +133,25 @@ function formatTime(value: string | null) {
 
   return `${parts.hour}:${parts.minute}`;
 }
+function formatEndTime(startAt: string | null, endAt: string | null) {
+  const startParts = getJstParts(startAt);
+  const endParts = getJstParts(endAt);
 
+  if (!startParts || !endParts) return "";
+
+  const startTotal = Number(startParts.hour) * 60 + Number(startParts.minute);
+  const endTotal = Number(endParts.hour) * 60 + Number(endParts.minute);
+
+  if (!Number.isFinite(startTotal) || !Number.isFinite(endTotal)) {
+    return "";
+  }
+
+  if (endTotal <= startTotal) {
+    return "";
+  }
+
+  return `${endParts.hour}:${endParts.minute}`;
+}
 function getDisplayMenu(visit: VisitRow | null) {
   if (!visit) return "未登録";
   if (visit.menu_name?.trim()) return visit.menu_name;
@@ -548,7 +566,9 @@ export default function CustomerAppMyPage() {
                           〜{formatTime(reservation.end_at)}
                         </div>
                       </div>
-
+{formatEndTime(reservation.start_at, reservation.end_at)
+  ? `〜${formatEndTime(reservation.start_at, reservation.end_at)}`
+  : ""}
                       <div
                         className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${getReservationStatusClass(
                           reservation.status
