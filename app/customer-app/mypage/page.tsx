@@ -250,7 +250,7 @@ export default function CustomerAppMyPage() {
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [message, setMessage] = useState("");
-
+const [visitCount, setVisitCount] = useState(0);
   useEffect(() => {
     async function fetchMyPage() {
       setLoading(true);
@@ -294,7 +294,12 @@ export default function CustomerAppMyPage() {
           .limit(1);
 
         setLatestVisit(((visitData || [])[0] as VisitRow | undefined) || null);
+const { count } = await supabase
+  .from("visits")
+  .select("*", { count: "exact", head: true })
+  .eq("customer_id", meJson.customer.id);
 
+setVisitCount(count || 0);
         const { data: reservationData, error: reservationError } = await supabase
           .from("reservations")
           .select(
@@ -475,7 +480,82 @@ export default function CustomerAppMyPage() {
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">前回来店</div>
+<section className="rounded-3xl border bg-white p-4 shadow-sm">
+  <div className="flex items-center justify-between gap-3">
+    <div>
+      <div className="text-base font-bold text-slate-900">
+        来店ポイント
+      </div>
+      <div className="mt-1 text-xs text-slate-500">
+        公式LINEポイントカードと同じ特典内容です。
+      </div>
+    </div>
 
+    <div className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
+      {visitCount}回来店
+    </div>
+  </div>
+
+  <div className="mt-4 rounded-3xl bg-gradient-to-br from-pink-50 to-orange-50 p-4">
+    <div className="text-xs font-bold text-slate-500">
+      現在の来店回数
+    </div>
+
+    <div className="mt-1 text-3xl font-black text-slate-900">
+      {visitCount}回
+    </div>
+
+    <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="rounded-2xl bg-white p-3">
+        <div className="text-xs font-bold text-slate-500">
+          6回特典まで
+        </div>
+        <div className="mt-1 text-lg font-black text-pink-600">
+          あと{Math.max(6 - (visitCount % 6 || 6), 0)}回
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          500円OFF
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-white p-3">
+        <div className="text-xs font-bold text-slate-500">
+          12回特典まで
+        </div>
+        <div className="mt-1 text-lg font-black text-orange-600">
+          あと{Math.max(12 - (visitCount % 12 || 12), 0)}回
+        </div>
+        <div className="mt-1 text-xs text-slate-500">
+          1,000円OFF
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-4 space-y-2">
+    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+      <div className="text-sm font-bold text-slate-700">
+        6回来店
+      </div>
+      <div className="text-sm font-black text-pink-600">
+        500円OFF
+      </div>
+    </div>
+
+    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+      <div className="text-sm font-bold text-slate-700">
+        12回来店
+      </div>
+      <div className="text-sm font-black text-orange-600">
+        1,000円OFF
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-3 text-xs leading-5 text-slate-500">
+    特典利用は来店時にスタッフへお伝えください。
+  </div>
+</section>
           <div className="mt-4 grid grid-cols-1 gap-3">
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs text-slate-500">前回来店日</div>
