@@ -613,6 +613,12 @@ export default function ExpensesPage() {
 >
   CSV取込
 </Link>
+<Link
+  href="/expenses/import-rows"
+  className="rounded-xl border px-4 py-2 text-sm font-medium"
+>
+  CSV取込候補
+</Link>
             <button
               type="button"
               onClick={handleDownloadCSV}
