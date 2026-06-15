@@ -103,8 +103,7 @@ export default function ExpenseImportRowsPage() {
         throw new Error(data?.error || "除外に失敗しました");
       }
 
-      alert("除外しました");
-      await fetchRows();
+     setRows((current) => current.filter((row) => row.id !== rowId));
     } catch (error) {
       console.error(error);
       alert(
