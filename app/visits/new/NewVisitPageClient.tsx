@@ -410,9 +410,27 @@ if (visitCount) {
     await supabase.rpc("increment_coupon_1000", {
       customer_id_input: customerId,
     });
+
+    await supabase.from("coupon_histories").insert({
+      customer_id: customerId,
+      visit_id: insertedVisit.id,
+      coupon_type: "coupon_1000",
+      action: "earned",
+      amount: 1000,
+      note: "12回来店達成",
+    });
   } else if (visitCount % 6 === 0) {
     await supabase.rpc("increment_coupon_500", {
       customer_id_input: customerId,
+    });
+
+    await supabase.from("coupon_histories").insert({
+      customer_id: customerId,
+      visit_id: insertedVisit.id,
+      coupon_type: "coupon_500",
+      action: "earned",
+      amount: 500,
+      note: "6回来店達成",
     });
   }
 }
