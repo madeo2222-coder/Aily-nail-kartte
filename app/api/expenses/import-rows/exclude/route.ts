@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     const { error } = await supabase
       .from("expense_import_rows")
       .update({
-        review_status: "excluded",
+        review_status: "confirmed",
         excluded_flag: true,
       })
       .eq("id", rowId);

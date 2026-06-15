@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     const { error: updateError } = await supabase
       .from("expense_import_rows")
       .update({
-        review_status: "approved",
+        review_status: "confirmed",
         excluded_flag: false,
         matched_expense_id: insertedExpense.id,
       })
