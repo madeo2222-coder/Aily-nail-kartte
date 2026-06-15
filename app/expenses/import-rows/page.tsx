@@ -177,16 +177,24 @@ export default function ExpenseImportRowsPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 md:w-[220px]">
-                  <button
+                 <button
   type="button"
-  onClick={() => handleApprove(row.id)}
+  onClick={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void handleApprove(row.id);
+  }}
   className="rounded-xl border px-3 py-2 text-sm font-bold text-blue-700"
 >
   正式登録
 </button>
              <button
   type="button"
-  onClick={() => handleExclude(row.id)}
+  onClick={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    void handleExclude(row.id);
+  }}
   className="rounded-xl border px-3 py-2 text-sm font-bold text-rose-700"
 >
   除外
