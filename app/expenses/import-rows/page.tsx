@@ -53,7 +53,67 @@ export default function ExpenseImportRowsPage() {
   useEffect(() => {
     void fetchRows();
   }, []);
+  async function handleApprove(rowId: string) {
+    const ok = window.confirm("この候補を正式な経費として登録しますか？");
+    if (!ok) return;
 
+    try {
+      const res = await fetch("/api/expenses/import-rows/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ rowId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data?.error || "正式登録に失敗しました");
+      }
+
+      alert("正式登録しました");
+      await fetchRows();
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "正式登録中にエラーが発生しました"
+      );
+    }
+  }
+
+  async function handleExclude(rowId: string) {
+    const ok = window.confirm("この候補を除外しますか？");
+    if (!ok) return;
+
+    try {
+      const res = await fetch("/api/expenses/import-rows/exclude", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ rowId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.ok) {
+        throw new Error(data?.error || "除外に失敗しました");
+      }
+
+      alert("除外しました");
+      await fetchRows();
+    } catch (error) {
+      console.error(error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "除外中にエラーが発生しました"
+      );
+    }
+  }
   return (
     <main className="mx-auto max-w-5xl p-4 pb-24">
       <div className="mb-6 flex items-start justify-between gap-3">
@@ -119,20 +179,19 @@ export default function ExpenseImportRowsPage() {
 
                 <div className="grid grid-cols-2 gap-2 md:w-[220px]">
                   <button
-                    type="button"
-                    className="rounded-xl border px-3 py-2 text-sm"
-                    disabled
-                  >
-                    正式登録
-                  </button>
-
-                  <button
-                    type="button"
-                    className="rounded-xl border px-3 py-2 text-sm"
-                    disabled
-                  >
-                    除外
-                  </button>
+  type="button"
+  onClick={() => handleApprove(row.id)}
+  className="rounded-xl border px-3 py-2 text-sm font-bold text-blue-700"
+>
+  正式登録
+</button>
+             <button
+  type="button"
+  onClick={() => handleExclude(row.id)}
+  className="rounded-xl border px-3 py-2 text-sm font-bold text-rose-700"
+>
+  除外
+</button>
                 </div>
               </div>
             </div>
