@@ -72,8 +72,7 @@ export default function ExpenseImportRowsPage() {
         throw new Error(data?.error || "正式登録に失敗しました");
       }
 
-      alert("正式登録しました");
-      await fetchRows();
+      setRows((currentRows) => currentRows.filter((row) => row.id !== rowId));
     } catch (error) {
       console.error(error);
       alert(
