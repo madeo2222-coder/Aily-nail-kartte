@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
+export const dynamic = "force-dynamic";
+
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -58,25 +60,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const text = `${row.vendor_raw || ""} ${row.description_raw || ""}`;
+    const text = `${row.vendor_raw || ""} ${row.description_raw || ""}`.trim();
 
-    const { error: insertError } = await supabase.from("expenses").insert({
-      expense_date: row.expense_date,
-      category: guessCategory(text),
-      amount: row.amount,
-      memo: text.trim() || null,
-      receipt_url: null,
-    });
+    const { data: insertedExpense, error: insertError } = await supabase
+      .from("expenses")
+      .insert({
+        expense_date: row.expense_date,
+        category: guessCategory(text),
+        amount: Math.round(Number(row.amount || 0)),
+        memo: text || null,
+        receipt_url: null,
+        source_import_row_id: row.id,
+      })
+      .select("id")
+      .single();
 
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
+    if (insertError || !insertedExpense) {
+      return NextResponse.json(
+        { error: insertError?.message || "経費登録に失敗しました" },
+        { status: 500 }
+      );
     }
 
     const { error: updateError } = await supabase
       .from("expense_import_rows")
       .update({
         review_status: "approved",
-        excluded_flag: true,
+        excluded_flag: false,
+        matched_expense_id: insertedExpense.id,
       })
       .eq("id", rowId);
 
@@ -84,7 +95,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, expenseId: insertedExpense.id });
   } catch (error) {
     return NextResponse.json(
       {
