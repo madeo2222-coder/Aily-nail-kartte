@@ -39,6 +39,17 @@ type ReservationRow = {
   created_at: string | null;
 };
 
+type CouponHistoryRow = {
+  id: string;
+  customer_id: string;
+  visit_id: string | null;
+  coupon_type: string;
+  action: string;
+  amount: number;
+  note: string | null;
+  created_at: string | null;
+};
+
 type StaffRow = {
   id: string;
   name: string | null;

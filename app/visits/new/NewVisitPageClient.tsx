@@ -456,14 +456,32 @@ if (visitCount) {
         .reduce((sum, line) => sum + Math.abs(line.amount), 0);
 
       if (discountTotal >= 1000) {
-        await supabase.rpc("decrement_coupon_1000", {
-          customer_id_input: customerId,
-        });
-      } else if (discountTotal >= 500) {
-        await supabase.rpc("decrement_coupon_500", {
-          customer_id_input: customerId,
-        });
-      }
+  await supabase.rpc("decrement_coupon_1000", {
+    customer_id_input: customerId,
+  });
+
+  await supabase.from("coupon_histories").insert({
+    customer_id: customerId,
+    visit_id: insertedVisit.id,
+    coupon_type: "coupon_1000",
+    action: "used",
+    amount: -1000,
+    note: "会計時利用",
+  });
+} else if (discountTotal >= 500) {
+  await supabase.rpc("decrement_coupon_500", {
+    customer_id_input: customerId,
+  });
+
+  await supabase.from("coupon_histories").insert({
+    customer_id: customerId,
+    visit_id: insertedVisit.id,
+    coupon_type: "coupon_500",
+    action: "used",
+    amount: -500,
+    note: "会計時利用",
+  });
+}
       await uploadVisitPhotos({
         visitId: insertedVisit.id,
         salonId: resolvedSalonId,
