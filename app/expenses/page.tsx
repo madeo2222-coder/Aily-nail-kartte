@@ -607,7 +607,12 @@ export default function ExpensesPage() {
             >
               新規登録
             </Link>
-
+<Link
+  href="/expenses/import"
+  className="rounded-xl border px-4 py-2 text-sm font-medium"
+>
+  CSV取込
+</Link>
             <button
               type="button"
               onClick={handleDownloadCSV}
