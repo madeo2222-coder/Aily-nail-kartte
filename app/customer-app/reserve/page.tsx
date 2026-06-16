@@ -558,28 +558,61 @@ function ReservePageContent() {
       }
 
       try {
-        let query = supabase
+        let reservationQuery = supabase
           .from("reservations")
           .select("id, staff_id, status, start_at, end_at")
           .lt("start_at", dayEnd)
           .gt("end_at", dayStart);
 
         if (salonId) {
-          query = query.eq("salon_id", salonId);
+          reservationQuery = reservationQuery.eq("salon_id", salonId);
         }
 
         if (selectedStaffId) {
-          query = query.eq("staff_id", selectedStaffId);
+          reservationQuery = reservationQuery.eq("staff_id", selectedStaffId);
         }
 
-        const { data, error } = await query;
+        let externalBlockQuery = supabase
+          .from("external_calendar_blocks")
+          .select("id, staff_id, start_at, end_at")
+          .lt("start_at", dayEnd)
+          .gt("end_at", dayStart);
 
-        if (error) {
-          console.error("reservation blocks fetch error:", error.message);
-          setReservationBlocks([]);
-        } else {
-          setReservationBlocks((data || []) as ReservationBlockRow[]);
+        if (selectedStaffId) {
+          externalBlockQuery = externalBlockQuery.eq("staff_id", selectedStaffId);
         }
+
+        const [reservationResult, externalBlockResult] = await Promise.all([
+          reservationQuery,
+          externalBlockQuery,
+        ]);
+
+        if (reservationResult.error) {
+          console.error(
+            "reservation blocks fetch error:",
+            reservationResult.error.message
+          );
+        }
+
+        if (externalBlockResult.error) {
+          console.error(
+            "external blocks fetch error:",
+            externalBlockResult.error.message
+          );
+        }
+
+        const reservationRows =
+          (reservationResult.data || []) as ReservationBlockRow[];
+
+        const externalRows = (externalBlockResult.data || []).map((block) => ({
+          id: String(block.id),
+          staff_id: block.staff_id,
+          status: "external_block",
+          start_at: block.start_at,
+          end_at: block.end_at,
+        })) as ReservationBlockRow[];
+
+        setReservationBlocks([...reservationRows, ...externalRows]);
       } catch (error) {
         console.error("reservation blocks fetch error:", error);
         setReservationBlocks([]);
