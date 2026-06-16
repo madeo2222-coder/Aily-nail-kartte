@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 export const dynamic = "force-dynamic";
 
@@ -28,9 +27,6 @@ function buildUtcIsoFromJst(dateText: string, timeText: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = requireStaffSession(req);
-  if (authError) return authError;
-
   try {
     const body = await req.json();
 
@@ -44,22 +40,34 @@ export async function POST(req: NextRequest) {
     const memo = String(body.memo || "").trim() || null;
 
     if (!staffId) {
-      return NextResponse.json({ ok: false, error: "担当スタッフを選択してください" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "担当スタッフを選択してください" },
+        { status: 400 }
+      );
     }
 
     if (!date || !startTime || !endTime) {
-      return NextResponse.json({ ok: false, error: "日付・開始時間・終了時間を入力してください" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "日付・開始時間・終了時間を入力してください" },
+        { status: 400 }
+      );
     }
 
     if (startTime < "10:00" || endTime > "19:00" || startTime >= endTime) {
-      return NextResponse.json({ ok: false, error: "時間は10:00〜19:00の範囲で正しく入力してください" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "時間は10:00〜19:00の範囲で正しく入力してください" },
+        { status: 400 }
+      );
     }
 
     const startAt = buildUtcIsoFromJst(date, startTime);
     const endAt = buildUtcIsoFromJst(date, endTime);
 
     if (!startAt || !endAt) {
-      return NextResponse.json({ ok: false, error: "日時の変換に失敗しました" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: "日時の変換に失敗しました" },
+        { status: 400 }
+      );
     }
 
     const supabase = getSupabaseAdmin();
@@ -83,7 +91,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "外部予約ブロック登録に失敗しました",
+        error:
+          error instanceof Error
+            ? error.message
+            : "外部予約ブロック登録に失敗しました",
       },
       { status: 500 }
     );
