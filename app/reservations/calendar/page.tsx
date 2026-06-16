@@ -18,6 +18,18 @@ type ReservationRow = {
   created_at: string | null;
 };
 
+type ExternalCalendarBlockRow = {
+  id: string;
+  salon_id: string | null;
+  staff_id: string | null;
+  source: string | null;
+  title: string | null;
+  start_at: string | null;
+  end_at: string | null;
+  memo: string | null;
+  created_at: string | null;
+};
+
 type CustomerRow = {
   id: string;
   name: string | null;
@@ -43,6 +55,7 @@ type CalendarReservation = {
   startMinute: number;
   endMinute: number;
   durationMinutes: number;
+  isExternalBlock: boolean;
 };
 
 type StaffColumn = {
@@ -209,6 +222,7 @@ function getStatusColor(status: string, menuName: string, memo: string) {
   }
 
   if (
+    checkText.includes("外部ブロック") ||
     checkText.includes("休憩") ||
     checkText.includes("店休日") ||
     checkText.includes("ブロック")
@@ -300,6 +314,7 @@ export default function ReservationsCalendarPage() {
   const [selectedStaffFilter, setSelectedStaffFilter] = useState("all");
 
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
+  const [externalBlocks, setExternalBlocks] = useState<ExternalCalendarBlockRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -307,20 +322,34 @@ export default function ReservationsCalendarPage() {
   async function fetchCalendarData() {
     setLoading(true);
 
-    const [reservationsRes, customersRes, staffsRes] = await Promise.all([
-      supabase
-        .from("reservations")
-        .select("*")
-        .order("start_at", { ascending: true }),
-      supabase.from("customers").select("id, name"),
-      supabase.from("staffs").select("id, name"),
-    ]);
+    const [reservationsRes, externalBlocksRes, customersRes, staffsRes] =
+      await Promise.all([
+        supabase
+          .from("reservations")
+          .select("*")
+          .order("start_at", { ascending: true }),
+        supabase
+          .from("external_calendar_blocks")
+          .select("*")
+          .order("start_at", { ascending: true }),
+        supabase.from("customers").select("id, name"),
+        supabase.from("staffs").select("id, name"),
+      ]);
 
     if (reservationsRes.error) {
       console.error("calendar reservations error:", reservationsRes.error);
       setReservations([]);
     } else {
       setReservations((reservationsRes.data || []) as ReservationRow[]);
+    }
+
+    if (externalBlocksRes.error) {
+      console.error("calendar external blocks error:", externalBlocksRes.error);
+      setExternalBlocks([]);
+    } else {
+      setExternalBlocks(
+        (externalBlocksRes.data || []) as ExternalCalendarBlockRow[]
+      );
     }
 
     if (customersRes.error) {
@@ -360,7 +389,7 @@ export default function ReservationsCalendarPage() {
     return map;
   }, [staffs]);
 
-  const allCalendarReservations = useMemo<CalendarReservation[]>(() => {
+  const reservationCalendarRows = useMemo<CalendarReservation[]>(() => {
     return reservations.map((reservation) => {
       const date = toJstDateText(reservation.start_at);
       const startTime = toJstTimeText(reservation.start_at);
@@ -390,9 +419,49 @@ export default function ReservationsCalendarPage() {
         startMinute,
         endMinute,
         durationMinutes: Math.max(endMinute - startMinute, SLOT_MINUTES),
+        isExternalBlock: false,
       };
     });
   }, [reservations, customerMap, staffMap]);
+
+  const externalCalendarRows = useMemo<CalendarReservation[]>(() => {
+    return externalBlocks.map((block) => {
+      const date = toJstDateText(block.start_at);
+      const startTime = toJstTimeText(block.start_at);
+      const endTime = toJstTimeText(block.end_at);
+      const startMinute = timeTextToMinute(startTime);
+      const endMinute = timeTextToMinute(endTime);
+
+      const staffId = block.staff_id || null;
+      const staffName = staffId ? staffMap.get(staffId) || "未設定" : "指名なし";
+      const source = block.source || "外部";
+      const title = block.title || `${source}予約`;
+
+      return {
+        id: `external-${block.id}`,
+        customerName: source,
+        staffId,
+        staffName,
+        menuName: title,
+        status: "外部ブロック",
+        source,
+        memo: [source, title, block.memo || "", "外部ブロック"]
+          .filter(Boolean)
+          .join(" "),
+        date,
+        startTime,
+        endTime,
+        startMinute,
+        endMinute,
+        durationMinutes: Math.max(endMinute - startMinute, SLOT_MINUTES),
+        isExternalBlock: true,
+      };
+    });
+  }, [externalBlocks, staffMap]);
+
+  const allCalendarReservations = useMemo<CalendarReservation[]>(() => {
+    return [...reservationCalendarRows, ...externalCalendarRows];
+  }, [reservationCalendarRows, externalCalendarRows]);
 
   const staffFilteredReservations = useMemo(() => {
     if (selectedStaffFilter === "all") {
@@ -569,6 +638,13 @@ export default function ReservationsCalendarPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <Link
+                href="/external-calendar-blocks"
+                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                外部予約ブロック
+              </Link>
+
               <Link
                 href="/reservations"
                 className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
@@ -839,20 +915,8 @@ export default function ReservationsCalendarPage() {
                           reservation.memo
                         );
 
-                        return (
-                          <Link
-                            key={reservation.id}
-                            href={`/reservations/edit/${reservation.id}`}
-                            className={`absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
-                              overlapIds.has(reservation.id)
-                                ? "ring-2 ring-rose-400"
-                                : ""
-                            }`}
-                            style={{
-                              top: Math.max(top, 0),
-                              height: Math.max(height - 6, 52),
-                            }}
-                          >
+                        const cardContent = (
+                          <>
                             <div className="truncate font-black">
                               {reservation.customerName}
                             </div>
@@ -873,6 +937,40 @@ export default function ReservationsCalendarPage() {
                                 {reservation.source}
                               </span>
                             </div>
+                          </>
+                        );
+
+                        const className = `absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
+                          overlapIds.has(reservation.id)
+                            ? "ring-2 ring-rose-400"
+                            : ""
+                        }`;
+
+                        const style = {
+                          top: Math.max(top, 0),
+                          height: Math.max(height - 6, 52),
+                        };
+
+                        if (reservation.isExternalBlock) {
+                          return (
+                            <div
+                              key={reservation.id}
+                              className={className}
+                              style={style}
+                            >
+                              {cardContent}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <Link
+                            key={reservation.id}
+                            href={`/reservations/edit/${reservation.id}`}
+                            className={className}
+                            style={style}
+                          >
+                            {cardContent}
                           </Link>
                         );
                       })}
