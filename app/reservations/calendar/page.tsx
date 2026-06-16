@@ -964,16 +964,67 @@ export default function ReservationsCalendarPage() {
                         };
 
                         if (reservation.isExternalBlock) {
-                          return (
-                            <div
-                              key={reservation.id}
-                              className={className}
-                              style={style}
-                            >
-                              {cardContent}
-                            </div>
-                          );
-                        }
+  return (
+    <div
+      key={reservation.id}
+      className={className}
+      style={style}
+    >
+      {cardContent}
+
+      <button
+        type="button"
+        onClick={async () => {
+          const ok = window.confirm(
+            "この外部予約ブロックを削除しますか？"
+          );
+
+          if (!ok) return;
+
+          try {
+            const blockId = reservation.id.replace("external-", "");
+
+            const res = await fetch(
+              "/api/external-calendar-blocks/delete",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  id: blockId,
+                }),
+              }
+            );
+
+            const data = await res.json();
+
+            if (!res.ok || !data.ok) {
+              throw new Error(
+                data?.error || "削除に失敗しました"
+              );
+            }
+
+            alert("削除しました");
+
+            await fetchCalendarData();
+          } catch (error) {
+            console.error(error);
+
+            alert(
+              error instanceof Error
+                ? error.message
+                : "削除に失敗しました"
+            );
+          }
+        }}
+        className="mt-2 w-full rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white"
+      >
+        削除
+      </button>
+    </div>
+  );
+}
 
                         return (
                           <Link
