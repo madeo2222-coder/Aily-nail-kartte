@@ -142,6 +142,16 @@ function toJstTimeText(value: string | null) {
   return `${parts.hour}:${parts.minute}`;
 }
 
+function toLocalDateText(value: string | null) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+function toLocalTimeText(value: string | null) {
+  if (!value) return "";
+  return value.slice(11, 16);
+}
+
 function timeTextToMinute(time: string) {
   const [h, m] = time.split(":").map(Number);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
@@ -314,7 +324,9 @@ export default function ReservationsCalendarPage() {
   const [selectedStaffFilter, setSelectedStaffFilter] = useState("all");
 
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
-  const [externalBlocks, setExternalBlocks] = useState<ExternalCalendarBlockRow[]>([]);
+  const [externalBlocks, setExternalBlocks] = useState<
+    ExternalCalendarBlockRow[]
+  >([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -426,9 +438,9 @@ export default function ReservationsCalendarPage() {
 
   const externalCalendarRows = useMemo<CalendarReservation[]>(() => {
     return externalBlocks.map((block) => {
-      const date = toJstDateText(block.start_at);
-      const startTime = toJstTimeText(block.start_at);
-      const endTime = toJstTimeText(block.end_at);
+      const date = toLocalDateText(block.start_at);
+      const startTime = toLocalTimeText(block.start_at);
+      const endTime = toLocalTimeText(block.end_at);
       const startMinute = timeTextToMinute(startTime);
       const endMinute = timeTextToMinute(endTime);
 
@@ -696,8 +708,8 @@ export default function ReservationsCalendarPage() {
                   week === "日"
                     ? "text-rose-500"
                     : week === "土"
-                    ? "text-blue-500"
-                    : "text-slate-500"
+                      ? "text-blue-500"
+                      : "text-slate-500"
                 }`}
               >
                 {week}
@@ -717,8 +729,8 @@ export default function ReservationsCalendarPage() {
                     isSelected
                       ? "border-rose-400 bg-rose-100 shadow-sm"
                       : day.isToday
-                      ? "border-blue-200 bg-blue-50"
-                      : "border-slate-100 bg-white hover:bg-rose-50"
+                        ? "border-blue-200 bg-blue-50"
+                        : "border-slate-100 bg-white hover:bg-rose-50"
                   } ${day.isCurrentMonth ? "" : "opacity-35"}`}
                 >
                   <div
@@ -726,8 +738,8 @@ export default function ReservationsCalendarPage() {
                       isSelected
                         ? "text-rose-700"
                         : day.isToday
-                        ? "text-blue-700"
-                        : "text-slate-800"
+                          ? "text-blue-700"
+                          : "text-slate-800"
                     }`}
                   >
                     {day.day}
