@@ -31,12 +31,21 @@ export default function SanmeigakuLpPage() {
             ))}
           </div>
 
-          <Link
-            href="/customer-app/sanmeigaku"
-            className="mt-6 block rounded-3xl bg-white px-5 py-4 text-center text-sm font-black text-fuchsia-600 shadow-xl"
-          >
-            無料で診断する
-          </Link>
+          <div className="mt-6 grid grid-cols-1 gap-2">
+            <Link
+              href="/customer-app/sanmeigaku"
+              className="block rounded-3xl bg-white px-5 py-4 text-center text-sm font-black text-fuchsia-600 shadow-xl"
+            >
+              無料で診断する
+            </Link>
+
+            <Link
+              href="/customer-app/login"
+              className="block rounded-3xl border border-white/30 bg-white/10 px-5 py-4 text-center text-sm font-black text-white backdrop-blur"
+            >
+              LINEで診断結果を保存する
+            </Link>
+          </div>
         </section>
 
         <section className="mt-5 rounded-[32px] border border-white/10 bg-white/5 p-5 shadow-xl">
@@ -44,9 +53,7 @@ export default function SanmeigakuLpPage() {
             FREE DIAGNOSIS
           </div>
 
-          <h2 className="mt-2 text-xl font-black">
-            診断でわかること
-          </h2>
+          <h2 className="mt-2 text-xl font-black">診断でわかること</h2>
 
           <div className="mt-4 space-y-3">
             {[
@@ -71,25 +78,21 @@ export default function SanmeigakuLpPage() {
             SAMPLE
           </div>
 
-          <h2 className="mt-2 text-xl font-black">
-            診断サンプル
-          </h2>
+          <h2 className="mt-2 text-xl font-black">診断サンプル</h2>
 
           <div className="mt-4 space-y-3">
             <div className="rounded-3xl bg-white p-4 text-slate-900">
-              <div className="text-xs font-black text-pink-500">
-                恋愛運UP
+              <div className="text-xs font-black text-pink-500">恋愛運UP</div>
+              <div className="mt-1 text-lg font-black">
+                ルビー × ローズピンク
               </div>
-              <div className="mt-1 text-lg font-black">ルビー × ローズピンク</div>
               <div className="mt-2 text-sm leading-6 text-slate-600">
                 魅力を引き上げたい時におすすめの開運ネイル。
               </div>
             </div>
 
             <div className="rounded-3xl bg-white p-4 text-slate-900">
-              <div className="text-xs font-black text-yellow-600">
-                金運UP
-              </div>
+              <div className="text-xs font-black text-yellow-600">金運UP</div>
               <div className="mt-1 text-lg font-black">
                 天然ダイヤ × シャンパンゴールド
               </div>
@@ -99,10 +102,10 @@ export default function SanmeigakuLpPage() {
             </div>
 
             <div className="rounded-3xl bg-white p-4 text-slate-900">
-              <div className="text-xs font-black text-blue-500">
-                仕事運UP
+              <div className="text-xs font-black text-blue-500">仕事運UP</div>
+              <div className="mt-1 text-lg font-black">
+                サファイア × ネイビー
               </div>
-              <div className="mt-1 text-lg font-black">サファイア × ネイビー</div>
               <div className="mt-2 text-sm leading-6 text-slate-600">
                 判断力や信頼感を整えたい時におすすめ。
               </div>
@@ -121,15 +124,52 @@ export default function SanmeigakuLpPage() {
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-white/15 p-4 text-center">
+            <Link
+              href="/customer-app/reserve?menu=開運ネイル相談"
+              className="rounded-2xl bg-white/15 p-4 text-center"
+            >
               <div className="text-2xl">🏠</div>
-              <div className="mt-2 text-xs font-black">店舗施術</div>
-            </div>
+              <div className="mt-2 text-xs font-black">予約相談</div>
+            </Link>
 
-            <div className="rounded-2xl bg-white/15 p-4 text-center">
+            <Link
+              href="/customer-app/nail-tip-order"
+              className="rounded-2xl bg-white/15 p-4 text-center"
+            >
               <div className="text-2xl">📦</div>
               <div className="mt-2 text-xs font-black">チップ注文</div>
-            </div>
+            </Link>
+          </div>
+        </section>
+
+        <section className="mt-5 rounded-[32px] border border-fuchsia-300/30 bg-fuchsia-500/10 p-5 shadow-xl">
+          <div className="text-xs font-black tracking-[0.25em] text-fuchsia-300">
+            NEXT ACTION
+          </div>
+
+          <h2 className="mt-2 text-xl font-black">
+            診断結果を保存して、あとから見返せます
+          </h2>
+
+          <p className="mt-3 text-sm font-bold leading-7 text-white/80">
+            LINEログインすると、マイページに診断履歴が保存されます。
+            ラッキーカラーや天然石をもとに、次回予約やチップ注文へ進めます。
+          </p>
+
+          <div className="mt-4 grid grid-cols-1 gap-2">
+            <Link
+              href="/customer-app/login"
+              className="block rounded-3xl bg-white px-5 py-4 text-center text-sm font-black text-fuchsia-600 shadow-xl"
+            >
+              LINEで保存する
+            </Link>
+
+            <Link
+              href="/customer-app/reserve?menu=開運ネイル相談"
+              className="block rounded-3xl border border-white/30 px-5 py-4 text-center text-sm font-black text-white"
+            >
+              開運ネイルを予約相談する
+            </Link>
           </div>
         </section>
 
