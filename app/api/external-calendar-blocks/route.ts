@@ -16,14 +16,12 @@ function getSupabaseAdmin() {
   });
 }
 
-function buildUtcIsoFromJst(dateText: string, timeText: string) {
-  const date = new Date(`${dateText}T${timeText}:00+09:00`);
-
-  if (Number.isNaN(date.getTime())) {
+function buildLocalTimestamp(dateText: string, timeText: string) {
+  if (!dateText || !timeText) {
     return null;
   }
 
-  return date.toISOString();
+  return `${dateText} ${timeText}:00`;
 }
 
 export async function POST(req: NextRequest) {
@@ -55,13 +53,16 @@ export async function POST(req: NextRequest) {
 
     if (startTime < "10:00" || endTime > "19:00" || startTime >= endTime) {
       return NextResponse.json(
-        { ok: false, error: "時間は10:00〜19:00の範囲で正しく入力してください" },
+        {
+          ok: false,
+          error: "時間は10:00〜19:00の範囲で正しく入力してください",
+        },
         { status: 400 }
       );
     }
 
-    const startAt = buildUtcIsoFromJst(date, startTime);
-    const endAt = buildUtcIsoFromJst(date, endTime);
+    const startAt = buildLocalTimestamp(date, startTime);
+    const endAt = buildLocalTimestamp(date, endTime);
 
     if (!startAt || !endAt) {
       return NextResponse.json(
@@ -83,7 +84,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (error) {
-      return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+      return NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ ok: true });
