@@ -149,7 +149,73 @@ function NailTipOrderContent() {
             {summaryText}
           </div>
         </section>
+<section className="rounded-3xl border bg-white p-4 shadow-sm">
+  <div className="text-base font-bold text-slate-900">
+    開運ネイルチップ商品一覧
+  </div>
 
+  <div className="mt-4 space-y-3">
+    <div className="rounded-3xl border border-pink-200 bg-pink-50 p-4">
+      <div className="text-xs font-black text-pink-500">
+        恋愛運人気No.1
+      </div>
+      <div className="mt-1 text-lg font-black">
+        ルビー開運ネイルチップ
+      </div>
+      <div className="mt-2 text-sm text-slate-600">
+        恋愛運・魅力アップをテーマにしたデザイン
+      </div>
+      <div className="mt-3 text-2xl font-black text-pink-600">
+        ¥19,800
+      </div>
+    </div>
+
+    <div className="rounded-3xl border border-blue-200 bg-blue-50 p-4">
+      <div className="text-xs font-black text-blue-500">
+        仕事運人気No.1
+      </div>
+      <div className="mt-1 text-lg font-black">
+        サファイア開運ネイルチップ
+      </div>
+      <div className="mt-2 text-sm text-slate-600">
+        判断力・信頼感アップをテーマにしたデザイン
+      </div>
+      <div className="mt-3 text-2xl font-black text-blue-600">
+        ¥19,800
+      </div>
+    </div>
+
+    <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4">
+      <div className="text-xs font-black text-amber-600">
+        金運人気No.1
+      </div>
+      <div className="mt-1 text-lg font-black">
+        シトリン開運ネイルチップ
+      </div>
+      <div className="mt-2 text-sm text-slate-600">
+        金運・豊かさアップをテーマにしたデザイン
+      </div>
+      <div className="mt-3 text-2xl font-black text-amber-600">
+        ¥19,800
+      </div>
+    </div>
+
+    <div className="rounded-3xl border border-purple-200 bg-purple-50 p-4">
+      <div className="text-xs font-black text-purple-500">
+        プレミアム
+      </div>
+      <div className="mt-1 text-lg font-black">
+        天然ダイヤ開運ネイルチップ
+      </div>
+      <div className="mt-2 text-sm text-slate-600">
+        天然ダイヤモンド使用・鑑定書付き
+      </div>
+      <div className="mt-3 text-2xl font-black text-purple-600">
+        ¥29,800
+      </div>
+    </div>
+  </div>
+</section>
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">
             注文希望内容
