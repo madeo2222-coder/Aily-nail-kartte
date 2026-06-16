@@ -39,20 +39,24 @@ type ReservationRow = {
   created_at: string | null;
 };
 
-type CouponHistoryRow = {
-  id: string;
-  customer_id: string;
-  visit_id: string | null;
-  coupon_type: string;
-  action: string;
-  amount: number;
-  note: string | null;
-  created_at: string | null;
-};
-
 type StaffRow = {
   id: string;
   name: string | null;
+};
+
+type DiagnosisRow = {
+  id: string;
+  customer_id: string | null;
+  name: string | null;
+  birthday: string | null;
+  fortune: string | null;
+  mood: string | null;
+  lucky_color: string | null;
+  lucky_stone: string | null;
+  nail_theme: string | null;
+  diagnosis_message: string | null;
+  diagnosis_type: string | null;
+  created_at: string | null;
 };
 
 type MeResponse = {
@@ -64,12 +68,7 @@ const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
   { key: "gallery", label: "ギャラリー", icon: "💅", href: "/customer-app/gallery" },
-  {
-    key: "diagnosis",
-    label: "診断",
-    icon: "✨",
-    href: "/customer-app/sanmeigaku",
-  },
+  { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
   { key: "mypage", label: "マイ", icon: "👤", href: "/customer-app/mypage" },
 ];
 
@@ -83,23 +82,16 @@ function normalizeSupabaseDateTime(value: string | null) {
     return trimmed;
   }
 
-  const isoLike = trimmed.includes("T")
-    ? trimmed
-    : trimmed.replace(" ", "T");
-
+  const isoLike = trimmed.includes("T") ? trimmed : trimmed.replace(" ", "T");
   return `${isoLike}Z`;
 }
 
 function getJstParts(value: string | null) {
   const normalizedValue = normalizeSupabaseDateTime(value);
-
   if (!normalizedValue) return null;
 
   const target = new Date(normalizedValue);
-
-  if (Number.isNaN(target.getTime())) {
-    return null;
-  }
+  if (Number.isNaN(target.getTime())) return null;
 
   const formatter = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
@@ -125,7 +117,6 @@ function getJstParts(value: string | null) {
 
 function formatDate(value: string | null) {
   const parts = getJstParts(value);
-
   if (!parts) return "未登録";
 
   return `${Number(parts.year)}/${Number(parts.month)}/${Number(parts.day)}`;
@@ -133,7 +124,6 @@ function formatDate(value: string | null) {
 
 function formatDateTime(value: string | null) {
   const parts = getJstParts(value);
-
   if (!parts) return "未登録";
 
   return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
@@ -141,11 +131,11 @@ function formatDateTime(value: string | null) {
 
 function formatTime(value: string | null) {
   const parts = getJstParts(value);
-
   if (!parts) return "";
 
   return `${parts.hour}:${parts.minute}`;
 }
+
 function formatEndTime(startAt: string | null, endAt: string | null) {
   const startParts = getJstParts(startAt);
   const endParts = getJstParts(endAt);
@@ -155,16 +145,12 @@ function formatEndTime(startAt: string | null, endAt: string | null) {
   const startTotal = Number(startParts.hour) * 60 + Number(startParts.minute);
   const endTotal = Number(endParts.hour) * 60 + Number(endParts.minute);
 
-  if (!Number.isFinite(startTotal) || !Number.isFinite(endTotal)) {
-    return "";
-  }
-
-  if (endTotal <= startTotal) {
-    return "";
-  }
+  if (!Number.isFinite(startTotal) || !Number.isFinite(endTotal)) return "";
+  if (endTotal <= startTotal) return "";
 
   return `${endParts.hour}:${endParts.minute}`;
 }
+
 function getDisplayMenu(visit: VisitRow | null) {
   if (!visit) return "未登録";
   if (visit.menu_name?.trim()) return visit.menu_name;
@@ -254,16 +240,24 @@ function extractCustomerMemo(memo: string | null) {
     .trim();
 }
 
+function getCouponProgressText(visitCount: number, target: number) {
+  const remainder = visitCount % target;
+  if (remainder === 0 && visitCount > 0) return "達成済み";
+  return `あと${target - remainder}回`;
+}
+
 export default function CustomerAppMyPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [customer, setCustomer] = useState<CustomerRow | null>(null);
   const [salonName, setSalonName] = useState("Aily Nail Studio");
   const [latestVisit, setLatestVisit] = useState<VisitRow | null>(null);
+  const [latestDiagnosis, setLatestDiagnosis] = useState<DiagnosisRow | null>(null);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [message, setMessage] = useState("");
-const [visitCount, setVisitCount] = useState(0);
+  const [visitCount, setVisitCount] = useState(0);
+
   useEffect(() => {
     async function fetchMyPage() {
       setLoading(true);
@@ -282,14 +276,16 @@ const [visitCount, setVisitCount] = useState(0);
           return;
         }
 
-        setIsLoggedIn(true);
-        setCustomer(meJson.customer);
+        const currentCustomer = meJson.customer;
 
-        if (meJson.customer.salon_id) {
+        setIsLoggedIn(true);
+        setCustomer(currentCustomer);
+
+        if (currentCustomer.salon_id) {
           const { data: salonData } = await supabase
             .from("salons")
             .select("id, name")
-            .eq("id", meJson.customer.salon_id)
+            .eq("id", currentCustomer.salon_id)
             .single();
 
           if (salonData) {
@@ -301,24 +297,44 @@ const [visitCount, setVisitCount] = useState(0);
         const { data: visitData } = await supabase
           .from("visits")
           .select("id, visit_date, menu, menu_name, created_at")
-          .eq("customer_id", meJson.customer.id)
+          .eq("customer_id", currentCustomer.id)
           .order("visit_date", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(1);
 
         setLatestVisit(((visitData || [])[0] as VisitRow | undefined) || null);
-const { count } = await supabase
-  .from("visits")
-  .select("*", { count: "exact", head: true })
-  .eq("customer_id", meJson.customer.id);
 
-setVisitCount(count || 0);
+        const { count } = await supabase
+          .from("visits")
+          .select("*", { count: "exact", head: true })
+          .eq("customer_id", currentCustomer.id);
+
+        setVisitCount(count || 0);
+
+        const { data: diagnosisData, error: diagnosisError } = await supabase
+          .from("sanmeigaku_diagnoses")
+          .select(
+            "id, customer_id, name, birthday, fortune, mood, lucky_color, lucky_stone, nail_theme, diagnosis_message, diagnosis_type, created_at"
+          )
+          .eq("customer_id", currentCustomer.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (diagnosisError) {
+          console.error("sanmeigaku_diagnoses取得エラー:", diagnosisError);
+          setLatestDiagnosis(null);
+        } else {
+          setLatestDiagnosis(
+            ((diagnosisData || [])[0] as DiagnosisRow | undefined) || null
+          );
+        }
+
         const { data: reservationData, error: reservationError } = await supabase
           .from("reservations")
           .select(
             "id, customer_id, staff_id, menu, start_at, end_at, status, memo, created_at"
           )
-          .eq("customer_id", meJson.customer.id)
+          .eq("customer_id", currentCustomer.id)
           .order("start_at", { ascending: true })
           .limit(50);
 
@@ -384,21 +400,30 @@ setVisitCount(count || 0);
         return Number.isFinite(target) && target >= nowTime;
       })
       .sort((a, b) => {
-        const aTime = new Date(normalizeSupabaseDateTime(a.start_at) || "").getTime();
-        const bTime = new Date(normalizeSupabaseDateTime(b.start_at) || "").getTime();
+        const aTime = new Date(
+          normalizeSupabaseDateTime(a.start_at) || ""
+        ).getTime();
+        const bTime = new Date(
+          normalizeSupabaseDateTime(b.start_at) || ""
+        ).getTime();
 
         return aTime - bTime;
       });
   }, [activeReservations, nowTime]);
 
   const latestReservation = useMemo(() => {
-    return [...activeReservations]
-      .sort((a, b) => {
-        const aTime = new Date(normalizeSupabaseDateTime(a.start_at) || "").getTime();
-        const bTime = new Date(normalizeSupabaseDateTime(b.start_at) || "").getTime();
+    return (
+      [...activeReservations].sort((a, b) => {
+        const aTime = new Date(
+          normalizeSupabaseDateTime(a.start_at) || ""
+        ).getTime();
+        const bTime = new Date(
+          normalizeSupabaseDateTime(b.start_at) || ""
+        ).getTime();
 
         return bTime - aTime;
-      })[0] || null;
+      })[0] || null
+    );
   }, [activeReservations]);
 
   async function handleLogout() {
@@ -430,9 +455,11 @@ setVisitCount(count || 0);
             <div className="text-xs font-bold tracking-wide opacity-90">
               AILY MY PAGE
             </div>
+
             <h1 className="mt-2 text-2xl font-bold leading-tight">
               マイページ
             </h1>
+
             <p className="mt-3 text-sm leading-6 text-white/90">
               マイページはLINEログイン後に確認できます。
             </p>
@@ -456,12 +483,15 @@ setVisitCount(count || 0);
           <div className="text-xs font-bold tracking-wide opacity-90">
             AILY MY PAGE
           </div>
+
           <div className="mt-2 text-sm opacity-90">{salonName}</div>
+
           <h1 className="mt-2 text-2xl font-bold leading-tight">
             {customerName}様のマイページ
           </h1>
+
           <p className="mt-3 text-sm leading-6 text-white/90">
-            登録情報、前回来店、予約状況を確認できます。
+            登録情報、診断結果、来店ポイント、予約状況を確認できます。
           </p>
         </section>
 
@@ -470,6 +500,99 @@ setVisitCount(count || 0);
             {message}
           </section>
         ) : null}
+
+        <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-pink-500 p-5 text-white shadow">
+          <div className="text-xs font-black tracking-[0.25em] text-white/80">
+            AI BEAUTY ORACLE
+          </div>
+
+          <h2 className="mt-2 text-2xl font-black leading-tight">
+            最新の算命学ネイル診断
+          </h2>
+
+          {latestDiagnosis ? (
+            <>
+              <div className="mt-4 rounded-3xl bg-white/15 p-4 backdrop-blur">
+                <div className="text-xs font-bold text-white/70">
+                  診断日
+                </div>
+                <div className="mt-1 text-sm font-bold">
+                  {formatDate(latestDiagnosis.created_at)}
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3">
+                  <div className="rounded-2xl bg-white/15 p-3">
+                    <div className="text-xs text-white/70">
+                      ラッキーカラー
+                    </div>
+                    <div className="mt-1 text-lg font-black">
+                      {latestDiagnosis.lucky_color || "未登録"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/15 p-3">
+                    <div className="text-xs text-white/70">
+                      ラッキーストーン
+                    </div>
+                    <div className="mt-1 text-lg font-black">
+                      {latestDiagnosis.lucky_stone || "未登録"}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white/15 p-3">
+                    <div className="text-xs text-white/70">
+                      開運テーマ
+                    </div>
+                    <div className="mt-1 text-sm font-bold leading-6">
+                      {latestDiagnosis.nail_theme || "未登録"}
+                    </div>
+                  </div>
+                </div>
+
+                {latestDiagnosis.diagnosis_message ? (
+                  <div className="mt-4 rounded-2xl bg-white/15 p-3 text-sm leading-6 text-white/90">
+                    {latestDiagnosis.diagnosis_message}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 gap-2">
+                <Link
+                  href="/customer-app/reserve?menu=開運ネイル相談"
+                  className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-fuchsia-600"
+                >
+                  この診断で施術予約する
+                </Link>
+
+                <Link
+                  href={`/customer-app/nail-tip-order?color=${encodeURIComponent(
+                    latestDiagnosis.lucky_color || ""
+                  )}&stone=${encodeURIComponent(
+                    latestDiagnosis.lucky_stone || ""
+                  )}&theme=${encodeURIComponent(
+                    latestDiagnosis.nail_theme || ""
+                  )}`}
+                  className="rounded-2xl border border-white/30 px-4 py-3 text-center text-sm font-black text-white"
+                >
+                  この診断でチップ注文する
+                </Link>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="mt-3 text-sm leading-6 text-white/90">
+                まだ診断結果がありません。今のあなたに合うカラー、天然石、開運ネイルを無料で診断できます。
+              </p>
+
+              <Link
+                href="/customer-app/sanmeigaku"
+                className="mt-4 block rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-fuchsia-600"
+              >
+                無料で算命学ネイル診断をする
+              </Link>
+            </>
+          )}
+        </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">お客様情報</div>
@@ -492,136 +615,102 @@ setVisitCount(count || 0);
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
+          <div className="text-base font-bold text-slate-900">来店ポイント</div>
+          <div className="mt-1 text-xs text-slate-500">
+            公式LINEポイントカードと同じ特典内容です。
+          </div>
+
+          <div className="mt-4 rounded-3xl bg-gradient-to-br from-pink-50 to-orange-50 p-4">
+            <div className="text-xs font-bold text-slate-500">
+              現在の来店回数
+            </div>
+
+            <div className="mt-1 text-3xl font-black text-slate-900">
+              {visitCount}回
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-white p-3">
+                <div className="text-xs font-bold text-slate-500">
+                  6回特典まで
+                </div>
+                <div className="mt-1 text-lg font-black text-pink-600">
+                  {getCouponProgressText(visitCount, 6)}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">500円OFF</div>
+              </div>
+
+              <div className="rounded-2xl bg-white p-3">
+                <div className="text-xs font-bold text-slate-500">
+                  12回特典まで
+                </div>
+                <div className="mt-1 text-lg font-black text-orange-600">
+                  {getCouponProgressText(visitCount, 12)}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">1,000円OFF</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-base font-bold text-slate-900">
+                利用可能クーポン
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                来店ポイント達成で付与されます。
+              </div>
+            </div>
+
+            <div className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
+              {(customer?.coupon_500_count || 0) +
+                (customer?.coupon_1000_count || 0)}
+              枚
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3">
+            <div className="flex items-center justify-between rounded-2xl bg-pink-50 px-4 py-4">
+              <div>
+                <div className="text-sm font-bold text-slate-900">
+                  500円OFFクーポン
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  6回来店ごとに付与
+                </div>
+              </div>
+
+              <div className="text-2xl font-black text-pink-600">
+                ×{customer?.coupon_500_count || 0}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-2xl bg-orange-50 px-4 py-4">
+              <div>
+                <div className="text-sm font-bold text-slate-900">
+                  1,000円OFFクーポン
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  12回来店ごとに付与
+                </div>
+              </div>
+
+              <div className="text-2xl font-black text-orange-600">
+                ×{customer?.coupon_1000_count || 0}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 text-xs leading-5 text-slate-500">
+            クーポン利用時はスタッフが会計時に適用します。
+          </div>
+        </section>
+
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">前回来店</div>
-<section className="rounded-3xl border bg-white p-4 shadow-sm">
-  <div className="flex items-center justify-between gap-3">
-    <div>
-      <div className="text-base font-bold text-slate-900">
-        来店ポイント
-      </div>
-      <div className="mt-1 text-xs text-slate-500">
-        公式LINEポイントカードと同じ特典内容です。
-      </div>
-    </div>
-<section className="rounded-3xl border bg-white p-4 shadow-sm">
-  <div className="flex items-center justify-between gap-3">
-    <div>
-      <div className="text-base font-bold text-slate-900">
-        利用可能クーポン
-      </div>
-      <div className="mt-1 text-xs text-slate-500">
-        来店ポイント達成で自動付与されます。
-      </div>
-    </div>
 
-    <div className="rounded-full bg-orange-100 px-3 py-1 text-xs font-bold text-orange-700">
-      {(customer?.coupon_500_count || 0) +
-        (customer?.coupon_1000_count || 0)}
-      枚
-    </div>
-  </div>
-
-  <div className="mt-4 grid grid-cols-1 gap-3">
-    <div className="flex items-center justify-between rounded-2xl bg-pink-50 px-4 py-4">
-      <div>
-        <div className="text-sm font-bold text-slate-900">
-          500円OFFクーポン
-        </div>
-        <div className="mt-1 text-xs text-slate-500">
-          6回来店ごとに付与
-        </div>
-      </div>
-
-      <div className="text-2xl font-black text-pink-600">
-        ×{customer?.coupon_500_count || 0}
-      </div>
-    </div>
-
-    <div className="flex items-center justify-between rounded-2xl bg-orange-50 px-4 py-4">
-      <div>
-        <div className="text-sm font-bold text-slate-900">
-          1,000円OFFクーポン
-        </div>
-        <div className="mt-1 text-xs text-slate-500">
-          12回来店ごとに付与
-        </div>
-      </div>
-
-      <div className="text-2xl font-black text-orange-600">
-        ×{customer?.coupon_1000_count || 0}
-      </div>
-    </div>
-  </div>
-
-  <div className="mt-3 text-xs leading-5 text-slate-500">
-    クーポン利用時はスタッフが会計時に適用します。
-  </div>
-</section>
-    <div className="rounded-full bg-pink-100 px-3 py-1 text-xs font-bold text-pink-700">
-      {visitCount}回来店
-    </div>
-  </div>
-
-  <div className="mt-4 rounded-3xl bg-gradient-to-br from-pink-50 to-orange-50 p-4">
-    <div className="text-xs font-bold text-slate-500">
-      現在の来店回数
-    </div>
-
-    <div className="mt-1 text-3xl font-black text-slate-900">
-      {visitCount}回
-    </div>
-
-    <div className="mt-4 grid grid-cols-2 gap-3">
-      <div className="rounded-2xl bg-white p-3">
-        <div className="text-xs font-bold text-slate-500">
-          6回特典まで
-        </div>
-        <div className="mt-1 text-lg font-black text-pink-600">
-          あと{Math.max(6 - (visitCount % 6 || 6), 0)}回
-        </div>
-        <div className="mt-1 text-xs text-slate-500">
-          500円OFF
-        </div>
-      </div>
-
-      <div className="rounded-2xl bg-white p-3">
-        <div className="text-xs font-bold text-slate-500">
-          12回特典まで
-        </div>
-        <div className="mt-1 text-lg font-black text-orange-600">
-          あと{Math.max(12 - (visitCount % 12 || 12), 0)}回
-        </div>
-        <div className="mt-1 text-xs text-slate-500">
-          1,000円OFF
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div className="mt-4 space-y-2">
-    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-      <div className="text-sm font-bold text-slate-700">
-        6回来店
-      </div>
-      <div className="text-sm font-black text-pink-600">
-        500円OFF
-      </div>
-    </div>
-
-    <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
-      <div className="text-sm font-bold text-slate-700">
-        12回来店
-      </div>
-      <div className="text-sm font-black text-orange-600">
-        1,000円OFF
-      </div>
-    </div>
-  </div>
-
-  <div className="mt-3 text-xs leading-5 text-slate-500">
-    特典利用は来店時にスタッフへお伝えください。
-  </div>
-</section>
           <div className="mt-4 grid grid-cols-1 gap-3">
             <div className="rounded-2xl bg-slate-50 p-4">
               <div className="text-xs text-slate-500">前回来店日</div>
@@ -694,6 +783,10 @@ setVisitCount(count || 0);
                   : "指名なし";
 
                 const customerMemo = extractCustomerMemo(reservation.memo);
+                const endTimeText = formatEndTime(
+                  reservation.start_at,
+                  reservation.end_at
+                );
 
                 return (
                   <article
@@ -708,13 +801,13 @@ setVisitCount(count || 0);
                         <div className="mt-1 text-lg font-black text-slate-900">
                           {formatDateTime(reservation.start_at)}
                         </div>
-                        <div className="mt-1 text-sm font-bold text-slate-700">
-                          〜{formatTime(reservation.end_at)}
-                        </div>
+                        {endTimeText ? (
+                          <div className="mt-1 text-sm font-bold text-slate-700">
+                            〜{endTimeText}
+                          </div>
+                        ) : null}
                       </div>
-{formatEndTime(reservation.start_at, reservation.end_at)
-  ? `〜${formatEndTime(reservation.start_at, reservation.end_at)}`
-  : ""}
+
                       <div
                         className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${getReservationStatusClass(
                           reservation.status
@@ -739,7 +832,9 @@ setVisitCount(count || 0);
                       </div>
 
                       <div className="rounded-2xl bg-white p-3">
-                        <div className="text-xs text-slate-500">担当スタッフ</div>
+                        <div className="text-xs text-slate-500">
+                          担当スタッフ
+                        </div>
                         <div className="mt-1 text-sm font-bold text-slate-900">
                           {staffName}
                         </div>
