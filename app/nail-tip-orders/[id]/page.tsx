@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
-
+import OrderPaymentForm from "./OrderPaymentForm";
 export const dynamic = "force-dynamic";
 
 type NailTipOrderRow = {
@@ -15,6 +15,10 @@ type NailTipOrderRow = {
   delivery_request: string | null;
   status: string | null;
   created_at: string | null;
+    payment_url: string | null;
+  payment_transaction_id: string | null;
+  payment_status: string | null;
+  payment_due_at: string | null;
 };
 
 type CustomerRow = {
@@ -262,7 +266,12 @@ export default async function NailTipOrderDetailPage({
             </div>
           </div>
         </section>
-
+<OrderPaymentForm
+  orderId={order.id}
+  defaultPaymentUrl={order.payment_url}
+  defaultTransactionId={order.payment_transaction_id}
+  defaultPaymentDueAt={order.payment_due_at}
+/>
         <Link
           href="/nail-tip-orders"
           className="block rounded-2xl bg-purple-600 px-4 py-3 text-center text-sm font-bold text-white"
