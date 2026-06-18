@@ -78,32 +78,48 @@ export default function NailTipOrdersPageClient() {
   const [loading, setLoading] = useState(true);
 
   async function fetchOrders() {
-    setLoading(true);
+  setLoading(true);
 
-    const [ordersRes, customersRes] = await Promise.all([
-      supabase
-        .from("nail_tip_orders")
-        .select("*")
-        .order("created_at", { ascending: false }),
+  try {
+    const [ordersResponse, customersRes] = await Promise.all([
+      fetch("/api/nail-tip-orders/admin", {
+        cache: "no-store",
+      }),
       supabase.from("customers").select("id, name"),
     ]);
 
-    if (ordersRes.error) {
-      console.error("nail_tip_orders fetch error:", ordersRes.error.message);
+    const ordersJson = await ordersResponse.json();
+
+    if (!ordersJson.ok) {
+      console.error(
+        "nail_tip_orders api error:",
+        ordersJson.error
+      );
       setOrders([]);
     } else {
-      setOrders((ordersRes.data || []) as NailTipOrderRow[]);
+      setOrders(
+        (ordersJson.orders || []) as NailTipOrderRow[]
+      );
     }
 
     if (customersRes.error) {
-      console.error("customers fetch error:", customersRes.error.message);
+      console.error(
+        "customers fetch error:",
+        customersRes.error.message
+      );
       setCustomers([]);
     } else {
-      setCustomers((customersRes.data || []) as CustomerRow[]);
+      setCustomers(
+        (customersRes.data || []) as CustomerRow[]
+      );
     }
-
-    setLoading(false);
+  } catch (error) {
+    console.error(error);
+    setOrders([]);
   }
+
+  setLoading(false);
+}
 
   useEffect(() => {
     void fetchOrders();
