@@ -306,6 +306,12 @@ export default function NailTipOrdersPageClient() {
                           注文日時：{formatDateTime(order.created_at)}
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
+                          <Link
+  href={`/nail-tip-orders/${order.id}`}
+  className="rounded-2xl bg-purple-600 px-4 py-2 text-xs font-bold text-white"
+>
+  詳細を見る
+</Link>
   <button
     type="button"
     onClick={async () => {
