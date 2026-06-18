@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type OrderPaymentFormProps = {
   orderId: string;
@@ -8,6 +8,21 @@ type OrderPaymentFormProps = {
   defaultTransactionId?: string | null;
   defaultPaymentDueAt?: string | null;
 };
+
+function formatDueDate(value: string) {
+  if (!value) return "期限の記載なし";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "期限の記載なし";
+
+  return new Intl.DateTimeFormat("ja-JP", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
 
 export default function OrderPaymentForm({
   orderId,
@@ -21,6 +36,22 @@ export default function OrderPaymentForm({
     defaultPaymentDueAt ? defaultPaymentDueAt.slice(0, 16) : ""
   );
   const [saving, setSaving] = useState(false);
+  const [copyMessage, setCopyMessage] = useState("");
+
+  const customerPaymentMessage = useMemo(() => {
+    return [
+      "ネイルチップのご注文ありがとうございます。",
+      "",
+      "下記URLよりクレジットカード決済をお願いいたします。",
+      "",
+      paymentUrl || "【決済URL未設定】",
+      "",
+      `お支払い期限：${formatDueDate(paymentDueAt)}`,
+      "",
+      "お支払い確認後、制作を開始いたします。",
+      "よろしくお願いいたします。",
+    ].join("\n");
+  }, [paymentUrl, paymentDueAt]);
 
   async function handleSave() {
     setSaving(true);
@@ -34,7 +65,9 @@ export default function OrderPaymentForm({
         body: JSON.stringify({
           paymentUrl,
           transactionId,
-          paymentDueAt: paymentDueAt ? new Date(paymentDueAt).toISOString() : null,
+          paymentDueAt: paymentDueAt
+            ? new Date(paymentDueAt).toISOString()
+            : null,
         }),
       });
 
@@ -47,17 +80,30 @@ export default function OrderPaymentForm({
       alert("決済情報を保存しました");
       window.location.reload();
     } catch (error) {
-      alert(error instanceof Error ? error.message : "決済情報の保存に失敗しました");
+      alert(
+        error instanceof Error
+          ? error.message
+          : "決済情報の保存に失敗しました"
+      );
     } finally {
       setSaving(false);
     }
   }
 
+  async function handleCopyMessage() {
+    try {
+      await navigator.clipboard.writeText(customerPaymentMessage);
+      setCopyMessage("お客様案内文をコピーしました");
+      window.setTimeout(() => setCopyMessage(""), 2500);
+    } catch {
+      setCopyMessage("コピーに失敗しました");
+      window.setTimeout(() => setCopyMessage(""), 2500);
+    }
+  }
+
   return (
     <section className="rounded-3xl border bg-white p-5 shadow-sm">
-      <div className="text-lg font-bold text-slate-900">
-        DG決済リンク
-      </div>
+      <div className="text-lg font-bold text-slate-900">DG決済リンク</div>
 
       <p className="mt-2 text-sm leading-6 text-slate-600">
         MAPで作成した決済URLを貼り付けて保存します。
@@ -120,6 +166,30 @@ export default function OrderPaymentForm({
         >
           {saving ? "保存中..." : "決済情報を保存する"}
         </button>
+
+        <div className="rounded-2xl bg-slate-50 p-4">
+          <div className="text-sm font-bold text-slate-900">
+            お客様案内文
+          </div>
+
+          <pre className="mt-3 whitespace-pre-wrap rounded-2xl bg-white p-3 text-xs leading-6 text-slate-700">
+            {customerPaymentMessage}
+          </pre>
+
+          <button
+            type="button"
+            onClick={handleCopyMessage}
+            className="mt-3 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
+          >
+            お客様案内文をコピー
+          </button>
+
+          {copyMessage ? (
+            <div className="mt-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">
+              {copyMessage}
+            </div>
+          ) : null}
+        </div>
       </div>
     </section>
   );
