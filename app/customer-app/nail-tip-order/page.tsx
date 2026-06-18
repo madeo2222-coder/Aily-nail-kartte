@@ -13,13 +13,107 @@ type MeResponse = {
   };
 };
 
+type NailTipProduct = {
+  id: string;
+  name: string;
+  price: number;
+  stone: string;
+  fortune: string;
+  description: string;
+  badge: string;
+  cardClassName: string;
+  textClassName: string;
+};
+
+const nailTipProducts: NailTipProduct[] = [
+  {
+    id: "ruby_love",
+    name: "ルビー開運ネイルチップ",
+    price: 19800,
+    stone: "ルビー",
+    fortune: "恋愛運・魅力運",
+    description: "恋愛運・魅力アップをテーマにしたデザイン",
+    badge: "恋愛運人気No.1",
+    cardClassName: "border-pink-200 bg-pink-50",
+    textClassName: "text-pink-600",
+  },
+  {
+    id: "sapphire_work",
+    name: "サファイア開運ネイルチップ",
+    price: 19800,
+    stone: "サファイア",
+    fortune: "仕事運・信頼運",
+    description: "判断力・信頼感アップをテーマにしたデザイン",
+    badge: "仕事運人気No.1",
+    cardClassName: "border-blue-200 bg-blue-50",
+    textClassName: "text-blue-600",
+  },
+  {
+    id: "citrine_money",
+    name: "シトリン開運ネイルチップ",
+    price: 19800,
+    stone: "シトリン",
+    fortune: "金運・豊かさ運",
+    description: "金運・豊かさアップをテーマにしたデザイン",
+    badge: "金運人気No.1",
+    cardClassName: "border-amber-200 bg-amber-50",
+    textClassName: "text-amber-600",
+  },
+  {
+    id: "diamond_premium",
+    name: "天然ダイヤ開運ネイルチップ",
+    price: 29800,
+    stone: "天然ダイヤモンド",
+    fortune: "総合運・特別運",
+    description: "天然ダイヤモンド使用・鑑定書付き",
+    badge: "プレミアム",
+    cardClassName: "border-purple-200 bg-purple-50",
+    textClassName: "text-purple-600",
+  },
+];
+
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
-  { key: "diagnosis", label: "診断", icon: "✨", href: "/customer-app/sanmeigaku" },
+  {
+    key: "diagnosis",
+    label: "診断",
+    icon: "✨",
+    href: "/customer-app/sanmeigaku",
+  },
   { key: "history", label: "履歴", icon: "📝", href: "/customer-app/history" },
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
+
+function formatYen(value: number) {
+  return `¥${value.toLocaleString("ja-JP")}`;
+}
+
+function findRecommendedProduct(stone: string) {
+  const normalizedStone = stone.toLowerCase();
+
+  if (stone.includes("ルビー") || normalizedStone.includes("ruby")) {
+    return "ruby_love";
+  }
+
+  if (stone.includes("サファイア") || normalizedStone.includes("sapphire")) {
+    return "sapphire_work";
+  }
+
+  if (stone.includes("シトリン") || normalizedStone.includes("citrine")) {
+    return "citrine_money";
+  }
+
+  if (
+    stone.includes("ダイヤ") ||
+    stone.includes("天然ダイヤ") ||
+    normalizedStone.includes("diamond")
+  ) {
+    return "diamond_premium";
+  }
+
+  return "diamond_premium";
+}
 
 function NailTipOrderContent() {
   const searchParams = useSearchParams();
@@ -28,13 +122,22 @@ function NailTipOrderContent() {
   const stone = searchParams.get("stone") || "未選択";
   const theme = searchParams.get("theme") || "未選択";
 
+  const recommendedProductId = useMemo(() => {
+    return findRecommendedProduct(stone);
+  }, [stone]);
+
   const [message, setMessage] = useState("");
+  const [selectedProductId, setSelectedProductId] = useState(recommendedProductId);
   const [designRequest, setDesignRequest] = useState("");
   const [sizeStatus, setSizeStatus] = useState("サイズ未確認");
   const [deliveryRequest, setDeliveryRequest] = useState("");
 
   const [customerId, setCustomerId] = useState("");
   const [salonId, setSalonId] = useState("");
+
+  useEffect(() => {
+    setSelectedProductId(recommendedProductId);
+  }, [recommendedProductId]);
 
   useEffect(() => {
     async function fetchMe() {
@@ -56,6 +159,13 @@ function NailTipOrderContent() {
     fetchMe();
   }, []);
 
+  const selectedProduct = useMemo(() => {
+    return (
+      nailTipProducts.find((product) => product.id === selectedProductId) ||
+      nailTipProducts[0]
+    );
+  }, [selectedProductId]);
+
   const summaryText = useMemo(() => {
     return `${color} / ${stone} / ${theme}`;
   }, [color, stone, theme]);
@@ -67,6 +177,17 @@ function NailTipOrderContent() {
 
   async function handleSubmit() {
     try {
+      const productText = [
+        `選択商品：${selectedProduct.name}`,
+        `商品価格：${formatYen(selectedProduct.price)}`,
+        `商品ストーン：${selectedProduct.stone}`,
+        `商品テーマ：${selectedProduct.fortune}`,
+        "",
+        designRequest.trim() ? `デザイン希望：${designRequest.trim()}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
       const response = await fetch("/api/nail-tip-orders", {
         method: "POST",
         headers: {
@@ -78,7 +199,7 @@ function NailTipOrderContent() {
           luckyColor: color,
           luckyStone: stone,
           nailTheme: theme,
-          designRequest,
+          designRequest: productText,
           sizeStatus,
           deliveryRequest,
         }),
@@ -96,6 +217,7 @@ function NailTipOrderContent() {
       setDesignRequest("");
       setDeliveryRequest("");
       setSizeStatus("サイズ未確認");
+      setSelectedProductId(recommendedProductId);
     } catch (error) {
       console.error(error);
       showMessage("通信エラーが発生しました");
@@ -149,76 +271,78 @@ function NailTipOrderContent() {
             {summaryText}
           </div>
         </section>
-<section className="rounded-3xl border bg-white p-4 shadow-sm">
-  <div className="text-base font-bold text-slate-900">
-    開運ネイルチップ商品一覧
-  </div>
 
-  <div className="mt-4 space-y-3">
-    <div className="rounded-3xl border border-pink-200 bg-pink-50 p-4">
-      <div className="text-xs font-black text-pink-500">
-        恋愛運人気No.1
-      </div>
-      <div className="mt-1 text-lg font-black">
-        ルビー開運ネイルチップ
-      </div>
-      <div className="mt-2 text-sm text-slate-600">
-        恋愛運・魅力アップをテーマにしたデザイン
-      </div>
-      <div className="mt-3 text-2xl font-black text-pink-600">
-        ¥19,800
-      </div>
-    </div>
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+          <div className="text-base font-bold text-slate-900">
+            開運ネイルチップ商品一覧
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            診断結果に近い商品を自動でおすすめします。別の商品も選択できます。
+          </p>
 
-    <div className="rounded-3xl border border-blue-200 bg-blue-50 p-4">
-      <div className="text-xs font-black text-blue-500">
-        仕事運人気No.1
-      </div>
-      <div className="mt-1 text-lg font-black">
-        サファイア開運ネイルチップ
-      </div>
-      <div className="mt-2 text-sm text-slate-600">
-        判断力・信頼感アップをテーマにしたデザイン
-      </div>
-      <div className="mt-3 text-2xl font-black text-blue-600">
-        ¥19,800
-      </div>
-    </div>
+          <div className="mt-4 space-y-3">
+            {nailTipProducts.map((product) => {
+              const isSelected = selectedProductId === product.id;
+              const isRecommended = recommendedProductId === product.id;
 
-    <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4">
-      <div className="text-xs font-black text-amber-600">
-        金運人気No.1
-      </div>
-      <div className="mt-1 text-lg font-black">
-        シトリン開運ネイルチップ
-      </div>
-      <div className="mt-2 text-sm text-slate-600">
-        金運・豊かさアップをテーマにしたデザイン
-      </div>
-      <div className="mt-3 text-2xl font-black text-amber-600">
-        ¥19,800
-      </div>
-    </div>
+              return (
+                <button
+                  key={product.id}
+                  type="button"
+                  onClick={() => setSelectedProductId(product.id)}
+                  className={`w-full rounded-3xl border p-4 text-left transition ${
+                    product.cardClassName
+                  } ${
+                    isSelected
+                      ? "ring-2 ring-slate-900"
+                      : "hover:ring-2 hover:ring-slate-300"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className={`text-xs font-black ${product.textClassName}`}>
+                        {product.badge}
+                        {isRecommended ? " / 診断おすすめ" : ""}
+                      </div>
+                      <div className="mt-1 text-lg font-black text-slate-900">
+                        {product.name}
+                      </div>
+                      <div className="mt-2 text-sm leading-6 text-slate-600">
+                        {product.description}
+                      </div>
+                      <div className="mt-2 text-xs font-bold text-slate-500">
+                        {product.stone} / {product.fortune}
+                      </div>
+                    </div>
 
-    <div className="rounded-3xl border border-purple-200 bg-purple-50 p-4">
-      <div className="text-xs font-black text-purple-500">
-        プレミアム
-      </div>
-      <div className="mt-1 text-lg font-black">
-        天然ダイヤ開運ネイルチップ
-      </div>
-      <div className="mt-2 text-sm text-slate-600">
-        天然ダイヤモンド使用・鑑定書付き
-      </div>
-      <div className="mt-3 text-2xl font-black text-purple-600">
-        ¥29,800
-      </div>
-    </div>
-  </div>
-</section>
+                    <div className="shrink-0 text-right">
+                      <div className={`text-2xl font-black ${product.textClassName}`}>
+                        {formatYen(product.price)}
+                      </div>
+                      <div className="mt-2 text-xl">
+                        {isSelected ? "☑" : "□"}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">
             注文希望内容
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+            <div className="text-xs text-slate-500">選択中の商品</div>
+            <div className="mt-1 text-lg font-black text-slate-900">
+              {selectedProduct.name}
+            </div>
+            <div className="mt-1 text-sm font-bold text-slate-600">
+              {formatYen(selectedProduct.price)} / {selectedProduct.stone}
+            </div>
           </div>
 
           <div className="mt-4 space-y-4">
@@ -300,9 +424,7 @@ function NailTipOrderContent() {
         <div className="fixed left-1/2 top-4 z-50 w-[calc(100%-24px)] max-w-md -translate-x-1/2">
           <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 shadow-lg">
             <div className="flex items-start justify-between gap-3">
-              <div className="text-sm font-bold text-blue-700">
-                {message}
-              </div>
+              <div className="text-sm font-bold text-blue-700">{message}</div>
 
               <button
                 type="button"
@@ -335,13 +457,8 @@ function NailTipOrderContent() {
                       : "text-gray-500 hover:text-gray-800"
                   }`}
                 >
-                  <span className="text-lg leading-none">
-                    {item.icon}
-                  </span>
-
-                  <span className="mt-1 leading-none">
-                    {item.label}
-                  </span>
+                  <span className="text-lg leading-none">{item.icon}</span>
+                  <span className="mt-1 leading-none">{item.label}</span>
                 </Link>
               );
             }
@@ -355,13 +472,8 @@ function NailTipOrderContent() {
                 }
                 className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
               >
-                <span className="text-lg leading-none">
-                  {item.icon}
-                </span>
-
-                <span className="mt-1 leading-none">
-                  {item.label}
-                </span>
+                <span className="text-lg leading-none">{item.icon}</span>
+                <span className="mt-1 leading-none">{item.label}</span>
               </button>
             );
           })}
