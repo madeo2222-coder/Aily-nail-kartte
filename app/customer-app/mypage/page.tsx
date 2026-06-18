@@ -258,6 +258,16 @@ export default function CustomerAppMyPage() {
   const [message, setMessage] = useState("");
   const [visitCount, setVisitCount] = useState(0);
 
+type NailTipOrderRow = {
+  id: string;
+  design_request: string | null;
+  payment_url: string | null;
+  payment_due_at: string | null;
+  status: string | null;
+  created_at: string | null;
+};
+
+const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
   useEffect(() => {
     async function fetchMyPage() {
       setLoading(true);
@@ -355,6 +365,24 @@ export default function CustomerAppMyPage() {
           setStaffs([]);
         } else {
           setStaffs((staffData || []) as StaffRow[]);
+          const { data: nailTipOrderData } = await supabase
+  .from("nail_tip_orders")
+  .select(
+    `
+      id,
+      design_request,
+      payment_url,
+      payment_due_at,
+      status,
+      created_at
+    `
+  )
+  .eq("customer_id", currentCustomer.id)
+  .order("created_at", { ascending: false });
+
+setNailTipOrders(
+  (nailTipOrderData || []) as NailTipOrderRow[]
+);
         }
       } catch (error) {
         console.error("mypage取得エラー:", error);
@@ -707,7 +735,59 @@ export default function CustomerAppMyPage() {
             クーポン利用時はスタッフが会計時に適用します。
           </div>
         </section>
+<section className="rounded-3xl border bg-white p-4 shadow-sm">
+  <div className="flex items-center justify-between">
+    <div className="text-base font-bold text-slate-900">
+      ネイルチップ注文
+    </div>
 
+    <div className="rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">
+      {nailTipOrders.length}件
+    </div>
+  </div>
+
+  {nailTipOrders.length === 0 ? (
+    <div className="mt-4 text-sm text-slate-500">
+      注文履歴はありません。
+    </div>
+  ) : (
+    <div className="mt-4 space-y-3">
+      {nailTipOrders.slice(0, 3).map((order) => (
+        <div
+          key={order.id}
+          className="rounded-2xl bg-violet-50 p-4"
+        >
+          <div className="text-xs text-violet-500">
+            注文日
+          </div>
+
+          <div className="font-bold">
+            {formatDateTime(order.created_at)}
+          </div>
+
+          <div className="mt-3 text-xs text-slate-500">
+            状態
+          </div>
+
+          <div className="font-bold text-violet-700">
+            {order.status || "未設定"}
+          </div>
+
+          {order.payment_url ? (
+            <a
+              href={order.payment_url}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 block rounded-xl bg-violet-600 px-3 py-2 text-center text-sm font-bold text-white"
+            >
+              お支払いはこちら
+            </a>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  )}
+</section>
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">前回来店</div>
 
