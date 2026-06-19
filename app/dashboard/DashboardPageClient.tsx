@@ -517,21 +517,28 @@ export default function DashboardPageClient() {
           </div>
 
           <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              onClick={handleStaffLogout}
-              className="rounded-2xl border border-white/40 bg-white/15 px-4 py-3 text-sm font-bold text-white backdrop-blur"
-            >
-              ログアウト
-            </button>
+  <button
+    type="button"
+    onClick={handleStaffLogout}
+    className="rounded-2xl border border-white/40 bg-white/15 px-4 py-3 text-sm font-bold text-white backdrop-blur"
+  >
+    ログアウト
+  </button>
 
-            <Link
-              href="/visits/new"
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
-            >
-              来店登録
-            </Link>
-          </div>
+  <Link
+    href="/nail-tip-orders"
+    className="rounded-2xl border border-white/40 bg-white/15 px-4 py-3 text-sm font-bold text-white backdrop-blur"
+  >
+    ネイルチップ注文
+  </Link>
+
+  <Link
+    href="/visits/new"
+    className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+  >
+    来店登録
+  </Link>
+</div>
         </div>
       </div>
 
