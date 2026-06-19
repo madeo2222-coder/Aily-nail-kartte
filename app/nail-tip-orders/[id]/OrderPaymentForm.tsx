@@ -42,9 +42,9 @@ export default function OrderPaymentForm({
     return [
       "ネイルチップのご注文ありがとうございます。",
       "",
-      "下記URLよりクレジットカード決済をお願いいたします。",
+      "下記URLよりお支払いをお願いいたします。",
       "",
-      paymentUrl || "【決済URL未設定】",
+      paymentUrl || "【決済URL未作成】",
       "",
       `お支払い期限：${formatDueDate(paymentDueAt)}`,
       "",
@@ -106,8 +106,8 @@ export default function OrderPaymentForm({
       <div className="text-lg font-bold text-slate-900">DG決済リンク</div>
 
       <p className="mt-2 text-sm leading-6 text-slate-600">
-        MAPで作成した決済URLを貼り付けて保存します。
-        保存後、この注文は支払待ちになります。
+        まずはDG決済URL・取引ID・支払期限を注文に保存します。
+        次の工程で、この部分をDG Unified APIによる自動作成に切り替えます。
       </p>
 
       <div className="mt-4 space-y-4">
@@ -125,12 +125,12 @@ export default function OrderPaymentForm({
 
         <div>
           <label className="mb-2 block text-sm font-bold text-slate-700">
-            取引ID・管理番号
+            取引ID
           </label>
           <input
             value={transactionId}
             onChange={(e) => setTransactionId(e.target.value)}
-            placeholder="DG管理番号など"
+            placeholder="paymentId または orderId"
             className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
           />
         </div>

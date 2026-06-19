@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import OrderPaymentForm from "./OrderPaymentForm";
+import OrderStatusForm from "./OrderStatusForm";
+
 export const dynamic = "force-dynamic";
 
 type NailTipOrderRow = {
@@ -15,7 +17,7 @@ type NailTipOrderRow = {
   delivery_request: string | null;
   status: string | null;
   created_at: string | null;
-    payment_url: string | null;
+  payment_url: string | null;
   payment_transaction_id: string | null;
   payment_status: string | null;
   payment_due_at: string | null;
@@ -152,9 +154,7 @@ export default async function NailTipOrderDetailPage({
             ネイルチップ注文詳細
           </h1>
 
-          <p className="mt-2 text-sm text-white/90">
-            注文ID：{order.id}
-          </p>
+          <p className="mt-2 text-sm text-white/90">注文ID：{order.id}</p>
         </section>
 
         <section className="rounded-3xl border bg-white p-5 shadow-sm">
@@ -266,12 +266,16 @@ export default async function NailTipOrderDetailPage({
             </div>
           </div>
         </section>
-<OrderPaymentForm
-  orderId={order.id}
-  defaultPaymentUrl={order.payment_url}
-  defaultTransactionId={order.payment_transaction_id}
-  defaultPaymentDueAt={order.payment_due_at}
-/>
+
+        <OrderStatusForm orderId={order.id} defaultStatus={order.status} />
+
+        <OrderPaymentForm
+          orderId={order.id}
+          defaultPaymentUrl={order.payment_url}
+          defaultTransactionId={order.payment_transaction_id}
+          defaultPaymentDueAt={order.payment_due_at}
+        />
+
         <Link
           href="/nail-tip-orders"
           className="block rounded-2xl bg-purple-600 px-4 py-3 text-center text-sm font-bold text-white"
