@@ -363,26 +363,26 @@ const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
         if (staffError) {
           console.error("staffs取得エラー:", staffError);
           setStaffs([]);
-        } else {
-          setStaffs((staffData || []) as StaffRow[]);
-          const { data: nailTipOrderData } = await supabase
+        
+const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
   .from("nail_tip_orders")
-  .select(
-    `
-      id,
-      design_request,
-      payment_url,
-      payment_due_at,
-      status,
-      created_at
-    `
-  )
+  .select(`
+    id,
+    design_request,
+    payment_url,
+    payment_due_at,
+    status,
+    created_at
+  `)
   .eq("customer_id", currentCustomer.id)
   .order("created_at", { ascending: false });
 
-setNailTipOrders(
-  (nailTipOrderData || []) as NailTipOrderRow[]
-);
+if (nailTipOrderError) {
+  console.error("ネイルチップ注文取得エラー:", nailTipOrderError);
+  setNailTipOrders([]);
+} else {
+  setNailTipOrders((nailTipOrderData || []) as NailTipOrderRow[]);
+}
         }
       } catch (error) {
         console.error("mypage取得エラー:", error);
