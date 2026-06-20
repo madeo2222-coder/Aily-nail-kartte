@@ -23,6 +23,16 @@ type CustomerRow = {
   name: string | null;
 };
 
+const statusOptions = [
+  { value: "requested", label: "注文相談中" },
+  { value: "payment_waiting", label: "支払待ち" },
+  { value: "paid", label: "支払済み" },
+  { value: "making", label: "制作中" },
+  { value: "shipped", label: "発送済み" },
+  { value: "completed", label: "完了" },
+  { value: "cancelled", label: "キャンセル" },
+];
+
 function formatDateTime(value: string | null) {
   if (!value) return "未登録";
 
@@ -39,37 +49,36 @@ function formatDateTime(value: string | null) {
 }
 
 function getStatusLabel(status: string | null) {
-  switch (status) {
-    case "requested":
-      return "注文相談中";
-    case "making":
-      return "制作中";
-    case "shipped":
-      return "発送済み";
-    case "completed":
-      return "完了";
-    case "cancelled":
-      return "キャンセル";
-    default:
-      return status || "未設定";
-  }
+  return (
+    statusOptions.find((item) => item.value === status)?.label ||
+    status ||
+    "未設定"
+  );
 }
 
 function getStatusClass(status: string | null) {
   switch (status) {
     case "requested":
       return "bg-purple-100 text-purple-700";
+    case "payment_waiting":
+      return "bg-orange-100 text-orange-700";
+    case "paid":
+      return "bg-emerald-100 text-emerald-700";
     case "making":
       return "bg-amber-100 text-amber-700";
     case "shipped":
       return "bg-blue-100 text-blue-700";
     case "completed":
-      return "bg-emerald-100 text-emerald-700";
+      return "bg-slate-100 text-slate-700";
     case "cancelled":
       return "bg-rose-100 text-rose-700";
     default:
       return "bg-slate-100 text-slate-700";
   }
+}
+
+function getOrderCountByStatus(orders: NailTipOrderRow[], status: string) {
+  return orders.filter((order) => order.status === status).length;
 }
 
 export default function NailTipOrdersPageClient() {
@@ -78,48 +87,38 @@ export default function NailTipOrdersPageClient() {
   const [loading, setLoading] = useState(true);
 
   async function fetchOrders() {
-  setLoading(true);
+    setLoading(true);
 
-  try {
-    const [ordersResponse, customersRes] = await Promise.all([
-      fetch("/api/nail-tip-orders/admin", {
-        cache: "no-store",
-      }),
-      supabase.from("customers").select("id, name"),
-    ]);
+    try {
+      const [ordersResponse, customersRes] = await Promise.all([
+        fetch("/api/nail-tip-orders/admin", {
+          cache: "no-store",
+        }),
+        supabase.from("customers").select("id, name"),
+      ]);
 
-    const ordersJson = await ordersResponse.json();
+      const ordersJson = await ordersResponse.json();
 
-    if (!ordersJson.ok) {
-      console.error(
-        "nail_tip_orders api error:",
-        ordersJson.error
-      );
+      if (!ordersJson.ok) {
+        console.error("nail_tip_orders api error:", ordersJson.error);
+        setOrders([]);
+      } else {
+        setOrders((ordersJson.orders || []) as NailTipOrderRow[]);
+      }
+
+      if (customersRes.error) {
+        console.error("customers fetch error:", customersRes.error.message);
+        setCustomers([]);
+      } else {
+        setCustomers((customersRes.data || []) as CustomerRow[]);
+      }
+    } catch (error) {
+      console.error(error);
       setOrders([]);
-    } else {
-      setOrders(
-        (ordersJson.orders || []) as NailTipOrderRow[]
-      );
     }
 
-    if (customersRes.error) {
-      console.error(
-        "customers fetch error:",
-        customersRes.error.message
-      );
-      setCustomers([]);
-    } else {
-      setCustomers(
-        (customersRes.data || []) as CustomerRow[]
-      );
-    }
-  } catch (error) {
-    console.error(error);
-    setOrders([]);
+    setLoading(false);
   }
-
-  setLoading(false);
-}
 
   useEffect(() => {
     void fetchOrders();
@@ -136,6 +135,19 @@ export default function NailTipOrdersPageClient() {
   }, [customers]);
 
   const orderCount = orders.length;
+  const paymentWaitingCount = useMemo(
+    () => getOrderCountByStatus(orders, "payment_waiting"),
+    [orders]
+  );
+  const paidCount = useMemo(() => getOrderCountByStatus(orders, "paid"), [orders]);
+  const makingCount = useMemo(
+    () => getOrderCountByStatus(orders, "making"),
+    [orders]
+  );
+  const shippedCount = useMemo(
+    () => getOrderCountByStatus(orders, "shipped"),
+    [orders]
+  );
 
   if (loading) {
     return (
@@ -175,9 +187,9 @@ export default function NailTipOrdersPageClient() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-3">
+        <section className="grid gap-4 md:grid-cols-4">
           <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">注文相談件数</div>
+            <div className="text-sm text-slate-500">総注文数</div>
             <div className="mt-2 text-2xl font-bold text-slate-900">
               {orderCount.toLocaleString()}件
             </div>
@@ -186,23 +198,55 @@ export default function NailTipOrdersPageClient() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">管理状態</div>
-            <div className="mt-2 text-base font-bold text-slate-900">
-              Supabase連携中
+          <div className="rounded-3xl border border-orange-100 bg-orange-50 p-4 shadow-sm">
+            <div className="text-sm text-orange-600">支払待ち</div>
+            <div className="mt-2 text-2xl font-bold text-orange-700">
+              {paymentWaitingCount.toLocaleString()}件
             </div>
-            <div className="mt-2 text-sm text-slate-500">
-              nail_tip_orders 取得OK
+            <div className="mt-2 text-sm text-orange-600">
+              決済案内が必要な注文
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 shadow-sm">
+            <div className="text-sm text-emerald-600">支払済み</div>
+            <div className="mt-2 text-2xl font-bold text-emerald-700">
+              {paidCount.toLocaleString()}件
+            </div>
+            <div className="mt-2 text-sm text-emerald-600">
+              制作開始できる注文
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 shadow-sm">
+            <div className="text-sm text-amber-600">制作中</div>
+            <div className="mt-2 text-2xl font-bold text-amber-700">
+              {makingCount.toLocaleString()}件
+            </div>
+            <div className="mt-2 text-sm text-amber-600">
+              発送前の注文
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-3 md:grid-cols-2">
+          <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+            <div className="text-sm text-blue-600">発送済み</div>
+            <div className="mt-2 text-2xl font-bold text-blue-700">
+              {shippedCount.toLocaleString()}件
+            </div>
+            <div className="mt-2 text-sm text-blue-600">
+              お客様へ発送済みの注文
             </div>
           </div>
 
           <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">次の実装候補</div>
+            <div className="text-sm text-slate-500">運用メモ</div>
             <div className="mt-2 text-base font-bold text-slate-900">
-              制作・発送管理
+              詳細画面でステータス変更
             </div>
             <div className="mt-2 text-sm text-slate-500">
-              ステータス変更は次段階
+              支払待ち・支払済み・制作中・発送済みを管理できます。
             </div>
           </div>
         </section>
@@ -275,7 +319,7 @@ export default function NailTipOrdersPageClient() {
                           <div className="text-xs text-slate-500">
                             デザイン希望
                           </div>
-                          <div className="mt-1 leading-6">
+                          <div className="mt-1 whitespace-pre-wrap leading-6">
                             {order.design_request?.trim()
                               ? order.design_request
                               : "未入力"}
@@ -295,7 +339,7 @@ export default function NailTipOrdersPageClient() {
                           <div className="text-xs text-slate-500">
                             配送・納期希望
                           </div>
-                          <div className="mt-1 leading-6">
+                          <div className="mt-1 whitespace-pre-wrap leading-6">
                             {order.delivery_request?.trim()
                               ? order.delivery_request
                               : "未入力"}
@@ -305,70 +349,72 @@ export default function NailTipOrdersPageClient() {
                         <div className="text-xs text-slate-400">
                           注文日時：{formatDateTime(order.created_at)}
                         </div>
+
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Link
-  href={`/nail-tip-orders/${order.id}`}
-  className="rounded-2xl bg-purple-600 px-4 py-2 text-xs font-bold text-white"
->
-  詳細を見る
-</Link>
-  <button
-    type="button"
-    onClick={async () => {
-      const { error } = await supabase
-        .from("nail_tip_orders")
-        .update({
-          status: "making",
-        })
-        .eq("id", order.id);
+                            href={`/nail-tip-orders/${order.id}`}
+                            className="rounded-2xl bg-purple-600 px-4 py-2 text-xs font-bold text-white"
+                          >
+                            詳細を見る
+                          </Link>
 
-      if (!error) {
-        void fetchOrders();
-      }
-    }}
-    className="rounded-2xl bg-amber-500 px-4 py-2 text-xs font-bold text-white"
-  >
-    制作中へ
-  </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { error } = await supabase
+                                .from("nail_tip_orders")
+                                .update({
+                                  status: "making",
+                                })
+                                .eq("id", order.id);
 
-  <button
-    type="button"
-    onClick={async () => {
-      const { error } = await supabase
-        .from("nail_tip_orders")
-        .update({
-          status: "shipped",
-        })
-        .eq("id", order.id);
+                              if (!error) {
+                                void fetchOrders();
+                              }
+                            }}
+                            className="rounded-2xl bg-amber-500 px-4 py-2 text-xs font-bold text-white"
+                          >
+                            制作中へ
+                          </button>
 
-      if (!error) {
-        void fetchOrders();
-      }
-    }}
-    className="rounded-2xl bg-blue-500 px-4 py-2 text-xs font-bold text-white"
-  >
-    発送済みへ
-  </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { error } = await supabase
+                                .from("nail_tip_orders")
+                                .update({
+                                  status: "shipped",
+                                })
+                                .eq("id", order.id);
 
-  <button
-    type="button"
-    onClick={async () => {
-      const { error } = await supabase
-        .from("nail_tip_orders")
-        .update({
-          status: "completed",
-        })
-        .eq("id", order.id);
+                              if (!error) {
+                                void fetchOrders();
+                              }
+                            }}
+                            className="rounded-2xl bg-blue-500 px-4 py-2 text-xs font-bold text-white"
+                          >
+                            発送済みへ
+                          </button>
 
-      if (!error) {
-        void fetchOrders();
-      }
-    }}
-    className="rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white"
-  >
-    完了へ
-  </button>
-</div>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const { error } = await supabase
+                                .from("nail_tip_orders")
+                                .update({
+                                  status: "completed",
+                                })
+                                .eq("id", order.id);
+
+                              if (!error) {
+                                void fetchOrders();
+                              }
+                            }}
+                            className="rounded-2xl bg-emerald-500 px-4 py-2 text-xs font-bold text-white"
+                          >
+                            完了へ
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
