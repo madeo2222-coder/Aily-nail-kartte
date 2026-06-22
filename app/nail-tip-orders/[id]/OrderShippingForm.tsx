@@ -9,6 +9,43 @@ type OrderShippingFormProps = {
   defaultShippedAt?: string | null;
 };
 
+function toDateTimeLocalValue(value: string | null | undefined) {
+  if (!value) return "";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hour}:${minute}`;
+}
+
+function normalizeDateTimeLocalValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const normalized = trimmed.replace(/\//g, "-").replace(" ", "T");
+  const [datePart, timePart = "00:00"] = normalized.split("T");
+  const [year = "", month = "", day = ""] = datePart.split("-");
+  const [hour = "00", minute = "00"] = timePart.split(":");
+
+  if (!year || !month || !day) return null;
+
+  const safeDatePart = `${year.padStart(4, "0")}-${month.padStart(
+    2,
+    "0"
+  )}-${day.padStart(2, "0")}`;
+
+  return `${safeDatePart}T${hour.padStart(2, "0")}:${minute.padStart(
+    2,
+    "0"
+  )}:00`;
+}
+
 export default function OrderShippingForm({
   orderId,
   defaultShippingCompany,
@@ -22,11 +59,13 @@ export default function OrderShippingForm({
     defaultTrackingNumber || ""
   );
   const [shippedAt, setShippedAt] = useState(
-    defaultShippedAt ? defaultShippedAt.slice(0, 16) : ""
+    toDateTimeLocalValue(defaultShippedAt)
   );
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
+    const normalizedShippedAt = normalizeDateTimeLocalValue(shippedAt);
+
     setSaving(true);
 
     try {
@@ -38,9 +77,9 @@ export default function OrderShippingForm({
         body: JSON.stringify({
           shippingCompany,
           trackingNumber,
-          shippedAt: shippedAt
-  ? new Date(shippedAt.replace(/\//g, "-").replace(" ", "T")).toISOString()
-  : null,
+          shippedAt: normalizedShippedAt
+            ? new Date(normalizedShippedAt).toISOString()
+            : null,
         }),
       });
 
