@@ -323,9 +323,7 @@ const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
 
         const { data: diagnosisData, error: diagnosisError } = await supabase
           .from("sanmeigaku_diagnoses")
-          .select(
-            "id, customer_id, name, birthday, fortune, mood, lucky_color, lucky_stone, nail_theme, diagnosis_message, diagnosis_type, created_at"
-          )
+          .select("id, customer_id, created_at")
           .eq("customer_id", currentCustomer.id)
           .order("created_at", { ascending: false })
           .limit(1);
