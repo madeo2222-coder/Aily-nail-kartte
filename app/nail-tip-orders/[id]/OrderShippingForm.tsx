@@ -24,28 +24,6 @@ function toDateTimeLocalValue(value: string | null | undefined) {
   return `${year}-${month}-${day}T${hour}:${minute}`;
 }
 
-function normalizeDateTimeLocalValue(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  const normalized = trimmed.replace(/\//g, "-").replace(" ", "T");
-  const [datePart, timePart = "00:00"] = normalized.split("T");
-  const [year = "", month = "", day = ""] = datePart.split("-");
-  const [hour = "00", minute = "00"] = timePart.split(":");
-
-  if (!year || !month || !day) return null;
-
-  const safeDatePart = `${year.padStart(4, "0")}-${month.padStart(
-    2,
-    "0"
-  )}-${day.padStart(2, "0")}`;
-
-  return `${safeDatePart}T${hour.padStart(2, "0")}:${minute.padStart(
-    2,
-    "0"
-  )}:00`;
-}
-
 export default function OrderShippingForm({
   orderId,
   defaultShippingCompany,
@@ -64,8 +42,6 @@ export default function OrderShippingForm({
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
-    const normalizedShippedAt = normalizeDateTimeLocalValue(shippedAt);
-
     setSaving(true);
 
     try {
@@ -77,9 +53,7 @@ export default function OrderShippingForm({
         body: JSON.stringify({
           shippingCompany,
           trackingNumber,
-          shippedAt: normalizedShippedAt
-            ? new Date(normalizedShippedAt).toISOString()
-            : null,
+          shippedAt,
         }),
       });
 
