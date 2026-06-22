@@ -265,6 +265,9 @@ type NailTipOrderRow = {
   payment_due_at: string | null;
   status: string | null;
   created_at: string | null;
+  shipping_company: string | null;
+  tracking_number: string | null;
+  shipped_at: string | null;
 };
 
 const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
@@ -373,7 +376,10 @@ const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
     payment_url,
     payment_due_at,
     status,
-    created_at
+    created_at,
+    shipping_company,
+    tracking_number,
+    shipped_at
   `)
   .eq("customer_id", currentCustomer.id)
   .order("created_at", { ascending: false });
@@ -773,7 +779,30 @@ if (nailTipOrderError) {
           <div className="font-bold text-violet-700">
             {order.status || "未設定"}
           </div>
+{order.status === "shipped" ? (
+  <div className="mt-3 rounded-xl bg-white p-3">
+    <div className="text-xs text-slate-500">
+      配送会社
+    </div>
+    <div className="font-bold text-slate-900">
+      {order.shipping_company || "未登録"}
+    </div>
 
+    <div className="mt-2 text-xs text-slate-500">
+      追跡番号
+    </div>
+    <div className="font-bold text-slate-900">
+      {order.tracking_number || "未登録"}
+    </div>
+
+    <div className="mt-2 text-xs text-slate-500">
+      発送日時
+    </div>
+    <div className="font-bold text-slate-900">
+      {formatDateTime(order.shipped_at)}
+    </div>
+  </div>
+) : null}
           {order.payment_url ? (
             <a
               href={order.payment_url}
