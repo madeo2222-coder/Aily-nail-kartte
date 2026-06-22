@@ -9,26 +9,10 @@ type OrderShippingFormProps = {
   defaultShippedAt?: string | null;
 };
 
-function toDisplayDateTime(value: string | null | undefined) {
-  if (!value) return "";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const hour = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-
-  return `${year}/${month}/${day} ${hour}:${minute}`;
-}
-
 export default function OrderShippingForm({
   orderId,
   defaultShippingCompany,
   defaultTrackingNumber,
-  defaultShippedAt,
 }: OrderShippingFormProps) {
   const [shippingCompany, setShippingCompany] = useState(
     defaultShippingCompany || ""
@@ -36,7 +20,6 @@ export default function OrderShippingForm({
   const [trackingNumber, setTrackingNumber] = useState(
     defaultTrackingNumber || ""
   );
-  const [shippedAt, setShippedAt] = useState(toDisplayDateTime(defaultShippedAt));
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -51,7 +34,6 @@ export default function OrderShippingForm({
         body: JSON.stringify({
           shippingCompany,
           trackingNumber,
-          shippedAt,
         }),
       });
 
@@ -101,19 +83,6 @@ export default function OrderShippingForm({
             value={trackingNumber}
             onChange={(event) => setTrackingNumber(event.target.value)}
             placeholder="追跡番号を入力"
-            className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-bold text-slate-700">
-            発送日時
-          </label>
-          <input
-            type="text"
-            value={shippedAt}
-            onChange={(event) => setShippedAt(event.target.value)}
-            placeholder="2026/06/23 01:28"
             className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
           />
         </div>
