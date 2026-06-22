@@ -378,18 +378,6 @@ const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
   .eq("customer_id", currentCustomer.id)
   .order("created_at", { ascending: false });
 
-const { data: nailTipOrderDebugData, error: nailTipOrderDebugError } =
-  await supabase
-    .from("nail_tip_orders")
-    .select("id, customer_id, status, created_at")
-    .limit(10);
-
-console.log("currentCustomer.id", currentCustomer.id);
-console.log("nailTipOrderData", nailTipOrderData);
-console.log("nailTipOrderError", nailTipOrderError);
-console.log("nailTipOrderDebugData", nailTipOrderDebugData);
-console.log("nailTipOrderDebugError", nailTipOrderDebugError);
-
 if (nailTipOrderError) {
   console.error("ネイルチップ注文取得エラー:", nailTipOrderError);
   setNailTipOrders([]);
