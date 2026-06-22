@@ -7,7 +7,7 @@ const navItems = [
   { href: "/dashboard", label: "ホーム", icon: "🏠" },
   { href: "/customers", label: "顧客", icon: "👤" },
   { href: "/reservations", label: "予約", icon: "📅" },
-  { href: "/visits", label: "来店", icon: "💅" },
+  { href: "/visits", label: "来店", icon: "✍️" },
   { href: "/expenses", label: "経費", icon: "🧾" },
   { href: "/finance", label: "収支", icon: "📊" },
   { href: "/nail-tip-orders", label: "チップ", icon: "💅" },
