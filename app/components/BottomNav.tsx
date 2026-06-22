@@ -9,7 +9,11 @@ const navItems = [
   { href: "/visits", label: "来店", icon: "💅" },
   { href: "/expenses", label: "経費", icon: "🧾" },
   { href: "/finance", label: "収支", icon: "📊" },
-  { href: "/receivables", label: "未収", icon: "💰" },
+ {
+  href: "/nail-tip-orders",
+  label: "チップ",
+  icon: "💅",
+},
 ];
 
 export default function BottomNav() {
