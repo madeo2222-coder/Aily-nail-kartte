@@ -9,7 +9,7 @@ type OrderShippingFormProps = {
   defaultShippedAt?: string | null;
 };
 
-function toDateTimeLocalValue(value: string | null | undefined) {
+function toDisplayDateTime(value: string | null | undefined) {
   if (!value) return "";
 
   const date = new Date(value);
@@ -21,7 +21,7 @@ function toDateTimeLocalValue(value: string | null | undefined) {
   const hour = String(date.getHours()).padStart(2, "0");
   const minute = String(date.getMinutes()).padStart(2, "0");
 
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+  return `${year}/${month}/${day} ${hour}:${minute}`;
 }
 
 export default function OrderShippingForm({
@@ -36,9 +36,7 @@ export default function OrderShippingForm({
   const [trackingNumber, setTrackingNumber] = useState(
     defaultTrackingNumber || ""
   );
-  const [shippedAt, setShippedAt] = useState(
-    toDateTimeLocalValue(defaultShippedAt)
-  );
+  const [shippedAt, setShippedAt] = useState(toDisplayDateTime(defaultShippedAt));
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -112,9 +110,10 @@ export default function OrderShippingForm({
             発送日時
           </label>
           <input
-            type="datetime-local"
+            type="text"
             value={shippedAt}
             onChange={(event) => setShippedAt(event.target.value)}
+            placeholder="2026/06/23 01:28"
             className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
           />
         </div>
