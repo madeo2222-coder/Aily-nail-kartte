@@ -38,7 +38,9 @@ export default function OrderShippingForm({
         body: JSON.stringify({
           shippingCompany,
           trackingNumber,
-          shippedAt: shippedAt ? new Date(shippedAt).toISOString() : null,
+          shippedAt: shippedAt
+  ? new Date(shippedAt.replace(/\//g, "-").replace(" ", "T")).toISOString()
+  : null,
         }),
       });
 
