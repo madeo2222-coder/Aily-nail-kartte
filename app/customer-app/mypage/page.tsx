@@ -379,7 +379,8 @@ const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
   `)
   .eq("customer_id", currentCustomer.id)
   .order("created_at", { ascending: false });
-
+console.log("currentCustomer.id", currentCustomer.id);
+console.log("nailTipOrderData", nailTipOrderData);
 if (nailTipOrderError) {
   console.error("ネイルチップ注文取得エラー:", nailTipOrderError);
   setNailTipOrders([]);
