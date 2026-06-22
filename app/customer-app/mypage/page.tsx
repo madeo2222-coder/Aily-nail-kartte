@@ -360,10 +360,13 @@ const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
           .select("id, name")
           .order("name", { ascending: true });
 
-        if (staffError) {
-          console.error("staffs取得エラー:", staffError);
-          setStaffs([]);
-        
+if (staffError) {
+  console.error("staffs取得エラー:", staffError);
+  setStaffs([]);
+} else {
+  setStaffs((staffData || []) as StaffRow[]);
+}
+
 const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
   .from("nail_tip_orders")
   .select(`
@@ -383,7 +386,7 @@ if (nailTipOrderError) {
 } else {
   setNailTipOrders((nailTipOrderData || []) as NailTipOrderRow[]);
 }
-        }
+        
       } catch (error) {
         console.error("mypage取得エラー:", error);
         setMessage("マイページ情報の取得に失敗しました。");
