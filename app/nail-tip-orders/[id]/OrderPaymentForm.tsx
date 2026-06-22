@@ -24,6 +24,17 @@ function formatDueDate(value: string) {
   }).format(date);
 }
 
+function isValidPaymentUrl(value: string) {
+  if (!value.trim()) return false;
+
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 export default function OrderPaymentForm({
   orderId,
   defaultPaymentUrl,
@@ -37,6 +48,10 @@ export default function OrderPaymentForm({
   );
   const [saving, setSaving] = useState(false);
   const [copyMessage, setCopyMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const trimmedPaymentUrl = paymentUrl.trim();
+  const canUsePaymentUrl = isValidPaymentUrl(trimmedPaymentUrl);
 
   const customerPaymentMessage = useMemo(() => {
     return [
@@ -44,16 +59,25 @@ export default function OrderPaymentForm({
       "",
       "下記URLよりお支払いをお願いいたします。",
       "",
-      paymentUrl || "【決済URL未作成】",
+      canUsePaymentUrl ? trimmedPaymentUrl : "【決済URL未作成】",
       "",
       `お支払い期限：${formatDueDate(paymentDueAt)}`,
       "",
       "お支払い確認後、制作を開始いたします。",
       "よろしくお願いいたします。",
     ].join("\n");
-  }, [paymentUrl, paymentDueAt]);
+  }, [canUsePaymentUrl, trimmedPaymentUrl, paymentDueAt]);
 
   async function handleSave() {
+    setErrorMessage("");
+
+    if (!canUsePaymentUrl) {
+      setErrorMessage(
+        "決済URLは https:// または http:// から始まるURLを入力してください"
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -63,8 +87,8 @@ export default function OrderPaymentForm({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          paymentUrl,
-          transactionId,
+          paymentUrl: trimmedPaymentUrl,
+          transactionId: transactionId.trim(),
           paymentDueAt: paymentDueAt
             ? new Date(paymentDueAt).toISOString()
             : null,
@@ -117,10 +141,19 @@ export default function OrderPaymentForm({
           </label>
           <input
             value={paymentUrl}
-            onChange={(e) => setPaymentUrl(e.target.value)}
+            onChange={(e) => {
+              setPaymentUrl(e.target.value);
+              setErrorMessage("");
+            }}
             placeholder="https://..."
             className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
           />
+
+          {trimmedPaymentUrl && !canUsePaymentUrl ? (
+            <div className="mt-2 rounded-2xl bg-red-50 px-4 py-3 text-xs font-bold leading-5 text-red-700">
+              決済URLは https:// または http:// から始まるURLを入力してください。
+            </div>
+          ) : null}
         </div>
 
         <div>
@@ -147,9 +180,9 @@ export default function OrderPaymentForm({
           />
         </div>
 
-        {paymentUrl ? (
+        {canUsePaymentUrl ? (
           <a
-            href={paymentUrl}
+            href={trimmedPaymentUrl}
             target="_blank"
             rel="noreferrer"
             className="block rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3 text-center text-sm font-bold text-purple-700"
@@ -158,19 +191,23 @@ export default function OrderPaymentForm({
           </a>
         ) : null}
 
+        {errorMessage ? (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+            {errorMessage}
+          </div>
+        ) : null}
+
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || !canUsePaymentUrl}
           className="w-full rounded-2xl bg-purple-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
         >
           {saving ? "保存中..." : "決済情報を保存する"}
         </button>
 
         <div className="rounded-2xl bg-slate-50 p-4">
-          <div className="text-sm font-bold text-slate-900">
-            お客様案内文
-          </div>
+          <div className="text-sm font-bold text-slate-900">お客様案内文</div>
 
           <pre className="mt-3 whitespace-pre-wrap rounded-2xl bg-white p-3 text-xs leading-6 text-slate-700">
             {customerPaymentMessage}
