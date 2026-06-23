@@ -102,6 +102,7 @@ export default function InboundReservePage() {
     [todayText]
   );
 
+  const [serviceType, setServiceType] = useState<"salon" | "tips">("salon");
   const [language, setLanguage] = useState("en");
   const [guestCount, setGuestCount] = useState(2);
   const [selectedMenuId, setSelectedMenuId] = useState(inboundMenus[0].id);
@@ -109,6 +110,9 @@ export default function InboundReservePage() {
   const [selectedTime, setSelectedTime] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
+  const [country, setCountry] = useState("");
+  const [instagramId, setInstagramId] = useState("");
+  const [tipDesignRequest, setTipDesignRequest] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -128,7 +132,7 @@ export default function InboundReservePage() {
     window.setTimeout(() => setMessage(""), 3000);
   }
 
-  async function handleSubmit() {
+  async function handleSalonSubmit() {
     if (!selectedDate) {
       showMessage("Please select a date.");
       return;
@@ -185,8 +189,8 @@ export default function InboundReservePage() {
           durationMinutes,
           memo,
           guestCount,
-customerName: customerName.trim(),
-customerEmail: customerEmail.trim(),
+          customerName: customerName.trim(),
+          customerEmail: customerEmail.trim(),
         }),
       });
 
@@ -209,6 +213,32 @@ customerEmail: customerEmail.trim(),
     }
   }
 
+  function handleTipsSubmit() {
+    if (!customerName.trim()) {
+      showMessage("Please enter your name.");
+      return;
+    }
+
+    if (!customerEmail.trim()) {
+      showMessage("Please enter your email.");
+      return;
+    }
+
+    if (!country.trim()) {
+      showMessage("Please enter your country.");
+      return;
+    }
+
+    if (!tipDesignRequest.trim()) {
+      showMessage("Please tell us your design request.");
+      return;
+    }
+
+    showMessage(
+      "Custom nail tips request form is ready. API connection will be added next."
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-50 pb-10">
       <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
@@ -217,12 +247,54 @@ customerEmail: customerEmail.trim(),
             AILY NAIL STUDIO
           </div>
           <h1 className="mt-3 text-2xl font-black leading-tight">
-            Group Nail Reservation
+            Anime Nail & Travel Nail
           </h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            Book nail services for 1 to 3 guests. Perfect for friends, couples,
-            and family trips in Fukuoka.
+            Book a salon visit in Fukuoka or request custom anime nail tips with
+            worldwide shipping.
           </p>
+        </section>
+
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+          <div className="text-base font-bold text-slate-900">
+            What would you like?
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-3">
+            <button
+              type="button"
+              onClick={() => setServiceType("salon")}
+              className={`rounded-3xl border p-4 text-left ${
+                serviceType === "salon"
+                  ? "border-purple-300 bg-purple-50"
+                  : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="text-lg font-black text-slate-900">
+                💅 Salon Reservation
+              </div>
+              <div className="mt-1 text-sm leading-6 text-slate-500">
+                Visit our salon in Fukuoka. Available for 1 or 2 guests.
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setServiceType("tips")}
+              className={`rounded-3xl border p-4 text-left ${
+                serviceType === "tips"
+                  ? "border-pink-300 bg-pink-50"
+                  : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="text-lg font-black text-slate-900">
+                🌏 Custom Nail Tips
+              </div>
+              <div className="mt-1 text-sm leading-6 text-slate-500">
+                Anime character nail tips. Worldwide shipping available.
+              </div>
+            </button>
+          </div>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
@@ -240,110 +312,114 @@ customerEmail: customerEmail.trim(),
           </select>
         </section>
 
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">
-            Number of guests
-          </div>
+        {serviceType === "salon" ? (
+          <>
+            <section className="rounded-3xl border bg-white p-4 shadow-sm">
+              <div className="text-base font-bold text-slate-900">
+                Number of guests
+              </div>
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            {[1, 2].map((count) => (
-              <button
-                key={count}
-                type="button"
-                onClick={() => setGuestCount(count)}
-                className={`rounded-2xl border px-3 py-4 text-sm font-black ${
-                  guestCount === count
-                    ? "border-purple-300 bg-purple-50 text-purple-700"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-              >
-                {count} {count === 1 ? "person" : "people"}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">Menu</div>
-
-          <div className="mt-3 space-y-2">
-            {inboundMenus.map((menu) => {
-              const selected = menu.id === selectedMenuId;
-
-              return (
-                <button
-                  key={menu.id}
-                  type="button"
-                  onClick={() => setSelectedMenuId(menu.id)}
-                  className={`w-full rounded-2xl border p-4 text-left ${
-                    selected
-                      ? "border-purple-300 bg-purple-50"
-                      : "border-slate-200 bg-white"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-black text-slate-900">
-                        {menu.label}
-                      </div>
-                      <div className="mt-1 text-xs leading-5 text-slate-500">
-                        {menu.description}
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm font-black text-purple-700">
-                        {formatYen(menu.price)}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {menu.minutes} min
-                      </div>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">
-            Date and time
-          </div>
-
-          <div className="mt-4 space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                Date
-              </label>
-              <input
-                type="date"
-                value={selectedDate}
-                min={todayText}
-                max={maxReservationDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                Time
-              </label>
-              <select
-                value={selectedTime}
-                onChange={(event) => setSelectedTime(event.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-              >
-                <option value="">Select time</option>
-                {timeOptions.map((time) => (
-                  <option key={time} value={time}>
-                    {time}
-                  </option>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {[1, 2].map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => setGuestCount(count)}
+                    className={`rounded-2xl border px-3 py-4 text-sm font-black ${
+                      guestCount === count
+                        ? "border-purple-300 bg-purple-50 text-purple-700"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    {count} {count === 1 ? "person" : "people"}
+                  </button>
                 ))}
-              </select>
-            </div>
-          </div>
-        </section>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border bg-white p-4 shadow-sm">
+              <div className="text-base font-bold text-slate-900">Menu</div>
+
+              <div className="mt-3 space-y-2">
+                {inboundMenus.map((menu) => {
+                  const selected = menu.id === selectedMenuId;
+
+                  return (
+                    <button
+                      key={menu.id}
+                      type="button"
+                      onClick={() => setSelectedMenuId(menu.id)}
+                      className={`w-full rounded-2xl border p-4 text-left ${
+                        selected
+                          ? "border-purple-300 bg-purple-50"
+                          : "border-slate-200 bg-white"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="font-black text-slate-900">
+                            {menu.label}
+                          </div>
+                          <div className="mt-1 text-xs leading-5 text-slate-500">
+                            {menu.description}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-sm font-black text-purple-700">
+                            {formatYen(menu.price)}
+                          </div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {menu.minutes} min
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border bg-white p-4 shadow-sm">
+              <div className="text-base font-bold text-slate-900">
+                Date and time
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    min={todayText}
+                    max={maxReservationDate}
+                    onChange={(event) => setSelectedDate(event.target.value)}
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Time
+                  </label>
+                  <select
+                    value={selectedTime}
+                    onChange={(event) => setSelectedTime(event.target.value)}
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  >
+                    <option value="">Select time</option>
+                    {timeOptions.map((time) => (
+                      <option key={time} value={time}>
+                        {time}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </section>
+          </>
+        ) : null}
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">
@@ -376,68 +452,138 @@ customerEmail: customerEmail.trim(),
               />
             </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                Request / Note
-              </label>
-              <textarea
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                rows={4}
-                placeholder="Please tell us your design request."
-                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-              />
-            </div>
+            {serviceType === "tips" ? (
+              <>
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Country
+                  </label>
+                  <input
+                    value={country}
+                    onChange={(event) => setCountry(event.target.value)}
+                    placeholder="France / USA / Korea / Thailand..."
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Instagram ID
+                  </label>
+                  <input
+                    value={instagramId}
+                    onChange={(event) => setInstagramId(event.target.value)}
+                    placeholder="@your_instagram"
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Anime character / Design request
+                  </label>
+                  <textarea
+                    value={tipDesignRequest}
+                    onChange={(event) => setTipDesignRequest(event.target.value)}
+                    rows={5}
+                    placeholder="Please tell us the anime character, color, theme, and your design request."
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  />
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    Image upload and estimate request will be added in the next
+                    step.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <div>
+                <label className="mb-2 block text-sm font-bold text-slate-700">
+                  Request / Note
+                </label>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  rows={4}
+                  placeholder="Please tell us your design request."
+                  className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                />
+              </div>
+            )}
           </div>
         </section>
 
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-base font-bold text-slate-900">Summary</div>
-              <div className="mt-1 text-sm text-slate-500">
-                Estimated price and service time
-              </div>
-            </div>
-            <div className="rounded-full bg-purple-100 px-3 py-1 text-xs font-black text-purple-700">
-              {guestCount} guests
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
-            <div className="text-sm font-black text-slate-900">
-              {selectedMenu.label}
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-3">
-              <div className="rounded-2xl bg-white p-3">
-                <div className="text-xs text-slate-500">Total price</div>
-                <div className="mt-1 text-lg font-black text-slate-900">
-                  {formatYen(totalPrice)}
+        {serviceType === "salon" ? (
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-bold text-slate-900">
+                  Summary
+                </div>
+                <div className="mt-1 text-sm text-slate-500">
+                  Estimated price and service time
                 </div>
               </div>
-              <div className="rounded-2xl bg-white p-3">
-                <div className="text-xs text-slate-500">Time</div>
-                <div className="mt-1 text-lg font-black text-slate-900">
-                  {durationMinutes} min
+              <div className="rounded-full bg-purple-100 px-3 py-1 text-xs font-black text-purple-700">
+                {guestCount} guests
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+              <div className="text-sm font-black text-slate-900">
+                {selectedMenu.label}
+              </div>
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-white p-3">
+                  <div className="text-xs text-slate-500">Total price</div>
+                  <div className="mt-1 text-lg font-black text-slate-900">
+                    {formatYen(totalPrice)}
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-white p-3">
+                  <div className="text-xs text-slate-500">Time</div>
+                  <div className="mt-1 text-lg font-black text-slate-900">
+                    {durationMinutes} min
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            Please arrive on time. Late arrival may shorten the service time.
-            No-show or same-day cancellation may be charged a cancellation fee.
-          </div>
+            <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+              Please arrive on time. Late arrival may shorten the service time.
+              No-show or same-day cancellation may be charged a cancellation
+              fee.
+            </div>
 
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={sending}
-            className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
-          >
-            {sending ? "Sending..." : "Send reservation request"}
-          </button>
-        </section>
+            <button
+              type="button"
+              onClick={handleSalonSubmit}
+              disabled={sending}
+              className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {sending ? "Sending..." : "Send reservation request"}
+            </button>
+          </section>
+        ) : (
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <div className="text-base font-bold text-slate-900">
+              Custom Nail Tips Request
+            </div>
+
+            <div className="mt-3 rounded-2xl bg-pink-50 p-4 text-sm leading-6 text-pink-800">
+              Worldwide shipping is available. After reviewing your design, our
+              staff will send you an estimate, production time, and payment
+              information.
+            </div>
+
+            <button
+              type="button"
+              onClick={handleTipsSubmit}
+              className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white"
+            >
+              Send custom nail tips request
+            </button>
+          </section>
+        )}
       </div>
 
       {message ? (
