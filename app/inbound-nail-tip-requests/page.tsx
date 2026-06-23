@@ -4,7 +4,7 @@ import StatusForm from "./StatusForm";
 import QuoteForm from "./QuoteForm";
 import SendQuoteButton from "./SendQuoteButton";
 import PaymentUrlForm from "./PaymentUrlForm";
-
+import MarkPaidButton from "./MarkPaidButton";
 export const dynamic = "force-dynamic";
 
 type InboundNailTipRequestRow = {
@@ -244,6 +244,7 @@ export default async function InboundNailTipRequestsPage() {
   requestId={request.id}
   defaultUrl={request.payment_url}
 />
+<MarkPaidButton requestId={request.id} />
                   <StatusForm
                     requestId={request.id}
                     defaultStatus={request.status}
