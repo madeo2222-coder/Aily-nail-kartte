@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import StatusForm from "./StatusForm";
+import QuoteForm from "./QuoteForm";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ type InboundNailTipRequestRow = {
   design_request: string | null;
   image_urls: string[] | null;
   status: string | null;
+  quote_amount: number | null;
   created_at: string | null;
 };
 
@@ -47,6 +49,12 @@ function formatDateTime(value: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function formatYen(value: number | null) {
+  if (!value || value <= 0) return "未設定";
+
+  return `¥${value.toLocaleString("ja-JP")}`;
 }
 
 function getStatusLabel(status: string | null) {
@@ -155,7 +163,7 @@ export default async function InboundNailTipRequestsPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <div className="rounded-2xl bg-slate-50 p-4">
                       <div className="text-xs text-slate-500">メール</div>
                       <a
@@ -170,6 +178,13 @@ export default async function InboundNailTipRequestsPage() {
                       <div className="text-xs text-slate-500">Instagram</div>
                       <div className="mt-1 break-all text-sm font-bold text-slate-900">
                         {request.instagram_id || "未登録"}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-amber-50 p-4">
+                      <div className="text-xs text-amber-700">見積金額</div>
+                      <div className="mt-1 text-lg font-black text-amber-900">
+                        {formatYen(request.quote_amount)}
                       </div>
                     </div>
                   </div>
@@ -215,6 +230,11 @@ export default async function InboundNailTipRequestsPage() {
                       </div>
                     )}
                   </div>
+
+                  <QuoteForm
+                    requestId={request.id}
+                    defaultAmount={request.quote_amount}
+                  />
 
                   <StatusForm
                     requestId={request.id}
