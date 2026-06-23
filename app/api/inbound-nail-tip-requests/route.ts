@@ -1,10 +1,27 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
 function getFromEmail() {
   return (
     process.env.RESEND_FROM_EMAIL ||
     "Aily Nail Studio <onboarding@resend.dev>"
   );
+}
+
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !key) {
+    throw new Error("Supabase環境変数不足");
+  }
+
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
 }
 
 function normalizeImageUrls(value: unknown) {
@@ -227,6 +244,28 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { ok: false, error: "Design request is required." },
         { status: 400 }
+      );
+    }
+
+    const supabase = getSupabaseAdmin();
+
+    const { error: insertError } = await supabase
+      .from("inbound_nail_tip_requests")
+      .insert({
+        customer_name: customerName,
+        customer_email: customerEmail,
+        country,
+        instagram_id: instagramId || null,
+        language,
+        design_request: designRequest,
+        image_urls: imageUrls,
+        status: "new",
+      });
+
+    if (insertError) {
+      return NextResponse.json(
+        { ok: false, error: insertError.message },
+        { status: 500 }
       );
     }
 
