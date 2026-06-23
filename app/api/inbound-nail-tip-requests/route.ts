@@ -7,6 +7,21 @@ function getFromEmail() {
   );
 }
 
+function normalizeImageUrls(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+function buildImageUrlText(imageUrls: string[]) {
+  if (imageUrls.length === 0) return "-";
+
+  return imageUrls.map((url, index) => `${index + 1}. ${url}`).join("\n");
+}
+
 async function sendEmail(params: {
   to: string[];
   subject: string;
@@ -46,6 +61,7 @@ async function sendAdminMail(params: {
   instagramId: string;
   language: string;
   designRequest: string;
+  imageUrls: string[];
 }) {
   const notifyEmail = process.env.RESERVATION_NOTIFY_EMAIL;
   if (!notifyEmail) return;
@@ -61,6 +77,9 @@ async function sendAdminMail(params: {
     "",
     "Design request:",
     params.designRequest || "-",
+    "",
+    "Reference images:",
+    buildImageUrlText(params.imageUrls),
     "",
     "Worldwide shipping requested.",
   ].join("\n");
@@ -79,6 +98,7 @@ async function sendCustomerConfirmationMail(params: {
   instagramId: string;
   language: string;
   designRequest: string;
+  imageUrls: string[];
 }) {
   const text = [
     `Dear ${params.customerName},`,
@@ -93,6 +113,9 @@ async function sendCustomerConfirmationMail(params: {
     "Design request:",
     params.designRequest || "-",
     "",
+    "Reference images:",
+    buildImageUrlText(params.imageUrls),
+    "",
     "Our staff will review your design and contact you with:",
     "- Availability",
     "- Estimated price",
@@ -100,7 +123,7 @@ async function sendCustomerConfirmationMail(params: {
     "- Worldwide shipping details",
     "- Payment information",
     "",
-    "For anime or character nail tips, we may ask you to send reference images before making an estimate.",
+    "For anime or character nail tips, we may ask you to send additional reference images before making an estimate.",
     "",
     "Aily Nail Studio",
   ].join("\n");
@@ -119,6 +142,7 @@ async function sendAdminLine(params: {
   instagramId: string;
   language: string;
   designRequest: string;
+  imageUrls: string[];
 }) {
   const lineAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const adminUserId = process.env.LINE_ADMIN_USER_ID;
@@ -141,6 +165,9 @@ async function sendAdminLine(params: {
     "",
     "Design request:",
     params.designRequest || "-",
+    "",
+    "Reference images:",
+    buildImageUrlText(params.imageUrls),
     "",
     "Worldwide shipping requested.",
   ].join("\n");
@@ -173,6 +200,7 @@ export async function POST(request: Request) {
     const instagramId = String(body.instagramId || "").trim();
     const language = String(body.language || "en").trim();
     const designRequest = String(body.designRequest || "").trim();
+    const imageUrls = normalizeImageUrls(body.imageUrls);
 
     if (!customerName) {
       return NextResponse.json(
@@ -210,6 +238,7 @@ export async function POST(request: Request) {
         instagramId,
         language,
         designRequest,
+        imageUrls,
       }),
       sendCustomerConfirmationMail({
         customerName,
@@ -218,6 +247,7 @@ export async function POST(request: Request) {
         instagramId,
         language,
         designRequest,
+        imageUrls,
       }),
       sendAdminLine({
         customerName,
@@ -226,6 +256,7 @@ export async function POST(request: Request) {
         instagramId,
         language,
         designRequest,
+        imageUrls,
       }),
     ]);
 

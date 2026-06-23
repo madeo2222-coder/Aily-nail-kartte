@@ -1,8 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 const salonId = "e120ed90-fded-41b8-b3fe-f486e84f2418";
+const uploadBucketName = "visit-photos";
 
 const languageOptions = [
   { value: "en", label: "English" },
@@ -95,6 +97,11 @@ function formatYen(value: number) {
   return `¥${value.toLocaleString("ja-JP")}`;
 }
 
+function getFileExtension(fileName: string) {
+  const extension = fileName.split(".").pop();
+  return extension ? extension.toLowerCase() : "jpg";
+}
+
 export default function InboundReservePage() {
   const todayText = useMemo(() => getTodayText(), []);
   const maxReservationDate = useMemo(
@@ -113,6 +120,7 @@ export default function InboundReservePage() {
   const [country, setCountry] = useState("");
   const [instagramId, setInstagramId] = useState("");
   const [tipDesignRequest, setTipDesignRequest] = useState("");
+  const [designFiles, setDesignFiles] = useState<File[]>([]);
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
@@ -130,6 +138,48 @@ export default function InboundReservePage() {
   function showMessage(text: string) {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 3000);
+  }
+
+  function handleDesignFilesChange(files: FileList | null) {
+    if (!files) {
+      setDesignFiles([]);
+      return;
+    }
+
+    const selectedFiles = Array.from(files).slice(0, 3);
+    setDesignFiles(selectedFiles);
+  }
+
+  async function uploadDesignImages() {
+    const uploadedUrls: string[] = [];
+
+    for (const file of designFiles) {
+      const extension = getFileExtension(file.name);
+      const filePath = `inbound-nail-tips/${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.${extension}`;
+
+      const { error } = await supabase.storage
+        .from(uploadBucketName)
+        .upload(filePath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const { data } = supabase.storage
+        .from(uploadBucketName)
+        .getPublicUrl(filePath);
+
+      if (data.publicUrl) {
+        uploadedUrls.push(data.publicUrl);
+      }
+    }
+
+    return uploadedUrls;
   }
 
   async function handleSalonSubmit() {
@@ -214,64 +264,70 @@ export default function InboundReservePage() {
   }
 
   async function handleTipsSubmit() {
-  if (!customerName.trim()) {
-    showMessage("Please enter your name.");
-    return;
-  }
-
-  if (!customerEmail.trim()) {
-    showMessage("Please enter your email.");
-    return;
-  }
-
-  if (!country.trim()) {
-    showMessage("Please enter your country.");
-    return;
-  }
-
-  if (!tipDesignRequest.trim()) {
-    showMessage("Please tell us your design request.");
-    return;
-  }
-
-  setSending(true);
-
-  try {
-    const response = await fetch("/api/inbound-nail-tip-requests", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        customerName: customerName.trim(),
-        customerEmail: customerEmail.trim(),
-        country: country.trim(),
-        instagramId: instagramId.trim(),
-        language,
-        designRequest: tipDesignRequest.trim(),
-      }),
-    });
-
-    const json = await response.json();
-
-    if (!response.ok || !json.ok) {
-      showMessage(json.error || "Custom nail tips request failed.");
-      setSending(false);
+    if (!customerName.trim()) {
+      showMessage("Please enter your name.");
       return;
     }
 
-    showMessage(
-      "Custom nail tips request sent. We will contact you by email."
-    );
-    setTipDesignRequest("");
-    setNote("");
-  } catch (error) {
-    console.error(error);
-    showMessage("Network error. Please try again.");
-  } finally {
-    setSending(false);
+    if (!customerEmail.trim()) {
+      showMessage("Please enter your email.");
+      return;
+    }
+
+    if (!country.trim()) {
+      showMessage("Please enter your country.");
+      return;
+    }
+
+    if (!tipDesignRequest.trim()) {
+      showMessage("Please tell us your design request.");
+      return;
+    }
+
+    setSending(true);
+
+    try {
+      const imageUrls = await uploadDesignImages();
+
+      const response = await fetch("/api/inbound-nail-tip-requests", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          customerName: customerName.trim(),
+          customerEmail: customerEmail.trim(),
+          country: country.trim(),
+          instagramId: instagramId.trim(),
+          language,
+          designRequest: tipDesignRequest.trim(),
+          imageUrls,
+        }),
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.ok) {
+        showMessage(json.error || "Custom nail tips request failed.");
+        setSending(false);
+        return;
+      }
+
+      showMessage(
+        "Custom nail tips request sent. We will contact you by email."
+      );
+      setTipDesignRequest("");
+      setDesignFiles([]);
+      setNote("");
+    } catch (error) {
+      console.error(error);
+      showMessage(
+        error instanceof Error ? error.message : "Network error. Please try again."
+      );
+    } finally {
+      setSending(false);
+    }
   }
-}
 
   return (
     <main className="min-h-screen bg-slate-50 pb-10">
@@ -514,19 +570,43 @@ export default function InboundReservePage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Reference images
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(event) =>
+                      handleDesignFilesChange(event.target.files)
+                    }
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  />
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    You can upload up to 3 reference images.
+                  </p>
+
+                  {designFiles.length > 0 ? (
+                    <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                      {designFiles.map((file) => (
+                        <div key={file.name}>・{file.name}</div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
                     Anime character / Design request
                   </label>
                   <textarea
                     value={tipDesignRequest}
-                    onChange={(event) => setTipDesignRequest(event.target.value)}
+                    onChange={(event) =>
+                      setTipDesignRequest(event.target.value)
+                    }
                     rows={5}
                     placeholder="Please tell us the anime character, color, theme, and your design request."
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    Image upload and estimate request will be added in the next
-                    step.
-                  </p>
                 </div>
               </>
             ) : (
@@ -609,14 +689,14 @@ export default function InboundReservePage() {
               information.
             </div>
 
-           <button
-  type="button"
-  onClick={handleTipsSubmit}
-  disabled={sending}
-  className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
->
-  {sending ? "Sending..." : "Send custom nail tips request"}
-</button>
+            <button
+              type="button"
+              onClick={handleTipsSubmit}
+              disabled={sending}
+              className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+            >
+              {sending ? "Sending..." : "Send custom nail tips request"}
+            </button>
           </section>
         )}
       </div>
