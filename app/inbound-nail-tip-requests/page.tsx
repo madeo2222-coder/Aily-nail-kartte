@@ -3,6 +3,8 @@ import { createClient } from "@supabase/supabase-js";
 import StatusForm from "./StatusForm";
 import QuoteForm from "./QuoteForm";
 import SendQuoteButton from "./SendQuoteButton";
+import PaymentUrlForm from "./PaymentUrlForm";
+
 export const dynamic = "force-dynamic";
 
 type InboundNailTipRequestRow = {
@@ -16,7 +18,9 @@ type InboundNailTipRequestRow = {
   image_urls: string[] | null;
   status: string | null;
   quote_amount: number | null;
-  created_at: string | null;
+payment_url: string | null;
+payment_status: string | null;
+created_at: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -236,6 +240,10 @@ export default async function InboundNailTipRequestsPage() {
                     defaultAmount={request.quote_amount}
                   />
 <SendQuoteButton requestId={request.id} />
+<PaymentUrlForm
+  requestId={request.id}
+  defaultUrl={request.payment_url}
+/>
                   <StatusForm
                     requestId={request.id}
                     defaultStatus={request.status}
