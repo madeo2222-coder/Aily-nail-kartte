@@ -8,6 +8,7 @@ import MarkPaidButton from "./MarkPaidButton";
 import ShippingForm from "./ShippingForm";
 import StartMakingButton from "./StartMakingButton";
 import CompleteButton from "./CompleteButton";
+
 export const dynamic = "force-dynamic";
 
 type InboundNailTipRequestRow = {
@@ -102,8 +103,15 @@ function getPaymentStatusLabel(status: string | null) {
   }
 }
 
-export default async function InboundNailTipRequestsPage() {
+export default async function InboundNailTipRequestsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ view?: string }>;
+}) {
   const supabase = getSupabaseAdmin();
+
+  const resolvedSearchParams = searchParams ? await searchParams : {};
+  const view = resolvedSearchParams.view || "active";
 
   const { data, error } = await supabase
     .from("inbound_nail_tip_requests")
@@ -111,15 +119,23 @@ export default async function InboundNailTipRequestsPage() {
     .order("created_at", { ascending: false });
 
   const requests = ((data || []) as InboundNailTipRequestRow[]) || [];
-const activeRequests = requests.filter(
-  (request) =>
-    request.status !== "completed" &&
-    request.status !== "cancelled"
-);
 
-const completedRequests = requests.filter(
-  (request) => request.status === "completed"
-);
+  const activeRequests = requests.filter(
+    (request) =>
+      request.status !== "completed" && request.status !== "cancelled"
+  );
+
+  const completedRequests = requests.filter(
+    (request) => request.status === "completed"
+  );
+
+  const displayRequests =
+    view === "all"
+      ? requests
+      : view === "completed"
+        ? completedRequests
+        : activeRequests;
+
   return (
     <main className="min-h-screen bg-slate-50 pb-24">
       <div className="mx-auto w-full max-w-[960px] space-y-4 p-4">
@@ -149,41 +165,78 @@ const completedRequests = requests.filter(
             受付ページ確認
           </Link>
         </div>
-<section className="grid grid-cols-3 gap-3">
-  <div className="rounded-2xl bg-amber-50 p-4">
-    <div className="text-xs text-amber-700">進行中</div>
-    <div className="mt-1 text-2xl font-black text-amber-900">
-      {activeRequests.length}
-    </div>
-  </div>
 
-  <div className="rounded-2xl bg-emerald-50 p-4">
-    <div className="text-xs text-emerald-700">完了</div>
-    <div className="mt-1 text-2xl font-black text-emerald-900">
-      {completedRequests.length}
-    </div>
-  </div>
+        <section className="grid grid-cols-3 gap-3">
+          <div className="rounded-2xl bg-amber-50 p-4">
+            <div className="text-xs text-amber-700">進行中</div>
+            <div className="mt-1 text-2xl font-black text-amber-900">
+              {activeRequests.length}
+            </div>
+          </div>
 
-  <div className="rounded-2xl bg-slate-100 p-4">
-    <div className="text-xs text-slate-600">総数</div>
-    <div className="mt-1 text-2xl font-black text-slate-900">
-      {requests.length}
-    </div>
-  </div>
-</section>
+          <div className="rounded-2xl bg-emerald-50 p-4">
+            <div className="text-xs text-emerald-700">完了</div>
+            <div className="mt-1 text-2xl font-black text-emerald-900">
+              {completedRequests.length}
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-slate-100 p-4">
+            <div className="text-xs text-slate-600">総数</div>
+            <div className="mt-1 text-2xl font-black text-slate-900">
+              {requests.length}
+            </div>
+          </div>
+        </section>
+
+        <section className="flex flex-wrap gap-2">
+          <Link
+            href="/inbound-nail-tip-requests"
+            className={`rounded-2xl px-4 py-3 text-sm font-bold shadow-sm ${
+              view === "active"
+                ? "bg-pink-600 text-white"
+                : "border bg-white text-slate-700"
+            }`}
+          >
+            進行中を見る
+          </Link>
+
+          <Link
+            href="/inbound-nail-tip-requests?view=completed"
+            className={`rounded-2xl px-4 py-3 text-sm font-bold shadow-sm ${
+              view === "completed"
+                ? "bg-pink-600 text-white"
+                : "border bg-white text-slate-700"
+            }`}
+          >
+            完了を見る
+          </Link>
+
+          <Link
+            href="/inbound-nail-tip-requests?view=all"
+            className={`rounded-2xl px-4 py-3 text-sm font-bold shadow-sm ${
+              view === "all"
+                ? "bg-pink-600 text-white"
+                : "border bg-white text-slate-700"
+            }`}
+          >
+            全件を見る
+          </Link>
+        </section>
+
         {error ? (
           <section className="rounded-3xl border border-red-100 bg-red-50 p-5 text-sm font-bold text-red-700">
             取得エラー：{error.message}
           </section>
         ) : null}
 
-        {activeRequests.length === 0 ? (
+        {displayRequests.length === 0 ? (
           <section className="rounded-3xl border bg-white p-5 text-sm font-bold text-slate-500 shadow-sm">
             まだ相談はありません。
           </section>
         ) : (
           <div className="space-y-4">
-            {activeRequests.map((request) => {
+            {displayRequests.map((request) => {
               const imageUrls = Array.isArray(request.image_urls)
                 ? request.image_urls
                 : [];
@@ -314,48 +367,48 @@ const completedRequests = requests.filter(
                     )}
                   </div>
 
-{request.status === "new" && (
-  <>
-    <QuoteForm
-      requestId={request.id}
-      defaultAmount={request.quote_amount}
-    />
+                  {request.status === "new" && (
+                    <>
+                      <QuoteForm
+                        requestId={request.id}
+                        defaultAmount={request.quote_amount}
+                      />
 
-    <SendQuoteButton requestId={request.id} />
-  </>
-)}
+                      <SendQuoteButton requestId={request.id} />
+                    </>
+                  )}
 
-{request.status === "quoted" && (
-  <PaymentUrlForm
-    requestId={request.id}
-    defaultUrl={request.payment_url}
-  />
-)}
+                  {request.status === "quoted" && (
+                    <PaymentUrlForm
+                      requestId={request.id}
+                      defaultUrl={request.payment_url}
+                    />
+                  )}
 
-{request.status === "payment_waiting" && (
-  <MarkPaidButton requestId={request.id} />
-)}
+                  {request.status === "payment_waiting" && (
+                    <MarkPaidButton requestId={request.id} />
+                  )}
 
-{request.status === "paid" && (
-  <StartMakingButton requestId={request.id} />
-)}
+                  {request.status === "paid" && (
+                    <StartMakingButton requestId={request.id} />
+                  )}
 
-{request.status === "making" && (
-  <ShippingForm
-    requestId={request.id}
-    defaultShippingCompany={request.shipping_company}
-    defaultTrackingNumber={request.tracking_number}
-  />
-)}
+                  {request.status === "making" && (
+                    <ShippingForm
+                      requestId={request.id}
+                      defaultShippingCompany={request.shipping_company}
+                      defaultTrackingNumber={request.tracking_number}
+                    />
+                  )}
 
-{request.status === "shipped" && (
-  <CompleteButton requestId={request.id} />
-)}
+                  {request.status === "shipped" && (
+                    <CompleteButton requestId={request.id} />
+                  )}
 
-<StatusForm
-  requestId={request.id}
-  defaultStatus={request.status}
-/>
+                  <StatusForm
+                    requestId={request.id}
+                    defaultStatus={request.status}
+                  />
                 </section>
               );
             })}
