@@ -322,7 +322,9 @@ export default function InboundReservePage() {
     } catch (error) {
       console.error(error);
       showMessage(
-        error instanceof Error ? error.message : "Network error. Please try again."
+        error instanceof Error
+          ? error.message
+          : "Network error. Please try again."
       );
     } finally {
       setSending(false);
@@ -337,12 +339,68 @@ export default function InboundReservePage() {
             AILY NAIL STUDIO
           </div>
           <h1 className="mt-3 text-2xl font-black leading-tight">
-            Anime Nail & Travel Nail
+            Anime Character Nail Tips
           </h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            Book a salon visit in Fukuoka or request custom anime nail tips with
-            worldwide shipping.
+            Handmade anime nail tips from Fukuoka, Japan. Worldwide shipping
+            available.
           </p>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold">
+            <div className="rounded-2xl bg-white/20 px-3 py-2">
+              🇯🇵 Made in Japan
+            </div>
+            <div className="rounded-2xl bg-white/20 px-3 py-2">
+              🌏 Worldwide Shipping
+            </div>
+            <div className="rounded-2xl bg-white/20 px-3 py-2">
+              🎨 Custom Design
+            </div>
+            <div className="rounded-2xl bg-white/20 px-3 py-2">
+              💅 Salon Visit OK
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+          <div className="text-lg font-black text-slate-900">
+            🌏 Worldwide Shipping Available
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            We create custom anime, character, idol, game, and original design
+            nail tips. Send us your reference images and request. Our staff will
+            reply with an estimate, production time, and DG/MAP payment URL.
+          </p>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+            <div className="rounded-2xl bg-pink-50 p-3 font-bold text-pink-700">
+              Hand painted
+            </div>
+            <div className="rounded-2xl bg-purple-50 p-3 font-bold text-purple-700">
+              Custom order
+            </div>
+            <div className="rounded-2xl bg-orange-50 p-3 font-bold text-orange-700">
+              International shipping
+            </div>
+            <div className="rounded-2xl bg-blue-50 p-3 font-bold text-blue-700">
+              Fukuoka salon
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+            <div className="text-xs font-bold tracking-[0.2em] text-slate-400">
+              SHIPPING TO
+            </div>
+            <div className="mt-2 text-sm font-bold leading-6 text-slate-700">
+              USA / Canada / France / Germany / Korea / Thailand / Singapore /
+              Australia / and more
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
+            For anime or character nail tips, advance consultation and payment
+            are required before production.
+          </div>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
@@ -353,23 +411,6 @@ export default function InboundReservePage() {
           <div className="mt-3 grid grid-cols-1 gap-3">
             <button
               type="button"
-              onClick={() => setServiceType("salon")}
-              className={`rounded-3xl border p-4 text-left ${
-                serviceType === "salon"
-                  ? "border-purple-300 bg-purple-50"
-                  : "border-slate-200 bg-white"
-              }`}
-            >
-              <div className="text-lg font-black text-slate-900">
-                💅 Salon Reservation
-              </div>
-              <div className="mt-1 text-sm leading-6 text-slate-500">
-                Visit our salon in Fukuoka. Available for 1 or 2 guests.
-              </div>
-            </button>
-
-            <button
-              type="button"
               onClick={() => setServiceType("tips")}
               className={`rounded-3xl border p-4 text-left ${
                 serviceType === "tips"
@@ -378,10 +419,27 @@ export default function InboundReservePage() {
               }`}
             >
               <div className="text-lg font-black text-slate-900">
-                🌏 Custom Nail Tips
+                🌏 Custom Anime Nail Tips
               </div>
               <div className="mt-1 text-sm leading-6 text-slate-500">
-                Anime character nail tips. Worldwide shipping available.
+                Custom character nail tips. Worldwide shipping available.
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setServiceType("salon")}
+              className={`rounded-3xl border p-4 text-left ${
+                serviceType === "salon"
+                  ? "border-purple-300 bg-purple-50"
+                  : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="text-lg font-black text-slate-900">
+                💅 Salon Reservation in Fukuoka
+              </div>
+              <div className="mt-1 text-sm leading-6 text-slate-500">
+                Visit our salon in Fukuoka. Available for 1 or 2 guests.
               </div>
             </button>
           </div>
