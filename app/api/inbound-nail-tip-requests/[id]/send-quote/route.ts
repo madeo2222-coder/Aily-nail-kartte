@@ -48,8 +48,8 @@ export async function POST(
 
     const customerName = data.customer_name || "Customer";
     const customerEmail = data.customer_email;
-
     const quoteAmount = Number(data.quote_amount || 0);
+    const paymentUrl = String(data.payment_url || "").trim();
 
     if (!customerEmail) {
       return NextResponse.json(
@@ -61,6 +61,13 @@ export async function POST(
     if (quoteAmount <= 0) {
       return NextResponse.json(
         { ok: false, error: "見積金額未設定" },
+        { status: 400 }
+      );
+    }
+
+    if (!paymentUrl) {
+      return NextResponse.json(
+        { ok: false, error: "DG決済URL未登録" },
         { status: 400 }
       );
     }
@@ -81,27 +88,29 @@ export async function POST(
       "",
       `Amount: ¥${quoteAmount.toLocaleString("ja-JP")}`,
       "",
-      "We will contact you with payment information shortly.",
+      "Payment URL:",
+      paymentUrl,
+      "",
+      "After payment confirmation, we will start production.",
+      "",
+      "If you have any questions, please contact us by email or Instagram.",
       "",
       "Aily Nail Studio",
     ].join("\n");
 
-    const emailResponse = await fetch(
-      "https://api.resend.com/emails",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: getFromEmail(),
-          to: [customerEmail],
-          subject: "Aily Nail Studio - Your Quote Is Ready",
-          text,
-        }),
-      }
-    );
+    const emailResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: getFromEmail(),
+        to: [customerEmail],
+        subject: "Aily Nail Studio - Quote and Payment URL",
+        text,
+      }),
+    });
 
     if (!emailResponse.ok) {
       const errorText = await emailResponse.text();
@@ -119,6 +128,7 @@ export async function POST(
       .from("inbound_nail_tip_requests")
       .update({
         status: "payment_waiting",
+        payment_status: "unpaid",
       })
       .eq("id", id);
 
@@ -130,9 +140,7 @@ export async function POST(
       {
         ok: false,
         error:
-          error instanceof Error
-            ? error.message
-            : "見積メール送信失敗",
+          error instanceof Error ? error.message : "見積メール送信失敗",
       },
       { status: 500 }
     );
