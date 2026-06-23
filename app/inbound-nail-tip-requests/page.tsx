@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
 import StatusForm from "./StatusForm";
 import QuoteForm from "./QuoteForm";
-
+import SendQuoteButton from "./SendQuoteButton";
 export const dynamic = "force-dynamic";
 
 type InboundNailTipRequestRow = {
@@ -235,7 +235,7 @@ export default async function InboundNailTipRequestsPage() {
                     requestId={request.id}
                     defaultAmount={request.quote_amount}
                   />
-
+<SendQuoteButton requestId={request.id} />
                   <StatusForm
                     requestId={request.id}
                     defaultStatus={request.status}
