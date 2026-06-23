@@ -17,6 +17,61 @@ function getSupabaseAdmin() {
   });
 }
 
+function getFromEmail() {
+  return (
+    process.env.RESEND_FROM_EMAIL ||
+    "Aily Nail Studio <onboarding@resend.dev>"
+  );
+}
+
+async function sendShippingMail(params: {
+  customerName: string;
+  customerEmail: string;
+  shippingCompany: string;
+  trackingNumber: string;
+}) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+
+  if (!resendApiKey) {
+    console.log("発送通知メールスキップ: RESEND_API_KEY 未設定");
+    return;
+  }
+
+  const text = [
+    `Hello ${params.customerName},`,
+    "",
+    "Your custom nail tips have been shipped.",
+    "",
+    `Shipping company: ${params.shippingCompany}`,
+    `Tracking number: ${params.trackingNumber}`,
+    "",
+    "Please use the tracking number above to check the delivery status.",
+    "",
+    "Thank you for your order.",
+    "",
+    "Aily Nail Studio",
+  ].join("\n");
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: getFromEmail(),
+      to: [params.customerEmail],
+      subject: "Aily Nail Studio - Your order has been shipped",
+      text,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("発送通知メール送信エラー:", errorText);
+  }
+}
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -44,6 +99,29 @@ export async function POST(
 
     const supabase = getSupabaseAdmin();
 
+    const { data: requestData, error: fetchError } = await supabase
+      .from("inbound_nail_tip_requests")
+      .select("customer_name, customer_email")
+      .eq("id", id)
+      .single();
+
+    if (fetchError || !requestData) {
+      return NextResponse.json(
+        { ok: false, error: "相談情報が見つかりません" },
+        { status: 404 }
+      );
+    }
+
+    const customerName = requestData.customer_name || "Customer";
+    const customerEmail = requestData.customer_email || "";
+
+    if (!customerEmail) {
+      return NextResponse.json(
+        { ok: false, error: "メールアドレス未登録" },
+        { status: 400 }
+      );
+    }
+
     const { error } = await supabase
       .from("inbound_nail_tip_requests")
       .update({
@@ -60,6 +138,13 @@ export async function POST(
         { status: 500 }
       );
     }
+
+    await sendShippingMail({
+      customerName,
+      customerEmail,
+      shippingCompany,
+      trackingNumber,
+    });
 
     return NextResponse.json({
       ok: true,
