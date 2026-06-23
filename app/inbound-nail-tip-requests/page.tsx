@@ -111,7 +111,15 @@ export default async function InboundNailTipRequestsPage() {
     .order("created_at", { ascending: false });
 
   const requests = ((data || []) as InboundNailTipRequestRow[]) || [];
+const activeRequests = requests.filter(
+  (request) =>
+    request.status !== "completed" &&
+    request.status !== "cancelled"
+);
 
+const completedRequests = requests.filter(
+  (request) => request.status === "completed"
+);
   return (
     <main className="min-h-screen bg-slate-50 pb-24">
       <div className="mx-auto w-full max-w-[960px] space-y-4 p-4">
@@ -141,20 +149,41 @@ export default async function InboundNailTipRequestsPage() {
             受付ページ確認
           </Link>
         </div>
+<section className="grid grid-cols-3 gap-3">
+  <div className="rounded-2xl bg-amber-50 p-4">
+    <div className="text-xs text-amber-700">進行中</div>
+    <div className="mt-1 text-2xl font-black text-amber-900">
+      {activeRequests.length}
+    </div>
+  </div>
 
+  <div className="rounded-2xl bg-emerald-50 p-4">
+    <div className="text-xs text-emerald-700">完了</div>
+    <div className="mt-1 text-2xl font-black text-emerald-900">
+      {completedRequests.length}
+    </div>
+  </div>
+
+  <div className="rounded-2xl bg-slate-100 p-4">
+    <div className="text-xs text-slate-600">総数</div>
+    <div className="mt-1 text-2xl font-black text-slate-900">
+      {requests.length}
+    </div>
+  </div>
+</section>
         {error ? (
           <section className="rounded-3xl border border-red-100 bg-red-50 p-5 text-sm font-bold text-red-700">
             取得エラー：{error.message}
           </section>
         ) : null}
 
-        {requests.length === 0 ? (
+        {activeRequests.length === 0 ? (
           <section className="rounded-3xl border bg-white p-5 text-sm font-bold text-slate-500 shadow-sm">
             まだ相談はありません。
           </section>
         ) : (
           <div className="space-y-4">
-            {requests.map((request) => {
+            {activeRequests.map((request) => {
               const imageUrls = Array.isArray(request.image_urls)
                 ? request.image_urls
                 : [];
