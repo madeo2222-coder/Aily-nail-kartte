@@ -172,7 +172,7 @@ export default function InboundReservePage() {
         .filter(Boolean)
         .join("\n");
 
-      const response = await fetch("/api/reservations", {
+      const response = await fetch("/api/inbound-reservations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -184,6 +184,9 @@ export default function InboundReservePage() {
           salonId,
           durationMinutes,
           memo,
+          guestCount,
+customerName: customerName.trim(),
+customerEmail: customerEmail.trim(),
         }),
       });
 
