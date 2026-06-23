@@ -243,7 +243,7 @@ export default function InboundReservePage() {
           </div>
 
           <div className="mt-3 grid grid-cols-3 gap-2">
-            {[1, 2, 3].map((count) => (
+            {[1, 2].map((count) => (
               <button
                 key={count}
                 type="button"
