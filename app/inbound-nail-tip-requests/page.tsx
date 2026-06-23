@@ -7,6 +7,7 @@ import PaymentUrlForm from "./PaymentUrlForm";
 import MarkPaidButton from "./MarkPaidButton";
 import ShippingForm from "./ShippingForm";
 import StartMakingButton from "./StartMakingButton";
+import CompleteButton from "./CompleteButton";
 export const dynamic = "force-dynamic";
 
 type InboundNailTipRequestRow = {
@@ -303,7 +304,7 @@ export default async function InboundNailTipRequestsPage() {
                     defaultShippingCompany={request.shipping_company}
                     defaultTrackingNumber={request.tracking_number}
                   />
-
+<CompleteButton requestId={request.id} />
                   <StatusForm
                     requestId={request.id}
                     defaultStatus={request.status}
