@@ -5,6 +5,8 @@ import QuoteForm from "./QuoteForm";
 import SendQuoteButton from "./SendQuoteButton";
 import PaymentUrlForm from "./PaymentUrlForm";
 import MarkPaidButton from "./MarkPaidButton";
+import ShippingForm from "./ShippingForm";
+import StartMakingButton from "./StartMakingButton";
 export const dynamic = "force-dynamic";
 
 type InboundNailTipRequestRow = {
@@ -18,9 +20,12 @@ type InboundNailTipRequestRow = {
   image_urls: string[] | null;
   status: string | null;
   quote_amount: number | null;
-payment_url: string | null;
-payment_status: string | null;
-created_at: string | null;
+  payment_url: string | null;
+  payment_status: string | null;
+  shipping_company: string | null;
+  tracking_number: string | null;
+  shipped_at: string | null;
+  created_at: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -57,7 +62,6 @@ function formatDateTime(value: string | null) {
 
 function formatYen(value: number | null) {
   if (!value || value <= 0) return "未設定";
-
   return `¥${value.toLocaleString("ja-JP")}`;
 }
 
@@ -81,6 +85,17 @@ function getStatusLabel(status: string | null) {
       return "完了";
     case "cancelled":
       return "キャンセル";
+    default:
+      return status || "未設定";
+  }
+}
+
+function getPaymentStatusLabel(status: string | null) {
+  switch (status) {
+    case "unpaid":
+      return "未払い";
+    case "paid":
+      return "支払済み";
     default:
       return status || "未設定";
   }
@@ -191,7 +206,41 @@ export default async function InboundNailTipRequestsPage() {
                         {formatYen(request.quote_amount)}
                       </div>
                     </div>
+
+                    <div className="rounded-2xl bg-emerald-50 p-4">
+                      <div className="text-xs text-emerald-700">支払状況</div>
+                      <div className="mt-1 text-sm font-black text-emerald-900">
+                        {getPaymentStatusLabel(request.payment_status)}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl bg-blue-50 p-4 md:col-span-2">
+                      <div className="text-xs text-blue-700">発送情報</div>
+                      <div className="mt-1 text-sm font-bold leading-6 text-blue-950">
+                        配送会社：{request.shipping_company || "未登録"}
+                        <br />
+                        追跡番号：{request.tracking_number || "未登録"}
+                        <br />
+                        発送日時：{formatDateTime(request.shipped_at)}
+                      </div>
+                    </div>
                   </div>
+
+                  {request.payment_url ? (
+                    <div className="mt-4 rounded-2xl bg-emerald-50 p-4">
+                      <div className="text-xs font-bold text-emerald-700">
+                        DG決済URL
+                      </div>
+                      <a
+                        href={request.payment_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 block break-all text-sm font-bold text-emerald-900 underline"
+                      >
+                        {request.payment_url}
+                      </a>
+                    </div>
+                  ) : null}
 
                   <div className="mt-4 rounded-2xl bg-pink-50 p-4">
                     <div className="text-xs font-bold text-pink-600">
@@ -239,12 +288,22 @@ export default async function InboundNailTipRequestsPage() {
                     requestId={request.id}
                     defaultAmount={request.quote_amount}
                   />
-<SendQuoteButton requestId={request.id} />
-<PaymentUrlForm
-  requestId={request.id}
-  defaultUrl={request.payment_url}
-/>
-<MarkPaidButton requestId={request.id} />
+
+                  <SendQuoteButton requestId={request.id} />
+
+                  <PaymentUrlForm
+                    requestId={request.id}
+                    defaultUrl={request.payment_url}
+                  />
+
+                  <MarkPaidButton requestId={request.id} />
+<StartMakingButton requestId={request.id} />
+                  <ShippingForm
+                    requestId={request.id}
+                    defaultShippingCompany={request.shipping_company}
+                    defaultTrackingNumber={request.tracking_number}
+                  />
+
                   <StatusForm
                     requestId={request.id}
                     defaultStatus={request.status}
