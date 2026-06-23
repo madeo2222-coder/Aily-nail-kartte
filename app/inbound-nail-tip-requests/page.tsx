@@ -285,30 +285,48 @@ export default async function InboundNailTipRequestsPage() {
                     )}
                   </div>
 
-                  <QuoteForm
-                    requestId={request.id}
-                    defaultAmount={request.quote_amount}
-                  />
+{request.status === "new" && (
+  <>
+    <QuoteForm
+      requestId={request.id}
+      defaultAmount={request.quote_amount}
+    />
 
-                  <SendQuoteButton requestId={request.id} />
+    <SendQuoteButton requestId={request.id} />
+  </>
+)}
 
-                  <PaymentUrlForm
-                    requestId={request.id}
-                    defaultUrl={request.payment_url}
-                  />
+{request.status === "quoted" && (
+  <PaymentUrlForm
+    requestId={request.id}
+    defaultUrl={request.payment_url}
+  />
+)}
 
-                  <MarkPaidButton requestId={request.id} />
-<StartMakingButton requestId={request.id} />
-                  <ShippingForm
-                    requestId={request.id}
-                    defaultShippingCompany={request.shipping_company}
-                    defaultTrackingNumber={request.tracking_number}
-                  />
-<CompleteButton requestId={request.id} />
-                  <StatusForm
-                    requestId={request.id}
-                    defaultStatus={request.status}
-                  />
+{request.status === "payment_waiting" && (
+  <MarkPaidButton requestId={request.id} />
+)}
+
+{request.status === "paid" && (
+  <StartMakingButton requestId={request.id} />
+)}
+
+{request.status === "making" && (
+  <ShippingForm
+    requestId={request.id}
+    defaultShippingCompany={request.shipping_company}
+    defaultTrackingNumber={request.tracking_number}
+  />
+)}
+
+{request.status === "shipped" && (
+  <CompleteButton requestId={request.id} />
+)}
+
+<StatusForm
+  requestId={request.id}
+  defaultStatus={request.status}
+/>
                 </section>
               );
             })}
