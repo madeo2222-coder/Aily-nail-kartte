@@ -213,31 +213,65 @@ export default function InboundReservePage() {
     }
   }
 
-  function handleTipsSubmit() {
-    if (!customerName.trim()) {
-      showMessage("Please enter your name.");
-      return;
-    }
+  async function handleTipsSubmit() {
+  if (!customerName.trim()) {
+    showMessage("Please enter your name.");
+    return;
+  }
 
-    if (!customerEmail.trim()) {
-      showMessage("Please enter your email.");
-      return;
-    }
+  if (!customerEmail.trim()) {
+    showMessage("Please enter your email.");
+    return;
+  }
 
-    if (!country.trim()) {
-      showMessage("Please enter your country.");
-      return;
-    }
+  if (!country.trim()) {
+    showMessage("Please enter your country.");
+    return;
+  }
 
-    if (!tipDesignRequest.trim()) {
-      showMessage("Please tell us your design request.");
+  if (!tipDesignRequest.trim()) {
+    showMessage("Please tell us your design request.");
+    return;
+  }
+
+  setSending(true);
+
+  try {
+    const response = await fetch("/api/inbound-nail-tip-requests", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        customerName: customerName.trim(),
+        customerEmail: customerEmail.trim(),
+        country: country.trim(),
+        instagramId: instagramId.trim(),
+        language,
+        designRequest: tipDesignRequest.trim(),
+      }),
+    });
+
+    const json = await response.json();
+
+    if (!response.ok || !json.ok) {
+      showMessage(json.error || "Custom nail tips request failed.");
+      setSending(false);
       return;
     }
 
     showMessage(
-      "Custom nail tips request form is ready. API connection will be added next."
+      "Custom nail tips request sent. We will contact you by email."
     );
+    setTipDesignRequest("");
+    setNote("");
+  } catch (error) {
+    console.error(error);
+    showMessage("Network error. Please try again.");
+  } finally {
+    setSending(false);
   }
+}
 
   return (
     <main className="min-h-screen bg-slate-50 pb-10">
@@ -575,13 +609,14 @@ export default function InboundReservePage() {
               information.
             </div>
 
-            <button
-              type="button"
-              onClick={handleTipsSubmit}
-              className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white"
-            >
-              Send custom nail tips request
-            </button>
+           <button
+  type="button"
+  onClick={handleTipsSubmit}
+  disabled={sending}
+  className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+>
+  {sending ? "Sending..." : "Send custom nail tips request"}
+</button>
           </section>
         )}
       </div>
