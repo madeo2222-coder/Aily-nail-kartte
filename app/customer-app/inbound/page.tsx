@@ -465,11 +465,11 @@ async function handleGoogleLogin() {
     </div>
 
     <div>
-      <img
-        src="/inbound-gallery/demon-slayer2.jpeg"
-        alt="Demon Slayer"
-        className="h-40 w-full rounded-2xl object-cover"
-      />
+<img
+  src="/inbound-gallery/demon-slayer.jpeg"
+  alt="Demon Slayer"
+  className="h-40 w-full rounded-2xl object-cover"
+/>
       <div className="mt-2 text-center text-xs font-bold">
         Demon Slayer
       </div>
