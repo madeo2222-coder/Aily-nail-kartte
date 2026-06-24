@@ -452,7 +452,17 @@ async function handleGoogleLogin() {
       </div>
     </div>
 
-   
+    <div>
+      <img
+        src="/inbound-gallery/attack-on-titan.jpeg"
+        alt="Attack on Titan"
+        className="h-40 w-full rounded-2xl object-cover"
+      />
+      <div className="mt-2 text-center text-xs font-bold">
+        Attack on Titan
+      </div>
+    </div>
+  </div>
 
     <div>
       <img
@@ -475,7 +485,7 @@ async function handleGoogleLogin() {
         JoJo
       </div>
     </div>
-    
+
 <div>
   <img
     src="/inbound-gallery/dragon-ball.jpeg"
@@ -487,17 +497,7 @@ async function handleGoogleLogin() {
   </div>
 </div>
 
-    <div>
-      <img
-        src="/inbound-gallery/attack-on-titan.jpeg"
-        alt="Attack on Titan"
-        className="h-40 w-full rounded-2xl object-cover"
-      />
-      <div className="mt-2 text-center text-xs font-bold">
-        Attack on Titan
-      </div>
-    </div>
-  </div>
+   
 
   <div className="mt-4 rounded-2xl bg-pink-50 p-4 text-center">
     <div className="text-lg font-black text-pink-700">
