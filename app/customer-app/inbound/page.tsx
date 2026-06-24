@@ -361,7 +361,81 @@ export default function InboundReservePage() {
             </div>
           </div>
         </section>
+<section className="rounded-3xl border bg-white p-4 shadow-sm">
+  <div className="text-lg font-black text-slate-900">
+    Featured Anime Gallery
+  </div>
 
+  <p className="mt-2 text-sm text-slate-500">
+    100% Hand Painted in Japan
+  </p>
+
+  <div className="mt-4 grid grid-cols-2 gap-3">
+    <div>
+      <img
+        src="/inbound-gallery/one-piece1.jpg"
+        alt="One Piece"
+        className="h-40 w-full rounded-2xl object-cover"
+      />
+      <div className="mt-2 text-center text-xs font-bold">
+        One Piece
+      </div>
+    </div>
+
+    <div>
+      <img
+        src="/inbound-gallery/dragon-ball.jpeg"
+        alt="Dragon Ball"
+        className="h-40 w-full rounded-2xl object-cover"
+      />
+      <div className="mt-2 text-center text-xs font-bold">
+        Dragon Ball
+      </div>
+    </div>
+
+    <div>
+      <img
+        src="/inbound-gallery/demon-slayer.jpeg"
+        alt="Demon Slayer"
+        className="h-40 w-full rounded-2xl object-cover"
+      />
+      <div className="mt-2 text-center text-xs font-bold">
+        Demon Slayer
+      </div>
+    </div>
+
+    <div>
+      <img
+        src="/inbound-gallery/jojo.jpeg"
+        alt="JoJo"
+        className="h-40 w-full rounded-2xl object-cover"
+      />
+      <div className="mt-2 text-center text-xs font-bold">
+        JoJo
+      </div>
+    </div>
+
+    <div className="col-span-2">
+      <img
+        src="/inbound-gallery/attack-on-titan.jpeg"
+        alt="Attack on Titan"
+        className="h-48 w-full rounded-2xl object-cover"
+      />
+      <div className="mt-2 text-center text-xs font-bold">
+        Attack on Titan
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-4 rounded-2xl bg-pink-50 p-4 text-center">
+    <div className="text-lg font-black text-pink-700">
+      Starting from ¥15,000
+    </div>
+    <div className="mt-1 text-sm text-pink-600">
+      Worldwide Shipping Available
+    </div>
+  </div>
+</section>
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-lg font-black text-slate-900">
             🌏 Worldwide Shipping Available
