@@ -54,6 +54,45 @@ const inboundMenus = [
   },
 ];
 
+const orderTypeOptions = [
+  {
+    value: "anime_character",
+    label: "Anime Character Nail Tips",
+    title: "🎨 Anime Character",
+    description: "Anime, game, idol, character, or original design.",
+    requestLabel: "Character / Design Request",
+    placeholder:
+      "Please tell us the character name, scene, color, theme, and your design request.",
+  },
+  {
+    value: "fortune_sanmeigaku",
+    label: "Fortune / Sanmeigaku Nail Tips",
+    title: "🔮 Fortune / Sanmeigaku",
+    description: "Japanese fortune-based lucky color nail design.",
+    requestLabel: "Fortune / Sanmeigaku Request",
+    placeholder:
+      "Please tell us your birthday, lucky color request, desired image, and design preference.",
+  },
+  {
+    value: "power_stone",
+    label: "Power Stone Nail Tips",
+    title: "💎 Power Stone",
+    description: "Power-stone inspired nail tips for love, money, beauty, or luck.",
+    requestLabel: "Power Stone Request",
+    placeholder:
+      "Please tell us your birthdate, desired effect, stone preference, color, and design request.",
+  },
+  {
+    value: "other",
+    label: "Other Custom Design",
+    title: "✨ Other Custom",
+    description: "Luxury, bridal, event, or fully custom nail tips.",
+    requestLabel: "Custom Design Request",
+    placeholder:
+      "Please tell us your theme, color, occasion, reference image, and design request.",
+  },
+];
+
 const timeOptions = [
   "10:00",
   "10:30",
@@ -109,7 +148,7 @@ export default function InboundReservePage() {
     [todayText]
   );
 
-  const [serviceType, setServiceType] = useState<"salon" | "tips">("salon");
+  const [serviceType, setServiceType] = useState<"salon" | "tips">("tips");
   const [language, setLanguage] = useState("en");
   const [guestCount, setGuestCount] = useState(2);
   const [selectedMenuId, setSelectedMenuId] = useState(inboundMenus[0].id);
@@ -119,6 +158,7 @@ export default function InboundReservePage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [country, setCountry] = useState("");
   const [instagramId, setInstagramId] = useState("");
+  const [orderType, setOrderType] = useState("anime_character");
   const [tipDesignRequest, setTipDesignRequest] = useState("");
   const [designFiles, setDesignFiles] = useState<File[]>([]);
   const [recipientName, setRecipientName] = useState("");
@@ -132,13 +172,20 @@ export default function InboundReservePage() {
   const [sending, setSending] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleUserEmail, setGoogleUserEmail] = useState("");
-const [orderType, setOrderType] = useState("anime_character");
+
   const selectedMenu = useMemo(() => {
     return (
       inboundMenus.find((menu) => menu.id === selectedMenuId) ||
       inboundMenus[0]
     );
   }, [selectedMenuId]);
+
+  const selectedOrderType = useMemo(() => {
+    return (
+      orderTypeOptions.find((item) => item.value === orderType) ||
+      orderTypeOptions[0]
+    );
+  }, [orderType]);
 
   const totalPrice = selectedMenu.price * guestCount;
   const durationMinutes = selectedMenu.minutes;
@@ -320,14 +367,14 @@ const [orderType, setOrderType] = useState("anime_character");
     try {
       let imageUrls: string[] = [];
 
-try {
-  imageUrls = await uploadDesignImages();
-} catch (uploadError) {
-  console.error("Reference image upload failed:", uploadError);
-  showMessage(
-    "Reference image upload failed, but we will send your request without images."
-  );
-}
+      try {
+        imageUrls = await uploadDesignImages();
+      } catch (uploadError) {
+        console.error("Reference image upload failed:", uploadError);
+        showMessage(
+          "Reference image upload failed, but we will send your request without images."
+        );
+      }
 
       const response = await fetch("/api/inbound-nail-tip-requests", {
         method: "POST",
@@ -384,11 +431,11 @@ try {
             AILY NAIL STUDIO
           </div>
           <h1 className="mt-3 text-2xl font-black leading-tight">
-            Anime Character Nail Tips
+            Custom Japanese Nail Art
           </h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            Handmade anime nail tips from Fukuoka, Japan. Worldwide shipping
-            available.
+            Handmade anime, fortune, power stone, and luxury custom nail tips
+            from Fukuoka, Japan.
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold">
@@ -399,10 +446,10 @@ try {
               🌏 Worldwide Shipping
             </div>
             <div className="rounded-2xl bg-white/20 px-3 py-2">
-              🎨 Custom Design
+              🔮 Fortune Design
             </div>
             <div className="rounded-2xl bg-white/20 px-3 py-2">
-              💅 Salon Visit OK
+              💎 Power Stone
             </div>
           </div>
         </section>
@@ -431,64 +478,66 @@ try {
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-lg font-black text-slate-900">
-            Featured Anime Gallery
+            Design Portfolio
           </div>
 
           <p className="mt-2 text-sm text-slate-500">
-            100% Hand Painted in Japan
+            100% hand painted custom nail tips in Japan.
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div>
               <img
                 src="/inbound-gallery/one-piece1.jpg"
-                alt="One Piece"
+                alt="Anime character nail tips"
                 className="h-40 w-full rounded-2xl object-cover"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                One Piece
+                Anime Character
               </div>
             </div>
 
             <div>
               <img
                 src="/inbound-gallery/attack-on-titan.jpeg"
-                alt="Attack on Titan"
+                alt="Custom character nail tips"
                 className="h-40 w-full rounded-2xl object-cover"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Attack on Titan
+                Character Art
               </div>
             </div>
 
             <div>
               <img
                 src="/inbound-gallery/demon-slayer.jpeg"
-                alt="Demon Slayer"
+                alt="Japanese fortune nail tips"
                 className="h-40 w-full rounded-2xl object-cover"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Demon Slayer
+                Fortune Nail
               </div>
             </div>
 
             <div>
               <img
                 src="/inbound-gallery/jojo.jpeg"
-                alt="JoJo"
+                alt="Power stone nail tips"
                 className="h-40 w-full rounded-2xl object-cover"
               />
-              <div className="mt-2 text-center text-xs font-bold">JoJo</div>
+              <div className="mt-2 text-center text-xs font-bold">
+                Power Stone
+              </div>
             </div>
 
             <div className="col-span-2">
               <img
                 src="/inbound-gallery/dragon-ball.jpeg"
-                alt="Dragon Ball hand painted process"
+                alt="Hand painted process"
                 className="h-72 w-full rounded-2xl bg-white object-contain"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Dragon Ball - Hand Painted Process
+                Hand Painted Process
               </div>
             </div>
           </div>
@@ -516,7 +565,7 @@ try {
           }}
           className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-4 text-sm font-black text-white shadow-sm"
         >
-          🎨 Request Custom Anime Nail Tips
+          ✨ Request Custom Nail Tips
         </button>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
@@ -524,23 +573,24 @@ try {
             🌏 Worldwide Shipping Available
           </div>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            We create custom anime, character, idol, game, and original design
-            nail tips. Send us your reference images and request. Our staff will
-            reply with an estimate, production time, and DG/MAP payment URL.
+            We create custom anime, fortune, Sanmeigaku, power-stone, idol,
+            game, bridal, and original design nail tips. Send us your request.
+            Our staff will reply with an estimate, production time, and DG/MAP
+            payment URL.
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
             <div className="rounded-2xl bg-pink-50 p-3 font-bold text-pink-700">
-              Hand painted
+              Anime / Character
             </div>
             <div className="rounded-2xl bg-purple-50 p-3 font-bold text-purple-700">
-              Custom order
+              Fortune / Sanmeigaku
             </div>
             <div className="rounded-2xl bg-orange-50 p-3 font-bold text-orange-700">
-              International shipping
+              Power Stone
             </div>
             <div className="rounded-2xl bg-blue-50 p-3 font-bold text-blue-700">
-              Fukuoka salon
+              Luxury Custom
             </div>
           </div>
 
@@ -555,8 +605,7 @@ try {
           </div>
 
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            For anime or character nail tips, advance consultation and payment
-            are required before production.
+            Advance consultation and payment are required before production.
           </div>
         </section>
 
@@ -566,22 +615,28 @@ try {
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-3">
-            <button
-              type="button"
-              onClick={() => setServiceType("tips")}
-              className={`rounded-3xl border p-4 text-left ${
-                serviceType === "tips"
-                  ? "border-pink-300 bg-pink-50"
-                  : "border-slate-200 bg-white"
-              }`}
-            >
-              <div className="text-lg font-black text-slate-900">
-                🌏 Custom Anime Nail Tips
-              </div>
-              <div className="mt-1 text-sm leading-6 text-slate-500">
-                Custom character nail tips. Worldwide shipping available.
-              </div>
-            </button>
+            {orderTypeOptions.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => {
+                  setServiceType("tips");
+                  setOrderType(item.value);
+                }}
+                className={`rounded-3xl border p-4 text-left ${
+                  serviceType === "tips" && orderType === item.value
+                    ? "border-pink-300 bg-pink-50"
+                    : "border-slate-200 bg-white"
+                }`}
+              >
+                <div className="text-lg font-black text-slate-900">
+                  {item.title}
+                </div>
+                <div className="mt-1 text-sm leading-6 text-slate-500">
+                  {item.description}
+                </div>
+              </button>
+            ))}
 
             <button
               type="button"
@@ -782,33 +837,29 @@ try {
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
                 </div>
-<div>
-  <label className="mb-2 block text-sm font-bold text-slate-700">
-    Order Type
-  </label>
 
-  <select
-    value={orderType}
-    onChange={(event) => setOrderType(event.target.value)}
-    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-  >
-    <option value="anime_character">
-      Anime Character Nail Tips
-    </option>
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    Order Type
+                  </label>
 
-    <option value="fortune_sanmeigaku">
-      Fortune / Sanmeigaku Nail Tips
-    </option>
+                  <select
+                    value={orderType}
+                    onChange={(event) => setOrderType(event.target.value)}
+                    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                  >
+                    {orderTypeOptions.map((item) => (
+                      <option key={item.value} value={item.value}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
 
-    <option value="power_stone">
-      Power Stone Nail Tips
-    </option>
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    {selectedOrderType.description}
+                  </p>
+                </div>
 
-    <option value="other">
-      Other Custom Design
-    </option>
-  </select>
-</div>
                 <div className="rounded-3xl border border-pink-100 bg-pink-50 p-4">
                   <div className="text-base font-black text-slate-900">
                     Shipping information
@@ -933,7 +984,7 @@ try {
 
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    Anime character / Design request
+                    {selectedOrderType.requestLabel}
                   </label>
                   <textarea
                     value={tipDesignRequest}
@@ -941,7 +992,7 @@ try {
                       setTipDesignRequest(event.target.value)
                     }
                     rows={5}
-                    placeholder="Please tell us the anime character, color, theme, and your design request."
+                    placeholder={selectedOrderType.placeholder}
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
                 </div>
