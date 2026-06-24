@@ -318,7 +318,16 @@ export default function InboundReservePage() {
     setSending(true);
 
     try {
-      const imageUrls = await uploadDesignImages();
+      let imageUrls: string[] = [];
+
+try {
+  imageUrls = await uploadDesignImages();
+} catch (uploadError) {
+  console.error("Reference image upload failed:", uploadError);
+  showMessage(
+    "Reference image upload failed, but we will send your request without images."
+  );
+}
 
       const response = await fetch("/api/inbound-nail-tip-requests", {
         method: "POST",
