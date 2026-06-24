@@ -132,7 +132,7 @@ export default function InboundReservePage() {
   const [sending, setSending] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleUserEmail, setGoogleUserEmail] = useState("");
-
+const [orderType, setOrderType] = useState("anime_character");
   const selectedMenu = useMemo(() => {
     return (
       inboundMenus.find((menu) => menu.id === selectedMenuId) ||
@@ -338,6 +338,7 @@ try {
           country: country.trim(),
           instagramId: instagramId.trim(),
           language,
+          orderType,
           designRequest: tipDesignRequest.trim(),
           imageUrls,
           recipientName: recipientName.trim(),
@@ -781,7 +782,33 @@ try {
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
                 </div>
+<div>
+  <label className="mb-2 block text-sm font-bold text-slate-700">
+    Order Type
+  </label>
 
+  <select
+    value={orderType}
+    onChange={(event) => setOrderType(event.target.value)}
+    className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+  >
+    <option value="anime_character">
+      Anime Character Nail Tips
+    </option>
+
+    <option value="fortune_sanmeigaku">
+      Fortune / Sanmeigaku Nail Tips
+    </option>
+
+    <option value="power_stone">
+      Power Stone Nail Tips
+    </option>
+
+    <option value="other">
+      Other Custom Design
+    </option>
+  </select>
+</div>
                 <div className="rounded-3xl border border-pink-100 bg-pink-50 p-4">
                   <div className="text-base font-black text-slate-900">
                     Shipping information

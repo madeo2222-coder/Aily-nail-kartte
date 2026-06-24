@@ -18,6 +18,7 @@ type InboundNailTipRequestRow = {
   country: string | null;
   instagram_id: string | null;
   language: string | null;
+  order_type: string | null;
   design_request: string | null;
   image_urls: string[] | null;
   status: string | null;
@@ -29,11 +30,11 @@ type InboundNailTipRequestRow = {
   shipped_at: string | null;
   created_at: string | null;
   recipient_name: string | null;
-shipping_address: string | null;
-shipping_city: string | null;
-shipping_state: string | null;
-shipping_postal_code: string | null;
-shipping_phone: string | null;
+  shipping_address: string | null;
+  shipping_city: string | null;
+  shipping_state: string | null;
+  shipping_postal_code: string | null;
+  shipping_phone: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -109,6 +110,35 @@ function getPaymentStatusLabel(status: string | null) {
   }
 }
 
+function getOrderTypeLabel(orderType: string | null) {
+  switch (orderType) {
+    case "anime_character":
+      return "🎨 アニメネイル";
+    case "fortune_sanmeigaku":
+      return "🔮 算命学ネイル";
+    case "power_stone":
+      return "💎 パワーストーンネイル";
+    case "other":
+      return "✨ その他カスタム";
+    default:
+      return "🎨 アニメネイル";
+  }
+}
+
+function getOrderTypeClassName(orderType: string | null) {
+  switch (orderType) {
+    case "fortune_sanmeigaku":
+      return "bg-purple-100 text-purple-700";
+    case "power_stone":
+      return "bg-blue-100 text-blue-700";
+    case "other":
+      return "bg-slate-100 text-slate-700";
+    case "anime_character":
+    default:
+      return "bg-pink-100 text-pink-700";
+  }
+}
+
 export default async function InboundNailTipRequestsPage({
   searchParams,
 }: {
@@ -153,7 +183,7 @@ export default async function InboundNailTipRequestsPage({
             海外発送ネイルチップ相談
           </h1>
           <p className="mt-2 text-sm leading-6 text-white/90">
-            インバウンドページから届いたアニメ・キャラネイルチップ相談を確認します。
+            インバウンドページから届いたネイルチップ相談を確認します。
           </p>
         </section>
 
@@ -264,6 +294,13 @@ export default async function InboundNailTipRequestsPage({
                         {request.country || "国未登録"} /{" "}
                         {request.language || "言語未登録"}
                       </div>
+                      <div
+                        className={`mt-3 inline-flex rounded-full px-4 py-2 text-xs font-black ${getOrderTypeClassName(
+                          request.order_type
+                        )}`}
+                      >
+                        {getOrderTypeLabel(request.order_type)}
+                      </div>
                     </div>
 
                     <div className="rounded-full bg-pink-100 px-4 py-2 text-sm font-bold text-pink-700">
@@ -302,34 +339,26 @@ export default async function InboundNailTipRequestsPage({
                         {getPaymentStatusLabel(request.payment_status)}
                       </div>
                     </div>
-<div className="rounded-2xl bg-purple-50 p-4 md:col-span-3">
-  <div className="text-xs text-purple-700">配送先情報</div>
 
-  <div className="mt-2 text-sm font-bold leading-6 text-purple-950">
-    Recipient：
-    {request.recipient_name || "未登録"}
-    <br />
+                    <div className="rounded-2xl bg-purple-50 p-4 md:col-span-3">
+                      <div className="text-xs text-purple-700">配送先情報</div>
 
-    Address：
-    {request.shipping_address || "未登録"}
-    <br />
+                      <div className="mt-2 text-sm font-bold leading-6 text-purple-950">
+                        Recipient：{request.recipient_name || "未登録"}
+                        <br />
+                        Address：{request.shipping_address || "未登録"}
+                        <br />
+                        City：{request.shipping_city || "未登録"}
+                        <br />
+                        State：{request.shipping_state || "-"}
+                        <br />
+                        Postal Code：
+                        {request.shipping_postal_code || "未登録"}
+                        <br />
+                        Phone：{request.shipping_phone || "未登録"}
+                      </div>
+                    </div>
 
-    City：
-    {request.shipping_city || "未登録"}
-    <br />
-
-    State：
-    {request.shipping_state || "-"}
-    <br />
-
-    Postal Code：
-    {request.shipping_postal_code || "未登録"}
-    <br />
-
-    Phone：
-    {request.shipping_phone || "未登録"}
-  </div>
-</div>
                     <div className="rounded-2xl bg-blue-50 p-4 md:col-span-2">
                       <div className="text-xs text-blue-700">発送情報</div>
                       <div className="mt-1 text-sm font-bold leading-6 text-blue-950">

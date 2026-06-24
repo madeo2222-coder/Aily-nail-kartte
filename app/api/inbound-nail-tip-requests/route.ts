@@ -35,8 +35,25 @@ function normalizeImageUrls(value: unknown) {
 
 function buildImageUrlText(imageUrls: string[]) {
   if (imageUrls.length === 0) return "-";
-
   return imageUrls.map((url, index) => `${index + 1}. ${url}`).join("\n");
+}
+
+function buildShippingText(params: {
+  recipientName: string;
+  shippingAddress: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingPostalCode: string;
+  shippingPhone: string;
+}) {
+  return [
+    `Recipient name: ${params.recipientName || "-"}`,
+    `Address: ${params.shippingAddress || "-"}`,
+    `City: ${params.shippingCity || "-"}`,
+    `State / Province: ${params.shippingState || "-"}`,
+    `Postal Code: ${params.shippingPostalCode || "-"}`,
+    `Phone: ${params.shippingPhone || "-"}`,
+  ].join("\n");
 }
 
 async function sendEmail(params: {
@@ -71,30 +88,13 @@ async function sendEmail(params: {
   }
 }
 
-function buildShippingText(params: {
-  recipientName: string;
-  shippingAddress: string;
-  shippingCity: string;
-  shippingState: string;
-  shippingPostalCode: string;
-  shippingPhone: string;
-}) {
-  return [
-    `Recipient name: ${params.recipientName || "-"}`,
-    `Address: ${params.shippingAddress || "-"}`,
-    `City: ${params.shippingCity || "-"}`,
-    `State / Province: ${params.shippingState || "-"}`,
-    `Postal Code: ${params.shippingPostalCode || "-"}`,
-    `Phone: ${params.shippingPhone || "-"}`,
-  ].join("\n");
-}
-
-async function sendAdminMail(params: {
+type NotifyParams = {
   customerName: string;
   customerEmail: string;
   country: string;
   instagramId: string;
   language: string;
+  orderType: string;
   designRequest: string;
   imageUrls: string[];
   recipientName: string;
@@ -103,7 +103,9 @@ async function sendAdminMail(params: {
   shippingState: string;
   shippingPostalCode: string;
   shippingPhone: string;
-}) {
+};
+
+async function sendAdminMail(params: NotifyParams) {
   const notifyEmail = process.env.RESERVATION_NOTIFY_EMAIL;
   if (!notifyEmail) return;
 
@@ -115,6 +117,7 @@ async function sendAdminMail(params: {
     `Country: ${params.country}`,
     `Instagram ID: ${params.instagramId || "-"}`,
     `Language: ${params.language}`,
+    `Order Type: ${params.orderType}`,
     "",
     "Shipping information:",
     buildShippingText(params),
@@ -135,21 +138,7 @@ async function sendAdminMail(params: {
   });
 }
 
-async function sendCustomerConfirmationMail(params: {
-  customerName: string;
-  customerEmail: string;
-  country: string;
-  instagramId: string;
-  language: string;
-  designRequest: string;
-  imageUrls: string[];
-  recipientName: string;
-  shippingAddress: string;
-  shippingCity: string;
-  shippingState: string;
-  shippingPostalCode: string;
-  shippingPhone: string;
-}) {
+async function sendCustomerConfirmationMail(params: NotifyParams) {
   const text = [
     `Dear ${params.customerName},`,
     "",
@@ -159,6 +148,7 @@ async function sendCustomerConfirmationMail(params: {
     `Country: ${params.country}`,
     `Instagram ID: ${params.instagramId || "-"}`,
     `Language: ${params.language}`,
+    `Order Type: ${params.orderType}`,
     "",
     "Shipping information:",
     buildShippingText(params),
@@ -176,7 +166,7 @@ async function sendCustomerConfirmationMail(params: {
     "- Worldwide shipping details",
     "- Payment information",
     "",
-    "For anime or character nail tips, we may ask you to send additional reference images before making an estimate.",
+    "For anime, character, fortune, Sanmeigaku, or power stone nail tips, we may ask you to send additional reference information before making an estimate.",
     "",
     "Aily Nail Studio",
   ].join("\n");
@@ -188,21 +178,7 @@ async function sendCustomerConfirmationMail(params: {
   });
 }
 
-async function sendAdminLine(params: {
-  customerName: string;
-  customerEmail: string;
-  country: string;
-  instagramId: string;
-  language: string;
-  designRequest: string;
-  imageUrls: string[];
-  recipientName: string;
-  shippingAddress: string;
-  shippingCity: string;
-  shippingState: string;
-  shippingPostalCode: string;
-  shippingPhone: string;
-}) {
+async function sendAdminLine(params: NotifyParams) {
   const lineAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const adminUserId = process.env.LINE_ADMIN_USER_ID;
 
@@ -221,6 +197,7 @@ async function sendAdminLine(params: {
     `Country: ${params.country}`,
     `Instagram: ${params.instagramId || "-"}`,
     `Language: ${params.language}`,
+    `Order Type: ${params.orderType}`,
     "",
     "Shipping information:",
     buildShippingText(params),
@@ -261,6 +238,7 @@ export async function POST(request: Request) {
     const country = String(body.country || "").trim();
     const instagramId = String(body.instagramId || "").trim();
     const language = String(body.language || "en").trim();
+    const orderType = String(body.orderType || "anime_character").trim();
     const designRequest = String(body.designRequest || "").trim();
     const imageUrls = normalizeImageUrls(body.imageUrls);
 
@@ -344,6 +322,7 @@ export async function POST(request: Request) {
         country,
         instagram_id: instagramId || null,
         language,
+        order_type: orderType,
         design_request: designRequest,
         image_urls: imageUrls,
         recipient_name: recipientName,
@@ -362,52 +341,27 @@ export async function POST(request: Request) {
       );
     }
 
+    const notifyParams: NotifyParams = {
+      customerName,
+      customerEmail,
+      country,
+      instagramId,
+      language,
+      orderType,
+      designRequest,
+      imageUrls,
+      recipientName,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingPostalCode,
+      shippingPhone,
+    };
+
     await Promise.allSettled([
-      sendAdminMail({
-        customerName,
-        customerEmail,
-        country,
-        instagramId,
-        language,
-        designRequest,
-        imageUrls,
-        recipientName,
-        shippingAddress,
-        shippingCity,
-        shippingState,
-        shippingPostalCode,
-        shippingPhone,
-      }),
-      sendCustomerConfirmationMail({
-        customerName,
-        customerEmail,
-        country,
-        instagramId,
-        language,
-        designRequest,
-        imageUrls,
-        recipientName,
-        shippingAddress,
-        shippingCity,
-        shippingState,
-        shippingPostalCode,
-        shippingPhone,
-      }),
-      sendAdminLine({
-        customerName,
-        customerEmail,
-        country,
-        instagramId,
-        language,
-        designRequest,
-        imageUrls,
-        recipientName,
-        shippingAddress,
-        shippingCity,
-        shippingState,
-        shippingPostalCode,
-        shippingPhone,
-      }),
+      sendAdminMail(notifyParams),
+      sendCustomerConfirmationMail(notifyParams),
+      sendAdminLine(notifyParams),
     ]);
 
     return NextResponse.json({
