@@ -837,7 +837,19 @@ export default function InboundReservePage() {
               staff will send you an estimate, production time, and payment
               information.
             </div>
+<div className="mt-4 rounded-2xl border border-pink-100 bg-white p-4">
+  <div className="text-sm font-black text-slate-900">
+    How It Works
+  </div>
 
+  <div className="mt-3 space-y-2 text-sm text-slate-700">
+    <div>1️⃣ Send your design request</div>
+    <div>2️⃣ Receive quote & production schedule</div>
+    <div>3️⃣ Pay via DG/MAP secure payment link</div>
+    <div>4️⃣ We hand paint your nail tips</div>
+    <div>5️⃣ Worldwide shipping from Japan</div>
+  </div>
+</div>
             <button
               type="button"
               onClick={handleTipsSubmit}
