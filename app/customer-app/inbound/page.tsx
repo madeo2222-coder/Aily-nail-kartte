@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 const salonId = "e120ed90-fded-41b8-b3fe-f486e84f2418";
@@ -124,7 +124,8 @@ export default function InboundReservePage() {
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-
+const [googleLoading, setGoogleLoading] = useState(false);
+const [googleUserEmail, setGoogleUserEmail] = useState("");
   const selectedMenu = useMemo(() => {
     return (
       inboundMenus.find((menu) => menu.id === selectedMenuId) ||
@@ -134,7 +135,52 @@ export default function InboundReservePage() {
 
   const totalPrice = selectedMenu.price * guestCount;
   const durationMinutes = selectedMenu.minutes;
+useEffect(() => {
+  async function loadGoogleUser() {
+    const { data } = await supabase.auth.getUser();
+    const user = data.user;
 
+    if (!user) return;
+
+    const email = user.email || "";
+    const name =
+      typeof user.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name
+        : "";
+
+    if (email) {
+      setGoogleUserEmail(email);
+      setCustomerEmail((current) => current || email);
+    }
+
+    if (name) {
+      setCustomerName((current) => current || name);
+    }
+  }
+
+  loadGoogleUser();
+}, []);
+async function handleGoogleLogin() {
+  setGoogleLoading(true);
+
+  try {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/customer-app/inbound`,
+      },
+    });
+
+    if (error) {
+      showMessage(error.message);
+      setGoogleLoading(false);
+    }
+  } catch (error) {
+    console.error(error);
+    showMessage("Google login failed. Please try again.");
+    setGoogleLoading(false);
+  }
+}
   function showMessage(text: string) {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 3000);
@@ -361,6 +407,30 @@ export default function InboundReservePage() {
             </div>
           </div>
         </section>
+
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+  <div className="text-base font-bold text-slate-900">
+    Quick login
+  </div>
+  <p className="mt-2 text-sm leading-6 text-slate-500">
+    Continue with Google to automatically fill your name and email.
+  </p>
+
+  {googleUserEmail ? (
+    <div className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+      Logged in as {googleUserEmail}
+    </div>
+  ) : (
+    <button
+      type="button"
+      onClick={handleGoogleLogin}
+      disabled={googleLoading}
+      className="mt-4 w-full rounded-2xl border bg-white px-4 py-3 text-sm font-black text-slate-800 shadow-sm disabled:opacity-60"
+    >
+      {googleLoading ? "Connecting..." : "Continue with Google"}
+    </button>
+  )}
+</section>
 <section className="rounded-3xl border bg-white p-4 shadow-sm">
   <div className="text-lg font-black text-slate-900">
     Featured Anime Gallery
