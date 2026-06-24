@@ -436,6 +436,23 @@ export default function InboundReservePage() {
     </div>
   </div>
 </section>
+
+<button
+  type="button"
+  onClick={() => {
+    setServiceType("tips");
+    window.setTimeout(() => {
+      window.scrollTo({
+        top: document.body.scrollHeight,
+        behavior: "smooth",
+      });
+    }, 100);
+  }}
+  className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-4 text-sm font-black text-white shadow-sm"
+>
+  🎨 Request Custom Anime Nail Tips
+</button>
+
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-lg font-black text-slate-900">
             🌏 Worldwide Shipping Available
