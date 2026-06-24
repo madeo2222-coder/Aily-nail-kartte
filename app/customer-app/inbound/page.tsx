@@ -121,11 +121,18 @@ export default function InboundReservePage() {
   const [instagramId, setInstagramId] = useState("");
   const [tipDesignRequest, setTipDesignRequest] = useState("");
   const [designFiles, setDesignFiles] = useState<File[]>([]);
+  const [recipientName, setRecipientName] = useState("");
+  const [shippingAddress, setShippingAddress] = useState("");
+  const [shippingCity, setShippingCity] = useState("");
+  const [shippingState, setShippingState] = useState("");
+  const [shippingPostalCode, setShippingPostalCode] = useState("");
+  const [shippingPhone, setShippingPhone] = useState("");
   const [note, setNote] = useState("");
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
-const [googleLoading, setGoogleLoading] = useState(false);
-const [googleUserEmail, setGoogleUserEmail] = useState("");
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [googleUserEmail, setGoogleUserEmail] = useState("");
+
   const selectedMenu = useMemo(() => {
     return (
       inboundMenus.find((menu) => menu.id === selectedMenuId) ||
@@ -135,52 +142,56 @@ const [googleUserEmail, setGoogleUserEmail] = useState("");
 
   const totalPrice = selectedMenu.price * guestCount;
   const durationMinutes = selectedMenu.minutes;
-useEffect(() => {
-  async function loadGoogleUser() {
-    const { data } = await supabase.auth.getUser();
-    const user = data.user;
 
-    if (!user) return;
+  useEffect(() => {
+    async function loadGoogleUser() {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user;
 
-    const email = user.email || "";
-    const name =
-      typeof user.user_metadata?.full_name === "string"
-        ? user.user_metadata.full_name
-        : "";
+      if (!user) return;
 
-    if (email) {
-      setGoogleUserEmail(email);
-      setCustomerEmail((current) => current || email);
+      const email = user.email || "";
+      const name =
+        typeof user.user_metadata?.full_name === "string"
+          ? user.user_metadata.full_name
+          : "";
+
+      if (email) {
+        setGoogleUserEmail(email);
+        setCustomerEmail((current) => current || email);
+      }
+
+      if (name) {
+        setCustomerName((current) => current || name);
+        setRecipientName((current) => current || name);
+      }
     }
 
-    if (name) {
-      setCustomerName((current) => current || name);
-    }
-  }
+    loadGoogleUser();
+  }, []);
 
-  loadGoogleUser();
-}, []);
-async function handleGoogleLogin() {
-  setGoogleLoading(true);
+  async function handleGoogleLogin() {
+    setGoogleLoading(true);
 
-  try {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/customer-app/inbound`,
-      },
-    });
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/customer-app/inbound`,
+        },
+      });
 
-    if (error) {
-      showMessage(error.message);
+      if (error) {
+        showMessage(error.message);
+        setGoogleLoading(false);
+      }
+    } catch (error) {
+      console.error(error);
+      showMessage("Google login failed. Please try again.");
       setGoogleLoading(false);
     }
-  } catch (error) {
-    console.error(error);
-    showMessage("Google login failed. Please try again.");
-    setGoogleLoading(false);
   }
-}
+
   function showMessage(text: string) {
     setMessage(text);
     window.setTimeout(() => setMessage(""), 3000);
@@ -212,42 +223,23 @@ async function handleGoogleLogin() {
           upsert: false,
         });
 
-      if (error) {
-        throw new Error(error.message);
-      }
+      if (error) throw new Error(error.message);
 
       const { data } = supabase.storage
         .from(uploadBucketName)
         .getPublicUrl(filePath);
 
-      if (data.publicUrl) {
-        uploadedUrls.push(data.publicUrl);
-      }
+      if (data.publicUrl) uploadedUrls.push(data.publicUrl);
     }
 
     return uploadedUrls;
   }
 
   async function handleSalonSubmit() {
-    if (!selectedDate) {
-      showMessage("Please select a date.");
-      return;
-    }
-
-    if (!selectedTime) {
-      showMessage("Please select a time.");
-      return;
-    }
-
-    if (!customerName.trim()) {
-      showMessage("Please enter your name.");
-      return;
-    }
-
-    if (!customerEmail.trim()) {
-      showMessage("Please enter your email.");
-      return;
-    }
+    if (!selectedDate) return showMessage("Please select a date.");
+    if (!selectedTime) return showMessage("Please select a time.");
+    if (!customerName.trim()) return showMessage("Please enter your name.");
+    if (!customerEmail.trim()) return showMessage("Please enter your email.");
 
     setSending(true);
 
@@ -274,9 +266,7 @@ async function handleGoogleLogin() {
 
       const response = await fetch("/api/inbound-reservations", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           menu: `[Inbound] ${selectedMenu.label} / ${guestCount} guests`,
           date: selectedDate,
@@ -310,25 +300,20 @@ async function handleGoogleLogin() {
   }
 
   async function handleTipsSubmit() {
-    if (!customerName.trim()) {
-      showMessage("Please enter your name.");
-      return;
-    }
-
-    if (!customerEmail.trim()) {
-      showMessage("Please enter your email.");
-      return;
-    }
-
-    if (!country.trim()) {
-      showMessage("Please enter your country.");
-      return;
-    }
-
-    if (!tipDesignRequest.trim()) {
-      showMessage("Please tell us your design request.");
-      return;
-    }
+    if (!customerName.trim()) return showMessage("Please enter your name.");
+    if (!customerEmail.trim()) return showMessage("Please enter your email.");
+    if (!country.trim()) return showMessage("Please enter your country.");
+    if (!recipientName.trim())
+      return showMessage("Please enter the recipient name.");
+    if (!shippingAddress.trim())
+      return showMessage("Please enter your shipping address.");
+    if (!shippingCity.trim()) return showMessage("Please enter your city.");
+    if (!shippingPostalCode.trim())
+      return showMessage("Please enter your postal code.");
+    if (!shippingPhone.trim())
+      return showMessage("Please enter your phone number.");
+    if (!tipDesignRequest.trim())
+      return showMessage("Please tell us your design request.");
 
     setSending(true);
 
@@ -337,9 +322,7 @@ async function handleGoogleLogin() {
 
       const response = await fetch("/api/inbound-nail-tip-requests", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
@@ -348,6 +331,12 @@ async function handleGoogleLogin() {
           language,
           designRequest: tipDesignRequest.trim(),
           imageUrls,
+          recipientName: recipientName.trim(),
+          shippingAddress: shippingAddress.trim(),
+          shippingCity: shippingCity.trim(),
+          shippingState: shippingState.trim(),
+          shippingPostalCode: shippingPostalCode.trim(),
+          shippingPhone: shippingPhone.trim(),
         }),
       });
 
@@ -409,120 +398,116 @@ async function handleGoogleLogin() {
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
-  <div className="text-base font-bold text-slate-900">
-    Quick login
-  </div>
-  <p className="mt-2 text-sm leading-6 text-slate-500">
-    Continue with Google to automatically fill your name and email.
-  </p>
+          <div className="text-base font-bold text-slate-900">Quick login</div>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Continue with Google to automatically fill your name and email.
+          </p>
 
-  {googleUserEmail ? (
-    <div className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-      Logged in as {googleUserEmail}
-    </div>
-  ) : (
-    <button
-      type="button"
-      onClick={handleGoogleLogin}
-      disabled={googleLoading}
-      className="mt-4 w-full rounded-2xl border bg-white px-4 py-3 text-sm font-black text-slate-800 shadow-sm disabled:opacity-60"
-    >
-      {googleLoading ? "Connecting..." : "Continue with Google"}
-    </button>
-  )}
-</section>
+          {googleUserEmail ? (
+            <div className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              Logged in as {googleUserEmail}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={googleLoading}
+              className="mt-4 w-full rounded-2xl border bg-white px-4 py-3 text-sm font-black text-slate-800 shadow-sm disabled:opacity-60"
+            >
+              {googleLoading ? "Connecting..." : "Continue with Google"}
+            </button>
+          )}
+        </section>
 
-<section className="rounded-3xl border bg-white p-4 shadow-sm">
-  <div className="text-lg font-black text-slate-900">
-    Featured Anime Gallery
-  </div>
+        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+          <div className="text-lg font-black text-slate-900">
+            Featured Anime Gallery
+          </div>
 
-  <p className="mt-2 text-sm text-slate-500">
-    100% Hand Painted in Japan
-  </p>
+          <p className="mt-2 text-sm text-slate-500">
+            100% Hand Painted in Japan
+          </p>
 
-  <div className="mt-4 grid grid-cols-2 gap-3">
-    <div>
-      <img
-        src="/inbound-gallery/one-piece1.jpg"
-        alt="One Piece"
-        className="h-40 w-full rounded-2xl object-cover"
-      />
-      <div className="mt-2 text-center text-xs font-bold">
-        One Piece
-      </div>
-    </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div>
+              <img
+                src="/inbound-gallery/one-piece1.jpg"
+                alt="One Piece"
+                className="h-40 w-full rounded-2xl object-cover"
+              />
+              <div className="mt-2 text-center text-xs font-bold">
+                One Piece
+              </div>
+            </div>
 
-    <div>
-      <img
-        src="/inbound-gallery/attack-on-titan.jpeg"
-        alt="Attack on Titan"
-        className="h-40 w-full rounded-2xl object-cover"
-      />
-      <div className="mt-2 text-center text-xs font-bold">
-        Attack on Titan
-      </div>
-    </div>
+            <div>
+              <img
+                src="/inbound-gallery/attack-on-titan.jpeg"
+                alt="Attack on Titan"
+                className="h-40 w-full rounded-2xl object-cover"
+              />
+              <div className="mt-2 text-center text-xs font-bold">
+                Attack on Titan
+              </div>
+            </div>
 
-    <div>
-<img
-  src="/inbound-gallery/demon-slayer.jpeg"
-  alt="Demon Slayer"
-  className="h-40 w-full rounded-2xl object-cover"
-/>
-      <div className="mt-2 text-center text-xs font-bold">
-        Demon Slayer
-      </div>
-    </div>
+            <div>
+              <img
+                src="/inbound-gallery/demon-slayer.jpeg"
+                alt="Demon Slayer"
+                className="h-40 w-full rounded-2xl object-cover"
+              />
+              <div className="mt-2 text-center text-xs font-bold">
+                Demon Slayer
+              </div>
+            </div>
 
-    <div>
-      <img
-        src="/inbound-gallery/jojo.jpeg"
-        alt="JoJo"
-        className="h-40 w-full rounded-2xl object-cover"
-      />
-      <div className="mt-2 text-center text-xs font-bold">
-        JoJo
-      </div>
-    </div>
+            <div>
+              <img
+                src="/inbound-gallery/jojo.jpeg"
+                alt="JoJo"
+                className="h-40 w-full rounded-2xl object-cover"
+              />
+              <div className="mt-2 text-center text-xs font-bold">JoJo</div>
+            </div>
 
-    <div className="col-span-2">
-      <img
-  src="/inbound-gallery/dragon-ball.jpeg"
-  alt="Dragon Ball hand painted process"
-  className="h-72 w-full rounded-2xl object-contain bg-white"
-/>
-      <div className="mt-2 text-center text-xs font-bold">
-        Dragon Ball - Hand Painted Process
-      </div>
-    </div>
-  </div>
+            <div className="col-span-2">
+              <img
+                src="/inbound-gallery/dragon-ball.jpeg"
+                alt="Dragon Ball hand painted process"
+                className="h-72 w-full rounded-2xl bg-white object-contain"
+              />
+              <div className="mt-2 text-center text-xs font-bold">
+                Dragon Ball - Hand Painted Process
+              </div>
+            </div>
+          </div>
 
-  <div className="mt-4 rounded-2xl bg-pink-50 p-4 text-center">
-    <div className="text-lg font-black text-pink-700">
-      Starting from ¥15,000
-    </div>
-    <div className="mt-1 text-sm text-pink-600">
-      Worldwide Shipping Available
-    </div>
-  </div>
-</section>
+          <div className="mt-4 rounded-2xl bg-pink-50 p-4 text-center">
+            <div className="text-lg font-black text-pink-700">
+              Starting from ¥15,000
+            </div>
+            <div className="mt-1 text-sm text-pink-600">
+              Worldwide Shipping Available
+            </div>
+          </div>
+        </section>
 
-<button
-  type="button"
-  onClick={() => {
-    setServiceType("tips");
-    window.setTimeout(() => {
-      window.scrollTo({
-        top: document.body.scrollHeight,
-        behavior: "smooth",
-      });
-    }, 100);
-  }}
-  className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-4 text-sm font-black text-white shadow-sm"
->
-  🎨 Request Custom Anime Nail Tips
-</button>
+        <button
+          type="button"
+          onClick={() => {
+            setServiceType("tips");
+            window.setTimeout(() => {
+              window.scrollTo({
+                top: document.body.scrollHeight,
+                behavior: "smooth",
+              });
+            }, 100);
+          }}
+          className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-4 text-sm font-black text-white shadow-sm"
+        >
+          🎨 Request Custom Anime Nail Tips
+        </button>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-lg font-black text-slate-900">
@@ -788,6 +773,102 @@ async function handleGoogleLogin() {
                   />
                 </div>
 
+                <div className="rounded-3xl border border-pink-100 bg-pink-50 p-4">
+                  <div className="text-base font-black text-slate-900">
+                    Shipping information
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">
+                    Please enter the shipping address for worldwide delivery.
+                  </p>
+
+                  <div className="mt-4 space-y-4">
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        Recipient Name
+                      </label>
+                      <input
+                        value={recipientName}
+                        onChange={(event) =>
+                          setRecipientName(event.target.value)
+                        }
+                        placeholder="Full name for delivery"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        Shipping Address
+                      </label>
+                      <textarea
+                        value={shippingAddress}
+                        onChange={(event) =>
+                          setShippingAddress(event.target.value)
+                        }
+                        rows={3}
+                        placeholder="Street address, apartment, building"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        City
+                      </label>
+                      <input
+                        value={shippingCity}
+                        onChange={(event) =>
+                          setShippingCity(event.target.value)
+                        }
+                        placeholder="City"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        State / Province
+                      </label>
+                      <input
+                        value={shippingState}
+                        onChange={(event) =>
+                          setShippingState(event.target.value)
+                        }
+                        placeholder="State / Province"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        Postal Code
+                      </label>
+                      <input
+                        value={shippingPostalCode}
+                        onChange={(event) =>
+                          setShippingPostalCode(event.target.value)
+                        }
+                        placeholder="Postal code"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-2 block text-sm font-bold text-slate-700">
+                        Phone Number
+                      </label>
+                      <input
+                        value={shippingPhone}
+                        onChange={(event) =>
+                          setShippingPhone(event.target.value)
+                        }
+                        placeholder="+1 123 456 7890"
+                        className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
                     Reference images
@@ -908,19 +989,21 @@ async function handleGoogleLogin() {
               staff will send you an estimate, production time, and payment
               information.
             </div>
-<div className="mt-4 rounded-2xl border border-pink-100 bg-white p-4">
-  <div className="text-sm font-black text-slate-900">
-    How It Works
-  </div>
 
-  <div className="mt-3 space-y-2 text-sm text-slate-700">
-    <div>1️⃣ Send your design request</div>
-    <div>2️⃣ Receive quote & production schedule</div>
-    <div>3️⃣ Pay via DG/MAP secure payment link</div>
-    <div>4️⃣ We hand paint your nail tips</div>
-    <div>5️⃣ Worldwide shipping from Japan</div>
-  </div>
-</div>
+            <div className="mt-4 rounded-2xl border border-pink-100 bg-white p-4">
+              <div className="text-sm font-black text-slate-900">
+                How It Works
+              </div>
+
+              <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <div>1️⃣ Send your design request</div>
+                <div>2️⃣ Receive quote & production schedule</div>
+                <div>3️⃣ Pay via DG/MAP secure payment link</div>
+                <div>4️⃣ We hand paint your nail tips</div>
+                <div>5️⃣ Worldwide shipping from Japan</div>
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={handleTipsSubmit}

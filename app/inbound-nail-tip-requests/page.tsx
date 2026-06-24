@@ -28,6 +28,12 @@ type InboundNailTipRequestRow = {
   tracking_number: string | null;
   shipped_at: string | null;
   created_at: string | null;
+  recipient_name: string | null;
+shipping_address: string | null;
+shipping_city: string | null;
+shipping_state: string | null;
+shipping_postal_code: string | null;
+shipping_phone: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -296,7 +302,34 @@ export default async function InboundNailTipRequestsPage({
                         {getPaymentStatusLabel(request.payment_status)}
                       </div>
                     </div>
+<div className="rounded-2xl bg-purple-50 p-4 md:col-span-3">
+  <div className="text-xs text-purple-700">配送先情報</div>
 
+  <div className="mt-2 text-sm font-bold leading-6 text-purple-950">
+    Recipient：
+    {request.recipient_name || "未登録"}
+    <br />
+
+    Address：
+    {request.shipping_address || "未登録"}
+    <br />
+
+    City：
+    {request.shipping_city || "未登録"}
+    <br />
+
+    State：
+    {request.shipping_state || "-"}
+    <br />
+
+    Postal Code：
+    {request.shipping_postal_code || "未登録"}
+    <br />
+
+    Phone：
+    {request.shipping_phone || "未登録"}
+  </div>
+</div>
                     <div className="rounded-2xl bg-blue-50 p-4 md:col-span-2">
                       <div className="text-xs text-blue-700">発送情報</div>
                       <div className="mt-1 text-sm font-bold leading-6 text-blue-950">

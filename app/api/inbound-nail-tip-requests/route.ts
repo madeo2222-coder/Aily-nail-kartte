@@ -71,6 +71,24 @@ async function sendEmail(params: {
   }
 }
 
+function buildShippingText(params: {
+  recipientName: string;
+  shippingAddress: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingPostalCode: string;
+  shippingPhone: string;
+}) {
+  return [
+    `Recipient name: ${params.recipientName || "-"}`,
+    `Address: ${params.shippingAddress || "-"}`,
+    `City: ${params.shippingCity || "-"}`,
+    `State / Province: ${params.shippingState || "-"}`,
+    `Postal Code: ${params.shippingPostalCode || "-"}`,
+    `Phone: ${params.shippingPhone || "-"}`,
+  ].join("\n");
+}
+
 async function sendAdminMail(params: {
   customerName: string;
   customerEmail: string;
@@ -79,6 +97,12 @@ async function sendAdminMail(params: {
   language: string;
   designRequest: string;
   imageUrls: string[];
+  recipientName: string;
+  shippingAddress: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingPostalCode: string;
+  shippingPhone: string;
 }) {
   const notifyEmail = process.env.RESERVATION_NOTIFY_EMAIL;
   if (!notifyEmail) return;
@@ -91,6 +115,9 @@ async function sendAdminMail(params: {
     `Country: ${params.country}`,
     `Instagram ID: ${params.instagramId || "-"}`,
     `Language: ${params.language}`,
+    "",
+    "Shipping information:",
+    buildShippingText(params),
     "",
     "Design request:",
     params.designRequest || "-",
@@ -116,6 +143,12 @@ async function sendCustomerConfirmationMail(params: {
   language: string;
   designRequest: string;
   imageUrls: string[];
+  recipientName: string;
+  shippingAddress: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingPostalCode: string;
+  shippingPhone: string;
 }) {
   const text = [
     `Dear ${params.customerName},`,
@@ -126,6 +159,9 @@ async function sendCustomerConfirmationMail(params: {
     `Country: ${params.country}`,
     `Instagram ID: ${params.instagramId || "-"}`,
     `Language: ${params.language}`,
+    "",
+    "Shipping information:",
+    buildShippingText(params),
     "",
     "Design request:",
     params.designRequest || "-",
@@ -160,6 +196,12 @@ async function sendAdminLine(params: {
   language: string;
   designRequest: string;
   imageUrls: string[];
+  recipientName: string;
+  shippingAddress: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingPostalCode: string;
+  shippingPhone: string;
 }) {
   const lineAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const adminUserId = process.env.LINE_ADMIN_USER_ID;
@@ -179,6 +221,9 @@ async function sendAdminLine(params: {
     `Country: ${params.country}`,
     `Instagram: ${params.instagramId || "-"}`,
     `Language: ${params.language}`,
+    "",
+    "Shipping information:",
+    buildShippingText(params),
     "",
     "Design request:",
     params.designRequest || "-",
@@ -219,6 +264,13 @@ export async function POST(request: Request) {
     const designRequest = String(body.designRequest || "").trim();
     const imageUrls = normalizeImageUrls(body.imageUrls);
 
+    const recipientName = String(body.recipientName || "").trim();
+    const shippingAddress = String(body.shippingAddress || "").trim();
+    const shippingCity = String(body.shippingCity || "").trim();
+    const shippingState = String(body.shippingState || "").trim();
+    const shippingPostalCode = String(body.shippingPostalCode || "").trim();
+    const shippingPhone = String(body.shippingPhone || "").trim();
+
     if (!customerName) {
       return NextResponse.json(
         { ok: false, error: "Name is required." },
@@ -236,6 +288,41 @@ export async function POST(request: Request) {
     if (!country) {
       return NextResponse.json(
         { ok: false, error: "Country is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!recipientName) {
+      return NextResponse.json(
+        { ok: false, error: "Recipient name is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!shippingAddress) {
+      return NextResponse.json(
+        { ok: false, error: "Shipping address is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!shippingCity) {
+      return NextResponse.json(
+        { ok: false, error: "City is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!shippingPostalCode) {
+      return NextResponse.json(
+        { ok: false, error: "Postal code is required." },
+        { status: 400 }
+      );
+    }
+
+    if (!shippingPhone) {
+      return NextResponse.json(
+        { ok: false, error: "Phone number is required." },
         { status: 400 }
       );
     }
@@ -259,6 +346,12 @@ export async function POST(request: Request) {
         language,
         design_request: designRequest,
         image_urls: imageUrls,
+        recipient_name: recipientName,
+        shipping_address: shippingAddress,
+        shipping_city: shippingCity,
+        shipping_state: shippingState || null,
+        shipping_postal_code: shippingPostalCode,
+        shipping_phone: shippingPhone,
         status: "new",
       });
 
@@ -278,6 +371,12 @@ export async function POST(request: Request) {
         language,
         designRequest,
         imageUrls,
+        recipientName,
+        shippingAddress,
+        shippingCity,
+        shippingState,
+        shippingPostalCode,
+        shippingPhone,
       }),
       sendCustomerConfirmationMail({
         customerName,
@@ -287,6 +386,12 @@ export async function POST(request: Request) {
         language,
         designRequest,
         imageUrls,
+        recipientName,
+        shippingAddress,
+        shippingCity,
+        shippingState,
+        shippingPostalCode,
+        shippingPhone,
       }),
       sendAdminLine({
         customerName,
@@ -296,6 +401,12 @@ export async function POST(request: Request) {
         language,
         designRequest,
         imageUrls,
+        recipientName,
+        shippingAddress,
+        shippingCity,
+        shippingState,
+        shippingPostalCode,
+        shippingPhone,
       }),
     ]);
 
