@@ -488,10 +488,10 @@ async function handleGoogleLogin() {
 
     <div className="col-span-2">
       <img
-        src="/inbound-gallery/dragon-ball.jpeg"
-        alt="Dragon Ball hand painted process"
-        className="h-44 w-full rounded-2xl object-cover object-center"
-      />
+  src="/inbound-gallery/dragon-ball.jpeg"
+  alt="Dragon Ball hand painted process"
+  className="h-72 w-full rounded-2xl object-contain bg-white"
+/>
       <div className="mt-2 text-center text-xs font-bold">
         Dragon Ball - Hand Painted Process
       </div>
