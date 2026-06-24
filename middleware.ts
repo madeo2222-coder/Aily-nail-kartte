@@ -33,6 +33,8 @@ function isStaticAsset(pathname: string) {
 
 function isCustomerAllowedApiPath(pathname: string) {
   return (
+    pathname === "/api/inbound-nail-tip-requests" ||
+pathname.startsWith("/api/inbound-nail-tip-requests/") ||
     pathname.startsWith("/api/line-login/") ||
     pathname === "/api/line/webhook" ||
     pathname.startsWith("/api/line/webhook/") ||
@@ -49,8 +51,10 @@ function isCustomerAllowedApiPath(pathname: string) {
     pathname === "/api/send-review-request-line" ||
     pathname.startsWith("/api/send-review-request-line/") ||
     pathname === "/api/nail-tip-orders" ||
-    pathname.startsWith("/api/nail-tip-orders/") ||
-    pathname === "/api/sanmeigaku-diagnoses" ||
+pathname.startsWith("/api/nail-tip-orders/") ||
+pathname === "/api/inbound-nail-tip-requests" ||
+pathname.startsWith("/api/inbound-nail-tip-requests/") ||
+pathname === "/api/sanmeigaku-diagnoses" ||
     pathname.startsWith("/api/sanmeigaku-diagnoses/")
   );
 }
