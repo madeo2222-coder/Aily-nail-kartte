@@ -431,6 +431,7 @@ async function handleGoogleLogin() {
     </button>
   )}
 </section>
+
 <section className="rounded-3xl border bg-white p-4 shadow-sm">
   <div className="text-lg font-black text-slate-900">
     Featured Anime Gallery
@@ -462,11 +463,10 @@ async function handleGoogleLogin() {
         Attack on Titan
       </div>
     </div>
-  </div>
 
     <div>
       <img
-        src="/inbound-gallery/demon-slayer.jpeg"
+        src="/inbound-gallery/demon-slayer2.jpeg"
         alt="Demon Slayer"
         className="h-40 w-full rounded-2xl object-cover"
       />
@@ -486,18 +486,17 @@ async function handleGoogleLogin() {
       </div>
     </div>
 
-<div>
-  <img
-    src="/inbound-gallery/dragon-ball.jpeg"
-    alt="Dragon Ball"
-    className="h-40 w-full rounded-2xl object-cover"
-  />
-  <div className="mt-2 text-center text-xs font-bold">
-    Dragon Ball
+    <div className="col-span-2">
+      <img
+        src="/inbound-gallery/dragon-ball.jpeg"
+        alt="Dragon Ball hand painted process"
+        className="h-44 w-full rounded-2xl object-cover object-center"
+      />
+      <div className="mt-2 text-center text-xs font-bold">
+        Dragon Ball - Hand Painted Process
+      </div>
+    </div>
   </div>
-</div>
-
-   
 
   <div className="mt-4 rounded-2xl bg-pink-50 p-4 text-center">
     <div className="text-lg font-black text-pink-700">
