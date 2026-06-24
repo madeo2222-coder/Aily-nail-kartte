@@ -452,16 +452,7 @@ async function handleGoogleLogin() {
       </div>
     </div>
 
-    <div>
-      <img
-        src="/inbound-gallery/dragon-ball.jpeg"
-        alt="Dragon Ball"
-        className="h-40 w-full rounded-2xl object-cover"
-      />
-      <div className="mt-2 text-center text-xs font-bold">
-        Dragon Ball
-      </div>
-    </div>
+   
 
     <div>
       <img
@@ -484,12 +475,23 @@ async function handleGoogleLogin() {
         JoJo
       </div>
     </div>
+    
+<div>
+  <img
+    src="/inbound-gallery/dragon-ball.jpeg"
+    alt="Dragon Ball"
+    className="h-40 w-full rounded-2xl object-cover"
+  />
+  <div className="mt-2 text-center text-xs font-bold">
+    Dragon Ball
+  </div>
+</div>
 
-    <div className="col-span-2">
+    <div>
       <img
         src="/inbound-gallery/attack-on-titan.jpeg"
         alt="Attack on Titan"
-        className="h-48 w-full rounded-2xl object-cover"
+        className="h-40 w-full rounded-2xl object-cover"
       />
       <div className="mt-2 text-center text-xs font-bold">
         Attack on Titan
