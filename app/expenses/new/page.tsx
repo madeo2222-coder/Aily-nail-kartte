@@ -1,17 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-
-type ExpenseRow = {
-  id: string;
-  expense_date: string | null;
-  category: string | null;
-  amount: number | null;
-  memo: string | null;
-  receipt_url: string | null;
-};
 
 const EXPENSE_CATEGORIES = [
   "材料費",
@@ -25,67 +16,26 @@ const EXPENSE_CATEGORIES = [
   "雑費",
 ] as const;
 
-export default function ExpenseEditPage() {
+function getTodayText() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export default function ExpenseNewPage() {
   const router = useRouter();
-  const params = useParams<{ id: string }>();
-  const expenseId = params?.id;
 
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const [expenseDate, setExpenseDate] = useState("");
+  const [expenseDate, setExpenseDate] = useState(getTodayText());
   const [category, setCategory] = useState<string>("材料費");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
-  const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
-  useEffect(() => {
-    if (!expenseId || expenseId === "[id]") {
-      alert("IDが不正です");
-      router.push("/expenses");
-    }
-  }, [expenseId, router]);
-
-  const fetchExpense = async () => {
-    if (!expenseId || expenseId === "[id]") return;
-
-    setIsLoading(true);
-
-    const { data, error } = await supabase
-      .from("expenses")
-      .select("id, expense_date, category, amount, memo, receipt_url")
-      .eq("id", expenseId)
-      .single();
-
-    if (error || !data) {
-      console.error("経費詳細取得エラー:", error);
-      alert(`経費データの取得に失敗しました: ${error?.message ?? "not found"}`);
-      router.push("/expenses");
-      return;
-    }
-
-    const row = data as ExpenseRow;
-
-    setExpenseDate(row.expense_date ?? "");
-    setCategory(
-      row.category && EXPENSE_CATEGORIES.includes(row.category as never)
-        ? row.category
-        : "雑費"
-    );
-    setAmount(String(row.amount ?? ""));
-    setMemo(row.memo ?? "");
-    setReceiptUrl(row.receipt_url ?? null);
-    setIsLoading(false);
-  };
-
-  useEffect(() => {
-    void fetchExpense();
-  }, [expenseId]);
-
   const uploadReceiptImage = async () => {
-    if (!receiptFile) return receiptUrl;
+    if (!receiptFile) return null;
 
     const ext = receiptFile.name.split(".").pop() || "jpg";
     const fileName = `expense-${Date.now()}-${Math.random()
@@ -111,11 +61,6 @@ export default function ExpenseEditPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!expenseId || expenseId === "[id]") {
-      alert("IDが不正です");
-      return;
-    }
-
     if (!expenseDate) {
       alert("日付を入力してください");
       return;
@@ -134,87 +79,40 @@ export default function ExpenseEditPage() {
     setIsSaving(true);
 
     try {
-      const nextReceiptUrl = await uploadReceiptImage();
+      const receiptUrl = await uploadReceiptImage();
 
-      const { error } = await supabase
-        .from("expenses")
-        .update({
-          expense_date: expenseDate,
-          category,
-          amount: Number(amount),
-          memo: memo.trim() || null,
-          receipt_url: nextReceiptUrl,
-        })
-        .eq("id", expenseId);
+      const { error } = await supabase.from("expenses").insert({
+        expense_date: expenseDate,
+        category,
+        amount: Number(amount),
+        memo: memo.trim() || null,
+        receipt_url: receiptUrl,
+      });
 
       if (error) {
         throw new Error(error.message);
       }
 
-      alert("更新しました");
+      alert("登録しました");
       router.push("/expenses");
     } catch (error) {
-      console.error("経費更新エラー:", error);
+      console.error("経費登録エラー:", error);
       alert(
-        error instanceof Error ? `保存に失敗しました: ${error.message}` : "保存に失敗しました"
+        error instanceof Error
+          ? `登録に失敗しました: ${error.message}`
+          : "登録に失敗しました"
       );
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!expenseId || expenseId === "[id]") {
-      alert("IDが不正です");
-      return;
-    }
-
-    const ok = window.confirm(
-      "この経費を削除しますか？\nCSV由来の確定データなら review に戻します。"
-    );
-    if (!ok) return;
-
-    setIsDeleting(true);
-
-    try {
-      const res = await fetch("/api/expenses/delete", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ expenseId }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.error || "削除に失敗しました");
-      }
-
-      alert("削除しました。CSV由来データは review に戻しました。");
-      router.push("/expenses");
-    } catch (error) {
-      console.error("経費削除エラー:", error);
-      alert(error instanceof Error ? error.message : "削除に失敗しました");
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <main className="p-4 pb-24 max-w-xl mx-auto">
-        <div className="rounded-2xl border p-6">読み込み中...</div>
-      </main>
-    );
-  }
-
   return (
     <main className="p-4 pb-24 max-w-xl mx-auto">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">経費を編集</h1>
+        <h1 className="text-2xl font-bold">経費を新規登録</h1>
         <p className="text-sm text-gray-500 mt-1">
-          登録済みの経費を修正できます。
+          日付・カテゴリ・金額・メモ・レシート画像を登録できます。
         </p>
       </div>
 
@@ -273,17 +171,6 @@ export default function ExpenseEditPage() {
 
         <div>
           <label className="block text-sm font-medium mb-1">レシート画像</label>
-
-          {receiptUrl && (
-            <div className="mb-3">
-              <img
-                src={receiptUrl}
-                alt="レシート"
-                className="w-full rounded-xl border"
-              />
-            </div>
-          )}
-
           <input
             type="file"
             accept="image/*"
@@ -302,16 +189,7 @@ export default function ExpenseEditPage() {
             disabled={isSaving}
             className="w-full rounded-xl border px-4 py-3 font-medium"
           >
-            {isSaving ? "保存中..." : "保存する"}
-          </button>
-
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="w-full rounded-xl border px-4 py-3"
-          >
-            {isDeleting ? "削除中..." : "削除する"}
+            {isSaving ? "登録中..." : "登録する"}
           </button>
 
           <button
