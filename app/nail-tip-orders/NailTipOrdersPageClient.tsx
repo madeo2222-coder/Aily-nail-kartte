@@ -186,7 +186,41 @@ export default function NailTipOrdersPageClient() {
             </Link>
           </div>
         </section>
+<section className="grid gap-4 md:grid-cols-2">
+  <Link
+    href="/nail-tip-orders"
+    className="rounded-3xl border border-purple-200 bg-white p-5 shadow-sm transition hover:shadow-md"
+  >
+    <div className="text-xs font-bold tracking-wide text-purple-500">
+      🇯🇵 DOMESTIC
+    </div>
 
+    <div className="mt-2 text-xl font-black text-slate-900">
+      国内ネイルチップ注文
+    </div>
+
+    <div className="mt-2 text-sm leading-6 text-slate-600">
+      算命学・開運・パワーストーンネイル注文を管理します。
+    </div>
+  </Link>
+
+  <Link
+    href="/inbound-nail-tip-requests"
+    className="rounded-3xl border border-pink-200 bg-pink-50 p-5 shadow-sm transition hover:shadow-md"
+  >
+    <div className="text-xs font-bold tracking-wide text-pink-500">
+      🌏 INTERNATIONAL
+    </div>
+
+    <div className="mt-2 text-xl font-black text-slate-900">
+      海外ネイルチップ注文
+    </div>
+
+    <div className="mt-2 text-sm leading-6 text-slate-600">
+      Anime・Character・Fortune・Power Stone・Custom Design の海外注文を管理します。
+    </div>
+  </Link>
+</section>
         <section className="grid gap-4 md:grid-cols-4">
           <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
             <div className="text-sm text-slate-500">総注文数</div>
