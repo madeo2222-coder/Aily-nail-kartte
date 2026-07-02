@@ -7,6 +7,8 @@ type ParsedHpbMail = {
   customerName: string;
   normalizedCustomerName: string;
   compareCustomerName: string;
+  customerKana: string;
+  compareCustomerKana: string;
   startAt: string;
   endAt: string;
   menu: string;
@@ -23,6 +25,14 @@ function normalizeText(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
+function extractKanaFromName(value: string) {
+  const match =
+    value.match(/（([^）]+)）/) ||
+    value.match(/\(([^)]+)\)/);
+
+  return match?.[1]?.trim() || "";
+}
+
 function normalizeCustomerName(value: string) {
   return value
     .replace(/（[^）]*）/g, "")
@@ -31,8 +41,10 @@ function normalizeCustomerName(value: string) {
     .trim();
 }
 
-function normalizeCustomerNameForCompare(value: string) {
-  return normalizeCustomerName(value)
+function normalizeForCompare(value: string) {
+  return value
+    .replace(/（[^）]*）/g, "")
+    .replace(/\([^)]*\)/g, "")
     .replace(/\s+/g, "")
     .replace(/　+/g, "")
     .trim();
@@ -60,16 +72,6 @@ function parseJapaneseDateTime(value: string) {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
 
-  if (
-    !Number.isFinite(year) ||
-    !Number.isFinite(month) ||
-    !Number.isFinite(day) ||
-    !Number.isFinite(hour) ||
-    !Number.isFinite(minute)
-  ) {
-    return null;
-  }
-
   return new Date(
     Date.UTC(year, month - 1, day, hour - 9, minute, 0)
   ).toISOString();
@@ -77,6 +79,7 @@ function parseJapaneseDateTime(value: string) {
 
 function parseDurationMinutes(text: string) {
   const match = text.match(/所要時間目安\s*[:：]\s*(\d+)時間(?:(\d+)分)?/);
+
   if (match) {
     const hours = Number(match[1] || 0);
     const minutes = Number(match[2] || 0);
@@ -122,8 +125,10 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
     /氏名\s*[:：]?\s*([^\n]+)/,
   ]);
 
+  const customerKana = extractKanaFromName(customerName);
   const normalizedCustomerName = normalizeCustomerName(customerName);
-  const compareCustomerName = normalizeCustomerNameForCompare(customerName);
+  const compareCustomerName = normalizeForCompare(normalizedCustomerName);
+  const compareCustomerKana = normalizeForCompare(customerKana);
 
   const dateText = extractFirstMatch(text, [
     /■来店日時\s*\n\s*([^\n]+)/,
@@ -133,17 +138,9 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
 
   const startAt = parseJapaneseDateTime(dateText);
 
-  if (!reservationNumber) {
-    throw new Error("予約番号を解析できませんでした");
-  }
-
-  if (!customerName) {
-    throw new Error("氏名を解析できませんでした");
-  }
-
-  if (!startAt) {
-    throw new Error("来店日時を解析できませんでした");
-  }
+  if (!reservationNumber) throw new Error("予約番号を解析できませんでした");
+  if (!customerName) throw new Error("氏名を解析できませんでした");
+  if (!startAt) throw new Error("来店日時を解析できませんでした");
 
   const durationMinutes = parseDurationMinutes(text);
   const startDate = new Date(startAt);
@@ -170,6 +167,8 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
     customerName,
     normalizedCustomerName,
     compareCustomerName,
+    customerKana,
+    compareCustomerKana,
     startAt,
     endAt,
     menu: menu.trim(),
@@ -179,45 +178,58 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
 }
 
 async function findCustomerByName(parsed: ParsedHpbMail) {
-  if (!parsed.compareCustomerName) {
-    return {
-      customerId: null as string | null,
-      matchStatus: "no_name",
-      matchedCount: 0,
-      matchedName: null as string | null,
-    };
-  }
-
   const { data, error } = await supabase
     .from("customers")
     .select("id, name")
     .not("name", "is", null);
 
-  if (error) {
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   const customers = (data || []) as MatchedCustomer[];
 
-  const matchedCustomers = customers.filter((customer) => {
-    const compareName = normalizeCustomerNameForCompare(customer.name || "");
+  const nameMatches = customers.filter((customer) => {
+    const compareName = normalizeForCompare(customer.name || "");
     return compareName === parsed.compareCustomerName;
   });
 
-  if (matchedCustomers.length === 1) {
+  if (nameMatches.length === 1) {
     return {
-      customerId: matchedCustomers[0].id,
-      matchStatus: "matched",
+      customerId: nameMatches[0].id,
+      matchStatus: "matched_by_name",
       matchedCount: 1,
-      matchedName: matchedCustomers[0].name,
+      matchedName: nameMatches[0].name,
     };
+  }
+
+  if (parsed.compareCustomerKana) {
+    const kanaMatches = customers.filter((customer) => {
+      const compareName = normalizeForCompare(customer.name || "");
+      return compareName.includes(parsed.compareCustomerKana);
+    });
+
+    if (kanaMatches.length === 1) {
+      return {
+        customerId: kanaMatches[0].id,
+        matchStatus: "matched_by_kana",
+        matchedCount: 1,
+        matchedName: kanaMatches[0].name,
+      };
+    }
+
+    if (kanaMatches.length > 1) {
+      return {
+        customerId: null as string | null,
+        matchStatus: "multiple_found_by_kana",
+        matchedCount: kanaMatches.length,
+        matchedName: null as string | null,
+      };
+    }
   }
 
   return {
     customerId: null as string | null,
-    matchStatus:
-      matchedCustomers.length === 0 ? "not_found" : "multiple_found",
-    matchedCount: matchedCustomers.length,
+    matchStatus: "not_found",
+    matchedCount: 0,
     matchedName: null as string | null,
   };
 }
@@ -227,19 +239,19 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
 
   const { data: existing, error: findError } = await supabase
     .from("reservations")
-    .select("id, customer_id")
+    .select("id")
     .ilike("memo", `%HPB予約番号：${parsed.reservationNumber}%`)
     .maybeSingle();
 
-  if (findError) {
-    throw new Error(findError.message);
-  }
+  if (findError) throw new Error(findError.message);
 
   const memo = [
     `HPB予約番号：${parsed.reservationNumber}`,
     `HPB氏名：${parsed.customerName}`,
     `HPB氏名照合用：${parsed.normalizedCustomerName}`,
     `HPB氏名比較用：${parsed.compareCustomerName}`,
+    `HPBカナ：${parsed.customerKana || "-"}`,
+    `HPBカナ比較用：${parsed.compareCustomerKana || "-"}`,
     `HPB顧客照合：${customerMatch.matchStatus}（${customerMatch.matchedCount}件）`,
     customerMatch.matchedName ? `HPB紐付け顧客：${customerMatch.matchedName}` : "",
     `HPB担当：${parsed.staffName}`,
@@ -307,9 +319,7 @@ async function cancelReservation(parsed: ParsedHpbMail, rawText: string) {
     .ilike("memo", `%HPB予約番号：${parsed.reservationNumber}%`)
     .maybeSingle();
 
-  if (findError) {
-    throw new Error(findError.message);
-  }
+  if (findError) throw new Error(findError.message);
 
   if (!existing?.id) {
     return {
