@@ -32,7 +32,7 @@ function extractPlainText(payload: any): string {
   return "";
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const clientId = process.env.GOOGLE_GMAIL_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_GMAIL_CLIENT_SECRET;
@@ -49,6 +49,25 @@ export async function GET() {
         { status: 500 }
       );
     }
+
+    const cronSecret = process.env.CRON_SECRET;
+
+if (process.env.NODE_ENV === "production") {
+  const auth = req.headers.get("authorization");
+
+  if (
+    !cronSecret ||
+    auth !== `Bearer ${cronSecret}`
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Unauthorized",
+      },
+      { status: 401 }
+    );
+  }
+}
 
     const oauth2Client = new google.auth.OAuth2(
       clientId,
