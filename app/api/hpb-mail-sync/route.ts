@@ -5,6 +5,7 @@ type ParsedHpbMail = {
   action: "reservation" | "cancel";
   reservationNumber: string;
   customerName: string;
+  normalizedCustomerName: string;
   startAt: string;
   endAt: string;
   menu: string;
@@ -12,8 +13,21 @@ type ParsedHpbMail = {
   price: number | null;
 };
 
+type MatchedCustomer = {
+  id: string;
+  name: string | null;
+};
+
 function normalizeText(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
+function normalizeCustomerName(value: string) {
+  return value
+    .replace(/（[^）]*）/g, "")
+    .replace(/\([^)]*\)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function extractFirstMatch(text: string, patterns: RegExp[]) {
@@ -100,6 +114,8 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
     /氏名\s*[:：]?\s*([^\n]+)/,
   ]);
 
+  const normalizedCustomerName = normalizeCustomerName(customerName);
+
   const dateText = extractFirstMatch(text, [
     /■来店日時\s*\n\s*([^\n]+)/,
     /来店日時\s*\n\s*([^\n]+)/,
@@ -143,6 +159,7 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
     action,
     reservationNumber,
     customerName,
+    normalizedCustomerName,
     startAt,
     endAt,
     menu: menu.trim(),
@@ -151,10 +168,47 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
   };
 }
 
+async function findCustomerByName(normalizedCustomerName: string) {
+  if (!normalizedCustomerName) {
+    return {
+      customerId: null as string | null,
+      matchStatus: "no_name",
+      matchedCount: 0,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("customers")
+    .select("id, name")
+    .eq("name", normalizedCustomerName);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const customers = (data || []) as MatchedCustomer[];
+
+  if (customers.length === 1) {
+    return {
+      customerId: customers[0].id,
+      matchStatus: "matched",
+      matchedCount: 1,
+    };
+  }
+
+  return {
+    customerId: null as string | null,
+    matchStatus: customers.length === 0 ? "not_found" : "multiple_found",
+    matchedCount: customers.length,
+  };
+}
+
 async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
+  const customerMatch = await findCustomerByName(parsed.normalizedCustomerName);
+
   const { data: existing, error: findError } = await supabase
     .from("reservations")
-    .select("id")
+    .select("id, customer_id")
     .ilike("memo", `%HPB予約番号：${parsed.reservationNumber}%`)
     .maybeSingle();
 
@@ -165,6 +219,8 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
   const memo = [
     `HPB予約番号：${parsed.reservationNumber}`,
     `HPB氏名：${parsed.customerName}`,
+    `HPB氏名照合用：${parsed.normalizedCustomerName}`,
+    `HPB顧客照合：${customerMatch.matchStatus}（${customerMatch.matchedCount}件）`,
     `HPB担当：${parsed.staffName}`,
     parsed.price ? `HPB金額：${parsed.price}円` : "",
     "",
@@ -174,16 +230,29 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
     .filter(Boolean)
     .join("\n");
 
+  const reservationPayload: {
+    menu: string;
+    start_at: string;
+    end_at: string;
+    status: string;
+    memo: string;
+    customer_id?: string | null;
+  } = {
+    menu: parsed.menu,
+    start_at: parsed.startAt,
+    end_at: parsed.endAt,
+    status: "confirmed",
+    memo,
+  };
+
+  if (customerMatch.customerId) {
+    reservationPayload.customer_id = customerMatch.customerId;
+  }
+
   if (existing?.id) {
     const { error } = await supabase
       .from("reservations")
-      .update({
-        menu: parsed.menu,
-        start_at: parsed.startAt,
-        end_at: parsed.endAt,
-        status: "confirmed",
-        memo,
-      })
+      .update(reservationPayload)
       .eq("id", existing.id);
 
     if (error) throw new Error(error.message);
@@ -191,18 +260,13 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
     return {
       mode: "updated",
       reservationId: existing.id,
+      customerMatch,
     };
   }
 
   const { data, error } = await supabase
     .from("reservations")
-    .insert({
-      menu: parsed.menu,
-      start_at: parsed.startAt,
-      end_at: parsed.endAt,
-      status: "confirmed",
-      memo,
-    })
+    .insert(reservationPayload)
     .select("id")
     .single();
 
@@ -211,6 +275,7 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
   return {
     mode: "inserted",
     reservationId: data.id,
+    customerMatch,
   };
 }
 
