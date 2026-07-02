@@ -6,6 +6,7 @@ type ParsedHpbMail = {
   reservationNumber: string;
   customerName: string;
   normalizedCustomerName: string;
+  compareCustomerName: string;
   startAt: string;
   endAt: string;
   menu: string;
@@ -27,6 +28,13 @@ function normalizeCustomerName(value: string) {
     .replace(/（[^）]*）/g, "")
     .replace(/\([^)]*\)/g, "")
     .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeCustomerNameForCompare(value: string) {
+  return normalizeCustomerName(value)
+    .replace(/\s+/g, "")
+    .replace(/　+/g, "")
     .trim();
 }
 
@@ -115,6 +123,7 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
   ]);
 
   const normalizedCustomerName = normalizeCustomerName(customerName);
+  const compareCustomerName = normalizeCustomerNameForCompare(customerName);
 
   const dateText = extractFirstMatch(text, [
     /■来店日時\s*\n\s*([^\n]+)/,
@@ -160,6 +169,7 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
     reservationNumber,
     customerName,
     normalizedCustomerName,
+    compareCustomerName,
     startAt,
     endAt,
     menu: menu.trim(),
@@ -168,19 +178,20 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
   };
 }
 
-async function findCustomerByName(normalizedCustomerName: string) {
-  if (!normalizedCustomerName) {
+async function findCustomerByName(parsed: ParsedHpbMail) {
+  if (!parsed.compareCustomerName) {
     return {
       customerId: null as string | null,
       matchStatus: "no_name",
       matchedCount: 0,
+      matchedName: null as string | null,
     };
   }
 
   const { data, error } = await supabase
     .from("customers")
     .select("id, name")
-    .eq("name", normalizedCustomerName);
+    .not("name", "is", null);
 
   if (error) {
     throw new Error(error.message);
@@ -188,23 +199,31 @@ async function findCustomerByName(normalizedCustomerName: string) {
 
   const customers = (data || []) as MatchedCustomer[];
 
-  if (customers.length === 1) {
+  const matchedCustomers = customers.filter((customer) => {
+    const compareName = normalizeCustomerNameForCompare(customer.name || "");
+    return compareName === parsed.compareCustomerName;
+  });
+
+  if (matchedCustomers.length === 1) {
     return {
-      customerId: customers[0].id,
+      customerId: matchedCustomers[0].id,
       matchStatus: "matched",
       matchedCount: 1,
+      matchedName: matchedCustomers[0].name,
     };
   }
 
   return {
     customerId: null as string | null,
-    matchStatus: customers.length === 0 ? "not_found" : "multiple_found",
-    matchedCount: customers.length,
+    matchStatus:
+      matchedCustomers.length === 0 ? "not_found" : "multiple_found",
+    matchedCount: matchedCustomers.length,
+    matchedName: null as string | null,
   };
 }
 
 async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
-  const customerMatch = await findCustomerByName(parsed.normalizedCustomerName);
+  const customerMatch = await findCustomerByName(parsed);
 
   const { data: existing, error: findError } = await supabase
     .from("reservations")
@@ -220,7 +239,9 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
     `HPB予約番号：${parsed.reservationNumber}`,
     `HPB氏名：${parsed.customerName}`,
     `HPB氏名照合用：${parsed.normalizedCustomerName}`,
+    `HPB氏名比較用：${parsed.compareCustomerName}`,
     `HPB顧客照合：${customerMatch.matchStatus}（${customerMatch.matchedCount}件）`,
+    customerMatch.matchedName ? `HPB紐付け顧客：${customerMatch.matchedName}` : "",
     `HPB担当：${parsed.staffName}`,
     parsed.price ? `HPB金額：${parsed.price}円` : "",
     "",
