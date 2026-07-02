@@ -1,0 +1,139 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+
+type SyncResult = {
+  ok?: boolean;
+  error?: string;
+  parsed?: unknown;
+  result?: unknown;
+};
+
+export default function HpbMailSyncTestPage() {
+  const [mailText, setMailText] = useState("");
+  const [result, setResult] = useState<SyncResult | null>(null);
+  const [sending, setSending] = useState(false);
+
+  async function handleSync() {
+    if (!mailText.trim()) {
+      alert("HPBメール本文を貼り付けてください");
+      return;
+    }
+
+    setSending(true);
+    setResult(null);
+
+    try {
+      const response = await fetch("/api/hpb-mail-sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: mailText,
+        }),
+      });
+
+      const json = (await response.json()) as SyncResult;
+      setResult(json);
+
+      if (!response.ok || !json.ok) {
+        alert(json.error || "同期に失敗しました");
+        return;
+      }
+
+      alert("HPBメール同期テストが完了しました");
+    } catch (error) {
+      console.error(error);
+      alert("通信エラーが発生しました");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <main className="min-h-screen bg-rose-50/40">
+      <div className="mx-auto w-full max-w-[920px] space-y-4 p-4 pb-24">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+            NAILY AIDOL
+          </p>
+          <h1 className="mt-2 text-2xl font-bold text-white">
+            HPBメール同期テスト
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-white/90">
+            SALON BOARDから届いた予約・キャンセルメール本文を貼り付けて、予約DBへの反映をテストします。
+          </p>
+        </section>
+
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/reservations"
+            className="rounded-2xl border bg-white px-4 py-3 text-sm font-bold text-rose-600 shadow-sm"
+          >
+            予約一覧へ
+          </Link>
+
+          <Link
+            href="/reservations/calendar"
+            className="rounded-2xl border bg-white px-4 py-3 text-sm font-bold text-rose-600 shadow-sm"
+          >
+            カレンダーへ
+          </Link>
+        </div>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm">
+          <label className="block text-sm font-bold text-slate-900">
+            HPBメール本文
+          </label>
+
+          <textarea
+            value={mailText}
+            onChange={(event) => setMailText(event.target.value)}
+            rows={18}
+            placeholder="ここにHPBの予約連絡メール、またはキャンセル連絡メールの本文を貼り付けてください。"
+            className="mt-3 w-full rounded-2xl border border-rose-100 bg-rose-50/30 px-4 py-3 text-sm leading-6 outline-none focus:border-rose-300"
+          />
+
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={sending}
+            className="mt-4 w-full rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+          >
+            {sending ? "同期中..." : "HPBメール同期テスト"}
+          </button>
+        </section>
+
+        {result ? (
+          <section
+            className={`rounded-[28px] border p-5 shadow-sm ${
+              result.ok
+                ? "border-emerald-100 bg-emerald-50"
+                : "border-red-100 bg-red-50"
+            }`}
+          >
+            <div
+              className={`text-sm font-bold ${
+                result.ok ? "text-emerald-700" : "text-red-700"
+              }`}
+            >
+              {result.ok ? "同期成功" : "同期失敗"}
+            </div>
+
+            {result.error ? (
+              <div className="mt-3 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-red-700">
+                {result.error}
+              </div>
+            ) : null}
+
+            <pre className="mt-4 max-h-[520px] overflow-auto rounded-2xl bg-white p-4 text-xs leading-5 text-slate-700">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          </section>
+        ) : null}
+      </div>
+    </main>
+  );
+}
