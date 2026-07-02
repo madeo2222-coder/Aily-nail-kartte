@@ -927,39 +927,44 @@ export default function ReservationsCalendarPage() {
                           reservation.memo
                         );
 
-                        const cardContent = (
-                          <>
-                            <div className="truncate font-black">
-                              {reservation.customerName}
-                            </div>
+const sourceLabel =
+  reservation.memo.includes("HPB予約番号")
+    ? "HPB同期"
+    : reservation.source;
 
-                            <div className="mt-1 truncate font-bold">
-                              {reservation.startTime}〜{reservation.endTime}
-                            </div>
+const cardContent = (
+  <>
+    <div className="truncate font-black">
+      {reservation.customerName}
+    </div>
 
-                            <div className="mt-1 truncate">
-                              {reservation.menuName}
-                            </div>
+    <div className="mt-1 truncate font-bold">
+      {reservation.startTime}〜{reservation.endTime}
+    </div>
 
-                            <div className="mt-1 flex flex-wrap gap-1">
-                            <span
-  className={`rounded-full px-2 py-0.5 ${
-    isCancelledStatus(reservation.status)
-      ? "bg-zinc-700 text-white"
-      : "bg-white/70"
-  }`}
->
-  {isCancelledStatus(reservation.status)
-    ? "キャンセル済み"
-    : reservation.status}
-</span>
-                              <span className="rounded-full bg-white/70 px-2 py-0.5">
-                                {reservation.source}
-                              </span>
-                            </div>
-                          </>
-                        );
+    <div className="mt-1 truncate">
+      {reservation.menuName}
+    </div>
 
+    <div className="mt-1 flex flex-wrap gap-1">
+      <span
+        className={`rounded-full px-2 py-0.5 ${
+          isCancelledStatus(reservation.status)
+            ? "bg-zinc-700 text-white"
+            : "bg-white/70"
+        }`}
+      >
+        {isCancelledStatus(reservation.status)
+          ? "キャンセル済み"
+          : reservation.status}
+      </span>
+
+      <span className="rounded-full bg-white/70 px-2 py-0.5">
+        {sourceLabel}
+      </span>
+    </div>
+  </>
+);
              const className = `absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
   overlapIds.has(reservation.id)
     ? "ring-2 ring-rose-400"
