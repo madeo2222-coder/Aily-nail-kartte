@@ -13,8 +13,8 @@
       "schedule": "0 12 * * *"
     },
     {
-      "path": "/api/hpb-gmail-sync",
-      "schedule": "*/5 * * * *"
-    }
+  "path": "/api/hpb-gmail-sync",
+  "schedule": "0 9 * * *"
+}
   ]
 }
