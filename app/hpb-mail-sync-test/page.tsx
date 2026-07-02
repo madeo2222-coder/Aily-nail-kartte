@@ -8,12 +8,15 @@ type SyncResult = {
   error?: string;
   parsed?: unknown;
   result?: unknown;
+  count?: number;
+  results?: unknown[];
 };
 
 export default function HpbMailSyncTestPage() {
   const [mailText, setMailText] = useState("");
   const [result, setResult] = useState<SyncResult | null>(null);
   const [sending, setSending] = useState(false);
+  const [gmailSyncing, setGmailSyncing] = useState(false);
 
   async function handleSync() {
     if (!mailText.trim()) {
@@ -27,12 +30,8 @@ export default function HpbMailSyncTestPage() {
     try {
       const response = await fetch("/api/hpb-mail-sync", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          text: mailText,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: mailText }),
       });
 
       const json = (await response.json()) as SyncResult;
@@ -52,6 +51,35 @@ export default function HpbMailSyncTestPage() {
     }
   }
 
+  async function handleGmailSync() {
+    const ok = window.confirm("Gmailから最新のHPBメールを取得して同期しますか？");
+    if (!ok) return;
+
+    setGmailSyncing(true);
+    setResult(null);
+
+    try {
+      const response = await fetch("/api/hpb-gmail-sync", {
+        method: "POST",
+      });
+
+      const json = (await response.json()) as SyncResult;
+      setResult(json);
+
+      if (!response.ok || !json.ok) {
+        alert(json.error || "Gmail同期に失敗しました");
+        return;
+      }
+
+      alert(`Gmail同期が完了しました（取得 ${json.count || 0} 件）`);
+    } catch (error) {
+      console.error(error);
+      alert("Gmail同期の通信エラーが発生しました");
+    } finally {
+      setGmailSyncing(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-rose-50/40">
       <div className="mx-auto w-full max-w-[920px] space-y-4 p-4 pb-24">
@@ -63,7 +91,7 @@ export default function HpbMailSyncTestPage() {
             HPBメール同期テスト
           </h1>
           <p className="mt-2 text-sm leading-6 text-white/90">
-            SALON BOARDから届いた予約・キャンセルメール本文を貼り付けて、予約DBへの反映をテストします。
+            SALON BOARDから届いた予約・キャンセルメールを同期します。
           </p>
         </section>
 
@@ -83,9 +111,27 @@ export default function HpbMailSyncTestPage() {
           </Link>
         </div>
 
+        <section className="rounded-[28px] border border-orange-100 bg-white p-5 shadow-sm">
+          <div className="text-sm font-bold text-slate-900">
+            Gmailから今すぐ同期
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            ailynail2026@gmail.com に届いたSALON BOARD/HPBメールを取得して、予約カレンダーへ反映します。
+          </p>
+
+          <button
+            type="button"
+            onClick={handleGmailSync}
+            disabled={gmailSyncing}
+            className="mt-4 w-full rounded-2xl bg-orange-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+          >
+            {gmailSyncing ? "Gmail同期中..." : "Gmailから今すぐ同期"}
+          </button>
+        </section>
+
         <section className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm">
           <label className="block text-sm font-bold text-slate-900">
-            HPBメール本文
+            HPBメール本文を手動同期
           </label>
 
           <textarea
@@ -102,7 +148,7 @@ export default function HpbMailSyncTestPage() {
             disabled={sending}
             className="mt-4 w-full rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
-            {sending ? "同期中..." : "HPBメール同期テスト"}
+            {sending ? "同期中..." : "HPBメール本文を同期テスト"}
           </button>
         </section>
 
