@@ -209,6 +209,10 @@ function isCancelledStatus(status: string) {
 }
 
 function getStatusColor(status: string, menuName: string, memo: string) {
+  if (isCancelledStatus(status)) {
+    return "border-zinc-300 bg-zinc-100 text-zinc-500 opacity-60";
+  }
+
   const checkText = `${menuName || ""} ${memo || ""}`;
 
   if (checkText.includes("ホットペッパー") || checkText.includes("HPB")) {
@@ -254,10 +258,6 @@ function getStatusColor(status: string, menuName: string, memo: string) {
 
   if (status === "完了") {
     return "border-slate-200 bg-slate-100 text-slate-700";
-  }
-
-  if (status === "キャンセル") {
-    return "border-rose-200 bg-rose-50 text-rose-600 opacity-60";
   }
 
   return "border-rose-100 bg-rose-50 text-rose-800";
@@ -942,9 +942,17 @@ export default function ReservationsCalendarPage() {
                             </div>
 
                             <div className="mt-1 flex flex-wrap gap-1">
-                              <span className="rounded-full bg-white/70 px-2 py-0.5">
-                                {reservation.status}
-                              </span>
+                            <span
+  className={`rounded-full px-2 py-0.5 ${
+    isCancelledStatus(reservation.status)
+      ? "bg-zinc-700 text-white"
+      : "bg-white/70"
+  }`}
+>
+  {isCancelledStatus(reservation.status)
+    ? "キャンセル済み"
+    : reservation.status}
+</span>
                               <span className="rounded-full bg-white/70 px-2 py-0.5">
                                 {reservation.source}
                               </span>
@@ -952,11 +960,15 @@ export default function ReservationsCalendarPage() {
                           </>
                         );
 
-                        const className = `absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
-                          overlapIds.has(reservation.id)
-                            ? "ring-2 ring-rose-400"
-                            : ""
-                        }`;
+             const className = `absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
+  overlapIds.has(reservation.id)
+    ? "ring-2 ring-rose-400"
+    : ""
+} ${
+  isCancelledStatus(reservation.status)
+    ? "line-through"
+    : ""
+}`;
 
                         const style = {
                           top: Math.max(top, 0),
