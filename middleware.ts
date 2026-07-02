@@ -33,6 +33,10 @@ function isStaticAsset(pathname: string) {
 
 function isCustomerAllowedApiPath(pathname: string) {
   return (
+    pathname === "/api/hpb-gmail-sync" ||
+pathname.startsWith("/api/hpb-gmail-sync/") ||
+pathname === "/api/send-google-review-line" ||
+pathname.startsWith("/api/send-google-review-line/") ||
     pathname === "/api/inbound-nail-tip-requests" ||
 pathname.startsWith("/api/inbound-nail-tip-requests/") ||
     pathname.startsWith("/api/line-login/") ||
