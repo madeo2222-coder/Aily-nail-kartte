@@ -648,7 +648,12 @@ export default function ReservationsCalendarPage() {
                 スタッフ別・時間帯別に予約状況を確認できます。
               </p>
             </div>
-
+<Link
+  href="/hpb-mail-sync-test"
+  className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-orange-600 backdrop-blur"
+>
+  HPB同期
+</Link>
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/external-calendar-blocks"
