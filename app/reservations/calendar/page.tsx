@@ -330,6 +330,7 @@ export default function ReservationsCalendarPage() {
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
+const [syncingHpb, setSyncingHpb] = useState(false);
 
   async function fetchCalendarData() {
     setLoading(true);
@@ -380,6 +381,35 @@ export default function ReservationsCalendarPage() {
 
     setLoading(false);
   }
+async function syncHpbNow() {
+  try {
+    setSyncingHpb(true);
+
+    const response = await fetch("/api/hpb-gmail-sync", {
+      method: "POST",
+    });
+
+    const json = await response.json();
+
+    if (!response.ok || !json.ok) {
+      throw new Error(json.error || "同期に失敗しました");
+    }
+
+    await fetchCalendarData();
+
+    alert(`${json.count ?? 0}件同期しました`);
+  } catch (error) {
+    console.error(error);
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : "同期に失敗しました"
+    );
+  } finally {
+    setSyncingHpb(false);
+  }
+}
 
   useEffect(() => {
     void fetchCalendarData();
@@ -648,12 +678,14 @@ export default function ReservationsCalendarPage() {
                 スタッフ別・時間帯別に予約状況を確認できます。
               </p>
             </div>
-<Link
-  href="/hpb-mail-sync-test"
-  className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-orange-600 backdrop-blur"
+<button
+  type="button"
+  onClick={syncHpbNow}
+  disabled={syncingHpb}
+  className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-orange-600 backdrop-blur disabled:opacity-60"
 >
-  HPB同期
-</Link>
+  {syncingHpb ? "同期中..." : "HPB今すぐ同期"}
+</button>
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/external-calendar-blocks"
