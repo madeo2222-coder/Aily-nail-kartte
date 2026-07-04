@@ -35,6 +35,20 @@ function extractPlainText(payload: any): string {
   return "";
 }
 
+function isTargetReservationMail(subject: string, bodyText: string) {
+  const checkText = `${subject}\n${bodyText}`;
+
+  return (
+    checkText.includes("予約番号") ||
+    checkText.includes("SALON BOARD") ||
+    checkText.includes("HOT PEPPER Beauty") ||
+    checkText.includes("ミニモ") ||
+    checkText.includes("minimo") ||
+    checkText.includes("ミニモサロンツール") ||
+    checkText.includes("予約ID")
+  );
+}
+
 async function runHpbGmailSync() {
   const clientId = process.env.GOOGLE_GMAIL_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_GMAIL_CLIENT_SECRET;
@@ -69,8 +83,8 @@ async function runHpbGmailSync() {
 
   const listResponse = await gmail.users.messages.list({
     userId: "me",
-    maxResults: 10,
-    q: 'newer_than:30d (from:beauty.hotpepper.jp OR from:salonboard.com OR "SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号")',
+    maxResults: 20,
+    q: 'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ミニモサロンツール" OR "予約ID")',
   });
 
   const messages = listResponse.data.messages || [];
@@ -92,12 +106,12 @@ async function runHpbGmailSync() {
 
     const bodyText = extractPlainText(messageResponse.data.payload).trim();
 
-    if (!bodyText.includes("予約番号")) {
+    if (!isTargetReservationMail(subject, bodyText)) {
       results.push({
         messageId: message.id,
         subject,
         skipped: true,
-        reason: "予約番号が本文にありません",
+        reason: "HPB/ミニモ予約メールではありません",
       });
       continue;
     }
@@ -122,7 +136,7 @@ async function runHpbGmailSync() {
         error:
           error instanceof Error
             ? error.message
-            : "HPBメール同期に失敗しました",
+            : "予約メール同期に失敗しました",
       });
     }
   }
@@ -157,7 +171,7 @@ export async function GET(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "GmailからHPBメール取得に失敗しました",
+            : "Gmailから予約メール取得に失敗しました",
       },
       { status: 500 }
     );
@@ -184,7 +198,7 @@ export async function POST() {
         error:
           error instanceof Error
             ? error.message
-            : "GmailからHPBメール取得に失敗しました",
+            : "Gmailから予約メール取得に失敗しました",
       },
       { status: 500 }
     );

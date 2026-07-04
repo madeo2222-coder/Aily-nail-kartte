@@ -1,6 +1,9 @@
 import { supabase } from "@/lib/supabase";
 
+type MailSource = "hpb" | "minimo";
+
 export type ParsedHpbMail = {
+  source: MailSource;
   action: "reservation" | "cancel";
   reservationNumber: string;
   customerName: string;
@@ -8,6 +11,7 @@ export type ParsedHpbMail = {
   compareCustomerName: string;
   customerKana: string;
   compareCustomerKana: string;
+  phone: string;
   startAt: string;
   endAt: string;
   menu: string;
@@ -18,6 +22,7 @@ export type ParsedHpbMail = {
 type MatchedCustomer = {
   id: string;
   name: string | null;
+  phone?: string | null;
 };
 
 function normalizeText(value: string) {
@@ -46,12 +51,15 @@ function normalizeForCompare(value: string) {
     .trim();
 }
 
+function normalizePhone(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
 function extractFirstMatch(text: string, patterns: RegExp[]) {
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match?.[1]) return match[1].trim();
   }
-
   return "";
 }
 
@@ -68,22 +76,30 @@ function parseJapaneseDateTime(value: string) {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
 
-  return new Date(Date.UTC(year, month - 1, day, hour - 9, minute, 0)).toISOString();
+  return new Date(
+    Date.UTC(year, month - 1, day, hour - 9, minute, 0)
+  ).toISOString();
 }
 
 function parseDurationMinutes(text: string) {
-  const match = text.match(/所要時間目安\s*[:：]\s*(\d+)時間(?:(\d+)分)?/);
+  const hpbMatch = text.match(/所要時間目安\s*[:：]\s*(\d+)時間(?:(\d+)分)?/);
 
-  if (match) {
-    const hours = Number(match[1] || 0);
-    const minutes = Number(match[2] || 0);
+  if (hpbMatch) {
+    const hours = Number(hpbMatch[1] || 0);
+    const minutes = Number(hpbMatch[2] || 0);
     const total = hours * 60 + minutes;
     if (total > 0) return total;
   }
 
-  const minuteMatch = text.match(/所要時間目安\s*[:：]\s*(\d+)分/);
-  if (minuteMatch) {
-    const total = Number(minuteMatch[1]);
+  const hpbMinuteMatch = text.match(/所要時間目安\s*[:：]\s*(\d+)分/);
+  if (hpbMinuteMatch) {
+    const total = Number(hpbMinuteMatch[1]);
+    if (total > 0) return total;
+  }
+
+  const minimoMatch = text.match(/施術時間\s*[:：]\s*(\d+)分/);
+  if (minimoMatch) {
+    const total = Number(minimoMatch[1]);
     if (total > 0) return total;
   }
 
@@ -91,14 +107,35 @@ function parseDurationMinutes(text: string) {
 }
 
 function parsePrice(text: string) {
-  const match = text.match(/(?:合計金額|予約時合計金額|金額)[^\d]*(\d[\d,]*)円/);
+  const match = text.match(
+    /(?:合計金額|予約時合計金額|金額|店頭お支払い金額)[^\d]*(\d[\d,]*)円/
+  );
+
   if (!match?.[1]) return null;
 
   const price = Number(match[1].replace(/,/g, ""));
   return Number.isFinite(price) ? price : null;
 }
 
-export function parseHpbMail(rawText: string): ParsedHpbMail {
+function parseMinimoDateTime(value: string) {
+  const match = value.match(
+    /(\d{4})年(\d{1,2})月(\d{1,2})日.*?(\d{1,2}):(\d{2})/
+  );
+
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+
+  return new Date(
+    Date.UTC(year, month - 1, day, hour - 9, minute, 0)
+  ).toISOString();
+}
+
+function parseHpbMail(rawText: string): ParsedHpbMail {
   const text = normalizeText(rawText);
 
   const action: ParsedHpbMail["action"] =
@@ -117,6 +154,12 @@ export function parseHpbMail(rawText: string): ParsedHpbMail {
     /■氏名\s*\n\s*([^\n]+)/,
     /氏名\s*\n\s*([^\n]+)/,
     /氏名\s*[:：]?\s*([^\n]+)/,
+  ]);
+
+  const phone = extractFirstMatch(text, [
+    /■電話番号\s*\n\s*([0-9\-]+)/,
+    /電話番号\s*\n\s*([0-9\-]+)/,
+    /電話番号\s*[:：]?\s*([0-9\-]+)/,
   ]);
 
   const customerKana = extractKanaFromName(customerName);
@@ -138,7 +181,9 @@ export function parseHpbMail(rawText: string): ParsedHpbMail {
 
   const durationMinutes = parseDurationMinutes(text);
   const startDate = new Date(startAt);
-  const endAt = new Date(startDate.getTime() + durationMinutes * 60 * 1000).toISOString();
+  const endAt = new Date(
+    startDate.getTime() + durationMinutes * 60 * 1000
+  ).toISOString();
 
   const staffName =
     extractFirstMatch(text, [
@@ -154,6 +199,7 @@ export function parseHpbMail(rawText: string): ParsedHpbMail {
     ]) || "HPB予約";
 
   return {
+    source: "hpb",
     action,
     reservationNumber,
     customerName,
@@ -161,6 +207,7 @@ export function parseHpbMail(rawText: string): ParsedHpbMail {
     compareCustomerName,
     customerKana,
     compareCustomerKana,
+    phone,
     startAt,
     endAt,
     menu: menu.trim(),
@@ -169,15 +216,122 @@ export function parseHpbMail(rawText: string): ParsedHpbMail {
   };
 }
 
+function parseMinimoMail(rawText: string): ParsedHpbMail {
+  const text = normalizeText(rawText);
+
+  const action: ParsedHpbMail["action"] =
+    text.includes("キャンセルされました") ||
+    text.includes("予約がキャンセル") ||
+    text.includes("キャンセルになりました")
+      ? "cancel"
+      : "reservation";
+
+  const reservationNumber = extractFirstMatch(text, [
+    /予約ID\s*\n\s*([^\n]+)/,
+    /予約ID\s*[:：]?\s*([^\n]+)/,
+  ]);
+
+  const customerName = extractFirstMatch(text, [
+    /氏名\s*\n\s*([^\n]+)/,
+    /氏名\s*[:：]?\s*([^\n]+)/,
+  ]);
+
+  const phone = extractFirstMatch(text, [
+    /電話番号\s*\n\s*([0-9\-]+)/,
+    /電話番号\s*[:：]?\s*([0-9\-]+)/,
+  ]);
+
+  const dateText = extractFirstMatch(text, [
+    /来店日時\s*\n\s*([^\n]+)/,
+    /来店日時\s*[:：]?\s*([^\n]+)/,
+  ]);
+
+  const startAt = parseMinimoDateTime(dateText);
+
+  if (!reservationNumber) throw new Error("ミニモ予約IDを解析できませんでした");
+  if (!customerName) throw new Error("ミニモ氏名を解析できませんでした");
+  if (!startAt) throw new Error("ミニモ来店日時を解析できませんでした");
+
+  const durationMinutes = parseDurationMinutes(text);
+  const startDate = new Date(startAt);
+  const endAt = new Date(
+    startDate.getTime() + durationMinutes * 60 * 1000
+  ).toISOString();
+
+  const staffName =
+    extractFirstMatch(text, [
+      /担当者\s*\n\s*([^\n]+)/,
+      /担当者\s*[:：]?\s*([^\n]+)/,
+    ]) || "指名なし";
+
+  const menu =
+    extractFirstMatch(text, [
+      /メニュー\s*\n\s*([\s\S]*?)(?:\n・店頭お支払い金額|\n店頭お支払い金額|\n■|$)/,
+      /メニュー\s*[:：]?\s*([\s\S]*?)(?:\n・店頭お支払い金額|\n店頭お支払い金額|\n■|$)/,
+    ]) || "ミニモ予約";
+
+  const normalizedCustomerName = normalizeCustomerName(customerName);
+  const compareCustomerName = normalizeForCompare(normalizedCustomerName);
+
+  return {
+    source: "minimo",
+    action,
+    reservationNumber,
+    customerName,
+    normalizedCustomerName,
+    compareCustomerName,
+    customerKana: "",
+    compareCustomerKana: "",
+    phone,
+    startAt,
+    endAt,
+    menu: menu.trim(),
+    staffName,
+    price: parsePrice(text),
+  };
+}
+
+function parseReservationMail(rawText: string): ParsedHpbMail {
+  const text = normalizeText(rawText);
+
+  if (
+    text.includes("ミニモ") ||
+    text.includes("minimo") ||
+    text.includes("ミニモサロンツール") ||
+    text.includes("予約ID")
+  ) {
+    return parseMinimoMail(text);
+  }
+
+  return parseHpbMail(text);
+}
+
 async function findCustomerByName(parsed: ParsedHpbMail) {
   const { data, error } = await supabase
     .from("customers")
-    .select("id, name")
+    .select("id, name, phone")
     .not("name", "is", null);
 
   if (error) throw new Error(error.message);
 
   const customers = (data || []) as MatchedCustomer[];
+
+  const phoneCompare = normalizePhone(parsed.phone || "");
+
+  if (phoneCompare) {
+    const phoneMatches = customers.filter((customer) => {
+      return normalizePhone(customer.phone || "") === phoneCompare;
+    });
+
+    if (phoneMatches.length === 1) {
+      return {
+        customerId: phoneMatches[0].id,
+        matchStatus: "matched_by_phone",
+        matchedCount: 1,
+        matchedName: phoneMatches[0].name,
+      };
+    }
+  }
 
   const nameMatches = customers.filter((customer) => {
     const compareName = normalizeForCompare(customer.name || "");
@@ -226,30 +380,45 @@ async function findCustomerByName(parsed: ParsedHpbMail) {
   };
 }
 
+function getSourceLabel(source: MailSource) {
+  return source === "minimo" ? "ミニモ" : "HPB";
+}
+
+function getReservationNumberMemoKey(source: MailSource) {
+  return source === "minimo" ? "ミニモ予約ID" : "HPB予約番号";
+}
+
 async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
+  const sourceLabel = getSourceLabel(parsed.source);
+  const reservationKey = getReservationNumberMemoKey(parsed.source);
   const customerMatch = await findCustomerByName(parsed);
 
   const { data: existing, error: findError } = await supabase
     .from("reservations")
     .select("id")
-    .ilike("memo", `%HPB予約番号：${parsed.reservationNumber}%`)
+    .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`)
     .maybeSingle();
 
   if (findError) throw new Error(findError.message);
 
   const memo = [
-    `HPB予約番号：${parsed.reservationNumber}`,
-    `HPB氏名：${parsed.customerName}`,
-    `HPB氏名照合用：${parsed.normalizedCustomerName}`,
-    `HPB氏名比較用：${parsed.compareCustomerName}`,
-    `HPBカナ：${parsed.customerKana || "-"}`,
-    `HPBカナ比較用：${parsed.compareCustomerKana || "-"}`,
-    `HPB顧客照合：${customerMatch.matchStatus}（${customerMatch.matchedCount}件）`,
-    customerMatch.matchedName ? `HPB紐付け顧客：${customerMatch.matchedName}` : "",
-    `HPB担当：${parsed.staffName}`,
-    parsed.price ? `HPB金額：${parsed.price}円` : "",
+    `${reservationKey}：${parsed.reservationNumber}`,
+    `${sourceLabel}氏名：${parsed.customerName}`,
+    `${sourceLabel}氏名照合用：${parsed.normalizedCustomerName}`,
+    `${sourceLabel}氏名比較用：${parsed.compareCustomerName}`,
+    parsed.phone ? `${sourceLabel}電話番号：${parsed.phone}` : "",
+    parsed.customerKana ? `${sourceLabel}カナ：${parsed.customerKana}` : "",
+    parsed.compareCustomerKana
+      ? `${sourceLabel}カナ比較用：${parsed.compareCustomerKana}`
+      : "",
+    `${sourceLabel}顧客照合：${customerMatch.matchStatus}（${customerMatch.matchedCount}件）`,
+    customerMatch.matchedName
+      ? `${sourceLabel}紐付け顧客：${customerMatch.matchedName}`
+      : "",
+    `${sourceLabel}担当：${parsed.staffName}`,
+    parsed.price ? `${sourceLabel}金額：${parsed.price}円` : "",
     "",
-    "【HPBメール本文】",
+    `【${sourceLabel}メール本文】`,
     rawText,
   ]
     .filter(Boolean)
@@ -305,10 +474,13 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
 }
 
 async function cancelReservation(parsed: ParsedHpbMail, rawText: string) {
+  const sourceLabel = getSourceLabel(parsed.source);
+  const reservationKey = getReservationNumberMemoKey(parsed.source);
+
   const { data: existing, error: findError } = await supabase
     .from("reservations")
     .select("id, memo")
-    .ilike("memo", `%HPB予約番号：${parsed.reservationNumber}%`)
+    .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`)
     .maybeSingle();
 
   if (findError) throw new Error(findError.message);
@@ -323,7 +495,7 @@ async function cancelReservation(parsed: ParsedHpbMail, rawText: string) {
   const nextMemo = [
     existing.memo || "",
     "",
-    "【HPBキャンセルメール本文】",
+    `【${sourceLabel}キャンセルメール本文】`,
     rawText,
   ].join("\n");
 
@@ -344,7 +516,7 @@ async function cancelReservation(parsed: ParsedHpbMail, rawText: string) {
 }
 
 export async function syncHpbMailText(rawText: string) {
-  const parsed = parseHpbMail(rawText);
+  const parsed = parseReservationMail(rawText);
 
   const result =
     parsed.action === "cancel"
