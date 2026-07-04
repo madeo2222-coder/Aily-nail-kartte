@@ -684,7 +684,7 @@ async function syncHpbNow() {
   disabled={syncingHpb}
   className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-orange-600 backdrop-blur disabled:opacity-60"
 >
-  {syncingHpb ? "同期中..." : "HPB今すぐ同期"}
+  {syncingHpb ? "予約同期中..." : "予約今すぐ同期"}
 </button>
             <div className="flex flex-wrap gap-2">
               <Link
@@ -964,8 +964,9 @@ async function syncHpbNow() {
                           reservation.memo
                         );
 
-const sourceLabel =
-  reservation.memo.includes("HPB予約番号")
+const sourceLabel = reservation.memo.includes("ミニモ予約ID")
+  ? "ミニモ同期"
+  : reservation.memo.includes("HPB予約番号")
     ? "HPB同期"
     : reservation.source;
 
@@ -996,7 +997,15 @@ const cardContent = (
           : reservation.status}
       </span>
 
-      <span className="rounded-full bg-white/70 px-2 py-0.5">
+      <span
+  className={`rounded-full px-2 py-0.5 ${
+    sourceLabel === "HPB同期"
+      ? "bg-orange-100 text-orange-700"
+      : sourceLabel === "ミニモ同期"
+        ? "bg-purple-100 text-purple-700"
+        : "bg-white/70"
+  }`}
+>
         {sourceLabel}
       </span>
     </div>
