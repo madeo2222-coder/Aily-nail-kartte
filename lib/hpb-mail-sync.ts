@@ -25,6 +25,14 @@ type MatchedCustomer = {
   phone?: string | null;
 };
 
+type CustomerMatchResult = {
+  customerId: string | null;
+  matchStatus: string;
+  matchedCount: number;
+  matchedName: string | null;
+  autoCreated?: boolean;
+};
+
 function normalizeText(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
@@ -118,21 +126,7 @@ function parsePrice(text: string) {
 }
 
 function parseMinimoDateTime(value: string) {
-  const match = value.match(
-    /(\d{4})年(\d{1,2})月(\d{1,2})日.*?(\d{1,2}):(\d{2})/
-  );
-
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const hour = Number(match[4]);
-  const minute = Number(match[5]);
-
-  return new Date(
-    Date.UTC(year, month - 1, day, hour - 9, minute, 0)
-  ).toISOString();
+  return parseJapaneseDateTime(value);
 }
 
 function parseHpbMail(rawText: string): ParsedHpbMail {
@@ -220,13 +214,13 @@ function parseMinimoMail(rawText: string): ParsedHpbMail {
   const text = normalizeText(rawText);
 
   const action: ParsedHpbMail["action"] =
-  text.includes("下記の予約がキャンセルされました") ||
-  text.includes("キャンセル理由") ||
-  text.includes("キャンセルされました") ||
-  text.includes("予約がキャンセル") ||
-  text.includes("キャンセルになりました")
-    ? "cancel"
-    : "reservation";
+    text.includes("下記の予約がキャンセルされました") ||
+    text.includes("キャンセル理由") ||
+    text.includes("キャンセルされました") ||
+    text.includes("予約がキャンセル") ||
+    text.includes("キャンセルになりました")
+      ? "cancel"
+      : "reservation";
 
   const reservationNumber = extractFirstMatch(text, [
     /予約ID\s*\n\s*([^\n]+)/,
@@ -308,7 +302,68 @@ function parseReservationMail(rawText: string): ParsedHpbMail {
   return parseHpbMail(text);
 }
 
-async function findCustomerByName(parsed: ParsedHpbMail) {
+async function getDefaultSalonId() {
+  const { data, error } = await supabase
+    .from("salons")
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return null;
+
+  return data?.id || null;
+}
+
+async function createCustomerFromReservation(
+  parsed: ParsedHpbMail
+): Promise<CustomerMatchResult> {
+  const sourceLabel = getSourceLabel(parsed.source);
+  const salonId = await getDefaultSalonId();
+
+  const notes = [
+    `${sourceLabel}予約メールから自動作成`,
+    `${sourceLabel}予約番号/ID：${parsed.reservationNumber}`,
+    parsed.price ? `${sourceLabel}金額：${parsed.price}円` : "",
+    `${sourceLabel}担当：${parsed.staffName}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const payload: {
+    name: string;
+    phone?: string | null;
+    name_kana?: string | null;
+    notes?: string | null;
+    salon_id?: string | null;
+  } = {
+    name: parsed.normalizedCustomerName || parsed.customerName,
+    phone: parsed.phone || null,
+    name_kana: parsed.customerKana || null,
+    notes,
+  };
+
+  if (salonId) {
+    payload.salon_id = salonId;
+  }
+
+  const { data, error } = await supabase
+    .from("customers")
+    .insert(payload)
+    .select("id, name")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  return {
+    customerId: data.id,
+    matchStatus: "auto_created",
+    matchedCount: 1,
+    matchedName: data.name,
+    autoCreated: true,
+  };
+}
+
+async function findOrCreateCustomer(parsed: ParsedHpbMail) {
   const { data, error } = await supabase
     .from("customers")
     .select("id, name, phone")
@@ -366,19 +421,23 @@ async function findCustomerByName(parsed: ParsedHpbMail) {
 
     if (kanaMatches.length > 1) {
       return {
-        customerId: null as string | null,
+        customerId: null,
         matchStatus: "multiple_found_by_kana",
         matchedCount: kanaMatches.length,
-        matchedName: null as string | null,
+        matchedName: null,
       };
     }
   }
 
+  if (parsed.action === "reservation") {
+    return await createCustomerFromReservation(parsed);
+  }
+
   return {
-    customerId: null as string | null,
+    customerId: null,
     matchStatus: "not_found",
     matchedCount: 0,
-    matchedName: null as string | null,
+    matchedName: null,
   };
 }
 
@@ -393,7 +452,7 @@ function getReservationNumberMemoKey(source: MailSource) {
 async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
   const sourceLabel = getSourceLabel(parsed.source);
   const reservationKey = getReservationNumberMemoKey(parsed.source);
-  const customerMatch = await findCustomerByName(parsed);
+  const customerMatch = await findOrCreateCustomer(parsed);
 
   const { data: existing, error: findError } = await supabase
     .from("reservations")
@@ -417,6 +476,7 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
     customerMatch.matchedName
       ? `${sourceLabel}紐付け顧客：${customerMatch.matchedName}`
       : "",
+    customerMatch.autoCreated ? `${sourceLabel}顧客自動作成：true` : "",
     `${sourceLabel}担当：${parsed.staffName}`,
     parsed.price ? `${sourceLabel}金額：${parsed.price}円` : "",
     "",
