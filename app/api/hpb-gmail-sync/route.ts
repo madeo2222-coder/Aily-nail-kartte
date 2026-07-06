@@ -87,7 +87,7 @@ async function runHpbGmailSync() {
     q: 'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ミニモサロンツール" OR "予約ID")',
   });
 
-  const messages = listResponse.data.messages || [];
+  const messages = [...(listResponse.data.messages || [])].reverse();
   const results = [];
 
   for (const message of messages) {
