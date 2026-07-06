@@ -220,11 +220,13 @@ function parseMinimoMail(rawText: string): ParsedHpbMail {
   const text = normalizeText(rawText);
 
   const action: ParsedHpbMail["action"] =
-    text.includes("キャンセルされました") ||
-    text.includes("予約がキャンセル") ||
-    text.includes("キャンセルになりました")
-      ? "cancel"
-      : "reservation";
+  text.includes("下記の予約がキャンセルされました") ||
+  text.includes("キャンセル理由") ||
+  text.includes("キャンセルされました") ||
+  text.includes("予約がキャンセル") ||
+  text.includes("キャンセルになりました")
+    ? "cancel"
+    : "reservation";
 
   const reservationNumber = extractFirstMatch(text, [
     /予約ID\s*\n\s*([^\n]+)/,
