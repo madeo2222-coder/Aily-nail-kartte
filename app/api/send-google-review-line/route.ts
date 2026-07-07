@@ -52,14 +52,15 @@ function getTargetDateFromRequest(request: Request) {
 function buildGoogleReviewMessage(params: { customerName: string }) {
   return `${params.customerName}様
 
-先日はご来店ありがとうございました💅
+先日はAily Nail Studioへご来店いただき、ありがとうございました💅
 
-もしよろしければ、Aily Nail StudioのGoogle口コミにご協力いただけると嬉しいです✨
+もしネイルにご満足いただけましたら、Google口コミにご協力いただけると大変励みになります✨
 
-口コミはこちら
+▼口コミはこちら
 ${GOOGLE_REVIEW_URL}
 
-スタッフ一同、とても励みになります。
+お忙しいところ恐れ入りますが、よろしくお願いいたします😊
+
 またのご来店を心よりお待ちしております。`;
 }
 
