@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 type AnyRow = Record<string, unknown>;
 
 const NOTIFICATION_TYPE = "google_review_request";
-const GOOGLE_REVIEW_URL = "https://g.page/r/CQnXZYS7huDFEBM/review";
+const DEFAULT_GOOGLE_REVIEW_URL = "https://g.page/r/CQnXZYS7huDFEBM/review";
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -49,7 +49,10 @@ function getTargetDateFromRequest(request: Request) {
   return url.searchParams.get("targetDate") || getJstDateDaysAgo(3);
 }
 
-function buildGoogleReviewMessage(params: { customerName: string }) {
+function buildGoogleReviewMessage(params: {
+  customerName: string;
+  googleReviewUrl: string;
+}) {
   return `${params.customerName}様
 
 先日はAily Nail Studioへご来店いただき、ありがとうございました💅
@@ -57,7 +60,7 @@ function buildGoogleReviewMessage(params: { customerName: string }) {
 もしネイルにご満足いただけましたら、Google口コミにご協力いただけると大変励みになります✨
 
 ▼口コミはこちら
-${GOOGLE_REVIEW_URL}
+${params.googleReviewUrl}
 
 お忙しいところ恐れ入りますが、よろしくお願いいたします😊
 
@@ -138,7 +141,15 @@ async function saveNotificationLog(params: {
 
 async function runGoogleReviewRequest(targetDate: string) {
   const supabaseAdmin = getSupabaseAdmin();
+const { data: salon } = await supabaseAdmin
+  .from("salons")
+  .select("google_review_url")
+  .limit(1)
+  .maybeSingle();
 
+const googleReviewUrl =
+  getString((salon || null) as AnyRow | null, ["google_review_url"]) ||
+  DEFAULT_GOOGLE_REVIEW_URL;
   const { data: visits, error } = await supabaseAdmin
     .from("visits")
     .select("*")
@@ -195,7 +206,10 @@ async function runGoogleReviewRequest(targetDate: string) {
       continue;
     }
 
-    const text = buildGoogleReviewMessage({ customerName });
+    const text = buildGoogleReviewMessage({
+  customerName,
+  googleReviewUrl,
+});
 
     await pushLineMessage(lineUserId, text);
 
