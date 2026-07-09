@@ -4,6 +4,17 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
+function normalizeName(value: string) {
+  return value
+    .replace(/\s+/g, "")
+    .replace(/　+/g, "")
+    .trim();
+}
+
+function normalizePhone(value: string) {
+  return value.replace(/[^\d]/g, "");
+}
+
 export default function NewCustomerPage() {
   const router = useRouter();
 
@@ -11,6 +22,41 @@ export default function NewCustomerPage() {
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+
+  async function findExistingCustomer(params: {
+    name: string;
+    phone: string;
+  }) {
+    const compareName = normalizeName(params.name);
+    const comparePhone = normalizePhone(params.phone);
+
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id, name, phone")
+      .not("name", "is", null);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    const customers = data || [];
+
+    if (comparePhone) {
+      const phoneMatch = customers.find((customer) => {
+        return normalizePhone(customer.phone || "") === comparePhone;
+      });
+
+      if (phoneMatch?.id) return phoneMatch.id;
+    }
+
+    const nameMatch = customers.find((customer) => {
+      return normalizeName(customer.name || "") === compareName;
+    });
+
+    if (nameMatch?.id) return nameMatch.id;
+
+    return "";
+  }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -28,32 +74,50 @@ export default function NewCustomerPage() {
     setSubmitting(true);
     setErrorMessage("");
 
-    const payload = {
-      name: trimmedName,
-      phone: trimmedPhone ? trimmedPhone : null,
-    };
+    try {
+      const existingCustomerId = await findExistingCustomer({
+        name: trimmedName,
+        phone: trimmedPhone,
+      });
 
-    const { data, error } = await supabase
-      .from("customers")
-      .insert([payload])
-      .select("id")
-      .single();
+      if (existingCustomerId) {
+        alert("同じ顧客が見つかったため、既存カルテを開きます。");
+        router.push(`/customers/${existingCustomerId}`);
+        return;
+      }
 
-    if (error) {
-      setErrorMessage(error.message || "顧客登録に失敗しました。");
+      const payload = {
+        name: trimmedName,
+        phone: trimmedPhone ? trimmedPhone : null,
+      };
+
+      const { data, error } = await supabase
+        .from("customers")
+        .insert([payload])
+        .select("id")
+        .single();
+
+      if (error) {
+        setErrorMessage(error.message || "顧客登録に失敗しました。");
+        setSubmitting(false);
+        return;
+      }
+
+      const newId =
+        data && typeof data.id === "string" && data.id.trim() ? data.id : "";
+
+      if (newId) {
+        router.push(`/customers/${newId}`);
+        return;
+      }
+
+      router.push("/customers");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "顧客登録に失敗しました。";
+      setErrorMessage(message);
       setSubmitting(false);
-      return;
     }
-
-    const newId =
-      data && typeof data.id === "string" && data.id.trim() ? data.id : "";
-
-    if (newId) {
-      router.push(`/customers/${newId}`);
-      return;
-    }
-
-    router.push("/customers");
   }
 
   return (
@@ -63,7 +127,7 @@ export default function NewCustomerPage() {
           <p className="text-sm text-neutral-500">顧客登録</p>
           <h1 className="text-2xl font-bold text-neutral-900">新規顧客登録</h1>
           <p className="mt-1 text-sm text-neutral-600">
-            今は安全運用のため、名前と電話番号のみ登録します。
+            同じ電話番号・同じ名前の顧客がいる場合は、既存カルテを開きます。
           </p>
         </div>
 
@@ -126,7 +190,7 @@ export default function NewCustomerPage() {
                 disabled={submitting}
                 className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-3 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? "登録中..." : "顧客を登録する"}
+                {submitting ? "確認中..." : "顧客を登録する"}
               </button>
             </div>
           </form>
