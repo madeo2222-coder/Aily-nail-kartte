@@ -91,13 +91,7 @@ const toolSections: ToolSection[] = [
         href: "/customers/merge",
         badge: "重複整理",
       },
-      {
-        title: "初回情報クイック確認",
-        description:
-          "名前や電話番号で、初回来店時に入力された情報をすぐ確認します。",
-        href: "/intake-lookup",
-        badge: "最優先",
-      },
+     
       {
         title: "初回来店入力一覧",
         description:

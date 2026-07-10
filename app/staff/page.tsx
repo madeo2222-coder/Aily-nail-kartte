@@ -16,10 +16,10 @@ const primaryLinks = [
     href: "/reservations",
   },
   {
-    title: "初回情報クイック確認",
+    title: "顧客一覧",
     description:
-      "名前・電話番号で初回入力内容やアレルギー情報をすぐ確認します。",
-    href: "/intake-lookup",
+      "顧客情報・来店履歴・写真・次回提案・初回カウンセリングを確認します。",
+    href: "/customers",
   },
   {
     title: "来店登録",
@@ -39,14 +39,8 @@ const secondaryLinks = [
   {
     title: "初回来店入力一覧",
     description:
-      "お客様がスマホから入力した初回受付情報を一覧で確認します。",
+      "お客様がスマホから入力した初回受付情報と顧客への紐付け状況を確認します。",
     href: "/customer-intake/list",
-  },
-  {
-    title: "顧客一覧",
-    description:
-      "顧客情報・来店履歴・写真・次回提案などを確認します。",
-    href: "/customers",
   },
   {
     title: "来店一覧",
@@ -66,6 +60,12 @@ const secondaryLinks = [
       "初回来店のお客様がスマホから情報を入力するページです。",
     href: "/customer-intake",
   },
+  {
+    title: "ネイルチップ注文",
+    description:
+      "ネイルチップの注文・支払い・制作・発送状況を確認します。",
+    href: "/nail-tip-orders",
+  },
 ];
 
 export default function StaffEntryPage() {
@@ -82,7 +82,7 @@ export default function StaffEntryPage() {
           </h1>
 
           <p className="mt-3 text-sm leading-6 text-gray-600">
-            受付・予約確認・施術前確認・来店登録など、日常業務でよく使う機能にすぐ入れます。
+            受付・予約確認・顧客確認・来店登録など、日常業務でよく使う機能にすぐ入れます。
             その他の設定や管理機能は「管理・便利ツール」にまとめています。
           </p>
         </section>
@@ -173,7 +173,7 @@ export default function StaffEntryPage() {
               ③ HPB・ミニモの新しい予約がある場合は「予約今すぐ同期」を押す
             </p>
             <p>
-              ④ 施術前は「初回情報クイック確認」でアレルギーや注意事項を確認する
+              ④ 施術前は「顧客一覧」から顧客詳細を開き、初回カウンセリングや注意事項を確認する
             </p>
             <p>⑤ 施術後は「来店登録」から施術記録と写真を登録する</p>
             <p>
