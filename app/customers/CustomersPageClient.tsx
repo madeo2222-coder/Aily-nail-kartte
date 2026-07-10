@@ -20,9 +20,12 @@ type Visit = {
 
 function formatDateLabel(value: string | null) {
   if (!value) return "";
+
   const normalized = value.slice(0, 10);
   const [year, month, day] = normalized.split("-");
+
   if (!year || !month || !day) return value;
+
   return `${year}/${Number(month)}/${Number(day)}`;
 }
 
@@ -36,23 +39,31 @@ export default function CustomersPageClient() {
   }, []);
 
   async function fetchData() {
-    const { data: customersData } = await supabase
+    const { data: customersData, error: customersError } = await supabase
       .from("customers")
       .select("id, name, name_kana, allergy")
       .order("created_at", { ascending: false });
 
-    if (customersData) setCustomers(customersData);
+    if (customersError) {
+      console.error("customers取得エラー:", customersError);
+    } else if (customersData) {
+      setCustomers(customersData);
+    }
 
-    const { data: visitsData } = await supabase
+    const { data: visitsData, error: visitsError } = await supabase
       .from("visits")
       .select("customer_id, next_visit_date, next_proposal, visit_date")
       .order("visit_date", { ascending: false });
 
-    if (visitsData) setVisits(visitsData);
+    if (visitsError) {
+      console.error("visits取得エラー:", visitsError);
+    } else if (visitsData) {
+      setVisits(visitsData);
+    }
   }
 
   function getLatestVisit(customerId: string) {
-    return visits.find((v) => v.customer_id === customerId);
+    return visits.find((visit) => visit.customer_id === customerId);
   }
 
   const filteredCustomers = useMemo(() => {
@@ -77,7 +88,9 @@ export default function CustomersPageClient() {
               <p className="text-xs font-bold tracking-[0.25em] text-white/80">
                 NAILY AIDOL
               </p>
+
               <h1 className="mt-2 text-2xl font-bold">顧客ページ</h1>
+
               <p className="mt-2 text-sm leading-6 text-white/90">
                 お客様情報や次回提案を、見やすくまとめて確認できるページです。
               </p>
@@ -90,11 +103,19 @@ export default function CustomersPageClient() {
               >
                 スタッフページへ
               </Link>
+
               <Link
                 href="/customers/new"
                 className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
               >
                 ＋ 顧客を追加
+              </Link>
+
+              <Link
+                href="/customers/merge"
+                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                顧客統合
               </Link>
             </div>
           </div>
@@ -103,6 +124,7 @@ export default function CustomersPageClient() {
         <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="mb-4">
             <div className="text-sm font-bold text-slate-900">顧客検索</div>
+
             <div className="mt-1 text-xs text-slate-500">
               お名前やフリガナで、見たいお客様をすぐ探せます。
             </div>
@@ -113,10 +135,11 @@ export default function CustomersPageClient() {
               <label className="mb-2 block text-sm font-medium text-slate-700">
                 名前 / フリガナ
               </label>
+
               <input
                 type="text"
                 value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
+                onChange={(event) => setKeyword(event.target.value)}
                 placeholder="名前 / フリガナで検索"
                 className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
               />
