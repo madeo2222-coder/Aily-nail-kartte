@@ -3,82 +3,104 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const navItems = [
-  { href: "/dashboard", label: "ホーム", icon: "🏠" },
-  { href: "/customers", label: "顧客", icon: "👤" },
-  { href: "/reservations", label: "予約", icon: "📅" },
-  { href: "/visits", label: "来店", icon: "✍️" },
-  { href: "/nail-tip-orders", label: "チップ", icon: "💅" },
-  { href: "/expenses", label: "経費", icon: "🧾" },
-  { href: "/finance", label: "収支", icon: "📊" },
-  { href: "/tax", label: "税理士", icon: "📩" },
+type NavItem = {
+  href: string;
+  label: string;
+  icon: string;
+  activePrefixes: string[];
+};
+
+const navItems: NavItem[] = [
+  {
+    href: "/dashboard",
+    label: "ホーム",
+    icon: "🏠",
+    activePrefixes: ["/dashboard"],
+  },
+  {
+    href: "/reservations/calendar",
+    label: "予約",
+    icon: "📅",
+    activePrefixes: ["/reservations"],
+  },
+  {
+    href: "/customers",
+    label: "顧客",
+    icon: "👤",
+    activePrefixes: ["/customers"],
+  },
+  {
+    href: "/visits/new",
+    label: "来店登録",
+    icon: "✍️",
+    activePrefixes: ["/visits"],
+  },
+  {
+    href: "/intake-lookup",
+    label: "初回確認",
+    icon: "🔍",
+    activePrefixes: ["/intake-lookup", "/customer-intake/list"],
+  },
+  {
+    href: "/staff-tools",
+    label: "ツール",
+    icon: "🧰",
+    activePrefixes: ["/staff-tools"],
+  },
 ];
+
+const hiddenPaths = [
+  "/login",
+  "/customer-intake",
+  "/customer-app",
+  "/owner-dashboard",
+];
+
+function isHiddenPath(pathname: string) {
+  return hiddenPaths.some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`)
+  );
+}
 
 export default function BottomNav() {
   const pathname = usePathname();
 
-  const hiddenPaths = [
-    "/customer-intake",
-    "/customer-app",
-    "/owner-dashboard",
-  ];
-
-  const shouldHide = hiddenPaths.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`)
-  );
-
-  async function handleStaffLogout() {
-    try {
-      await fetch("/api/staff-login/logout", {
-        method: "POST",
-      });
-    } finally {
-      window.location.href = "/login";
-    }
+  if (isHiddenPath(pathname)) {
+    return null;
   }
-
-  if (shouldHide) return null;
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 border-t bg-white/95 backdrop-blur"
+      className="fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 bg-white/95 shadow-[0_-4px_18px_rgba(15,23,42,0.06)] backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div
-        className="mx-auto max-w-md"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(9, minmax(0, 1fr))",
-        }}
-      >
+      <div className="mx-auto grid max-w-md grid-cols-6">
         {navItems.map((item) => {
-          const isActive =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const isActive = item.activePrefixes.some(
+            (prefix) =>
+              pathname === prefix || pathname.startsWith(`${prefix}/`)
+          );
 
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium transition ${
+              className={`flex min-h-[66px] min-w-0 flex-col items-center justify-center px-1 text-center text-[10px] font-bold transition ${
                 isActive
                   ? "bg-orange-50 text-orange-500"
-                  : "text-gray-500 hover:text-gray-800"
+                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
               }`}
             >
-              <span className="text-lg leading-none">{item.icon}</span>
-              <span className="mt-1 leading-none">{item.label}</span>
+              <span className="text-lg leading-none" aria-hidden="true">
+                {item.icon}
+              </span>
+
+              <span className="mt-1 max-w-full truncate leading-tight">
+                {item.label}
+              </span>
             </Link>
           );
         })}
-
-        <button
-          type="button"
-          onClick={handleStaffLogout}
-          className="flex min-h-[64px] flex-col items-center justify-center px-1 text-[11px] font-medium text-gray-500 transition hover:text-gray-800"
-        >
-          <span className="text-lg leading-none">🚪</span>
-          <span className="mt-1 leading-none">ログアウト</span>
-        </button>
       </div>
     </nav>
   );
