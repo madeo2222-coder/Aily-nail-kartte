@@ -144,7 +144,7 @@ function getFileExtension(fileName: string) {
 export default function InboundReservePage() {
   const todayText = useMemo(() => getTodayText(), []);
   const maxReservationDate = useMemo(
-    () => addDaysText(todayText, 40),
+    () => addDaysText(todayText, 30),
     [todayText]
   );
 
