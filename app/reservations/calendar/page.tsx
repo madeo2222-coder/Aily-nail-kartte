@@ -32,6 +32,29 @@ type ExternalCalendarBlockRow = {
 
 type VisitRow = {
   customer_id: string | null;
+  visit_date: string | null;
+  menu_name: string | null;
+  menu: string | null;
+  memo: string | null;
+  next_proposal: string | null;
+};
+
+type CustomerIntakeRow = {
+  customer_id: string | null;
+  allergy: string | null;
+  skin_trouble: string | null;
+  constitution: string | null;
+  avoid_items: string | null;
+  submitted_at: string | null;
+  created_at: string | null;
+};
+
+type CustomerBrief = {
+  allergy: string;
+  caution: string;
+  previousMemo: string;
+  previousMenu: string;
+  nextProposal: string;
 };
 
 type CustomerRow = {
@@ -49,6 +72,11 @@ type CalendarReservation = {
   customerId: string | null;
   customerName: string;
   visitCount: number;
+  allergy: string;
+  caution: string;
+  previousMemo: string;
+  previousMenu: string;
+  nextProposal: string;
   staffId: string | null;
   staffName: string;
   menuName: string;
@@ -212,6 +240,22 @@ function normalizeStatus(status: string | null) {
 
 function isCancelledStatus(status: string) {
   return status === "キャンセル" || status === "cancelled";
+}
+
+function normalizeBriefText(value: string | null | undefined) {
+  return (value || "").replace(/\s+/g, " ").trim();
+}
+
+function joinBriefParts(values: Array<string | null | undefined>) {
+  return values
+    .map((value) => normalizeBriefText(value))
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function getVisitMenu(visit: VisitRow | undefined) {
+  if (!visit) return "";
+  return normalizeBriefText(visit.menu_name || visit.menu);
 }
 
 function normalizeSourceLabel(params: {
@@ -443,6 +487,7 @@ export default function ReservationsCalendarPage() {
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [visits, setVisits] = useState<VisitRow[]>([]);
+  const [customerIntakes, setCustomerIntakes] = useState<CustomerIntakeRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingHpb, setSyncingHpb] = useState(false);
 
@@ -455,6 +500,7 @@ export default function ReservationsCalendarPage() {
       customersRes,
       staffsRes,
       visitsRes,
+      customerIntakesRes,
     ] = await Promise.all([
       supabase
         .from("reservations")
@@ -466,7 +512,16 @@ export default function ReservationsCalendarPage() {
         .order("start_at", { ascending: true }),
       supabase.from("customers").select("id, name"),
       supabase.from("staffs").select("id, name"),
-      supabase.from("visits").select("customer_id"),
+      supabase
+        .from("visits")
+        .select("customer_id, visit_date, menu_name, menu, memo, next_proposal")
+        .order("visit_date", { ascending: false }),
+      supabase
+        .from("customer_intakes")
+        .select(
+          "customer_id, allergy, skin_trouble, constitution, avoid_items, submitted_at, created_at",
+        )
+        .order("created_at", { ascending: false }),
     ]);
 
     if (reservationsRes.error) {
@@ -504,6 +559,18 @@ export default function ReservationsCalendarPage() {
       setVisits([]);
     } else {
       setVisits((visitsRes.data || []) as VisitRow[]);
+    }
+
+    if (customerIntakesRes.error) {
+      console.error(
+        "calendar customer_intakes error:",
+        customerIntakesRes.error,
+      );
+      setCustomerIntakes([]);
+    } else {
+      setCustomerIntakes(
+        (customerIntakesRes.data || []) as CustomerIntakeRow[],
+      );
     }
 
     setLoading(false);
@@ -567,6 +634,42 @@ export default function ReservationsCalendarPage() {
     return map;
   }, [visits]);
 
+  const customerBriefMap = useMemo(() => {
+    const latestVisitMap = new Map<string, VisitRow>();
+    const latestIntakeMap = new Map<string, CustomerIntakeRow>();
+
+    visits.forEach((visit) => {
+      if (!visit.customer_id || latestVisitMap.has(visit.customer_id)) return;
+      latestVisitMap.set(visit.customer_id, visit);
+    });
+
+    customerIntakes.forEach((intake) => {
+      if (!intake.customer_id || latestIntakeMap.has(intake.customer_id)) return;
+      latestIntakeMap.set(intake.customer_id, intake);
+    });
+
+    const map = new Map<string, CustomerBrief>();
+
+    customers.forEach((customer) => {
+      const latestVisit = latestVisitMap.get(customer.id);
+      const latestIntake = latestIntakeMap.get(customer.id);
+
+      map.set(customer.id, {
+        allergy: normalizeBriefText(latestIntake?.allergy),
+        caution: joinBriefParts([
+          latestIntake?.skin_trouble,
+          latestIntake?.constitution,
+          latestIntake?.avoid_items,
+        ]),
+        previousMemo: normalizeBriefText(latestVisit?.memo),
+        previousMenu: getVisitMenu(latestVisit),
+        nextProposal: normalizeBriefText(latestVisit?.next_proposal),
+      });
+    });
+
+    return map;
+  }, [customers, customerIntakes, visits]);
+
   const reservationCalendarRows = useMemo<CalendarReservation[]>(() => {
     return reservations.map((reservation) => {
       const date = toJstDateText(reservation.start_at);
@@ -586,12 +689,18 @@ export default function ReservationsCalendarPage() {
 
       const customerId = reservation.customer_id || null;
       const visitCount = customerId ? visitCountMap.get(customerId) || 0 : 0;
+      const brief = customerId ? customerBriefMap.get(customerId) : undefined;
 
       return {
         id: reservation.id,
         customerId,
         customerName,
         visitCount,
+        allergy: brief?.allergy || "",
+        caution: brief?.caution || "",
+        previousMemo: brief?.previousMemo || "",
+        previousMenu: brief?.previousMenu || "",
+        nextProposal: brief?.nextProposal || "",
         staffId,
         staffName,
         menuName: reservation.menu_name || reservation.menu || "未設定",
@@ -607,7 +716,13 @@ export default function ReservationsCalendarPage() {
         isExternalBlock: false,
       };
     });
-  }, [reservations, customerMap, staffMap, visitCountMap]);
+  }, [
+    reservations,
+    customerMap,
+    staffMap,
+    visitCountMap,
+    customerBriefMap,
+  ]);
 
   const externalCalendarRows = useMemo<CalendarReservation[]>(() => {
     return externalBlocks.map((block) => {
@@ -629,6 +744,11 @@ export default function ReservationsCalendarPage() {
         customerId: null,
         customerName: source,
         visitCount: 0,
+        allergy: "",
+        caution: "",
+        previousMemo: "",
+        previousMenu: "",
+        nextProposal: "",
         staffId,
         staffName,
         menuName: title,
@@ -1206,6 +1326,41 @@ export default function ReservationsCalendarPage() {
                                 </span>
                               ) : null}
                             </div>
+
+                            {!reservation.isExternalBlock &&
+                            !isCancelledStatus(reservation.status) &&
+                            (reservation.allergy || reservation.caution) ? (
+                              <div className="mt-1 truncate rounded-lg bg-red-50/90 px-2 py-1 font-bold text-red-700">
+                                ⚠ {joinBriefParts([
+                                  reservation.allergy,
+                                  reservation.caution,
+                                ])}
+                              </div>
+                            ) : null}
+
+                            {!reservation.isExternalBlock &&
+                            !isCancelledStatus(reservation.status) &&
+                            reservation.previousMemo ? (
+                              <div className="mt-1 truncate rounded-lg bg-white/70 px-2 py-1 text-slate-700">
+                                💬 前回: {reservation.previousMemo}
+                              </div>
+                            ) : null}
+
+                            {!reservation.isExternalBlock &&
+                            !isCancelledStatus(reservation.status) &&
+                            reservation.previousMenu ? (
+                              <div className="mt-1 truncate rounded-lg bg-white/70 px-2 py-1 text-slate-700">
+                                💅 前回: {reservation.previousMenu}
+                              </div>
+                            ) : null}
+
+                            {!reservation.isExternalBlock &&
+                            !isCancelledStatus(reservation.status) &&
+                            reservation.nextProposal ? (
+                              <div className="mt-1 truncate rounded-lg bg-amber-50/90 px-2 py-1 font-bold text-amber-800">
+                                ✨ 提案: {reservation.nextProposal}
+                              </div>
+                            ) : null}
                           </>
                         );
                         const className = `absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
