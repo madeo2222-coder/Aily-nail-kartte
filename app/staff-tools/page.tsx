@@ -19,7 +19,7 @@ const toolSections: ToolSection[] = [
   {
     title: "予約・外部連携",
     description:
-      "HPB・ミニモ同期や、外部予約枠、外部サービスとの接続設定を管理します。",
+      "HPB・ミニモの予約同期や、外部予約枠の確認・登録を行います。",
     tools: [
       {
         title: "予約カレンダー",
@@ -61,19 +61,19 @@ const toolSections: ToolSection[] = [
         description:
           "Gmailなど、予約同期に使用する外部サービスの接続状況を確認します。",
         href: "/settings/external-connections",
-        badge: "設定",
+        badge: "連携",
       },
     ],
   },
   {
     title: "顧客・受付管理",
     description:
-      "顧客カルテ、初回来店情報、重複顧客、休眠顧客などを管理します。",
+      "顧客カルテ、初回受付情報、重複カルテなどを確認・整理します。",
     tools: [
       {
         title: "顧客ページ",
         description:
-          "顧客情報、アレルギー、来店履歴、写真、次回提案などを確認します。",
+          "顧客情報、初回カウンセリング、来店履歴、写真、次回提案を確認します。",
         href: "/customers",
         badge: "顧客管理",
       },
@@ -87,22 +87,21 @@ const toolSections: ToolSection[] = [
       {
         title: "顧客統合",
         description:
-          "重複して作成された顧客カルテを、予約・来店・売上履歴ごと統合します。",
+          "重複して作成された顧客カルテを、予約・来店履歴ごと統合します。",
         href: "/customers/merge",
         badge: "重複整理",
       },
-     
       {
         title: "初回来店入力一覧",
         description:
-          "お客様スマホから送信された初回受付情報を一覧で確認します。",
+          "お客様がスマホから入力した初回受付情報と顧客への紐付けを確認します。",
         href: "/customer-intake/list",
         badge: "受付確認",
       },
       {
         title: "お客様入力ページ",
         description:
-          "お客様本人がスマホから初回情報を入力するページです。",
+          "初回来店のお客様がスマホからカウンセリング情報を入力するページです。",
         href: "/customer-intake",
         badge: "お客様用",
       },
@@ -130,7 +129,7 @@ const toolSections: ToolSection[] = [
       {
         title: "LINEフォローログ",
         description:
-          "口コミ依頼や予約案内など、LINE送信履歴を確認します。",
+          "口コミ依頼や予約案内など、顧客へのLINE送信履歴を確認します。",
         href: "/line-follow-logs",
         badge: "LINE",
       },
@@ -142,16 +141,16 @@ const toolSections: ToolSection[] = [
       "来店履歴、施術記録、写真登録など、現場で使うページです。",
     tools: [
       {
-        title: "来店ページ",
+        title: "来店一覧",
         description:
-          "登録済みの来店履歴を一覧で確認します。",
+          "登録済みの来店履歴や施術内容を一覧で確認します。",
         href: "/visits",
         badge: "履歴",
       },
       {
         title: "来店登録",
         description:
-          "施術内容、次回提案、写真、来店情報などを登録します。",
+          "施術内容、売上、次回提案、施術後写真をまとめて登録します。",
         href: "/visits/new",
         badge: "入力",
       },
@@ -165,184 +164,44 @@ const toolSections: ToolSection[] = [
     ],
   },
   {
-    title: "売上・会計",
+    title: "ネイルチップ・通販",
     description:
-      "売上、入金、未収金、月次締め、税理士連携などを管理します。",
-    tools: [
-      {
-        title: "売上ダッシュボード",
-        description:
-          "売上状況や集計をダッシュボード形式で確認します。",
-        href: "/sales-dashboard",
-        badge: "売上",
-      },
-      {
-        title: "売上登録",
-        description:
-          "施術売上や商品売上を登録・確認します。",
-        href: "/sales",
-        badge: "登録",
-      },
-      {
-        title: "入金管理",
-        description:
-          "売上に対する入金状況を登録・確認します。",
-        href: "/sales-payments",
-        badge: "入金",
-      },
-      {
-        title: "未入金一覧",
-        description:
-          "未払い・未入金の売上を一覧で確認します。",
-        href: "/sales-payments/unpaid",
-        badge: "未入金",
-      },
-      {
-        title: "未収金管理",
-        description:
-          "回収前の売上や未収金を確認します。",
-        href: "/receivables",
-        badge: "未収金",
-      },
-      {
-        title: "入金リマインド",
-        description:
-          "未入金案件の確認や督促対象を管理します。",
-        href: "/reminders",
-        badge: "督促",
-      },
-      {
-        title: "月次締め",
-        description:
-          "月単位の売上・入金・経費を締めて確認します。",
-        href: "/monthly-closing",
-        badge: "月次",
-      },
-      {
-        title: "経費管理",
-        description:
-          "経費の登録、一覧、領収書確認などを行います。",
-        href: "/expenses",
-        badge: "経費",
-      },
-      {
-        title: "資金管理",
-        description:
-          "店舗の資金状況や会計関連情報を確認します。",
-        href: "/finance",
-        badge: "資金",
-      },
-      {
-        title: "税理士ページ",
-        description:
-          "税理士共有用の集計や確認ページへ移動します。",
-        href: "/tax",
-        badge: "税理士",
-      },
-    ],
-  },
-  {
-    title: "分析・レポート",
-    description:
-      "売上、顧客、予約、KPIなどの集計を確認します。",
-    tools: [
-      {
-        title: "分析ページ",
-        description:
-          "店舗全体のデータ分析や傾向を確認します。",
-        href: "/analytics",
-        badge: "分析",
-      },
-      {
-        title: "失客分析",
-        description:
-          "来店が途絶えた顧客や失客傾向を分析します。",
-        href: "/analytics/lost-customers",
-        badge: "失客分析",
-      },
-      {
-        title: "日次レポート",
-        description:
-          "日ごとの売上・来店・予約状況を確認します。",
-        href: "/reports/daily",
-        badge: "日次",
-      },
-      {
-        title: "月次レポート",
-        description:
-          "月ごとの売上・来店・予約状況を確認します。",
-        href: "/reports/monthly",
-        badge: "月次",
-      },
-      {
-        title: "KPIレポート",
-        description:
-          "再来率、客単価、来店数など主要指標を確認します。",
-        href: "/reports/kpi",
-        badge: "KPI",
-      },
-      {
-        title: "顧客レポート",
-        description:
-          "顧客別の利用状況や来店傾向を確認します。",
-        href: "/reports/customers",
-        badge: "顧客分析",
-      },
-    ],
-  },
-  {
-    title: "ネイルチップ・注文",
-    description:
-      "ネイルチップの注文、見積、制作、発送、入金を管理します。",
+      "ネイルチップの注文、見積、制作、発送、入金状況を確認します。",
     tools: [
       {
         title: "ネイルチップ注文一覧",
         description:
-          "ネイルチップ注文の一覧、進捗、支払い、発送状況を確認します。",
+          "ネイルチップ注文の内容、制作、支払い、発送状況を確認します。",
         href: "/nail-tip-orders",
         badge: "注文管理",
       },
       {
-        title: "ネイルチップ依頼一覧",
+        title: "インバウンド依頼一覧",
         description:
-          "お客様から届いたネイルチップ依頼を確認し、見積や制作対応を行います。",
+          "海外・インバウンドから届いたネイルチップ依頼を確認します。",
         href: "/inbound-nail-tip-requests",
-        badge: "依頼受付",
+        badge: "海外受付",
       },
     ],
   },
   {
-    title: "店舗・スタッフ設定",
+    title: "スタッフ業務",
     description:
-      "店舗情報、口コミURL、スタッフ、権限などを管理します。",
+      "日常業務で使用するスタッフ向けページへ移動します。",
     tools: [
       {
-        title: "店舗設定",
+        title: "スタッフホーム",
         description:
-          "店舗名、Google口コミ、Instagram、HPB、ミニモ、LINEのURLを設定します。",
-        href: "/settings/salon",
-        badge: "店舗設定",
+          "今日の予約、売上、来店予定を確認する通常のスタッフ画面です。",
+        href: "/dashboard",
+        badge: "ホーム",
       },
       {
-        title: "スタッフページ",
+        title: "スタッフ入口",
         description:
-          "スタッフ向けの通常業務ページへ移動します。",
+          "予約確認、顧客確認、来店登録などのショートカットを開きます。",
         href: "/staff",
-        badge: "スタッフ",
-      },
-      {
-        title: "スタッフ管理",
-        description:
-          "スタッフ情報や登録内容を管理します。",
-        href: "/staff/manage",
-        badge: "管理者",
-      },
-      {
-        title: "オーナーダッシュボード",
-        description:
-          "オーナー向けの経営状況や管理情報を確認します。",
-        href: "/owner-dashboard",
-        badge: "オーナー",
+        badge: "入口",
       },
     ],
   },
@@ -358,26 +217,26 @@ export default function StaffToolsPage() {
           </p>
 
           <h1 className="mt-2 text-2xl font-bold">
-            管理・便利ツール
+            スタッフ用 管理・便利ツール
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-white/90">
-            普段の下部メニューに表示していない管理ページや、設定・分析ページをまとめています。
+            予約同期、顧客整理、来店記録、ネイルチップなど、現場で使う補助機能をまとめています。
           </p>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <Link
-              href="/staff"
-              className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+              href="/dashboard"
+              className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-white px-3 py-3 text-center text-sm font-bold text-rose-500 shadow"
             >
-              スタッフページへ
+              スタッフホーム
             </Link>
 
             <Link
-              href="/dashboard"
-              className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+              href="/reservations/calendar"
+              className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/40 bg-white/80 px-3 py-3 text-center text-sm font-bold text-rose-600 backdrop-blur"
             >
-              ホームへ
+              予約カレンダー
             </Link>
           </div>
         </section>
