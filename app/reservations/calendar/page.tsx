@@ -30,6 +30,10 @@ type ExternalCalendarBlockRow = {
   created_at: string | null;
 };
 
+type VisitRow = {
+  customer_id: string | null;
+};
+
 type CustomerRow = {
   id: string;
   name: string | null;
@@ -42,7 +46,9 @@ type StaffRow = {
 
 type CalendarReservation = {
   id: string;
+  customerId: string | null;
   customerName: string;
+  visitCount: number;
   staffId: string | null;
   staffName: string;
   menuName: string;
@@ -426,7 +432,7 @@ function buildMonthDays(monthText: string) {
 export default function ReservationsCalendarPage() {
   const [selectedDate, setSelectedDate] = useState(getTodayText());
   const [selectedMonth, setSelectedMonth] = useState(
-    getMonthText(getTodayText())
+    getMonthText(getTodayText()),
   );
   const [selectedStaffFilter, setSelectedStaffFilter] = useState("all");
 
@@ -436,25 +442,32 @@ export default function ReservationsCalendarPage() {
   >([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
+  const [visits, setVisits] = useState<VisitRow[]>([]);
   const [loading, setLoading] = useState(true);
-const [syncingHpb, setSyncingHpb] = useState(false);
+  const [syncingHpb, setSyncingHpb] = useState(false);
 
   async function fetchCalendarData() {
     setLoading(true);
 
-    const [reservationsRes, externalBlocksRes, customersRes, staffsRes] =
-      await Promise.all([
-        supabase
-          .from("reservations")
-          .select("*")
-          .order("start_at", { ascending: true }),
-        supabase
-          .from("external_calendar_blocks")
-          .select("*")
-          .order("start_at", { ascending: true }),
-        supabase.from("customers").select("id, name"),
-        supabase.from("staffs").select("id, name"),
-      ]);
+    const [
+      reservationsRes,
+      externalBlocksRes,
+      customersRes,
+      staffsRes,
+      visitsRes,
+    ] = await Promise.all([
+      supabase
+        .from("reservations")
+        .select("*")
+        .order("start_at", { ascending: true }),
+      supabase
+        .from("external_calendar_blocks")
+        .select("*")
+        .order("start_at", { ascending: true }),
+      supabase.from("customers").select("id, name"),
+      supabase.from("staffs").select("id, name"),
+      supabase.from("visits").select("customer_id"),
+    ]);
 
     if (reservationsRes.error) {
       console.error("calendar reservations error:", reservationsRes.error);
@@ -468,7 +481,7 @@ const [syncingHpb, setSyncingHpb] = useState(false);
       setExternalBlocks([]);
     } else {
       setExternalBlocks(
-        (externalBlocksRes.data || []) as ExternalCalendarBlockRow[]
+        (externalBlocksRes.data || []) as ExternalCalendarBlockRow[],
       );
     }
 
@@ -486,37 +499,41 @@ const [syncingHpb, setSyncingHpb] = useState(false);
       setStaffs((staffsRes.data || []) as StaffRow[]);
     }
 
-    setLoading(false);
-  }
-async function syncHpbNow() {
-  try {
-    setSyncingHpb(true);
-
-    const response = await fetch("/api/hpb-gmail-sync", {
-      method: "POST",
-    });
-
-    const json = await response.json();
-
-    if (!response.ok || !json.ok) {
-      throw new Error(json.error || "同期に失敗しました");
+    if (visitsRes.error) {
+      console.error("calendar visits error:", visitsRes.error);
+      setVisits([]);
+    } else {
+      setVisits((visitsRes.data || []) as VisitRow[]);
     }
 
-    await fetchCalendarData();
-
-    alert(`${json.count ?? 0}件同期しました`);
-  } catch (error) {
-    console.error(error);
-
-    alert(
-      error instanceof Error
-        ? error.message
-        : "同期に失敗しました"
-    );
-  } finally {
-    setSyncingHpb(false);
+    setLoading(false);
   }
-}
+
+  async function syncHpbNow() {
+    try {
+      setSyncingHpb(true);
+
+      const response = await fetch("/api/hpb-gmail-sync", {
+        method: "POST",
+      });
+
+      const json = await response.json();
+
+      if (!response.ok || !json.ok) {
+        throw new Error(json.error || "同期に失敗しました");
+      }
+
+      await fetchCalendarData();
+
+      alert(`${json.count ?? 0}件同期しました`);
+    } catch (error) {
+      console.error(error);
+
+      alert(error instanceof Error ? error.message : "同期に失敗しました");
+    } finally {
+      setSyncingHpb(false);
+    }
+  }
 
   useEffect(() => {
     void fetchCalendarData();
@@ -538,6 +555,18 @@ async function syncHpbNow() {
     return map;
   }, [staffs]);
 
+  const visitCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+
+    visits.forEach((visit) => {
+      if (!visit.customer_id) return;
+
+      map.set(visit.customer_id, (map.get(visit.customer_id) || 0) + 1);
+    });
+
+    return map;
+  }, [visits]);
+
   const reservationCalendarRows = useMemo<CalendarReservation[]>(() => {
     return reservations.map((reservation) => {
       const date = toJstDateText(reservation.start_at);
@@ -547,15 +576,22 @@ async function syncHpbNow() {
       const endMinute = timeTextToMinute(endTime);
 
       const staffId = reservation.staff_id || null;
-      const staffName = staffId ? staffMap.get(staffId) || "未設定" : "指名なし";
+      const staffName = staffId
+        ? staffMap.get(staffId) || "未設定"
+        : "指名なし";
 
       const customerName = reservation.customer_id
         ? customerMap.get(reservation.customer_id) || "顧客名未設定"
         : "顧客未設定";
 
+      const customerId = reservation.customer_id || null;
+      const visitCount = customerId ? visitCountMap.get(customerId) || 0 : 0;
+
       return {
         id: reservation.id,
+        customerId,
         customerName,
+        visitCount,
         staffId,
         staffName,
         menuName: reservation.menu_name || reservation.menu || "未設定",
@@ -571,7 +607,7 @@ async function syncHpbNow() {
         isExternalBlock: false,
       };
     });
-  }, [reservations, customerMap, staffMap]);
+  }, [reservations, customerMap, staffMap, visitCountMap]);
 
   const externalCalendarRows = useMemo<CalendarReservation[]>(() => {
     return externalBlocks.map((block) => {
@@ -582,13 +618,17 @@ async function syncHpbNow() {
       const endMinute = timeTextToMinute(endTime);
 
       const staffId = block.staff_id || null;
-      const staffName = staffId ? staffMap.get(staffId) || "未設定" : "指名なし";
+      const staffName = staffId
+        ? staffMap.get(staffId) || "未設定"
+        : "指名なし";
       const source = block.source || "外部";
       const title = block.title || `${source}予約`;
 
       return {
         id: `external-${block.id}`,
+        customerId: null,
         customerName: source,
+        visitCount: 0,
         staffId,
         staffName,
         menuName: title,
@@ -619,18 +659,18 @@ async function syncHpbNow() {
 
     if (selectedStaffFilter === "no_staff") {
       return allCalendarReservations.filter(
-        (reservation) => reservation.staffId === null
+        (reservation) => reservation.staffId === null,
       );
     }
 
     return allCalendarReservations.filter(
-      (reservation) => reservation.staffId === selectedStaffFilter
+      (reservation) => reservation.staffId === selectedStaffFilter,
     );
   }, [allCalendarReservations, selectedStaffFilter]);
 
   const calendarReservations = useMemo<CalendarReservation[]>(() => {
     return staffFilteredReservations.filter(
-      (reservation) => reservation.date === selectedDate
+      (reservation) => reservation.date === selectedDate,
     );
   }, [staffFilteredReservations, selectedDate]);
 
@@ -681,7 +721,7 @@ async function syncHpbNow() {
     }));
 
     const hasNoStaffReservation = calendarReservations.some(
-      (reservation) => reservation.staffId === null
+      (reservation) => reservation.staffId === null,
     );
 
     if (hasNoStaffReservation) {
@@ -754,7 +794,7 @@ async function syncHpbNow() {
 
   function getReservationsForStaff(column: StaffColumn) {
     return calendarReservations.filter(
-      (reservation) => reservation.staffId === column.staffId
+      (reservation) => reservation.staffId === column.staffId,
     );
   }
 
@@ -823,9 +863,7 @@ async function syncHpbNow() {
         </section>
 
         <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-          <div className="text-sm font-bold text-slate-900">
-            予約元の色分け
-          </div>
+          <div className="text-sm font-bold text-slate-900">予約元の色分け</div>
 
           <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
             <span className="rounded-full border border-orange-200 bg-orange-100 px-3 py-1.5 text-orange-700">
@@ -1099,7 +1137,7 @@ async function syncHpbNow() {
                         const height =
                           Math.max(
                             reservation.durationMinutes / SLOT_MINUTES,
-                            1
+                            1,
                           ) * rowHeight;
 
                         const sourceLabel = normalizeSourceLabel({
@@ -1111,55 +1149,74 @@ async function syncHpbNow() {
 
                         const colorClass = getStatusColor(
                           reservation.status,
-                          sourceLabel
+                          sourceLabel,
                         );
 
-const cardContent = (
-  <>
-    <div className="truncate font-black">
-      {reservation.customerName}
-    </div>
+                        const cardContent = (
+                          <>
+                            <div className="truncate font-black">
+                              {reservation.customerName}
+                            </div>
 
-    <div className="mt-1 truncate font-bold">
-      {reservation.startTime}〜{reservation.endTime}
-    </div>
+                            <div className="mt-1 truncate font-bold">
+                              {reservation.startTime}〜{reservation.endTime}
+                            </div>
 
-    <div className="mt-1 truncate">
-      {reservation.menuName}
-    </div>
+                            <div className="mt-1 truncate">
+                              {reservation.menuName}
+                            </div>
 
-    <div className="mt-1 flex flex-wrap gap-1">
-      <span
-        className={`rounded-full px-2 py-0.5 ${
-          isCancelledStatus(reservation.status)
-            ? "bg-zinc-700 text-white"
-            : "bg-white/70"
-        }`}
-      >
-        {isCancelledStatus(reservation.status)
-          ? "キャンセル済み"
-          : reservation.status}
-      </span>
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <span
+                                className={`rounded-full px-2 py-0.5 ${
+                                  isCancelledStatus(reservation.status)
+                                    ? "bg-zinc-700 text-white"
+                                    : "bg-white/70"
+                                }`}
+                              >
+                                {isCancelledStatus(reservation.status)
+                                  ? "キャンセル済み"
+                                  : reservation.status}
+                              </span>
 
-      <span
-        className={`rounded-full px-2 py-0.5 ${getSourceBadgeClass(
-          sourceLabel
-        )}`}
-      >
-        {sourceLabel}
-      </span>
-    </div>
-  </>
-);
-             const className = `absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
-  overlapIds.has(reservation.id)
-    ? "ring-2 ring-rose-400"
-    : ""
-} ${
-  isCancelledStatus(reservation.status)
-    ? "line-through"
-    : ""
-}`;
+                              <span
+                                className={`rounded-full px-2 py-0.5 ${getSourceBadgeClass(
+                                  sourceLabel,
+                                )}`}
+                              >
+                                {sourceLabel}
+                              </span>
+
+                              {!reservation.isExternalBlock &&
+                              !isCancelledStatus(reservation.status) ? (
+                                <span
+                                  className={`rounded-full px-2 py-0.5 font-bold ${
+                                    !reservation.customerId
+                                      ? "bg-slate-700 text-white"
+                                      : reservation.visitCount === 0
+                                        ? "bg-rose-600 text-white"
+                                        : "bg-white/80 text-slate-800"
+                                  }`}
+                                >
+                                  {!reservation.customerId
+                                    ? "顧客未連携"
+                                    : reservation.visitCount === 0
+                                      ? "新規"
+                                      : `再来・${reservation.visitCount}回来店`}
+                                </span>
+                              ) : null}
+                            </div>
+                          </>
+                        );
+                        const className = `absolute left-2 right-2 overflow-hidden rounded-2xl border p-2 text-xs shadow-sm ${colorClass} ${
+                          overlapIds.has(reservation.id)
+                            ? "ring-2 ring-rose-400"
+                            : ""
+                        } ${
+                          isCancelledStatus(reservation.status)
+                            ? "line-through"
+                            : ""
+                        }`;
 
                         const style = {
                           top: Math.max(top, 0),
@@ -1167,67 +1224,71 @@ const cardContent = (
                         };
 
                         if (reservation.isExternalBlock) {
-  return (
-    <div
-      key={reservation.id}
-      className={className}
-      style={style}
-    >
-      {cardContent}
+                          return (
+                            <div
+                              key={reservation.id}
+                              className={className}
+                              style={style}
+                            >
+                              {cardContent}
 
-      <button
-        type="button"
-        onClick={async () => {
-          const ok = window.confirm(
-            "この外部予約ブロックを削除しますか？"
-          );
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const ok =
+                                    window.confirm(
+                                      "この外部予約ブロックを削除しますか？",
+                                    );
 
-          if (!ok) return;
+                                  if (!ok) return;
 
-          try {
-            const blockId = reservation.id.replace("external-", "");
+                                  try {
+                                    const blockId = reservation.id.replace(
+                                      "external-",
+                                      "",
+                                    );
 
-            const res = await fetch(
-              "/api/external-calendar-blocks/delete",
-              {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  id: blockId,
-                }),
-              }
-            );
+                                    const res = await fetch(
+                                      "/api/external-calendar-blocks/delete",
+                                      {
+                                        method: "POST",
+                                        headers: {
+                                          "Content-Type": "application/json",
+                                        },
+                                        body: JSON.stringify({
+                                          id: blockId,
+                                        }),
+                                      },
+                                    );
 
-            const data = await res.json();
+                                    const data = await res.json();
 
-            if (!res.ok || !data.ok) {
-              throw new Error(
-                data?.error || "削除に失敗しました"
-              );
-            }
+                                    if (!res.ok || !data.ok) {
+                                      throw new Error(
+                                        data?.error || "削除に失敗しました",
+                                      );
+                                    }
 
-            alert("削除しました");
+                                    alert("削除しました");
 
-            await fetchCalendarData();
-          } catch (error) {
-            console.error(error);
+                                    await fetchCalendarData();
+                                  } catch (error) {
+                                    console.error(error);
 
-            alert(
-              error instanceof Error
-                ? error.message
-                : "削除に失敗しました"
-            );
-          }
-        }}
-        className="mt-2 w-full rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white"
-      >
-        削除
-      </button>
-    </div>
-  );
-}
+                                    alert(
+                                      error instanceof Error
+                                        ? error.message
+                                        : "削除に失敗しました",
+                                    );
+                                  }
+                                }}
+                                className="mt-2 w-full rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white"
+                              >
+                                削除
+                              </button>
+                            </div>
+                          );
+                        }
 
                         return (
                           <Link
