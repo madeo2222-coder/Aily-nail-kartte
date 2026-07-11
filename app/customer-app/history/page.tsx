@@ -509,6 +509,13 @@ export default function CustomerAppHistoryPage() {
                         {item.memo?.trim() ? item.memo : "備考はありません"}
                       </div>
                     </div>
+
+                    <Link
+                      href={`/customer-app/reservations/${item.id}`}
+                      className="block rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white shadow-sm"
+                    >
+                      予約内容を確認・変更する
+                    </Link>
                   </div>
                 </article>
               );

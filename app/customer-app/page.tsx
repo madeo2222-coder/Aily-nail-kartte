@@ -190,6 +190,7 @@ export default function CustomerAppPage() {
   const [lastMenu, setLastMenu] = useState("来店履歴を確認中です");
   const [lastStaff, setLastStaff] = useState("未登録");
   const [nextReservedAt, setNextReservedAt] = useState("");
+  const [nextReservationId, setNextReservationId] = useState("");
   const [latestPhoto, setLatestPhoto] = useState<LatestPhoto | null>(null);
 
   useEffect(() => {
@@ -295,6 +296,7 @@ export default function CustomerAppPage() {
           null;
 
         if (nextReservation) {
+          setNextReservationId(nextReservation.id);
           setNextReservedAt(formatDateTime(nextReservation.start_at));
 
           if (nextReservation.staff_id) {
@@ -310,6 +312,7 @@ export default function CustomerAppPage() {
             }
           }
         } else {
+          setNextReservationId("");
           setNextReservedAt("");
         }
 
@@ -540,13 +543,16 @@ export default function CustomerAppPage() {
               >
                 予約する
               </Link>
-              <button
-                type="button"
-                onClick={() => showMessage("予約確認機能は次段階で実装します")}
+              <Link
+                href={
+                  nextReservationId
+                    ? `/customer-app/reservations/${nextReservationId}`
+                    : "/customer-app/history"
+                }
                 className="rounded-xl border border-white/30 px-4 py-2 text-sm font-bold text-white"
               >
-                予約確認
-              </button>
+                {nextReservationId ? "予約内容を見る" : "予約確認"}
+              </Link>
             </div>
           </div>
         </section>
