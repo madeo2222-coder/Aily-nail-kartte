@@ -208,40 +208,147 @@ function isCancelledStatus(status: string) {
   return status === "キャンセル" || status === "cancelled";
 }
 
-function getStatusColor(status: string, menuName: string, memo: string) {
-  if (isCancelledStatus(status)) {
-    return "border-zinc-300 bg-zinc-100 text-zinc-500 opacity-60";
-  }
+function normalizeSourceLabel(params: {
+  source: string;
+  memo: string;
+  menuName: string;
+  isExternalBlock: boolean;
+}) {
+  const source = params.source.trim().toLowerCase();
+  const checkText = `${params.source} ${params.memo} ${params.menuName}`;
 
-  const checkText = `${menuName || ""} ${memo || ""}`;
-
-  if (checkText.includes("ホットペッパー") || checkText.includes("HPB")) {
-    return "border-orange-200 bg-orange-100 text-orange-800";
-  }
-
-  if (checkText.includes("ミニモ")) {
-    return "border-purple-200 bg-purple-100 text-purple-800";
-  }
-
-  if (checkText.includes("電話")) {
-    return "border-slate-300 bg-slate-100 text-slate-800";
-  }
-
-  if (checkText.includes("Instagram") || checkText.includes("インスタ")) {
-    return "border-pink-200 bg-pink-100 text-pink-800";
-  }
-
-  if (checkText.includes("LINE") || checkText.includes("ライン")) {
-    return "border-emerald-200 bg-emerald-100 text-emerald-800";
+  if (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    checkText.includes("HPB予約番号") ||
+    checkText.includes("ホットペッパー")
+  ) {
+    return "HPB同期";
   }
 
   if (
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
+    checkText.includes("ミニモ予約ID") ||
+    checkText.includes("ミニモ")
+  ) {
+    return "ミニモ同期";
+  }
+
+  if (
+    source.includes("line") ||
+    source.includes("ライン") ||
+    checkText.includes("LINE") ||
+    checkText.includes("ライン")
+  ) {
+    return "LINE予約";
+  }
+
+  if (
+    source.includes("instagram") ||
+    source.includes("インスタ") ||
+    checkText.includes("Instagram") ||
+    checkText.includes("インスタ")
+  ) {
+    return "Instagram";
+  }
+
+  if (
+    source.includes("phone") ||
+    source.includes("電話") ||
+    checkText.includes("電話")
+  ) {
+    return "電話予約";
+  }
+
+  if (
+    params.isExternalBlock ||
+    source.includes("external") ||
+    source.includes("外部") ||
     checkText.includes("外部ブロック") ||
     checkText.includes("休憩") ||
     checkText.includes("店休日") ||
     checkText.includes("ブロック")
   ) {
+    return "外部ブロック";
+  }
+
+  if (
+    source.includes("naily") ||
+    source.includes("customer-app") ||
+    source.includes("customer_app") ||
+    source.includes("顧客アプリ")
+  ) {
+    return "Naily予約";
+  }
+
+  return params.source || "手入力";
+}
+
+function getSourceBadgeClass(sourceLabel: string) {
+  if (sourceLabel === "HPB同期") {
+    return "bg-orange-100 text-orange-700";
+  }
+
+  if (sourceLabel === "ミニモ同期") {
+    return "bg-purple-100 text-purple-700";
+  }
+
+  if (sourceLabel === "LINE予約") {
+    return "bg-emerald-100 text-emerald-700";
+  }
+
+  if (sourceLabel === "Instagram") {
+    return "bg-pink-100 text-pink-700";
+  }
+
+  if (sourceLabel === "電話予約") {
+    return "bg-slate-200 text-slate-700";
+  }
+
+  if (sourceLabel === "外部ブロック") {
+    return "bg-zinc-200 text-zinc-700";
+  }
+
+  if (sourceLabel === "Naily予約") {
+    return "bg-blue-100 text-blue-700";
+  }
+
+  return "bg-white/70 text-slate-700";
+}
+
+function getStatusColor(status: string, sourceLabel: string) {
+  if (isCancelledStatus(status)) {
+    return "border-zinc-300 bg-zinc-100 text-zinc-500 opacity-60";
+  }
+
+  if (sourceLabel === "HPB同期") {
+    return "border-orange-200 bg-orange-100 text-orange-800";
+  }
+
+  if (sourceLabel === "ミニモ同期") {
+    return "border-purple-200 bg-purple-100 text-purple-800";
+  }
+
+  if (sourceLabel === "LINE予約") {
+    return "border-emerald-200 bg-emerald-100 text-emerald-800";
+  }
+
+  if (sourceLabel === "Instagram") {
+    return "border-pink-200 bg-pink-100 text-pink-800";
+  }
+
+  if (sourceLabel === "電話予約") {
+    return "border-slate-300 bg-slate-100 text-slate-800";
+  }
+
+  if (sourceLabel === "外部ブロック") {
     return "border-zinc-300 bg-zinc-100 text-zinc-800";
+  }
+
+  if (sourceLabel === "Naily予約") {
+    return "border-blue-200 bg-blue-100 text-blue-800";
   }
 
   if (status === "予約申請中" || status === "予約受付") {
@@ -666,48 +773,85 @@ async function syncHpbNow() {
         style={{ paddingBottom: "100px" }}
       >
         <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
               <p className="text-xs font-bold tracking-[0.25em] text-white/80">
                 NAILY AIDOL
               </p>
+
               <h1 className="mt-2 text-2xl font-bold text-white">
                 予約カレンダー
               </h1>
-              <p className="mt-2 text-sm leading-6 text-white/90">
-                スタッフ別・時間帯別に予約状況を確認できます。
+
+              <p className="mt-2 max-w-xl text-sm leading-6 text-white/90">
+                HPB・ミニモ・Naily・電話予約・外部ブロックを、予約元ごとの色で確認できます。
               </p>
             </div>
-<button
-  type="button"
-  onClick={syncHpbNow}
-  disabled={syncingHpb}
-  className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-orange-600 backdrop-blur disabled:opacity-60"
->
-  {syncingHpb ? "予約同期中..." : "予約今すぐ同期"}
-</button>
-            <div className="flex flex-wrap gap-2">
+
+            <div className="grid w-full grid-cols-2 gap-2 lg:w-auto lg:min-w-[430px]">
+              <button
+                type="button"
+                onClick={syncHpbNow}
+                disabled={syncingHpb}
+                className="col-span-2 inline-flex min-h-12 items-center justify-center rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-orange-600 shadow disabled:opacity-60"
+              >
+                {syncingHpb ? "予約同期中..." : "予約今すぐ同期"}
+              </button>
+
               <Link
                 href="/external-calendar-blocks"
-                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/40 bg-white/80 px-3 py-3 text-center text-sm font-bold text-rose-600 backdrop-blur"
               >
                 外部予約ブロック
               </Link>
 
               <Link
-                href="/reservations"
-                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
-              >
-                一覧へ戻る
-              </Link>
-
-              <Link
                 href="/reservations/new"
-                className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+                className="inline-flex min-h-12 items-center justify-center rounded-2xl bg-white px-3 py-3 text-center text-sm font-bold text-rose-500 shadow"
               >
                 新規予約
               </Link>
+
+              <Link
+                href="/reservations"
+                className="col-span-2 inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/40 bg-white/80 px-3 py-3 text-center text-sm font-bold text-rose-600 backdrop-blur"
+              >
+                予約一覧へ
+              </Link>
             </div>
+          </div>
+        </section>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+          <div className="text-sm font-bold text-slate-900">
+            予約元の色分け
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+            <span className="rounded-full border border-orange-200 bg-orange-100 px-3 py-1.5 text-orange-700">
+              HPB
+            </span>
+            <span className="rounded-full border border-purple-200 bg-purple-100 px-3 py-1.5 text-purple-700">
+              ミニモ
+            </span>
+            <span className="rounded-full border border-blue-200 bg-blue-100 px-3 py-1.5 text-blue-700">
+              Naily
+            </span>
+            <span className="rounded-full border border-emerald-200 bg-emerald-100 px-3 py-1.5 text-emerald-700">
+              LINE
+            </span>
+            <span className="rounded-full border border-pink-200 bg-pink-100 px-3 py-1.5 text-pink-700">
+              Instagram
+            </span>
+            <span className="rounded-full border border-slate-300 bg-slate-100 px-3 py-1.5 text-slate-700">
+              電話
+            </span>
+            <span className="rounded-full border border-zinc-300 bg-zinc-100 px-3 py-1.5 text-zinc-700">
+              外部ブロック
+            </span>
+            <span className="rounded-full border border-zinc-300 bg-zinc-100 px-3 py-1.5 text-zinc-500 line-through">
+              キャンセル
+            </span>
           </div>
         </section>
 
@@ -958,17 +1102,17 @@ async function syncHpbNow() {
                             1
                           ) * rowHeight;
 
+                        const sourceLabel = normalizeSourceLabel({
+                          source: reservation.source,
+                          memo: reservation.memo,
+                          menuName: reservation.menuName,
+                          isExternalBlock: reservation.isExternalBlock,
+                        });
+
                         const colorClass = getStatusColor(
                           reservation.status,
-                          reservation.menuName,
-                          reservation.memo
+                          sourceLabel
                         );
-
-const sourceLabel = reservation.memo.includes("ミニモ予約ID")
-  ? "ミニモ同期"
-  : reservation.memo.includes("HPB予約番号")
-    ? "HPB同期"
-    : reservation.source;
 
 const cardContent = (
   <>
@@ -998,14 +1142,10 @@ const cardContent = (
       </span>
 
       <span
-  className={`rounded-full px-2 py-0.5 ${
-    sourceLabel === "HPB同期"
-      ? "bg-orange-100 text-orange-700"
-      : sourceLabel === "ミニモ同期"
-        ? "bg-purple-100 text-purple-700"
-        : "bg-white/70"
-  }`}
->
+        className={`rounded-full px-2 py-0.5 ${getSourceBadgeClass(
+          sourceLabel
+        )}`}
+      >
         {sourceLabel}
       </span>
     </div>
