@@ -359,7 +359,10 @@ function ReservePageContent() {
   const [note, setNote] = useState("");
 
   const todayText = useMemo(() => getTodayText(), []);
-  const maxReservationDate = useMemo(() => addDaysText(todayText, 40), [todayText]);
+  const maxReservationDate = useMemo(
+  () => addDaysText(todayText, 30),
+  [todayText]
+);
 
   useEffect(() => {
     async function checkAuthAndLoadStaffs() {
@@ -770,7 +773,7 @@ function ReservePageContent() {
     }
 
     if (selectedDate > maxReservationDate) {
-      showMessage("予約は本日から40日先まで選択できます");
+      showMessage("予約は本日から30日先まで選択できます");
       return;
     }
 
@@ -995,7 +998,7 @@ function ReservePageContent() {
               </div>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                予約可能期間：本日から40日先まで
+                予約可能期間：本日から30日先まで
               </p>
             </div>
 
