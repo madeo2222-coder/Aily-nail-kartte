@@ -361,6 +361,7 @@ export default function DashboardPageClient() {
   const [repeatCustomerCount, setRepeatCustomerCount] = useState(0);
   const [visitedCustomerCount, setVisitedCustomerCount] = useState(0);
   const [nextVisitCount, setNextVisitCount] = useState(0);
+  const [pendingReservationCount, setPendingReservationCount] = useState(0);
   const [todayReservations, setTodayReservations] = useState<
     TodayReservation[]
   >([]);
@@ -503,6 +504,15 @@ export default function DashboardPageClient() {
         row.next_visit_date.trim() !== ""
     );
 
+    const pendingCount = reservations.filter((row) => {
+      const status = normalizeStatus(row);
+      return (
+        status === "予約申請中" ||
+        status === "予約受付" ||
+        status === "予約"
+      );
+    }).length;
+
     const normalizedTodayReservations = reservations
       .map((row) => {
         const customerId =
@@ -551,6 +561,7 @@ export default function DashboardPageClient() {
     setRepeatCustomerCount(repeatCustomers.length);
     setVisitedCustomerCount(visitedCustomers.length);
     setNextVisitCount(nextVisits.length);
+    setPendingReservationCount(pendingCount);
     setTodayReservations(normalizedTodayReservations);
 
     setLoading(false);
@@ -655,6 +666,33 @@ export default function DashboardPageClient() {
             </div>
           </div>
         </section>
+
+        {pendingReservationCount > 0 ? (
+          <Link
+            href="/reservations?view=pending"
+            className="block rounded-[28px] border-2 border-amber-300 bg-amber-50 p-5 shadow-sm transition hover:bg-amber-100"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-xs font-black tracking-[0.16em] text-amber-700">
+                  要対応
+                </div>
+                <div className="mt-2 text-xl font-black text-amber-950">
+                  未確認の予約希望が{pendingReservationCount}件あります
+                </div>
+                <div className="mt-2 text-sm leading-6 text-amber-800">
+                  予約日が先でも表示しています。内容を確認し、予約確定・LINE送信まで対応してください。
+                </div>
+              </div>
+              <span className="inline-flex shrink-0 rounded-full bg-amber-500 px-3 py-1.5 text-xs font-black text-white">
+                {pendingReservationCount > 9 ? "9+" : pendingReservationCount}
+              </span>
+            </div>
+            <div className="mt-4 rounded-2xl bg-amber-500 px-4 py-3 text-center text-sm font-bold text-white">
+              未確認予約を確認する
+            </div>
+          </Link>
+        ) : null}
 
         <section className="grid grid-cols-2 gap-3">
           <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type ReservationRow = {
@@ -425,6 +426,8 @@ function canMarkVisited(status: string) {
 }
 
 export default function ReservationsPageClient() {
+  const searchParams = useSearchParams();
+  const pendingListRef = useRef<HTMLDivElement | null>(null);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
@@ -489,6 +492,12 @@ export default function ReservationsPageClient() {
   useEffect(() => {
     void fetchReservations();
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("view") === "pending") {
+      setShowPendingOnly(true);
+    }
+  }, [searchParams]);
 
   const normalizedReservations = useMemo<NormalizedReservation[]>(() => {
     return reservations.map((reservation) => {
@@ -622,6 +631,24 @@ export default function ReservationsPageClient() {
   const galleryReferenceCount = filteredReservations.filter(
     (item) => item.galleryReference.designId || item.galleryReference.photoUrl
   ).length;
+
+  function showPendingReservations() {
+    setShowPendingOnly(true);
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        pendingListRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      });
+    });
+  }
+
+  function showNormalReservations() {
+    setShowPendingOnly(false);
+    window.history.replaceState(null, "", "/reservations");
+  }
 
   async function sendReservationConfirmedLine(id: string) {
     try {
@@ -787,7 +814,7 @@ export default function ReservationsPageClient() {
 
           <button
             type="button"
-            onClick={() => setShowPendingOnly(true)}
+            onClick={showPendingReservations}
             className={`rounded-3xl border p-4 text-left shadow-sm transition ${
               requestedCount > 0
                 ? "border-amber-300 bg-amber-50 ring-2 ring-amber-100"
@@ -843,7 +870,7 @@ export default function ReservationsPageClient() {
 
               <button
                 type="button"
-                onClick={() => setShowPendingOnly(true)}
+                onClick={showPendingReservations}
                 className="rounded-2xl bg-amber-500 px-4 py-3 text-sm font-bold text-white shadow-sm"
               >
                 未確認予約を確認する
@@ -866,7 +893,7 @@ export default function ReservationsPageClient() {
 
               <button
                 type="button"
-                onClick={() => setShowPendingOnly(false)}
+                onClick={showNormalReservations}
                 className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
               >
                 通常表示に戻る
@@ -875,7 +902,8 @@ export default function ReservationsPageClient() {
           </section>
         ) : null}
 
-        <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
+        {!showPendingOnly ? (
+          <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="mb-4">
             <div className="text-sm font-bold text-slate-900">絞り込み</div>
             <div className="mt-1 text-xs text-slate-500">
@@ -916,6 +944,9 @@ export default function ReservationsPageClient() {
             </div>
           </div>
         </div>
+        ) : null}
+
+        <div ref={pendingListRef} id="pending-reservations" className="scroll-mt-4" />
 
         {overlapReservations.length > 0 ? (
           <div className="rounded-[28px] border border-rose-200 bg-rose-50 p-4 shadow-sm">
