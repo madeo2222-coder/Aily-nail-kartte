@@ -432,6 +432,7 @@ export default function ReservationsPageClient() {
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedStaff, setSelectedStaff] = useState("全員");
+  const [showPendingOnly, setShowPendingOnly] = useState(false);
 
   const customerMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -573,11 +574,30 @@ export default function ReservationsPageClient() {
     });
   }, [normalizedReservations, selectedDate, selectedStaff]);
 
+  const pendingReservations = useMemo(() => {
+    return normalizedReservations
+      .filter(
+        (item) =>
+          item.status === "予約申請中" ||
+          item.status === "予約受付" ||
+          item.status === "予約"
+      )
+      .sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      });
+  }, [normalizedReservations]);
+
+  const displayedReservations = useMemo(() => {
+    return showPendingOnly ? pendingReservations : filteredReservations;
+  }, [showPendingOnly, pendingReservations, filteredReservations]);
+
   const overlapIds = useMemo(() => {
     const ids = new Set<string>();
 
-    filteredReservations.forEach((currentItem) => {
-      filteredReservations.forEach((otherItem) => {
+    displayedReservations.forEach((currentItem) => {
+      displayedReservations.forEach((otherItem) => {
         if (hasOverlap(currentItem, otherItem)) {
           ids.add(currentItem.id);
         }
@@ -585,17 +605,15 @@ export default function ReservationsPageClient() {
     });
 
     return ids;
-  }, [filteredReservations]);
+  }, [displayedReservations]);
 
   const overlapReservations = useMemo(() => {
-    return filteredReservations.filter((item) => overlapIds.has(item.id));
-  }, [filteredReservations, overlapIds]);
+    return displayedReservations.filter((item) => overlapIds.has(item.id));
+  }, [displayedReservations, overlapIds]);
 
   const reservationCount = filteredReservations.length;
 
-  const requestedCount = filteredReservations.filter(
-    (item) => item.status === "予約申請中" || item.status === "予約受付"
-  ).length;
+  const requestedCount = pendingReservations.length;
 
   const aiDiagnosisCount = filteredReservations.filter(
     (item) => item.isAiDiagnosis
@@ -767,15 +785,32 @@ export default function ReservationsPageClient() {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-amber-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-slate-500">未確認予約</div>
+          <button
+            type="button"
+            onClick={() => setShowPendingOnly(true)}
+            className={`rounded-3xl border p-4 text-left shadow-sm transition ${
+              requestedCount > 0
+                ? "border-amber-300 bg-amber-50 ring-2 ring-amber-100"
+                : "border-amber-100 bg-white"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-bold text-slate-700">
+                未確認予約（全日程）
+              </div>
+              {requestedCount > 0 ? (
+                <span className="rounded-full bg-amber-500 px-2.5 py-1 text-xs font-black text-white">
+                  要対応
+                </span>
+              ) : null}
+            </div>
             <div className="mt-2 text-2xl font-bold text-amber-500">
               {requestedCount.toLocaleString()}件
             </div>
             <div className="mt-2 text-sm text-slate-500">
-              予約確定前の予約
+              日付に関係なく、未確定の予約希望を表示
             </div>
-          </div>
+          </button>
 
           <div className="rounded-3xl border border-purple-100 bg-white p-4 shadow-sm">
             <div className="text-sm text-slate-500">AI診断予約</div>
@@ -793,6 +828,52 @@ export default function ReservationsPageClient() {
             <div className="mt-2 text-sm text-slate-500">参考デザインあり</div>
           </div>
         </div>
+
+        {requestedCount > 0 ? (
+          <section className="rounded-[28px] border border-amber-300 bg-amber-50 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-base font-black text-amber-900">
+                  未確認の予約希望が{requestedCount}件あります
+                </div>
+                <div className="mt-1 text-sm leading-6 text-amber-800">
+                  予約日が先でもここに表示されます。内容を確認して、予約確定・LINE送信まで対応してください。
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPendingOnly(true)}
+                className="rounded-2xl bg-amber-500 px-4 py-3 text-sm font-bold text-white shadow-sm"
+              >
+                未確認予約を確認する
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {showPendingOnly ? (
+          <section className="rounded-[28px] border border-amber-300 bg-white p-4 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-base font-black text-slate-900">
+                  未確認予約を全日程で表示中
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  対象日・担当者の絞り込みに関係なく、未確定の予約希望だけを表示しています。
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowPendingOnly(false)}
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                通常表示に戻る
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <div className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="mb-4">
@@ -861,13 +942,15 @@ export default function ReservationsPageClient() {
           </div>
         )}
 
-        {filteredReservations.length === 0 ? (
+        {displayedReservations.length === 0 ? (
           <div className="rounded-[28px] border border-rose-100 bg-white p-5 text-center text-sm text-gray-500 shadow-sm">
-            条件に合う予約はありません
+            {showPendingOnly
+              ? "未確認の予約希望はありません"
+              : "条件に合う予約はありません"}
           </div>
         ) : (
           <div className="space-y-3">
-            {filteredReservations.map((item) => {
+            {displayedReservations.map((item) => {
               const isUpdating = updatingId === item.id;
               const isOverlap = overlapIds.has(item.id);
               const galleryReference = item.galleryReference;
