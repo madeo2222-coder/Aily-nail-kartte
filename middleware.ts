@@ -4,6 +4,22 @@ const CUSTOMER_SESSION_COOKIE = "customer_line_session";
 const STAFF_SESSION_COOKIE = "staff_session";
 const STAFF_ROLE_COOKIE = "staff_role";
 
+const OWNER_ONLY_PATHS = [
+  "/owner-dashboard",
+  "/tax",
+  "/finance",
+  "/expenses",
+  "/sales-dashboard",
+  "/sales-payments",
+  "/monthly-closing",
+  "/receivables",
+  "/reminders",
+  "/analytics",
+  "/reports",
+  "/settings/salon",
+  "/staff/manage",
+];
+
 function hasCustomerSession(request: NextRequest) {
   return request.cookies.has(CUSTOMER_SESSION_COOKIE);
 }
@@ -14,7 +30,11 @@ function hasStaffSession(request: NextRequest) {
 
 function getStaffRole(request: NextRequest) {
   const role = request.cookies.get(STAFF_ROLE_COOKIE)?.value;
-  return role === "owner" ? "owner" : role === "staff" ? "staff" : null;
+
+  if (role === "owner") return "owner";
+  if (role === "staff") return "staff";
+
+  return null;
 }
 
 function isStaticAsset(pathname: string) {
@@ -27,18 +47,20 @@ function isStaticAsset(pathname: string) {
     pathname.startsWith("/icons") ||
     pathname.startsWith("/images") ||
     pathname.startsWith("/public") ||
-    /\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|xml)$/i.test(pathname)
+    /\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|map|txt|xml)$/i.test(
+      pathname
+    )
   );
 }
 
 function isCustomerAllowedApiPath(pathname: string) {
   return (
     pathname === "/api/hpb-gmail-sync" ||
-pathname.startsWith("/api/hpb-gmail-sync/") ||
-pathname === "/api/send-google-review-line" ||
-pathname.startsWith("/api/send-google-review-line/") ||
+    pathname.startsWith("/api/hpb-gmail-sync/") ||
+    pathname === "/api/send-google-review-line" ||
+    pathname.startsWith("/api/send-google-review-line/") ||
     pathname === "/api/inbound-nail-tip-requests" ||
-pathname.startsWith("/api/inbound-nail-tip-requests/") ||
+    pathname.startsWith("/api/inbound-nail-tip-requests/") ||
     pathname.startsWith("/api/line-login/") ||
     pathname === "/api/line/webhook" ||
     pathname.startsWith("/api/line/webhook/") ||
@@ -55,10 +77,8 @@ pathname.startsWith("/api/inbound-nail-tip-requests/") ||
     pathname === "/api/send-review-request-line" ||
     pathname.startsWith("/api/send-review-request-line/") ||
     pathname === "/api/nail-tip-orders" ||
-pathname.startsWith("/api/nail-tip-orders/") ||
-pathname === "/api/inbound-nail-tip-requests" ||
-pathname.startsWith("/api/inbound-nail-tip-requests/") ||
-pathname === "/api/sanmeigaku-diagnoses" ||
+    pathname.startsWith("/api/nail-tip-orders/") ||
+    pathname === "/api/sanmeigaku-diagnoses" ||
     pathname.startsWith("/api/sanmeigaku-diagnoses/")
   );
 }
@@ -76,11 +96,17 @@ function isAllowedCustomerPath(pathname: string) {
 }
 
 function isAllowedStaffPath(pathname: string) {
-  return pathname === "/login" || pathname.startsWith("/api/staff-login/");
+  return (
+    pathname === "/login" ||
+    pathname.startsWith("/api/staff-login/")
+  );
 }
 
 function isBlockedApiPathForCustomer(pathname: string) {
-  return pathname.startsWith("/api/") && !isCustomerAllowedApiPath(pathname);
+  return (
+    pathname.startsWith("/api/") &&
+    !isCustomerAllowedApiPath(pathname)
+  );
 }
 
 function isStaffProtectedPath(pathname: string) {
@@ -92,7 +118,10 @@ function isStaffProtectedPath(pathname: string) {
 }
 
 function isOwnerOnlyPath(pathname: string) {
-  return pathname === "/owner-dashboard" || pathname.startsWith("/owner-dashboard/");
+  return OWNER_ONLY_PATHS.some(
+    (path) =>
+      pathname === path || pathname.startsWith(`${path}/`)
+  );
 }
 
 export function middleware(request: NextRequest) {
@@ -109,32 +138,49 @@ export function middleware(request: NextRequest) {
   if (customerLoggedIn) {
     if (isBlockedApiPathForCustomer(pathname)) {
       return NextResponse.json(
-        { ok: false, error: "customer session cannot access staff api" },
+        {
+          ok: false,
+          error: "customer session cannot access staff api",
+        },
         { status: 403 }
       );
     }
 
     if (!isAllowedCustomerPath(pathname)) {
-      return NextResponse.redirect(new URL("/customer-app", request.url));
+      return NextResponse.redirect(
+        new URL("/customer-app", request.url)
+      );
     }
 
     return NextResponse.next();
   }
 
   if (isStaffProtectedPath(pathname) && !staffLoggedIn) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(
+      new URL("/login", request.url)
+    );
   }
 
   if (pathname === "/login" && staffLoggedIn) {
     if (staffRole === "owner") {
-      return NextResponse.redirect(new URL("/owner-dashboard", request.url));
+      return NextResponse.redirect(
+        new URL("/owner-dashboard", request.url)
+      );
     }
 
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(
+      new URL("/dashboard", request.url)
+    );
   }
 
-  if (staffLoggedIn && isOwnerOnlyPath(pathname) && staffRole !== "owner") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (
+    staffLoggedIn &&
+    isOwnerOnlyPath(pathname) &&
+    staffRole !== "owner"
+  ) {
+    return NextResponse.redirect(
+      new URL("/dashboard", request.url)
+    );
   }
 
   return NextResponse.next();
