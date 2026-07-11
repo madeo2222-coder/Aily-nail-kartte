@@ -246,11 +246,39 @@ function normalizeBriefText(value: string | null | undefined) {
   return (value || "").replace(/\s+/g, " ").trim();
 }
 
+function isMeaninglessBrief(value: string) {
+  const text = value
+    .replace(/[　\s]/g, "")
+    .replace(/[。、]/g, "")
+    .toLowerCase();
+
+  return (
+    text === "" ||
+    text === "-" ||
+    text === "ー" ||
+    text === "なし" ||
+    text === "無し".toLowerCase() ||
+    text === "特になし" ||
+    text === "特に無し".toLowerCase() ||
+    text === "未登録" ||
+    text === "null"
+  );
+}
+
 function joinBriefParts(values: Array<string | null | undefined>) {
-  return values
-    .map((value) => normalizeBriefText(value))
-    .filter(Boolean)
-    .join(" / ");
+  const unique = new Set<string>();
+
+  values.forEach((value) => {
+    const text = normalizeBriefText(value);
+
+    if (isMeaninglessBrief(text)) {
+      return;
+    }
+
+    unique.add(text);
+  });
+
+  return [...unique].join(" / ");
 }
 
 function getVisitMenu(visit: VisitRow | undefined) {
