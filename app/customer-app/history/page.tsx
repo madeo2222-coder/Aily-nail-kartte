@@ -15,7 +15,6 @@ type VisitRow = {
   visit_date: string | null;
   menu: string | null;
   menu_name: string | null;
-  memo: string | null;
   next_proposal: string | null;
   staff_name: string | null;
   created_at: string | null;
@@ -210,7 +209,7 @@ export default function CustomerAppHistoryPage() {
         const visitResponse = await supabase
           .from("visits")
           .select(
-            "id, customer_id, visit_date, menu, menu_name, memo, next_proposal, staff_name, created_at"
+            "id, customer_id, visit_date, menu, menu_name, next_proposal, staff_name, created_at"
           )
           .eq("customer_id", currentCustomer.id)
           .order("visit_date", { ascending: false })
@@ -559,13 +558,6 @@ export default function CustomerAppHistoryPage() {
                       </div>
                       <div className="mt-1 text-base font-bold text-slate-900">
                         {item.staff_name?.trim() ? item.staff_name : "未登録"}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <div className="text-xs text-slate-500">施術メモ</div>
-                      <div className="mt-1 text-sm leading-6 text-slate-700">
-                        {item.memo?.trim() ? item.memo : "メモはまだありません"}
                       </div>
                     </div>
 
