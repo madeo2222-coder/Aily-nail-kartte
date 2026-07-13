@@ -2,16 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabase";
-
-type CustomerRow = {
-  id: string;
-  name: string | null;
-};
 
 type VisitRow = {
   id: string;
-  customer_id: string | null;
   visit_date: string | null;
   menu: string | null;
   menu_name: string | null;
@@ -30,19 +23,13 @@ type VisitPhotoRow = {
 
 type ReservationRow = {
   id: string;
-  customer_id: string | null;
-  staff_id: string | null;
   menu: string | null;
-  memo: string | null;
   status: string | null;
   start_at: string | null;
   end_at: string | null;
+  staff_name: string | null;
+  source: string | null;
   created_at: string | null;
-};
-
-type StaffRow = {
-  id: string;
-  name: string | null;
 };
 
 type DiagnosisRow = {
@@ -66,9 +53,19 @@ type NailTipOrderRow = {
   created_at: string | null;
 };
 
-type MeResponse = {
+type CustomerHistoryResponse = {
+  ok: boolean;
   authenticated: boolean;
-  customer?: CustomerRow | null;
+  error?: string;
+  customer?: {
+    id: string;
+    name: string | null;
+  } | null;
+  visits?: VisitRow[];
+  visitPhotos?: VisitPhotoRow[];
+  reservations?: ReservationRow[];
+  diagnoses?: DiagnosisRow[];
+  nailTipOrders?: NailTipOrderRow[];
 };
 
 const signedInNavItems = [
@@ -178,7 +175,6 @@ export default function CustomerAppHistoryPage() {
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [visitPhotos, setVisitPhotos] = useState<VisitPhotoRow[]>([]);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
-  const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [diagnoses, setDiagnoses] = useState<DiagnosisRow[]>([]);
   const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
 
@@ -189,118 +185,35 @@ export default function CustomerAppHistoryPage() {
       setNoticeMessage("");
 
       try {
-        const meRes = await fetch("/api/line-login/me", {
+        const response = await fetch("/api/line-login/customer-history", {
           cache: "no-store",
         });
 
-        const meJson = (await meRes.json()) as MeResponse;
+        const json = (await response.json()) as CustomerHistoryResponse;
 
-        if (!meJson.authenticated || !meJson.customer) {
+        if (!response.ok || !json.ok) {
+          if (response.status === 401 || !json.authenticated) {
+            setIsLoggedIn(false);
+            return;
+          }
+
+          setIsLoggedIn(true);
+          setErrorMessage(json.error || "履歴情報の取得に失敗しました。");
+          return;
+        }
+
+        if (!json.authenticated || !json.customer) {
           setIsLoggedIn(false);
-          setLoading(false);
           return;
         }
 
         setIsLoggedIn(true);
-
-        const currentCustomer = meJson.customer;
-        setCustomerName(currentCustomer.name || "お客様");
-
-        const visitResponse = await supabase
-          .from("visits")
-          .select(
-            "id, customer_id, visit_date, menu, menu_name, next_proposal, staff_name, created_at"
-          )
-          .eq("customer_id", currentCustomer.id)
-          .order("visit_date", { ascending: false })
-          .order("created_at", { ascending: false });
-
-        if (visitResponse.error) {
-          console.error("visits取得エラー:", visitResponse.error);
-          setErrorMessage("来店履歴の取得に失敗しました。");
-          setVisits([]);
-          setVisitPhotos([]);
-        } else {
-          const nextVisits = (visitResponse.data || []) as VisitRow[];
-          setVisits(nextVisits);
-
-          const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
-
-          if (visitIds.length > 0) {
-            const photoResponse = await supabase
-              .from("visit_photos")
-              .select("id, visit_id, image_url, photo_type, created_at")
-              .in("visit_id", visitIds)
-              .order("created_at", { ascending: true });
-
-            if (photoResponse.error) {
-              console.error("visit_photos取得エラー:", photoResponse.error);
-              setVisitPhotos([]);
-              setNoticeMessage("施術写真の一部取得に失敗しました。");
-            } else {
-              setVisitPhotos((photoResponse.data || []) as VisitPhotoRow[]);
-            }
-          } else {
-            setVisitPhotos([]);
-          }
-        }
-
-        const reservationResponse = await supabase
-          .from("reservations")
-          .select(
-            "id, customer_id, staff_id, menu, memo, status, start_at, end_at, created_at"
-          )
-          .eq("customer_id", currentCustomer.id)
-          .order("start_at", { ascending: false });
-
-        if (reservationResponse.error) {
-          console.error("reservations取得エラー:", reservationResponse.error);
-          setReservations([]);
-          setNoticeMessage("予約情報の一部取得に失敗しました。");
-        } else {
-          setReservations((reservationResponse.data || []) as ReservationRow[]);
-        }
-
-        const staffResponse = await supabase.from("staffs").select("id, name");
-
-        if (staffResponse.error) {
-          console.error("staffs取得エラー:", staffResponse.error);
-          setStaffs([]);
-        } else {
-          setStaffs((staffResponse.data || []) as StaffRow[]);
-        }
-
-        const diagnosisResponse = await supabase
-          .from("sanmeigaku_diagnoses")
-          .select(
-            "id, lucky_color, lucky_stone, nail_theme, diagnosis_message, created_at"
-          )
-          .eq("customer_id", currentCustomer.id)
-          .order("created_at", { ascending: false });
-
-        if (diagnosisResponse.error) {
-          console.error("sanmeigaku_diagnoses取得エラー:", diagnosisResponse.error);
-          setDiagnoses([]);
-        } else {
-          setDiagnoses((diagnosisResponse.data || []) as DiagnosisRow[]);
-        }
-
-        const nailTipOrderResponse = await supabase
-          .from("nail_tip_orders")
-          .select(
-            "id, lucky_color, lucky_stone, nail_theme, design_request, size_status, delivery_request, status, created_at"
-          )
-          .eq("customer_id", currentCustomer.id)
-          .order("created_at", { ascending: false });
-
-        if (nailTipOrderResponse.error) {
-          console.error("nail_tip_orders取得エラー:", nailTipOrderResponse.error);
-          setNailTipOrders([]);
-        } else {
-          setNailTipOrders(
-            (nailTipOrderResponse.data || []) as NailTipOrderRow[]
-          );
-        }
+        setCustomerName(json.customer.name || "お客様");
+        setVisits(json.visits || []);
+        setVisitPhotos(json.visitPhotos || []);
+        setReservations(json.reservations || []);
+        setDiagnoses(json.diagnoses || []);
+        setNailTipOrders(json.nailTipOrders || []);
       } catch (error) {
         console.error("履歴ページ読み込みエラー:", error);
         setErrorMessage("読み込みに失敗しました。");
@@ -309,20 +222,9 @@ export default function CustomerAppHistoryPage() {
       }
     }
 
-    fetchHistory();
+    void fetchHistory();
   }, []);
 
-  const staffMap = useMemo(() => {
-    const map = new Map<string, string>();
-
-    staffs.forEach((staff) => {
-      if (staff.id) {
-        map.set(staff.id, staff.name || "未設定");
-      }
-    });
-
-    return map;
-  }, [staffs]);
 
   const visitPhotoMap = useMemo(() => {
     const map = new Map<string, VisitPhotoRow[]>();
@@ -459,8 +361,7 @@ export default function CustomerAppHistoryPage() {
             </div>
           ) : (
             reservations.map((item) => {
-              const isAiReservation =
-                item.menu?.includes("開運") || item.memo?.includes("AI算命学");
+              const isAiReservation = item.menu?.includes("開運") || false;
 
               return (
                 <article
@@ -496,16 +397,7 @@ export default function CustomerAppHistoryPage() {
                         担当スタッフ
                       </div>
                       <div className="mt-1 text-base font-bold text-slate-900">
-                        {item.staff_id
-                          ? staffMap.get(item.staff_id) || "未設定"
-                          : "指名なし"}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-slate-50 p-4">
-                      <div className="text-xs text-slate-500">ご要望・備考</div>
-                      <div className="mt-1 text-sm leading-6 text-slate-700">
-                        {item.memo?.trim() ? item.memo : "備考はありません"}
+                        {item.staff_name || "指名なし"}
                       </div>
                     </div>
 
