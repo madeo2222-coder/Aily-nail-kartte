@@ -133,20 +133,6 @@ type ReservationBlockRow = {
   end_at: string | null;
 };
 
-type GalleryVisitRow = {
-  id: string;
-  menu_name: string | null;
-  menu: string | null;
-  color: string | null;
-  visit_date: string | null;
-};
-
-type GalleryPhotoRow = {
-  id: string;
-  visit_id: string;
-  image_url: string | null;
-  created_at: string | null;
-};
 
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
@@ -294,31 +280,6 @@ function hasReservationOverlap({
   });
 }
 
-function isUsefulGalleryText(value: string | null | undefined) {
-  const text = String(value || "").trim();
-
-  if (!text) return false;
-
-  if (/^\d+$/.test(text)) return false;
-
-  if (/^\d+\s*分$/.test(text)) return false;
-
-  return true;
-}
-
-function getGalleryMenuName(visit: GalleryVisitRow | null) {
-  if (!visit) return "";
-
-  if (isUsefulGalleryText(visit.menu_name)) {
-    return String(visit.menu_name).trim();
-  }
-
-  if (isUsefulGalleryText(visit.menu)) {
-    return String(visit.menu).trim();
-  }
-
-  return "";
-}
 
 function ReservePageContent() {
   const searchParams = useSearchParams();
@@ -359,10 +320,7 @@ function ReservePageContent() {
   const [note, setNote] = useState("");
 
   const todayText = useMemo(() => getTodayText(), []);
-  const maxReservationDate = useMemo(
-  () => addDaysText(todayText, 30),
-  [todayText]
-);
+  const maxReservationDate = useMemo(() => addDaysText(todayText, 40), [todayText]);
 
   useEffect(() => {
     async function checkAuthAndLoadStaffs() {
@@ -410,37 +368,37 @@ function ReservePageContent() {
       setGalleryLoading(true);
 
       try {
-        const { data: photoData, error: photoError } = await supabase
-          .from("visit_photos")
-          .select("id, visit_id, image_url, created_at")
-          .eq("visit_id", designId)
-          .not("image_url", "is", null)
-          .order("created_at", { ascending: true })
-          .limit(1);
+        const response = await fetch(
+          `/api/line-login/gallery-reference/${encodeURIComponent(designId)}`,
+          {
+            cache: "no-store",
+          }
+        );
 
-        if (photoError) {
-          console.error("gallery photo fetch error:", photoError.message);
+        const json = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+          reference?: {
+            photoUrl?: string | null;
+            menuName?: string | null;
+            color?: string | null;
+          };
+        };
+
+        if (!response.ok || !json.ok || !json.reference) {
+          console.error(
+            "gallery reference fetch error:",
+            json.error || "取得できませんでした"
+          );
           setGalleryPhotoUrl("");
-        } else {
-          const firstPhoto = ((photoData || []) as GalleryPhotoRow[])[0] || null;
-          setGalleryPhotoUrl(firstPhoto?.image_url || "");
-        }
-
-        const { data: visitData, error: visitError } = await supabase
-          .from("visits")
-          .select("id, menu_name, menu, color, visit_date")
-          .eq("id", designId)
-          .maybeSingle();
-
-        if (visitError) {
-          console.error("gallery visit fetch error:", visitError.message);
           setGalleryMenuName("");
           setGalleryColor("");
-        } else {
-          const visit = (visitData as GalleryVisitRow | null) || null;
-          setGalleryMenuName(getGalleryMenuName(visit));
-          setGalleryColor(visit?.color?.trim() || "");
+          return;
         }
+
+        setGalleryPhotoUrl(json.reference.photoUrl || "");
+        setGalleryMenuName(json.reference.menuName || "");
+        setGalleryColor(json.reference.color || "");
       } catch (error) {
         console.error("gallery reference fetch error:", error);
         setGalleryPhotoUrl("");
@@ -451,7 +409,7 @@ function ReservePageContent() {
       }
     }
 
-    fetchGalleryReference();
+    void fetchGalleryReference();
   }, [designId]);
 
   const selectedMainMenu = useMemo(() => {
@@ -773,7 +731,7 @@ function ReservePageContent() {
     }
 
     if (selectedDate > maxReservationDate) {
-      showMessage("予約は本日から30日先まで選択できます");
+      showMessage("予約は本日から40日先まで選択できます");
       return;
     }
 
@@ -998,7 +956,7 @@ function ReservePageContent() {
               </div>
 
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                予約可能期間：本日から30日先まで
+                予約可能期間：本日から40日先まで
               </p>
             </div>
 
