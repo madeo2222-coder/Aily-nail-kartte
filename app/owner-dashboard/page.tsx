@@ -73,22 +73,8 @@ const menuSections: OwnerMenuSection[] = [
         icon: "💳",
         badge: "入金",
       },
-      {
-        title: "未入金一覧",
-        description:
-          "支払いが完了していない売上を一覧で確認します。",
-        href: "/sales-payments/unpaid",
-        icon: "⚠️",
-        badge: "未入金",
-      },
-      {
-        title: "未収金管理",
-        description:
-          "回収前の売上や未収金の状況を確認します。",
-        href: "/receivables",
-        icon: "💰",
-        badge: "未収",
-      },
+     
+    
       {
         title: "入金リマインド",
         description:

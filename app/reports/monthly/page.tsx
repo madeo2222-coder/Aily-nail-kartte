@@ -153,7 +153,6 @@ export default function MonthlyReportPage() {
     const monthlySales = payments.reduce((sum, row) => sum + row.amount, 0)
     const visitCount = visits.length
     const paidCount = payments.length
-    const unpaidCount = Math.max(visitCount - paidCount, 0)
     const avgUnitPrice = visitCount > 0 ? Math.round(monthlySales / visitCount) : 0
 
     const cashSales = payments
@@ -181,7 +180,6 @@ export default function MonthlyReportPage() {
       monthlySales,
       visitCount,
       paidCount,
-      unpaidCount,
       avgUnitPrice,
       cashSales,
       cardSales,
@@ -241,12 +239,7 @@ export default function MonthlyReportPage() {
             >
               売上一覧
             </Link>
-            <Link
-              href="/sales-payments/unpaid"
-              className="inline-flex items-center justify-center rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
-              未入金一覧
-            </Link>
+           
           </div>
         </div>
 
@@ -318,12 +311,7 @@ export default function MonthlyReportPage() {
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-                <div className="text-sm text-neutral-500">未入金件数</div>
-                <div className="mt-2 text-3xl font-bold text-neutral-900">
-                  {summary.unpaidCount.toLocaleString('ja-JP')}
-                </div>
-              </div>
+      
 
               <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <div className="text-sm text-neutral-500">日別売上日数</div>
@@ -395,13 +383,6 @@ export default function MonthlyReportPage() {
                     <span>入金済件数</span>
                     <span className="font-semibold text-neutral-900">
                       {summary.paidCount.toLocaleString('ja-JP')}件
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between rounded-xl bg-neutral-50 px-4 py-3">
-                    <span>未入金件数</span>
-                    <span className="font-semibold text-neutral-900">
-                      {summary.unpaidCount.toLocaleString('ja-JP')}件
                     </span>
                   </div>
 

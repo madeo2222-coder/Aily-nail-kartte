@@ -62,8 +62,13 @@ function createPaymentLine(method = "現金", amount = ""): PaymentLine {
 
 function toSafeNumber(value: string) {
   const normalized = value.replace(/,/g, "").trim();
-  if (!normalized) return 0;
+
+  if (!normalized) {
+    return 0;
+  }
+
   const parsed = Number(normalized);
+
   return Number.isFinite(parsed) ? parsed : NaN;
 }
 
@@ -73,13 +78,25 @@ function isDiscountMethod(method: string) {
 
 function formatAmountPreview(value: string) {
   const amount = toSafeNumber(value);
-  if (!Number.isFinite(amount)) return "未入力";
-  return `${amount.toLocaleString("ja-JP")}`;
+
+  if (!Number.isFinite(amount)) {
+    return "未入力";
+  }
+
+  return amount.toLocaleString("ja-JP");
+}
+
+function formatYen(value: number) {
+  const amount = Number.isFinite(value) ? Math.round(value) : 0;
+  const absoluteAmount = Math.abs(amount).toLocaleString("ja-JP");
+
+  return amount < 0 ? `-¥${absoluteAmount}` : `¥${absoluteAmount}`;
 }
 
 function getFileExtension(fileName: string) {
   const parts = fileName.split(".");
   const extension = parts.length > 1 ? parts.pop() : "";
+
   return extension ? extension.toLowerCase() : "jpg";
 }
 
@@ -118,15 +135,29 @@ export default function NewVisitPageClient() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    fetchCustomers();
+    void fetchCustomers();
   }, []);
 
   useEffect(() => {
-    if (preselectedCustomerId) setCustomerId(preselectedCustomerId);
-    if (prefilledVisitDate) setVisitDate(prefilledVisitDate);
-    if (prefilledMenuName) setMenuName(prefilledMenuName);
-    if (prefilledStaffName) setStaffName(prefilledStaffName);
-    if (prefilledMemo) setMemo(prefilledMemo);
+    if (preselectedCustomerId) {
+      setCustomerId(preselectedCustomerId);
+    }
+
+    if (prefilledVisitDate) {
+      setVisitDate(prefilledVisitDate);
+    }
+
+    if (prefilledMenuName) {
+      setMenuName(prefilledMenuName);
+    }
+
+    if (prefilledStaffName) {
+      setStaffName(prefilledStaffName);
+    }
+
+    if (prefilledMemo) {
+      setMemo(prefilledMemo);
+    }
   }, [
     preselectedCustomerId,
     prefilledVisitDate,
@@ -175,13 +206,20 @@ export default function NewVisitPageClient() {
   const paymentTotal = useMemo(() => {
     return paymentLines.reduce((sum, line) => {
       const amount = toSafeNumber(line.amount);
-      if (!Number.isFinite(amount)) return sum;
+
+      if (!Number.isFinite(amount)) {
+        return sum;
+      }
+
       return sum + amount;
     }, 0);
   }, [paymentLines]);
 
   const paymentDiff = useMemo(() => {
-    if (!Number.isFinite(totalPrice)) return NaN;
+    if (!Number.isFinite(totalPrice)) {
+      return NaN;
+    }
+
     return totalPrice - paymentTotal;
   }, [totalPrice, paymentTotal]);
 
@@ -190,29 +228,58 @@ export default function NewVisitPageClient() {
     key: "payment_method" | "amount",
     value: string
   ) {
-    setPaymentLines((prev) =>
-      prev.map((line) =>
+    setPaymentLines((previous) =>
+      previous.map((line) =>
         line.id === lineId ? { ...line, [key]: value } : line
       )
     );
   }
 
   function addPaymentLine() {
-    setPaymentLines((prev) => [...prev, createPaymentLine("現金", "")]);
+    setPaymentLines((previous) => [
+      ...previous,
+      createPaymentLine("現金", ""),
+    ]);
   }
 
   function removePaymentLine(lineId: string) {
-    setPaymentLines((prev) => {
-      if (prev.length === 1) return [createPaymentLine("現金", "")];
-      return prev.filter((line) => line.id !== lineId);
+    setPaymentLines((previous) => {
+      if (previous.length === 1) {
+        return [createPaymentLine("現金", "")];
+      }
+
+      return previous.filter((line) => line.id !== lineId);
+    });
+  }
+
+  function handlePriceChange(value: string) {
+    setPrice(value);
+
+    const total = toSafeNumber(value);
+
+    setPaymentLines((previous) => {
+      if (previous.length !== 1) {
+        return previous;
+      }
+
+      return previous.map((line) => ({
+        ...line,
+        amount:
+          Number.isFinite(total) && total >= 0 ? String(total) : line.amount,
+      }));
     });
   }
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
 
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (files.length === 0) {
+      return;
+    }
+
+    const imageFiles = files.filter((file) =>
+      file.type.startsWith("image/")
+    );
 
     if (imageFiles.length !== files.length) {
       setMessage("写真ファイルのみ選択できます");
@@ -226,15 +293,19 @@ export default function NewVisitPageClient() {
       previewUrl: URL.createObjectURL(file),
     }));
 
-    setVisitPhotos((prev) => [...prev, ...newPhotos]);
+    setVisitPhotos((previous) => [...previous, ...newPhotos]);
     e.target.value = "";
   }
 
   function removePhoto(photoId: string) {
-    setVisitPhotos((prev) => {
-      const target = prev.find((photo) => photo.id === photoId);
-      if (target) URL.revokeObjectURL(target.previewUrl);
-      return prev.filter((photo) => photo.id !== photoId);
+    setVisitPhotos((previous) => {
+      const target = previous.find((photo) => photo.id === photoId);
+
+      if (target) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+
+      return previous.filter((photo) => photo.id !== photoId);
     });
   }
 
@@ -245,7 +316,9 @@ export default function NewVisitPageClient() {
     visitId: string;
     salonId: string;
   }) {
-    if (visitPhotos.length === 0) return;
+    if (visitPhotos.length === 0) {
+      return;
+    }
 
     const uploadedPhotoRows = [];
 
@@ -287,7 +360,9 @@ export default function NewVisitPageClient() {
       .insert(uploadedPhotoRows);
 
     if (photoInsertError) {
-      throw new Error(`写真情報の保存に失敗しました: ${photoInsertError.message}`);
+      throw new Error(
+        `写真情報の保存に失敗しました: ${photoInsertError.message}`
+      );
     }
   }
 
@@ -305,12 +380,7 @@ export default function NewVisitPageClient() {
       return;
     }
 
-    if (!price || Number(price) < 0) {
-      setMessage("売上金額を正しく入力してください");
-      return;
-    }
-
-    if (!Number.isFinite(totalPrice)) {
+    if (!price || Number(price) < 0 || !Number.isFinite(totalPrice)) {
       setMessage("売上金額を正しく入力してください");
       return;
     }
@@ -321,21 +391,29 @@ export default function NewVisitPageClient() {
         amount: toSafeNumber(line.amount),
         sort_order: index + 1,
       }))
-      .filter((line) => line.payment_method && line.amount !== 0);
+      .filter(
+        (line) =>
+          line.payment_method &&
+          Number.isFinite(line.amount) &&
+          line.amount !== 0
+      );
 
     if (cleanedPaymentLines.length === 0) {
       setMessage("支払い内訳を1件以上入力してください");
       return;
     }
 
-    if (cleanedPaymentLines.some((line) => !Number.isFinite(line.amount))) {
+    if (
+      cleanedPaymentLines.some((line) => !Number.isFinite(line.amount))
+    ) {
       setMessage("支払い内訳の金額を正しく入力してください");
       return;
     }
 
     if (
       cleanedPaymentLines.some(
-        (line) => isDiscountMethod(line.payment_method) && line.amount > 0
+        (line) =>
+          isDiscountMethod(line.payment_method) && line.amount > 0
       )
     ) {
       setMessage("割引はマイナス金額で入力してください");
@@ -344,7 +422,8 @@ export default function NewVisitPageClient() {
 
     if (
       cleanedPaymentLines.some(
-        (line) => !isDiscountMethod(line.payment_method) && line.amount < 0
+        (line) =>
+          !isDiscountMethod(line.payment_method) && line.amount < 0
       )
     ) {
       setMessage("割引以外の支払い方法はマイナスにできません");
@@ -375,6 +454,9 @@ export default function NewVisitPageClient() {
         color: color.trim() || null,
         price: totalPrice,
         payment_method: mainPaymentMethod,
+        payment_status: "paid",
+        paid_amount: totalPrice,
+        unpaid_amount: 0,
         memo: memo.trim() || null,
         next_visit_date: nextVisitDate || null,
         next_proposal: nextProposal.trim() || null,
@@ -394,46 +476,47 @@ export default function NewVisitPageClient() {
             visitError?.message || "insert failed"
           }`
         );
-        setSaving(false);
         return;
       }
-const { count: visitCount } = await supabase
-  .from("visits")
-  .select("*", {
-    count: "exact",
-    head: true,
-  })
-  .eq("customer_id", customerId);
 
-if (visitCount) {
-  if (visitCount % 12 === 0) {
-    await supabase.rpc("increment_coupon_1000", {
-      customer_id_input: customerId,
-    });
+      const { count: visitCount } = await supabase
+        .from("visits")
+        .select("*", {
+          count: "exact",
+          head: true,
+        })
+        .eq("customer_id", customerId);
 
-    await supabase.from("coupon_histories").insert({
-      customer_id: customerId,
-      visit_id: insertedVisit.id,
-      coupon_type: "coupon_1000",
-      action: "earned",
-      amount: 1000,
-      note: "12回来店達成",
-    });
-  } else if (visitCount % 6 === 0) {
-    await supabase.rpc("increment_coupon_500", {
-      customer_id_input: customerId,
-    });
+      if (visitCount) {
+        if (visitCount % 12 === 0) {
+          await supabase.rpc("increment_coupon_1000", {
+            customer_id_input: customerId,
+          });
 
-    await supabase.from("coupon_histories").insert({
-      customer_id: customerId,
-      visit_id: insertedVisit.id,
-      coupon_type: "coupon_500",
-      action: "earned",
-      amount: 500,
-      note: "6回来店達成",
-    });
-  }
-}
+          await supabase.from("coupon_histories").insert({
+            customer_id: customerId,
+            visit_id: insertedVisit.id,
+            coupon_type: "coupon_1000",
+            action: "earned",
+            amount: 1000,
+            note: "12回来店達成",
+          });
+        } else if (visitCount % 6 === 0) {
+          await supabase.rpc("increment_coupon_500", {
+            customer_id_input: customerId,
+          });
+
+          await supabase.from("coupon_histories").insert({
+            customer_id: customerId,
+            visit_id: insertedVisit.id,
+            coupon_type: "coupon_500",
+            action: "earned",
+            amount: 500,
+            note: "6回来店達成",
+          });
+        }
+      }
+
       const visitPaymentsPayload = cleanedPaymentLines.map((line) => ({
         visit_id: insertedVisit.id,
         payment_method: line.payment_method,
@@ -447,41 +530,44 @@ if (visitCount) {
 
       if (paymentError) {
         console.error("visit_payments insert error:", paymentError);
-        setMessage(`支払い内訳の登録に失敗しました: ${paymentError.message}`);
-        setSaving(false);
+        setMessage(
+          `支払い内訳の登録に失敗しました: ${paymentError.message}`
+        );
         return;
       }
+
       const discountTotal = cleanedPaymentLines
         .filter((line) => isDiscountMethod(line.payment_method))
         .reduce((sum, line) => sum + Math.abs(line.amount), 0);
 
       if (discountTotal >= 1000) {
-  await supabase.rpc("decrement_coupon_1000", {
-    customer_id_input: customerId,
-  });
+        await supabase.rpc("decrement_coupon_1000", {
+          customer_id_input: customerId,
+        });
 
-  await supabase.from("coupon_histories").insert({
-    customer_id: customerId,
-    visit_id: insertedVisit.id,
-    coupon_type: "coupon_1000",
-    action: "used",
-    amount: -1000,
-    note: "会計時利用",
-  });
-} else if (discountTotal >= 500) {
-  await supabase.rpc("decrement_coupon_500", {
-    customer_id_input: customerId,
-  });
+        await supabase.from("coupon_histories").insert({
+          customer_id: customerId,
+          visit_id: insertedVisit.id,
+          coupon_type: "coupon_1000",
+          action: "used",
+          amount: -1000,
+          note: "会計時利用",
+        });
+      } else if (discountTotal >= 500) {
+        await supabase.rpc("decrement_coupon_500", {
+          customer_id_input: customerId,
+        });
 
-  await supabase.from("coupon_histories").insert({
-    customer_id: customerId,
-    visit_id: insertedVisit.id,
-    coupon_type: "coupon_500",
-    action: "used",
-    amount: -500,
-    note: "会計時利用",
-  });
-}
+        await supabase.from("coupon_histories").insert({
+          customer_id: customerId,
+          visit_id: insertedVisit.id,
+          coupon_type: "coupon_500",
+          action: "used",
+          amount: -500,
+          note: "会計時利用",
+        });
+      }
+
       await uploadVisitPhotos({
         visitId: insertedVisit.id,
         salonId: resolvedSalonId,
@@ -494,11 +580,13 @@ if (visitCount) {
           .eq("id", prefilledReservationId);
 
         if (reservationUpdateError) {
-          console.error("reservations update error:", reservationUpdateError);
+          console.error(
+            "reservations update error:",
+            reservationUpdateError
+          );
           setMessage(
             `来店履歴と写真は登録できましたが、予約ステータス更新に失敗しました: ${reservationUpdateError.message}`
           );
-          setSaving(false);
           return;
         }
       }
@@ -507,8 +595,12 @@ if (visitCount) {
       router.push(`/customers/${customerId}`);
     } catch (error) {
       console.error("来店登録エラー:", error);
+
       const errorMessage =
-        error instanceof Error ? error.message : "来店履歴の登録に失敗しました";
+        error instanceof Error
+          ? error.message
+          : "来店履歴の登録に失敗しました";
+
       setMessage(errorMessage);
     } finally {
       setSaving(false);
@@ -522,7 +614,9 @@ if (visitCount) {
           <p className="text-xs font-bold tracking-[0.25em] text-white/80">
             NAILY AIDOL
           </p>
+
           <h1 className="mt-2 text-2xl font-bold">来店登録ページ</h1>
+
           <p className="mt-2 text-sm leading-6 text-white/90">
             来店内容、お会計、次回提案、施術後写真をまとめて登録できます。
           </p>
@@ -530,7 +624,9 @@ if (visitCount) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">顧客情報</h2>
+            <h2 className="mb-4 text-lg font-bold text-slate-900">
+              顧客情報
+            </h2>
 
             <select
               value={customerId}
@@ -538,8 +634,11 @@ if (visitCount) {
               className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
             >
               <option value="">
-                {loadingCustomers ? "読み込み中..." : "顧客を選択してください"}
+                {loadingCustomers
+                  ? "読み込み中..."
+                  : "顧客を選択してください"}
               </option>
+
               {customers.map((customer) => (
                 <option key={customer.id} value={customer.id}>
                   {customer.name}
@@ -550,7 +649,9 @@ if (visitCount) {
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">来店情報</h2>
+            <h2 className="mb-4 text-lg font-bold text-slate-900">
+              来店情報
+            </h2>
 
             <div className="space-y-4">
               <input
@@ -579,8 +680,9 @@ if (visitCount) {
               <input
                 type="number"
                 inputMode="numeric"
+                min="0"
                 value={price}
-                onChange={(e) => setPrice(e.target.value)}
+                onChange={(e) => handlePriceChange(e.target.value)}
                 placeholder="売上金額"
                 className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
               />
@@ -604,18 +706,27 @@ if (visitCount) {
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">支払い内訳</h2>
+            <h2 className="mb-4 text-lg font-bold text-slate-900">
+              支払い内訳
+            </h2>
 
             <div className="space-y-3">
               {paymentLines.map((line) => {
                 const isDiscount = isDiscountMethod(line.payment_method);
 
                 return (
-                  <div key={line.id} className="rounded-[28px] border border-rose-100 bg-white p-3">
+                  <div
+                    key={line.id}
+                    className="rounded-[28px] border border-rose-100 bg-white p-3"
+                  >
                     <select
                       value={line.payment_method}
                       onChange={(e) =>
-                        updatePaymentLine(line.id, "payment_method", e.target.value)
+                        updatePaymentLine(
+                          line.id,
+                          "payment_method",
+                          e.target.value
+                        )
                       }
                       className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                     >
@@ -631,14 +742,28 @@ if (visitCount) {
                       inputMode="numeric"
                       value={line.amount}
                       onChange={(e) =>
-                        updatePaymentLine(line.id, "amount", e.target.value)
+                        updatePaymentLine(
+                          line.id,
+                          "amount",
+                          e.target.value
+                        )
                       }
                       placeholder={isDiscount ? "例: -1000" : "例: 5000"}
                       className="mt-3 w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
                     />
 
-                    <div className="mt-2 text-xs text-slate-500">
-                      入力値: {formatAmountPreview(line.amount)}
+                    <div className="mt-2 flex items-center justify-between gap-3 text-xs text-slate-500">
+                      <span>
+                        入力値: {formatAmountPreview(line.amount)}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => removePaymentLine(line.id)}
+                        className="font-bold text-rose-600"
+                      >
+                        この行を削除
+                      </button>
                     </div>
                   </div>
                 );
@@ -652,10 +777,45 @@ if (visitCount) {
             >
               ＋行追加
             </button>
+
+            <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <span className="text-slate-500">売上金額</span>
+                <span className="font-bold text-slate-900">
+                  {formatYen(
+                    Number.isFinite(totalPrice) ? totalPrice : 0
+                  )}
+                </span>
+              </div>
+
+              <div className="mt-2 flex justify-between gap-3">
+                <span className="text-slate-500">支払い内訳合計</span>
+                <span className="font-bold text-slate-900">
+                  {formatYen(paymentTotal)}
+                </span>
+              </div>
+
+              <div className="mt-2 flex justify-between gap-3">
+                <span className="text-slate-500">差額</span>
+                <span
+                  className={`font-bold ${
+                    paymentDiff === 0
+                      ? "text-emerald-700"
+                      : "text-amber-700"
+                  }`}
+                >
+                  {formatYen(
+                    Number.isFinite(paymentDiff) ? paymentDiff : 0
+                  )}
+                </span>
+              </div>
+            </div>
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-2 text-lg font-bold text-slate-900">施術後写真</h2>
+            <h2 className="mb-2 text-lg font-bold text-slate-900">
+              施術後写真
+            </h2>
 
             <label className="block cursor-pointer rounded-[28px] border border-dashed border-rose-300 bg-rose-50/50 px-4 py-6 text-center">
               <input
@@ -665,18 +825,25 @@ if (visitCount) {
                 onChange={handlePhotoChange}
                 className="hidden"
               />
-              <div className="text-sm font-bold text-rose-600">写真を選択する</div>
+
+              <div className="text-sm font-bold text-rose-600">
+                写真を選択する
+              </div>
             </label>
 
             {visitPhotos.length > 0 ? (
               <div className="mt-4 grid grid-cols-2 gap-3">
                 {visitPhotos.map((photo) => (
-                  <div key={photo.id} className="overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm">
+                  <div
+                    key={photo.id}
+                    className="overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
+                  >
                     <img
                       src={photo.previewUrl}
                       alt="施術後写真プレビュー"
                       className="h-36 w-full object-cover"
                     />
+
                     <div className="p-2">
                       <button
                         type="button"
@@ -693,7 +860,9 @@ if (visitCount) {
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">次回提案</h2>
+            <h2 className="mb-4 text-lg font-bold text-slate-900">
+              次回提案
+            </h2>
 
             <input
               type="date"

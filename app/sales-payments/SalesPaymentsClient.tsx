@@ -1,285 +1,169 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+
+type VisitRow = {
+  id: string;
+  customer_id: string | null;
+  visit_date: string | null;
+  menu_name: string | null;
+  staff_name: string | null;
+  memo: string | null;
+};
+
+function buildVisitRegistrationUrl(visit: VisitRow) {
+  const params = new URLSearchParams();
+
+  if (visit.customer_id) {
+    params.set("customer_id", visit.customer_id);
+  }
+
+  if (visit.visit_date) {
+    params.set("visit_date", visit.visit_date.split("T")[0]);
+  }
+
+  if (visit.menu_name) {
+    params.set("menu_name", visit.menu_name);
+  }
+
+  if (visit.staff_name) {
+    params.set("staff_name", visit.staff_name);
+  }
+
+  if (visit.memo) {
+    params.set("memo", visit.memo);
+  }
+
+  const query = params.toString();
+
+  return query ? `/visits/new?${query}` : "/visits/new";
+}
 
 export default function SalesPaymentsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [customerId, setCustomerId] = useState<string>("");
-  const [saleDate, setSaleDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
-  const [menuName, setMenuName] = useState<string>("");
-  const [staffName, setStaffName] = useState<string>("");
-  const [amount, setAmount] = useState<string>("");
-  const [paymentMethod, setPaymentMethod] = useState<string>("現金");
-  const [paymentStatus, setPaymentStatus] = useState<string>("paid");
-  const [paidAmount, setPaidAmount] = useState<string>("");
-  const [unpaidAmount, setUnpaidAmount] = useState<string>("0");
-  const [memo, setMemo] = useState<string>("");
-  const [visitId, setVisitId] = useState<string | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
-    fetchCustomers();
-  }, []);
-
-  useEffect(() => {
-    const id = searchParams.get("visit_id");
-    if (id) {
-      setVisitId(id);
-      fetchVisitData(id);
-    }
+    void moveToCurrentCheckout();
   }, [searchParams]);
 
-  useEffect(() => {
-    const total = Number(amount || 0);
-    const paid = Number(paidAmount || 0);
-    const unpaid = total - paid;
-
-    if (paymentStatus === "paid") {
-      setPaidAmount(String(total));
-      setUnpaidAmount("0");
-    } else {
-      setUnpaidAmount(String(unpaid > 0 ? unpaid : 0));
-    }
-  }, [amount, paymentStatus]);
-
-  async function fetchCustomers() {
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id,name")
-      .order("name", { ascending: true });
-
-    if (error) {
-      console.error("顧客取得エラー:", error);
-      return;
-    }
-
-    setCustomers(data || []);
-  }
-
-  async function fetchVisitData(id: string) {
-    const { data: visitData, error } = await supabase
-      .from("visits")
-      .select("id,customer_id,visit_date,menu_name,staff_name,memo,price")
-      .eq("id", id)
-      .single();
-
-    if (error) {
-      console.error("来店データ取得エラー:", error);
-      return;
-    }
-
-    if (visitData) {
-      const total = Number((visitData as any).price ?? 0);
-
-      setCustomerId(String((visitData as any).customer_id ?? ""));
-      setSaleDate(
-        (visitData as any).visit_date
-          ? String((visitData as any).visit_date).split("T")[0]
-          : ""
-      );
-      setMenuName((visitData as any).menu_name ?? "");
-      setStaffName((visitData as any).staff_name ?? "");
-      setMemo((visitData as any).memo ?? "");
-      setAmount(String(total));
-      setPaymentStatus("paid");
-      setPaidAmount(String(total));
-      setUnpaidAmount("0");
-    }
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-
+  async function moveToCurrentCheckout() {
     setLoading(true);
+    setErrorMessage("");
 
-    const total = Number(amount || 0);
-    const paid = paymentStatus === "paid" ? total : Number(paidAmount || 0);
-    const unpaid = paymentStatus === "paid" ? 0 : Math.max(total - paid, 0);
+    const visitId = searchParams.get("visit_id");
 
-    const { error } = await supabase.from("sales").insert([
-      {
-        customer_id: customerId || null,
-        visit_id: visitId,
-        sale_date: saleDate,
-        menu_name: menuName,
-        staff_name: staffName,
-        amount: total,
-        payment_method: paymentMethod,
-        payment_status: paymentStatus,
-        paid_amount: paid,
-        unpaid_amount: unpaid,
-        memo,
-      },
-    ]);
-
-    setLoading(false);
-
-    if (error) {
-      console.error("売上登録エラー:", error);
-      alert("売上登録に失敗しました");
+    if (!visitId) {
+      router.replace("/visits/new");
       return;
     }
 
-    alert("売上登録が完了しました");
-    router.push("/receivables");
+    const { data, error } = await supabase
+      .from("visits")
+      .select(
+        "id, customer_id, visit_date, menu_name, staff_name, memo"
+      )
+      .eq("id", visitId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("来店情報取得エラー:", error);
+      setErrorMessage(
+        "来店情報を取得できませんでした。来店・会計登録画面から登録してください。"
+      );
+      setLoading(false);
+      return;
+    }
+
+    if (!data) {
+      setErrorMessage(
+        "指定された来店情報が見つかりません。来店・会計登録画面から登録してください。"
+      );
+      setLoading(false);
+      return;
+    }
+
+    router.replace(buildVisitRegistrationUrl(data as VisitRow));
   }
 
   return (
-    <div className="p-4 max-w-xl mx-auto">
-      <h1 className="text-xl font-bold mb-4">会計登録</h1>
+    <main className="min-h-screen bg-rose-50/40">
+      <div className="mx-auto max-w-xl space-y-4 p-4 pb-24">
+        <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-rose-400 via-pink-400 to-orange-300 p-5 text-white shadow-sm">
+          <p className="text-xs font-bold tracking-[0.25em] text-white/80">
+            NAILY AIDOL
+          </p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block mb-1 font-medium">顧客</label>
-          <select
-            value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+          <h1 className="mt-2 text-2xl font-bold">会計登録</h1>
+
+          <p className="mt-2 text-sm leading-6 text-white/90">
+            会計登録は、現在の来店登録画面へ統合されています。
+          </p>
+        </section>
+
+        {loading ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm">
+            <div className="text-sm font-bold text-slate-900">
+              来店・会計登録画面へ移動しています
+            </div>
+
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              そのままお待ちください。
+            </p>
+          </section>
+        ) : errorMessage ? (
+          <section className="rounded-[28px] border border-red-200 bg-red-50 p-5 shadow-sm">
+            <div className="text-sm font-bold text-red-700">
+              会計画面を開けませんでした
+            </div>
+
+            <p className="mt-2 text-sm leading-6 text-red-600">
+              {errorMessage}
+            </p>
+
+            <Link
+              href="/visits/new"
+              className="mt-5 flex w-full items-center justify-center rounded-2xl bg-slate-900 px-4 py-4 text-sm font-bold text-white"
+            >
+              来店・会計登録へ
+            </Link>
+          </section>
+        ) : null}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Link
+            href="/sales"
+            className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm"
           >
-            <option value="">選択してください</option>
-            {customers.map((customer) => (
-              <option key={customer.id} value={customer.id}>
-                {customer.name}
-              </option>
-            ))}
-          </select>
-        </div>
+            <div className="text-sm font-bold text-slate-900">
+              売上一覧
+            </div>
 
-        <div>
-          <label className="block mb-1 font-medium">売上日</label>
-          <input
-            type="date"
-            value={saleDate}
-            onChange={(e) => setSaleDate(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-          />
-        </div>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              登録済みの売上と支払い内訳を確認します。
+            </p>
+          </Link>
 
-        <div>
-          <label className="block mb-1 font-medium">メニュー名</label>
-          <input
-            type="text"
-            value={menuName}
-            onChange={(e) => setMenuName(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-            placeholder="メニュー名を入力"
-          />
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">担当スタッフ</label>
-          <input
-            type="text"
-            value={staffName}
-            onChange={(e) => setStaffName(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-            placeholder="担当スタッフ名を入力"
-          />
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">売上金額</label>
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-            placeholder="金額を入力"
-          />
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">支払方法</label>
-          <select
-            value={paymentMethod}
-            onChange={(e) => setPaymentMethod(e.target.value)}
-            className="w-full border rounded px-3 py-2"
+          <Link
+            href="/visits"
+            className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm"
           >
-            <option value="現金">現金</option>
-            <option value="クレジット">クレジット</option>
-            <option value="QR決済">QR決済</option>
-            <option value="振込">振込</option>
-          </select>
+            <div className="text-sm font-bold text-slate-900">
+              来店一覧
+            </div>
+
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              来店履歴や会計内容を確認・編集します。
+            </p>
+          </Link>
         </div>
-
-        <div>
-          <label className="block mb-1 font-medium">支払い状況</label>
-          <select
-            value={paymentStatus}
-            onChange={(e) => {
-              const value = e.target.value;
-              setPaymentStatus(value);
-              if (value === "paid") {
-                setPaidAmount(String(Number(amount || 0)));
-                setUnpaidAmount("0");
-              } else {
-                setPaidAmount("0");
-                setUnpaidAmount(String(Number(amount || 0)));
-              }
-            }}
-            className="w-full border rounded px-3 py-2"
-          >
-            <option value="paid">支払い済み</option>
-            <option value="unpaid">未収</option>
-          </select>
-        </div>
-
-        {paymentStatus === "unpaid" && (
-          <div>
-            <label className="block mb-1 font-medium">入金額</label>
-            <input
-              type="number"
-              value={paidAmount}
-              onChange={(e) => {
-                const paid = Number(e.target.value || 0);
-                const total = Number(amount || 0);
-                const unpaid = total - paid;
-
-                setPaidAmount(String(paid));
-                setUnpaidAmount(String(unpaid > 0 ? unpaid : 0));
-              }}
-              className="w-full border rounded px-3 py-2"
-              placeholder="今回入金額を入力"
-            />
-          </div>
-        )}
-
-        <div>
-          <label className="block mb-1 font-medium">未収額</label>
-          <input
-            type="number"
-            value={unpaidAmount}
-            readOnly
-            className="w-full border rounded px-3 py-2 bg-gray-100"
-          />
-        </div>
-
-        <div>
-          <label className="block mb-1 font-medium">メモ</label>
-          <textarea
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            className="w-full border rounded px-3 py-2"
-            rows={4}
-            placeholder="メモを入力"
-          />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-black text-white rounded px-4 py-3 disabled:opacity-50"
-        >
-          {loading ? "登録中..." : "登録する"}
-        </button>
-      </form>
-    </div>
+      </div>
+    </main>
   );
 }
