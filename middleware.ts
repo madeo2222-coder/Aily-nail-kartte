@@ -12,7 +12,6 @@ const OWNER_ONLY_PATHS = [
   "/sales-dashboard",
   "/sales-payments",
   "/monthly-closing",
-  "/receivables",
   "/reminders",
   "/analytics",
   "/reports",

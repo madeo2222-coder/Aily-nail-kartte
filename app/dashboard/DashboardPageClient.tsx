@@ -22,12 +22,6 @@ type StaffRow = {
   name: string | null;
 };
 
-type ReceivableRow = {
-  id: string;
-  amount: number | null;
-  status: string | null;
-};
-
 type ReservationRow = {
   id: string;
   customer_id?: string | null;
@@ -395,13 +389,12 @@ export default function DashboardPageClient() {
 
     const previousMonthKey = getMonthKey(previousMonthDate);
 
-    const [
-      customersResult,
-      staffsResult,
-      visitsResult,
-      receivablesResult,
-      reservationsResult,
-    ] = await Promise.all([
+ const [
+  customersResult,
+  staffsResult,
+  visitsResult,
+  reservationsResult,
+] = await Promise.all([
       supabase.from("customers").select("id, name"),
       supabase.from("staffs").select("id, name"),
       supabase
@@ -410,7 +403,6 @@ export default function DashboardPageClient() {
           "id, price, visit_date, customer_id, next_visit_date"
         )
         .order("visit_date", { ascending: false }),
-      supabase.from("receivables").select("id, amount, status"),
       supabase
         .from("reservations")
         .select("*")
@@ -422,11 +414,9 @@ export default function DashboardPageClient() {
     const customers = (customersResult.data || []) as CustomerRow[];
     const staffs = (staffsResult.data || []) as StaffRow[];
     const visits = (visitsResult.data || []) as VisitRow[];
-    const receivables = (receivablesResult.data || []) as ReceivableRow[];
     const reservations = (reservationsResult.data ||
       []) as ReservationRow[];
 
-    void receivables;
 
     const customerMap: Record<string, string> = {};
 
