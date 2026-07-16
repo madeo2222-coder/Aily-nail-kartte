@@ -9,7 +9,31 @@ function getAdminClient() {
     throw new Error("Supabase環境変数不足");
   }
 
-  return createClient(url, key);
+  return createClient(url, key, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+}
+
+function getAppUrl() {
+  const rawUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() ||
+    "";
+
+  if (!rawUrl) {
+    throw new Error(
+      "NEXT_PUBLIC_APP_URL または VERCEL_PROJECT_PRODUCTION_URL が設定されていません"
+    );
+  }
+
+  const normalizedUrl = /^https?:\/\//i.test(rawUrl)
+    ? rawUrl
+    : `https://${rawUrl}`;
+
+  return normalizedUrl.replace(/\/+$/, "");
 }
 
 export async function POST(
@@ -18,15 +42,12 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const body = await request.json();
 
-    const paymentUrl = String(body.paymentUrl || "").trim();
-
-    if (!paymentUrl) {
+    if (!id) {
       return NextResponse.json(
         {
           ok: false,
-          error: "決済URL未入力",
+          error: "相談IDがありません",
         },
         { status: 400 }
       );
@@ -34,20 +55,63 @@ export async function POST(
 
     const supabase = getAdminClient();
 
-    const { error } = await supabase
+    const { data: requestData, error: selectError } = await supabase
+      .from("inbound_nail_tip_requests")
+      .select("id, quote_amount, payment_status, status")
+      .eq("id", id)
+      .single();
+
+    if (selectError || !requestData) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "相談が見つかりません",
+        },
+        { status: 404 }
+      );
+    }
+
+    const quoteAmount = Number(requestData.quote_amount || 0);
+
+    if (!Number.isFinite(quoteAmount) || quoteAmount <= 0) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "先に見積金額を登録してください",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (requestData.payment_status === "paid") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "この相談はすでに支払済みです",
+        },
+        { status: 400 }
+      );
+    }
+
+    const appUrl = getAppUrl();
+    const paymentUrl = `${appUrl}/inbound-nail-tip-pay/${encodeURIComponent(
+      id
+    )}`;
+
+    const { error: updateError } = await supabase
       .from("inbound_nail_tip_requests")
       .update({
         payment_url: paymentUrl,
         payment_status: "unpaid",
-        status: "payment_waiting",
+        status: "quoted",
       })
       .eq("id", id);
 
-    if (error) {
+    if (updateError) {
       return NextResponse.json(
         {
           ok: false,
-          error: error.message,
+          error: updateError.message,
         },
         { status: 500 }
       );
@@ -55,15 +119,16 @@ export async function POST(
 
     return NextResponse.json({
       ok: true,
+      paymentUrl,
     });
   } catch (error) {
+    console.error("DG決済URL生成エラー:", error);
+
     return NextResponse.json(
       {
         ok: false,
         error:
-          error instanceof Error
-            ? error.message
-            : "保存失敗",
+          error instanceof Error ? error.message : "DG決済URL生成失敗",
       },
       { status: 500 }
     );

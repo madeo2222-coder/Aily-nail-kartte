@@ -19,6 +19,7 @@
     "react-dom": "19.2.3",
     "recharts": "^3.8.1",
     "resend": "^6.12.4",
+    "tg-mdk-node": "file:tg-mdk-node-2.0.9.tgz",
     "twilio": "^5.13.1"
   },
   "devDependencies": {
