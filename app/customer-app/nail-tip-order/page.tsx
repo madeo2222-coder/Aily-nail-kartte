@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import {
+  NAIL_TIP_PRODUCTS,
+  type NailTipProduct as CatalogNailTipProduct,
+} from "@/lib/nail-tip-products/catalog";
 
 type MeResponse = {
   authenticated: boolean;
@@ -13,64 +17,47 @@ type MeResponse = {
   };
 };
 
-type NailTipProduct = {
-  id: string;
-  name: string;
-  price: number;
-  stone: string;
-  fortune: string;
+type NailTipProduct = CatalogNailTipProduct & {
   description: string;
   badge: string;
   cardClassName: string;
   textClassName: string;
 };
 
-const nailTipProducts: NailTipProduct[] = [
-  {
-    id: "ruby_love",
-    name: "ルビー開運ネイルチップ",
-    price: 19800,
-    stone: "ルビー",
-    fortune: "恋愛運・魅力運",
+const productPresentation: Record<
+  (typeof NAIL_TIP_PRODUCTS)[number]["code"],
+  Omit<NailTipProduct, keyof CatalogNailTipProduct>
+> = {
+  ruby_love: {
     description: "恋愛運・魅力アップをテーマにしたデザイン",
     badge: "恋愛運人気No.1",
     cardClassName: "border-pink-200 bg-pink-50",
     textClassName: "text-pink-600",
   },
-  {
-    id: "sapphire_work",
-    name: "サファイア開運ネイルチップ",
-    price: 19800,
-    stone: "サファイア",
-    fortune: "仕事運・信頼運",
+  sapphire_work: {
     description: "判断力・信頼感アップをテーマにしたデザイン",
     badge: "仕事運人気No.1",
     cardClassName: "border-blue-200 bg-blue-50",
     textClassName: "text-blue-600",
   },
-  {
-    id: "citrine_money",
-    name: "シトリン開運ネイルチップ",
-    price: 19800,
-    stone: "シトリン",
-    fortune: "金運・豊かさ運",
+  citrine_money: {
     description: "金運・豊かさアップをテーマにしたデザイン",
     badge: "金運人気No.1",
     cardClassName: "border-amber-200 bg-amber-50",
     textClassName: "text-amber-600",
   },
-  {
-    id: "diamond_premium",
-    name: "天然ダイヤ開運ネイルチップ",
-    price: 29800,
-    stone: "天然ダイヤモンド",
-    fortune: "総合運・特別運",
+  diamond_premium: {
     description: "天然ダイヤモンド使用・鑑定書付き",
     badge: "プレミアム",
     cardClassName: "border-purple-200 bg-purple-50",
     textClassName: "text-purple-600",
   },
-];
+};
+
+const nailTipProducts: NailTipProduct[] = NAIL_TIP_PRODUCTS.map((product) => ({
+  ...product,
+  ...productPresentation[product.code],
+}));
 
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
@@ -161,7 +148,7 @@ function NailTipOrderContent() {
 
   const selectedProduct = useMemo(() => {
     return (
-      nailTipProducts.find((product) => product.id === selectedProductId) ||
+      nailTipProducts.find((product) => product.code === selectedProductId) ||
       nailTipProducts[0]
     );
   }, [selectedProductId]);
@@ -177,17 +164,6 @@ function NailTipOrderContent() {
 
   async function handleSubmit() {
     try {
-      const productText = [
-        `選択商品：${selectedProduct.name}`,
-        `商品価格：${formatYen(selectedProduct.price)}`,
-        `商品ストーン：${selectedProduct.stone}`,
-        `商品テーマ：${selectedProduct.fortune}`,
-        "",
-        designRequest.trim() ? `デザイン希望：${designRequest.trim()}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
-
       const response = await fetch("/api/nail-tip-orders", {
         method: "POST",
         headers: {
@@ -199,7 +175,8 @@ function NailTipOrderContent() {
           luckyColor: color,
           luckyStone: stone,
           nailTheme: theme,
-          designRequest: productText,
+          productCode: selectedProduct.code,
+          designRequest,
           sizeStatus,
           deliveryRequest,
         }),
@@ -282,14 +259,14 @@ function NailTipOrderContent() {
 
           <div className="mt-4 space-y-3">
             {nailTipProducts.map((product) => {
-              const isSelected = selectedProductId === product.id;
-              const isRecommended = recommendedProductId === product.id;
+              const isSelected = selectedProductId === product.code;
+              const isRecommended = recommendedProductId === product.code;
 
               return (
                 <button
-                  key={product.id}
+                  key={product.code}
                   type="button"
-                  onClick={() => setSelectedProductId(product.id)}
+                  onClick={() => setSelectedProductId(product.code)}
                   className={`w-full rounded-3xl border p-4 text-left transition ${
                     product.cardClassName
                   } ${

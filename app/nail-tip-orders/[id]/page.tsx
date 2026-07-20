@@ -21,6 +21,10 @@ type NailTipOrderRow = {
   payment_transaction_id: string | null;
   payment_status: string | null;
   payment_due_at: string | null;
+  paid_at: string | null;
+  product_code: string | null;
+  product_name_snapshot: string | null;
+  product_price: number | null;
   shipping_company: string | null;
 　tracking_number: string | null;
 　shipped_at: string | null;
@@ -30,6 +34,11 @@ type CustomerRow = {
   id: string;
   name: string | null;
   phone: string | null;
+};
+
+type NailTipOrderPaymentRow = {
+  order_id: string;
+  status: "processing" | "pending" | "paid" | "failed";
 };
 
 function getSupabaseAdmin() {
@@ -139,6 +148,17 @@ export default async function NailTipOrderDetailPage({
 
     customer = (customerData as CustomerRow | null) || null;
   }
+
+  const {
+    data: latestPaymentData,
+    error: latestPaymentError,
+  } = await supabase
+    .from("nail_tip_order_payments")
+    .select("order_id, status")
+    .eq("nail_tip_order_id", order.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<NailTipOrderPaymentRow>();
 
   const productName = extractLine(order.design_request, "選択商品：");
   const productPrice = extractLine(order.design_request, "商品価格：");
@@ -274,9 +294,17 @@ export default async function NailTipOrderDetailPage({
 
         <OrderPaymentForm
           orderId={order.id}
+          productCode={order.product_code}
+          productName={order.product_name_snapshot}
+          productPrice={order.product_price}
+          paymentStatus={order.payment_status}
           defaultPaymentUrl={order.payment_url}
           defaultTransactionId={order.payment_transaction_id}
           defaultPaymentDueAt={order.payment_due_at}
+          paidAt={order.paid_at}
+          latestPaymentStatus={latestPaymentData?.status || null}
+          latestVeriTransOrderId={latestPaymentData?.order_id || null}
+          paymentHistoryLoadFailed={Boolean(latestPaymentError)}
         />
 <OrderShippingForm
   orderId={order.id}

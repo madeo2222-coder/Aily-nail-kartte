@@ -88,6 +88,7 @@ function isAllowedCustomerPath(pathname: string) {
     pathname.startsWith("/customer-app/") ||
     pathname === "/customer-intake" ||
     pathname.startsWith("/customer-intake/") ||
+    pathname.startsWith("/nail-tip-order-pay/") ||
     pathname === "/external-calendar-blocks" ||
     pathname.startsWith("/external-calendar-blocks/") ||
     isCustomerAllowedApiPath(pathname)

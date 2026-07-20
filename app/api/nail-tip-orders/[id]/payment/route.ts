@@ -173,6 +173,26 @@ export async function POST(
     }
 
     const order = orderData as AnyRow;
+    const productCode = getString(order, ["product_code"]);
+    const productPrice = Number(order.product_price);
+    const paymentLinkTokenHash = getString(order, [
+      "payment_link_token_hash",
+    ]);
+
+    if (
+      productCode ||
+      (Number.isInteger(productPrice) && productPrice > 0) ||
+      paymentLinkTokenHash
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "新形式の注文はDGダミー決済URL生成機能を使用してください。",
+        },
+        { status: 409 }
+      );
+    }
 
     const { error } = await supabase
       .from("nail_tip_orders")

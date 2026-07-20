@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { getNailTipProduct } from "@/lib/nail-tip-products/catalog";
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,9 +22,32 @@ export async function POST(request: Request) {
     const luckyColor = String(body.luckyColor || "").trim();
     const luckyStone = String(body.luckyStone || "").trim();
     const nailTheme = String(body.nailTheme || "").trim();
-    const designRequest = String(body.designRequest || "").trim();
+    const productCode = String(body.productCode || "").trim();
+    const customerDesignRequest = String(body.designRequest || "").trim();
     const sizeStatus = String(body.sizeStatus || "").trim();
     const deliveryRequest = String(body.deliveryRequest || "").trim();
+
+    const product = getNailTipProduct(productCode);
+
+    if (!product) {
+      return NextResponse.json(
+        { ok: false, error: "選択された商品は注文できません" },
+        { status: 400 }
+      );
+    }
+
+    const designRequest = [
+      `選択商品：${product.name}`,
+      `商品価格：¥${product.price.toLocaleString("ja-JP")}`,
+      `商品ストーン：${product.stone}`,
+      `商品テーマ：${product.fortune}`,
+      "",
+      customerDesignRequest
+        ? `デザイン希望：${customerDesignRequest}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     const supabase = getSupabaseAdmin();
 
@@ -38,6 +62,9 @@ export async function POST(request: Request) {
         design_request: designRequest,
         size_status: sizeStatus,
         delivery_request: deliveryRequest,
+        product_code: product.code,
+        product_name_snapshot: product.name,
+        product_price: product.price,
         status: "requested",
       })
       .select("id")
