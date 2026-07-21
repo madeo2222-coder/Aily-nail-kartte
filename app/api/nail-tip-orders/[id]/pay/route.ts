@@ -279,8 +279,28 @@ export async function POST(
       );
     }
 
+    const debugResult = {
+      succeeded: result.succeeded,
+      responseOrderId: result.responseOrderId,
+      merrMsg: result.merrMsg,
+    };
+
+    console.error("VeriTrans Card Authorize returned payment failure", {
+      mstatus: result.mstatus,
+      pending: result.pending,
+      vResultCode: result.vResultCode,
+      result: debugResult,
+    });
+
     return NextResponse.json(
-      { ok: false, error: "カード決済を完了できませんでした。" },
+      {
+        ok: false,
+        error: "カード決済を完了できませんでした。",
+        mstatus: result.mstatus,
+        pending: result.pending,
+        vResultCode: result.vResultCode,
+        result: debugResult,
+      },
       { status: 402 }
     );
   } catch {
