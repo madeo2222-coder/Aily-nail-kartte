@@ -1,21 +1,14 @@
-import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
-
-type CustomerRow = {
-  id: string;
-  name: string | null;
-  salon_id: string | null;
-};
-
-type StaffRow = {
-  id: string;
-  name: string | null;
-  salon_id: string | null;
-};
-
-function isCancelledStatus(status: string | null) {
-  return status === "キャンセル" || status === "cancelled";
-}
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getCustomerReservationAvailability,
+  isValidCustomerBookingDate,
+  normalizeCustomerBookingDuration,
+  resolveCustomerBookingSalonId,
+} from "@/lib/server/customerReservationAvailability";
+import {
+  getSupabaseAdmin,
+  requireCustomerLineSession,
+} from "@/lib/server/requireCustomerLineSession";
 
 function formatDateTimeForMail(value: string) {
   const date = new Date(value);
@@ -32,16 +25,6 @@ function formatDateTimeForMail(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
-}
-
-function normalizeDurationMinutes(value: unknown) {
-  const minutes = Number(value);
-
-  if (!Number.isFinite(minutes)) return 90;
-  if (minutes < 30) return 30;
-  if (minutes > 360) return 360;
-
-  return Math.round(minutes);
 }
 
 async function sendReservationNoticeMail({
@@ -225,18 +208,27 @@ async function sendReservationNoticeLine({
   console.log("予約LINE通知成功");
 }
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    const customer = await requireCustomerLineSession(request);
+
+    if (!customer) {
+      return NextResponse.json(
+        { ok: false, error: "LINEログインが必要です" },
+        { status: 401 }
+      );
+    }
+
+    const body = (await request.json()) as Record<string, unknown>;
 
     const menu = String(body.menu || "").trim();
     const date = String(body.date || "").trim();
     const time = String(body.time || "").trim();
     const memo = String(body.memo || "").trim();
-    const staffId = String(body.staffId || "").trim();
-    const customerId = String(body.customerId || "").trim();
-    let salonId = String(body.salonId || "").trim();
-    const durationMinutes = normalizeDurationMinutes(body.durationMinutes);
+    const requestedStaffId = String(body.staffId || "").trim();
+    const durationMinutes = normalizeCustomerBookingDuration(
+      body.durationMinutes
+    );
 
     if (!menu) {
       return NextResponse.json(
@@ -245,9 +237,9 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!date) {
+    if (!isValidCustomerBookingDate(date)) {
       return NextResponse.json(
-        { ok: false, error: "希望日が未入力です" },
+        { ok: false, error: "希望日を確認してください" },
         { status: 400 }
       );
     }
@@ -259,127 +251,90 @@ export async function POST(request: Request) {
       );
     }
 
-    let customerName = "お客様";
-    let staffName = "指名なし";
-
-    if (customerId) {
-      const { data: customerData, error: customerError } = await supabase
-        .from("customers")
-        .select("id, name, salon_id")
-        .eq("id", customerId)
-        .maybeSingle();
-
-      if (customerError) {
-        return NextResponse.json(
-          { ok: false, error: customerError.message },
-          { status: 500 }
-        );
-      }
-
-      const customer = customerData as CustomerRow | null;
-
-      if (customer?.name) customerName = customer.name;
-      if (!salonId && customer?.salon_id) salonId = String(customer.salon_id);
-    }
-
-    if (staffId) {
-      const { data: staffData, error: staffError } = await supabase
-        .from("staffs")
-        .select("id, name, salon_id")
-        .eq("id", staffId)
-        .maybeSingle();
-
-      if (staffError) {
-        return NextResponse.json(
-          { ok: false, error: staffError.message },
-          { status: 500 }
-        );
-      }
-
-      const staff = staffData as StaffRow | null;
-
-      if (staff?.name) staffName = staff.name;
-      if (!salonId && staff?.salon_id) salonId = String(staff.salon_id);
-    }
-
-    const startAt = new Date(`${date}T${time}:00+09:00`);
-
-    if (Number.isNaN(startAt.getTime())) {
+    if (durationMinutes === null) {
       return NextResponse.json(
-        { ok: false, error: "予約日時が正しくありません" },
+        { ok: false, error: "所要時間を確認してください" },
         { status: 400 }
       );
     }
 
-    const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
-    const startIso = startAt.toISOString();
-    const endIso = endAt.toISOString();
+    const supabase = getSupabaseAdmin();
+    const salonId = await resolveCustomerBookingSalonId(
+      supabase,
+      customer.salonId
+    );
 
-    let overlapQuery = supabase
-      .from("reservations")
-      .select("id, status, staff_id, start_at, end_at, menu")
-      .lt("start_at", endIso)
-      .gt("end_at", startIso);
-
-    if (salonId) overlapQuery = overlapQuery.eq("salon_id", salonId);
-    if (staffId) overlapQuery = overlapQuery.eq("staff_id", staffId);
-
-    const { data: overlapReservations, error: overlapError } =
-      await overlapQuery;
-
-    if (overlapError) {
+    if (!salonId) {
       return NextResponse.json(
-        { ok: false, error: overlapError.message },
-        { status: 500 }
+        { ok: false, error: "予約店舗を確認できません" },
+        { status: 400 }
       );
     }
 
-    const activeOverlaps = (overlapReservations || []).filter(
-      (reservation) => !isCancelledStatus(reservation.status)
+    const availability = await getCustomerReservationAvailability({
+      supabase,
+      salonId,
+      date,
+      durationMinutes,
+    });
+    const selectedSlot = availability.slots.find(
+      (slot) => slot.time === time
     );
+    const availableStaffIds = selectedSlot?.staffIds || [];
+    const assignedStaffId = requestedStaffId
+      ? availableStaffIds.includes(requestedStaffId)
+        ? requestedStaffId
+        : null
+      : availableStaffIds[0] || null;
 
-    if (activeOverlaps.length > 0) {
+    if (!assignedStaffId) {
       return NextResponse.json(
         {
           ok: false,
-          error: staffId
-            ? "選択した担当者はその時間帯に既に予約があります"
-            : "その時間帯は既に予約があります",
+          error:
+            "選択した時間の空き状況が変わりました。別の時間を選択してください",
         },
-        { status: 400 }
+        { status: 409 }
       );
     }
 
-    const insertData: {
-      menu: string;
-      start_at: string;
-      end_at: string;
-      status: string;
-      memo: string;
-      staff_id?: string;
-      customer_id?: string;
-      salon_id?: string;
-    } = {
+    const assignedStaff = availability.staffs.find(
+      (staff) => staff.id === assignedStaffId
+    );
+
+    if (!assignedStaff) {
+      return NextResponse.json(
+        { ok: false, error: "担当者を確認できません" },
+        { status: 409 }
+      );
+    }
+
+    const startAt = new Date(`${date}T${time}:00+09:00`);
+    const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
+    const startIso = startAt.toISOString();
+    const endIso = endAt.toISOString();
+    const customerName = customer.name || "お客様";
+    const staffName = assignedStaff.name || "担当者名未設定";
+
+    const { data, error } = await supabase
+      .from("reservations")
+      .insert({
       menu,
       start_at: startIso,
       end_at: endIso,
       status: "requested",
       memo,
-    };
-
-    if (staffId) insertData.staff_id = staffId;
-    if (customerId) insertData.customer_id = customerId;
-    if (salonId) insertData.salon_id = salonId;
-
-    const { data, error } = await supabase
-      .from("reservations")
-      .insert(insertData)
+        staff_id: assignedStaffId,
+        customer_id: customer.id,
+        salon_id: salonId,
+      })
       .select("id")
       .single();
 
     if (error) {
+      console.error("customer reservation insert failed", error.code);
       return NextResponse.json(
-        { ok: false, error: error.message },
+        { ok: false, error: "予約保存に失敗しました" },
         { status: 500 }
       );
     }
@@ -416,13 +371,16 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: true,
       reservationId: data.id,
+      assignedStaffId,
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "予約保存に失敗しました";
+    console.error(
+      "customer reservation creation failed",
+      error instanceof Error ? error.name : "UnknownError"
+    );
 
     return NextResponse.json(
-      { ok: false, error: message },
+      { ok: false, error: "予約保存に失敗しました" },
       { status: 500 }
     );
   }

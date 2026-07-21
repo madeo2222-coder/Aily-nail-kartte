@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 
 const customMenuId = "custom";
 
@@ -85,26 +84,6 @@ const addOnOptions = [
   },
 ];
 
-const reservationTimeOptions = [
-  "10:00",
-  "10:30",
-  "11:00",
-  "11:30",
-  "12:00",
-  "12:30",
-  "13:00",
-  "13:30",
-  "14:00",
-  "14:30",
-  "15:00",
-  "15:30",
-  "16:00",
-  "16:30",
-  "17:00",
-  "17:30",
-  "18:00",
-];
-
 type MeResponse = {
   authenticated: boolean;
   customer?: {
@@ -119,12 +98,9 @@ type StaffRow = {
   name: string | null;
 };
 
-type ReservationBlockRow = {
-  id: string;
-  staff_id: string | null;
-  status: string | null;
-  start_at: string | null;
-  end_at: string | null;
+type AvailabilitySlot = {
+  time: string;
+  staffIds: string[];
 };
 
 
@@ -188,93 +164,6 @@ function findInitialMenuId(menuFromQuery: string | null) {
   return matched?.id || "";
 }
 
-function buildUtcIsoFromJst(targetDate: string, targetTime: string) {
-  if (!targetDate || !targetTime) return null;
-
-  const date = new Date(`${targetDate}T${targetTime}:00+09:00`);
-
-  if (Number.isNaN(date.getTime())) return null;
-
-  return date.toISOString();
-}
-
-function addMinutesToUtcIso(
-  targetDate: string,
-  targetTime: string,
-  minutes: number
-) {
-  const startIso = buildUtcIsoFromJst(targetDate, targetTime);
-  if (!startIso) return null;
-
-  const start = new Date(startIso);
-  const end = new Date(start.getTime() + minutes * 60 * 1000);
-
-  if (Number.isNaN(end.getTime())) return null;
-
-  return end.toISOString();
-}
-
-function parseSupabaseTimestampAsUtc(value: string | null) {
-  if (!value) return null;
-
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  if (trimmed.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
-    const date = new Date(trimmed);
-    return Number.isNaN(date.getTime()) ? null : date;
-  }
-
-  const normalized = trimmed.replace(" ", "T");
-  const date = new Date(`${normalized}Z`);
-
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-function isCancelledStatus(status: string | null | undefined) {
-  return status === "キャンセル" || status === "cancelled";
-}
-
-function hasReservationOverlap({
-  targetDate,
-  targetTime,
-  minutes,
-  reservations,
-}: {
-  targetDate: string;
-  targetTime: string;
-  minutes: number;
-  reservations: ReservationBlockRow[];
-}) {
-  const startIso = buildUtcIsoFromJst(targetDate, targetTime);
-  const endIso = addMinutesToUtcIso(targetDate, targetTime, minutes);
-
-  if (!startIso || !endIso) return false;
-
-  const start = new Date(startIso).getTime();
-  const end = new Date(endIso).getTime();
-
-  if (!Number.isFinite(start) || !Number.isFinite(end)) {
-    return false;
-  }
-
-  return reservations.some((reservation) => {
-    if (isCancelledStatus(reservation.status)) return false;
-
-    const reservationStart = parseSupabaseTimestampAsUtc(
-      reservation.start_at
-    )?.getTime();
-    const reservationEnd = parseSupabaseTimestampAsUtc(
-      reservation.end_at
-    )?.getTime();
-
-    if (!reservationStart || !reservationEnd) return false;
-
-    return start < reservationEnd && reservationStart < end;
-  });
-}
-
-
 function ReservePageContent() {
   const searchParams = useSearchParams();
   const menuFromQuery = searchParams.get("menu");
@@ -285,13 +174,10 @@ function ReservePageContent() {
   const [sending, setSending] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
-  const [reservationBlocks, setReservationBlocks] = useState<
-    ReservationBlockRow[]
+  const [availabilitySlots, setAvailabilitySlots] = useState<
+    AvailabilitySlot[]
   >([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
-
-  const [customerId, setCustomerId] = useState("");
-  const [salonId, setSalonId] = useState("");
 
   const [galleryPhotoUrl, setGalleryPhotoUrl] = useState("");
   const [galleryMenuName, setGalleryMenuName] = useState("");
@@ -323,24 +209,8 @@ function ReservePageContent() {
         const json = (await res.json()) as MeResponse;
 
         setIsLoggedIn(!!json.authenticated);
-        setCustomerId(json.customer?.id || "");
-        setSalonId(json.customer?.salon_id || "");
-
-        const { data, error } = await supabase
-          .from("staffs")
-          .select("id, name")
-          .order("name", { ascending: true });
-
-        if (error) {
-          console.error("staffs fetch error:", error.message);
-          setStaffs([]);
-        } else {
-          setStaffs((data as StaffRow[]) || []);
-        }
       } catch {
         setIsLoggedIn(false);
-        setCustomerId("");
-        setSalonId("");
         setStaffs([]);
       } finally {
         setLoading(false);
@@ -507,108 +377,70 @@ function ReservePageContent() {
   }, [hasSelectedMenu, mainMenuMinutes, selectedOff.minutes, selectedAddOns]);
 
   useEffect(() => {
-    async function fetchReservationBlocks() {
-      if (!isLoggedIn || !selectedDate) {
-        setReservationBlocks([]);
+    const controller = new AbortController();
+
+    async function fetchAvailability() {
+      if (!isLoggedIn || !selectedDate || !hasSelectedMenu) {
+        setAvailabilitySlots([]);
+        setStaffs([]);
         return;
       }
 
       setAvailabilityLoading(true);
 
-      const dayStart = buildUtcIsoFromJst(selectedDate, "00:00");
-      const dayEnd = buildUtcIsoFromJst(selectedDate, "23:59");
-
-      if (!dayStart || !dayEnd) {
-        setReservationBlocks([]);
-        setAvailabilityLoading(false);
-        return;
-      }
-
       try {
-        let reservationQuery = supabase
-          .from("reservations")
-          .select("id, staff_id, status, start_at, end_at")
-          .lt("start_at", dayEnd)
-          .gt("end_at", dayStart);
+        const response = await fetch(
+          "/api/customer-reservations/availability",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              date: selectedDate,
+              durationMinutes: totalMinutes,
+            }),
+            signal: controller.signal,
+          }
+        );
+        const json = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+          staffs?: StaffRow[];
+          slots?: AvailabilitySlot[];
+        };
 
-        if (salonId) {
-          reservationQuery = reservationQuery.eq("salon_id", salonId);
+        if (!response.ok || !json.ok) {
+          setAvailabilitySlots([]);
+          setStaffs([]);
+          showMessage(json.error || "空き時間の取得に失敗しました");
+          return;
         }
 
-        if (selectedStaffId) {
-          reservationQuery = reservationQuery.eq("staff_id", selectedStaffId);
-        }
-
-        let externalBlockQuery = supabase
-          .from("external_calendar_blocks")
-          .select("id, staff_id, start_at, end_at")
-          .lt("start_at", dayEnd)
-          .gt("end_at", dayStart);
-
-        if (selectedStaffId) {
-          externalBlockQuery = externalBlockQuery.eq("staff_id", selectedStaffId);
-        }
-
-        const [reservationResult, externalBlockResult] = await Promise.all([
-          reservationQuery,
-          externalBlockQuery,
-        ]);
-
-        if (reservationResult.error) {
-          console.error(
-            "reservation blocks fetch error:",
-            reservationResult.error.message
-          );
-        }
-
-        if (externalBlockResult.error) {
-          console.error(
-            "external blocks fetch error:",
-            externalBlockResult.error.message
-          );
-        }
-
-        const reservationRows =
-          (reservationResult.data || []) as ReservationBlockRow[];
-
-        const externalRows = (externalBlockResult.data || []).map((block) => ({
-          id: String(block.id),
-          staff_id: block.staff_id,
-          status: "external_block",
-          start_at: block.start_at,
-          end_at: block.end_at,
-        })) as ReservationBlockRow[];
-
-        setReservationBlocks([...reservationRows, ...externalRows]);
+        setAvailabilitySlots(json.slots || []);
+        setStaffs(json.staffs || []);
       } catch (error) {
-        console.error("reservation blocks fetch error:", error);
-        setReservationBlocks([]);
+        if (error instanceof Error && error.name === "AbortError") return;
+        setAvailabilitySlots([]);
+        setStaffs([]);
+        showMessage("空き時間の取得に失敗しました");
       } finally {
-        setAvailabilityLoading(false);
+        if (!controller.signal.aborted) setAvailabilityLoading(false);
       }
     }
 
-    fetchReservationBlocks();
-  }, [isLoggedIn, selectedDate, selectedStaffId, salonId]);
+    void fetchAvailability();
+
+    return () => controller.abort();
+  }, [isLoggedIn, selectedDate, hasSelectedMenu, totalMinutes]);
 
   const availableTimeOptions = useMemo(() => {
-    if (!hasSelectedMenu) {
-      return [];
-    }
+    return availabilitySlots.map((slot) => slot.time);
+  }, [availabilitySlots]);
 
-    if (!selectedDate) {
-      return reservationTimeOptions;
-    }
-
-    return reservationTimeOptions.filter((time) => {
-      return !hasReservationOverlap({
-        targetDate: selectedDate,
-        targetTime: time,
-        minutes: totalMinutes,
-        reservations: reservationBlocks,
-      });
-    });
-  }, [hasSelectedMenu, selectedDate, totalMinutes, reservationBlocks]);
+  const availableStaffsForSelectedTime = useMemo(() => {
+    const slot = availabilitySlots.find((item) => item.time === selectedTime);
+    if (!slot) return [];
+    return staffs.filter((staff) => slot.staffIds.includes(staff.id));
+  }, [availabilitySlots, selectedTime, staffs]);
 
   useEffect(() => {
     if (!selectedTime) return;
@@ -616,7 +448,21 @@ function ReservePageContent() {
     if (availableTimeOptions.includes(selectedTime)) return;
 
     setSelectedTime("");
+    setSelectedStaffId("");
   }, [selectedTime, selectedDate, availableTimeOptions]);
+
+  useEffect(() => {
+    if (!selectedStaffId) return;
+    if (
+      availableStaffsForSelectedTime.some(
+        (staff) => staff.id === selectedStaffId
+      )
+    ) {
+      return;
+    }
+    setSelectedStaffId("");
+    showMessage("担当者の空き状況が変わりました。再度選択してください");
+  }, [selectedStaffId, availableStaffsForSelectedTime]);
 
   const timeBreakdown = useMemo(() => {
     if (!hasSelectedMenu) return [];
@@ -724,6 +570,7 @@ function ReservePageContent() {
   }
 
   function toggleAddOn(addOnId: string) {
+    setSelectedStaffId("");
     setSelectedAddOnIds((current) => {
       if (current.includes(addOnId)) {
         return current.filter((id) => id !== addOnId);
@@ -806,8 +653,6 @@ function ReservePageContent() {
           date: selectedDate,
           time: selectedTime,
           staffId: selectedStaffId,
-          customerId,
-          salonId,
           durationMinutes: totalMinutes,
           memo: memoLines.join("\n"),
         }),
@@ -817,6 +662,10 @@ function ReservePageContent() {
 
       if (!response.ok || !json.ok) {
         showMessage(json.error || "予約保存に失敗しました");
+        if (response.status === 409) {
+          setSelectedTime("");
+          setSelectedStaffId("");
+        }
         setSending(false);
         return;
       }
@@ -953,75 +802,14 @@ function ReservePageContent() {
           <div className="mt-4 space-y-4">
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
-                希望日
-              </label>
-
-              <div className="w-full overflow-hidden rounded-2xl border border-slate-300 bg-white">
-                <input
-                  type="date"
-                  value={selectedDate}
-                  min={todayText}
-                  max={maxReservationDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="block w-full border-0 bg-transparent px-4 py-3 text-sm outline-none"
-                  style={{
-                    minHeight: "52px",
-                  }}
-                />
-              </div>
-
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                予約可能期間：本日から30日先まで
-              </p>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                希望時間
-              </label>
-              <select
-                value={selectedTime}
-                onChange={(e) => setSelectedTime(e.target.value)}
-                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-                disabled={availabilityLoading || !selectedDate || !hasSelectedMenu}
-              >
-                <option value="">
-                  {!hasSelectedMenu
-                    ? "先にメニューを選択してください"
-                    : !selectedDate
-                    ? "先に希望日を選択してください"
-                    : availabilityLoading
-                    ? "空き時間を確認中..."
-                    : "選択してください"}
-                </option>
-                {availableTimeOptions.map((time) => (
-                  <option key={time} value={time}>
-                    {time}
-                  </option>
-                ))}
-              </select>
-
-              {selectedDate && !availabilityLoading ? (
-                availableTimeOptions.length > 0 ? (
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    選択中のメニュー所要時間で空いている時間だけ表示しています。
-                  </p>
-                ) : (
-                  <p className="mt-2 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold leading-5 text-rose-700">
-                    この日は選択中のメニュー時間で空きがありません。
-                    別の日付・担当者・メニューを選択してください。
-                  </p>
-                )
-              ) : null}
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
                 メインメニュー
               </label>
               <select
                 value={selectedMenuId}
-                onChange={(e) => setSelectedMenuId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedMenuId(e.target.value);
+                  setSelectedStaffId("");
+                }}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
                 <option value="">選択してください</option>
@@ -1085,7 +873,10 @@ function ReservePageContent() {
               </label>
               <select
                 value={selectedOffId}
-                onChange={(e) => setSelectedOffId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedOffId(e.target.value);
+                  setSelectedStaffId("");
+                }}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
                 {offOptions.map((off) => (
@@ -1134,15 +925,89 @@ function ReservePageContent() {
 
             <div>
               <label className="mb-2 block text-sm font-medium text-slate-700">
+                希望日
+              </label>
+
+              <div className="w-full overflow-hidden rounded-2xl border border-slate-300 bg-white">
+                <input
+                  type="date"
+                  value={selectedDate}
+                  min={todayText}
+                  max={maxReservationDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                    setSelectedTime("");
+                    setSelectedStaffId("");
+                  }}
+                  className="block w-full border-0 bg-transparent px-4 py-3 text-sm outline-none"
+                  style={{ minHeight: "52px" }}
+                />
+              </div>
+
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                予約可能期間：本日から30日先まで
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
+                希望時間
+              </label>
+              <select
+                value={selectedTime}
+                onChange={(e) => {
+                  setSelectedTime(e.target.value);
+                  setSelectedStaffId("");
+                }}
+                className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                disabled={availabilityLoading || !selectedDate || !hasSelectedMenu}
+              >
+                <option value="">
+                  {!hasSelectedMenu
+                    ? "先にメニューを選択してください"
+                    : !selectedDate
+                    ? "先に希望日を選択してください"
+                    : availabilityLoading
+                    ? "空き時間を確認中..."
+                    : "選択してください"}
+                </option>
+                {availableTimeOptions.map((time) => (
+                  <option key={time} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </select>
+
+              {selectedDate && hasSelectedMenu && !availabilityLoading ? (
+                availableTimeOptions.length > 0 ? (
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    選択中のメニューに対応できるスタッフが空いている時間だけ表示しています。
+                  </p>
+                ) : (
+                  <p className="mt-2 rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold leading-5 text-rose-700">
+                    この日は予約可能なスタッフの空きがありません。
+                    別の日付またはメニューを選択してください。
+                  </p>
+                )
+              ) : null}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700">
                 担当者
               </label>
               <select
                 value={selectedStaffId}
                 onChange={(e) => setSelectedStaffId(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
+                disabled={!selectedTime}
               >
-                <option value="">指名なし / 指名料なし</option>
-                {staffs.map((staff) => {
+                <option value="">
+                  {selectedTime
+                    ? "指名なし / 指名料なし"
+                    : "先に希望時間を選択してください"}
+                </option>
+                {availableStaffsForSelectedTime.map((staff) => {
                   const name = staff.name || "名前未設定";
                   const fee = getNominationFee(name);
 
@@ -1155,8 +1020,8 @@ function ReservePageContent() {
                 })}
               </select>
               <p className="mt-2 text-xs leading-5 text-slate-500">
-                担当者を選ぶと、そのスタッフの空き時間だけ表示します。
-                指名なしの場合は店舗全体の空き時間で確認します。
+                選択した時間に対応可能な担当者だけを表示します。
+                指名なしの場合は、空いている担当者へ自動で割り当てます。
               </p>
             </div>
 
