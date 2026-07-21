@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 type RpcError = {
   code?: string;
   message?: string;
+  details?: string;
+  hint?: string;
 };
 
 const UUID_PATTERN =
@@ -18,9 +20,8 @@ function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
-  if (!url || !serviceRoleKey) {
-    throw new Error("Supabase configuration is missing");
-  }
+  if (!url) throw new Error("NEXT_PUBLIC_SUPABASE_URL is missing");
+  if (!serviceRoleKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is missing");
 
   return createClient(url, serviceRoleKey, {
     auth: {
@@ -43,7 +44,13 @@ function getAppUrl() {
   const normalized = /^https?:\/\//i.test(rawUrl)
     ? rawUrl
     : `https://${rawUrl}`;
-  const url = new URL(normalized);
+  let url: URL;
+
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error("Application URL is invalid");
+  }
 
   if (url.protocol !== "https:") {
     throw new Error("Application URL must use HTTPS");
@@ -67,6 +74,8 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  let stage = "request-validation";
+
   try {
     const authError = requireStaffSession(request);
 
@@ -90,6 +99,7 @@ export async function POST(
       );
     }
 
+    stage = "application-url";
     const appUrl = getAppUrl();
     const paymentLinkKey = randomBytes(32).toString("base64url");
     const paymentLinkTokenHash = hashPaymentLinkKey(paymentLinkKey);
@@ -101,8 +111,10 @@ export async function POST(
     const paymentDueAt = new Date(
       Date.now() + 7 * 24 * 60 * 60 * 1000
     ).toISOString();
+    stage = "supabase-client";
     const supabase = getSupabaseAdmin();
 
+    stage = "prepare-payment-link-rpc";
     const { data, error } = await supabase.rpc(
       "prepare_nail_tip_order_payment_link",
       {
@@ -116,23 +128,42 @@ export async function POST(
     if (error) {
       const status = getRpcErrorStatus(error);
       const errorMessage =
-        status === 404
-          ? "注文が見つかりません。"
-          : status === 409
-            ? "この注文は支払済み、または決済処理中です。"
-            : status === 400
-              ? "商品コードまたは確定価格が設定されていません。"
-              : "決済URLを生成できませんでした。";
+        error.message || "prepare_nail_tip_order_payment_link RPC failed";
+
+      console.error("DG payment URL RPC error", {
+        stage,
+        status,
+        code: error.code || null,
+        message: error.message || null,
+        details: error.details || null,
+        hint: error.hint || null,
+      });
 
       return NextResponse.json(
-        { ok: false, error: errorMessage },
+        {
+          ok: false,
+          error: errorMessage,
+          errorCode: error.code || "RPC_ERROR",
+          stage,
+        },
         { status }
       );
     }
 
     if (data !== id) {
+      console.error("DG payment URL RPC returned an unexpected result", {
+        stage,
+        status: 500,
+        resultType: typeof data,
+      });
+
       return NextResponse.json(
-        { ok: false, error: "決済URLを生成できませんでした。" },
+        {
+          ok: false,
+          error: "prepare_nail_tip_order_payment_link RPC returned an unexpected result",
+          errorCode: "UNEXPECTED_RPC_RESULT",
+          stage,
+        },
         { status: 500 }
       );
     }
@@ -142,9 +173,25 @@ export async function POST(
       paymentUrl,
       paymentDueAt,
     });
-  } catch {
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown payment URL error";
+
+    console.error("DG payment URL generation error", {
+      stage,
+      status: 500,
+      name: error instanceof Error ? error.name : "UnknownError",
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     return NextResponse.json(
-      { ok: false, error: "決済URLを生成できませんでした。" },
+      {
+        ok: false,
+        error: message,
+        errorCode: "PAYMENT_URL_GENERATION_ERROR",
+        stage,
+      },
       { status: 500 }
     );
   }
