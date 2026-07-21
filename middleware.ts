@@ -77,6 +77,7 @@ function isCustomerAllowedApiPath(pathname: string) {
     pathname.startsWith("/api/send-review-request-line/") ||
     pathname === "/api/nail-tip-orders" ||
     pathname.startsWith("/api/nail-tip-orders/") ||
+    pathname === "/api/customer-reservations/availability" ||
     pathname === "/api/sanmeigaku-diagnoses" ||
     pathname.startsWith("/api/sanmeigaku-diagnoses/")
   );
