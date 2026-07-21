@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -431,12 +432,30 @@ export default function InboundReservePage() {
             AILY NAIL STUDIO
           </div>
           <h1 className="mt-3 text-2xl font-black leading-tight">
-            Custom Japanese Nail Art
+            International Custom Nail Tips
           </h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            Handmade anime, fortune, power stone, and luxury custom nail tips
-            from Fukuoka, Japan.
+            This page accepts custom nail tip consultations and worldwide
+            shipping requests.
           </p>
+
+          <div className="mt-4 rounded-2xl bg-white/15 p-4 text-sm leading-6 text-white/95 backdrop-blur-sm">
+            <p>
+              Online payment is currently unavailable. We will review your
+              request and contact you by email with a quotation and further
+              instructions.
+            </p>
+            <div className="mt-3 border-t border-white/20 pt-3 text-xs leading-5 text-white/85">
+              海外向けカスタムネイルチップの相談受付ページです。現在、オンラインカード決済は準備中です。受付後、内容を確認して見積りと今後の手続きをメールで案内します。
+            </div>
+          </div>
+
+          <Link
+            href="/customer-app/nail-tip-order"
+            className="mt-4 block rounded-2xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
+          >
+            Japan / 国内向けネイルチップ
+          </Link>
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold">
             <div className="rounded-2xl bg-white/20 px-3 py-2">
@@ -575,8 +594,8 @@ export default function InboundReservePage() {
           <p className="mt-2 text-sm leading-6 text-slate-600">
             We create custom anime, fortune, Sanmeigaku, power-stone, idol,
             game, bridal, and original design nail tips. Send us your request.
-            Our staff will reply with an estimate, production time, and DG/MAP
-            payment URL.
+            Our staff will reply by email with an estimate, production time,
+            and further instructions.
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
@@ -605,7 +624,8 @@ export default function InboundReservePage() {
           </div>
 
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            Advance consultation and payment are required before production.
+            Online payment is currently unavailable. Please submit a
+            consultation request first, and we will contact you by email.
           </div>
         </section>
 
@@ -1073,8 +1093,8 @@ export default function InboundReservePage() {
 
             <div className="mt-3 rounded-2xl bg-pink-50 p-4 text-sm leading-6 text-pink-800">
               Worldwide shipping is available. After reviewing your design, our
-              staff will send you an estimate, production time, and payment
-              information.
+              staff will send you an estimate, production time, and further
+              instructions by email. Online payment is currently unavailable.
             </div>
 
             <div className="mt-4 rounded-2xl border border-pink-100 bg-white p-4">
@@ -1085,7 +1105,7 @@ export default function InboundReservePage() {
               <div className="mt-3 space-y-2 text-sm text-slate-700">
                 <div>1️⃣ Send your design request</div>
                 <div>2️⃣ Receive quote & production schedule</div>
-                <div>3️⃣ Pay via DG/MAP secure payment link</div>
+                <div>3️⃣ Receive further instructions by email</div>
                 <div>4️⃣ We hand paint your nail tips</div>
                 <div>5️⃣ Worldwide shipping from Japan</div>
               </div>

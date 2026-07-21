@@ -47,7 +47,8 @@ const productPresentation: Record<
     textClassName: "text-amber-600",
   },
   diamond_premium: {
-    description: "天然ダイヤモンド使用・鑑定書付き",
+    description:
+      "ジュエリーパーツを使用したプレミアムデザイン。使用素材や証明書の詳細は、ご注文前に個別にご案内します。",
     badge: "プレミアム",
     cardClassName: "border-purple-200 bg-purple-50",
     textClassName: "text-purple-600",
@@ -377,6 +378,22 @@ function NailTipOrderContent() {
               この内容で注文相談する
             </button>
           </div>
+        </section>
+
+        <section className="rounded-3xl border border-blue-100 bg-blue-50 p-4 shadow-sm">
+          <div className="text-base font-bold text-slate-900">
+            Overseas customers
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            For international orders and worldwide shipping requests, please
+            use our English consultation form.
+          </p>
+          <Link
+            href="/customer-app/inbound"
+            className="mt-4 block rounded-2xl bg-blue-600 px-4 py-3 text-center text-sm font-bold text-white"
+          >
+            International Custom Nail Tips
+          </Link>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">

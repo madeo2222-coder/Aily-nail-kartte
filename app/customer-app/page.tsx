@@ -654,14 +654,14 @@ export default function CustomerAppPage() {
 
               <div className="mt-3 text-sm leading-6 text-white/90">
                 今のあなたは「魅力運」と「人間関係運」を整えるタイミングです。
-                透明感カラーと天然石を取り入れることで、印象運アップが期待できます。
+                透明感カラーやジュエリーパーツを取り入れた、印象を彩るデザインをご提案します。
               </div>
             </div>
 
             <div className="rounded-2xl bg-white/15 px-3 py-2 text-right backdrop-blur-sm">
               <div className="text-[11px] text-white/70">Lucky Stone</div>
 
-              <div className="mt-1 text-sm font-bold">Natural Diamond</div>
+              <div className="mt-1 text-sm font-bold">Jewelry Accent</div>
             </div>
           </div>
 
@@ -702,60 +702,36 @@ export default function CustomerAppPage() {
               <div className="text-sm text-slate-500">BEAUTY STORE</div>
 
               <div className="mt-1 text-xl font-bold text-slate-900">
-                開運Beauty Store
-              </div>
-            </div>
-
-            <div className="rounded-full bg-fuchsia-100 px-3 py-1 text-xs font-bold text-fuchsia-600">
-              Coming Soon
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-2xl">💎</div>
-              <div className="mt-2 text-sm font-bold text-slate-900">天然石</div>
-              <div className="mt-1 text-xs leading-5 text-slate-500">
-                天然ダイヤ・開運ストーン
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-2xl">🌿</div>
-              <div className="mt-2 text-sm font-bold text-slate-900">アロマ</div>
-              <div className="mt-1 text-xs leading-5 text-slate-500">
-                浄化・リラックス
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-2xl">🛁</div>
-              <div className="mt-2 text-sm font-bold text-slate-900">
-                フェムケア
-              </div>
-              <div className="mt-1 text-xs leading-5 text-slate-500">
-                女性向けセルフケア
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-slate-50 p-4">
-              <div className="text-2xl">🕯</div>
-              <div className="mt-2 text-sm font-bold text-slate-900">
-                開運雑貨
-              </div>
-              <div className="mt-1 text-xs leading-5 text-slate-500">
-                お守り・空間づくり
+                ネイルチップ相談
               </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => showMessage("Beauty Store は次段階で公開予定です")}
-            className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white"
-          >
-            ストア情報を見る
-          </button>
+          <div className="mt-4 grid grid-cols-1 gap-3">
+            <Link
+              href="/customer-app/nail-tip-order"
+              className="rounded-2xl border border-fuchsia-100 bg-fuchsia-50 p-4 transition hover:bg-fuchsia-100"
+            >
+              <div className="text-sm font-bold text-fuchsia-700">
+                開運ネイルチップ
+              </div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">
+                診断結果やご希望に合わせて、オーダーネイルチップをご相談いただけます。
+              </div>
+            </Link>
+
+            <Link
+              href="/customer-app/inbound"
+              className="rounded-2xl border border-blue-100 bg-blue-50 p-4 transition hover:bg-blue-100"
+            >
+              <div className="text-sm font-bold text-blue-700">
+                International Custom Nail Tips
+              </div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">
+                Custom nail tip consultation and worldwide shipping requests.
+              </div>
+            </Link>
+          </div>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
