@@ -181,11 +181,11 @@ function formatMinutes(minutes: number) {
 }
 
 function findInitialMenuId(menuFromQuery: string | null) {
-  if (!menuFromQuery) return mainMenus[0].id;
+  if (!menuFromQuery) return "";
 
   const matched = mainMenus.find((menu) => menu.label === menuFromQuery);
 
-  return matched?.id || mainMenus[0].id;
+  return matched?.id || "";
 }
 
 function buildUtcIsoFromJst(targetDate: string, targetTime: string) {
@@ -407,7 +407,7 @@ function ReservePageContent() {
   }, [designId]);
 
   const selectedMainMenu = useMemo(() => {
-    return mainMenus.find((menu) => menu.id === selectedMenuId) || mainMenus[0];
+    return mainMenus.find((menu) => menu.id === selectedMenuId) || null;
   }, [selectedMenuId]);
 
   const selectedOff = useMemo(() => {
@@ -433,19 +433,25 @@ function ReservePageContent() {
       return customMenu.trim();
     }
 
-    return selectedMainMenu.label;
-  }, [selectedMenuId, selectedMainMenu.label, customMenu]);
+    return selectedMainMenu?.label || "";
+  }, [selectedMenuId, selectedMainMenu, customMenu]);
+
+  const hasSelectedMenu = Boolean(mainMenuName);
 
   const mainMenuPrice = useMemo(() => {
+    if (!selectedMainMenu) return 0;
+
     if (selectedMenuId === customMenuId) {
       const price = Number(customPrice || 0);
       return Number.isFinite(price) ? price : 0;
     }
 
     return selectedMainMenu.price;
-  }, [selectedMenuId, customPrice, selectedMainMenu.price]);
+  }, [selectedMenuId, customPrice, selectedMainMenu]);
 
   const mainMenuMinutes = useMemo(() => {
+    if (!selectedMainMenu) return 0;
+
     if (selectedMenuId === customMenuId) {
       const minutes = Number(customMinutes || 90);
 
@@ -457,9 +463,11 @@ function ReservePageContent() {
     }
 
     return selectedMainMenu.minutes;
-  }, [selectedMenuId, customMinutes, selectedMainMenu.minutes]);
+  }, [selectedMenuId, customMinutes, selectedMainMenu]);
 
   const reservationMenu = useMemo(() => {
+    if (!mainMenuName) return "";
+
     const parts = [mainMenuName];
 
     if (selectedOff.id !== "none") {
@@ -474,12 +482,16 @@ function ReservePageContent() {
   }, [mainMenuName, selectedOff, selectedAddOns]);
 
   const totalPrice = useMemo(() => {
+    if (!hasSelectedMenu) return 0;
+
     const addOnPrice = selectedAddOns.reduce((sum, item) => sum + item.price, 0);
 
     return mainMenuPrice + selectedOff.price + addOnPrice + selectedStaffFee;
-  }, [mainMenuPrice, selectedOff.price, selectedAddOns, selectedStaffFee]);
+  }, [hasSelectedMenu, mainMenuPrice, selectedOff.price, selectedAddOns, selectedStaffFee]);
 
   const totalMinutes = useMemo(() => {
+    if (!hasSelectedMenu) return 0;
+
     const addOnMinutes = selectedAddOns.reduce(
       (sum, item) => sum + item.minutes,
       0
@@ -492,7 +504,7 @@ function ReservePageContent() {
     }
 
     return result;
-  }, [mainMenuMinutes, selectedOff.minutes, selectedAddOns]);
+  }, [hasSelectedMenu, mainMenuMinutes, selectedOff.minutes, selectedAddOns]);
 
   useEffect(() => {
     async function fetchReservationBlocks() {
@@ -580,6 +592,10 @@ function ReservePageContent() {
   }, [isLoggedIn, selectedDate, selectedStaffId, salonId]);
 
   const availableTimeOptions = useMemo(() => {
+    if (!hasSelectedMenu) {
+      return [];
+    }
+
     if (!selectedDate) {
       return reservationTimeOptions;
     }
@@ -592,7 +608,7 @@ function ReservePageContent() {
         reservations: reservationBlocks,
       });
     });
-  }, [selectedDate, totalMinutes, reservationBlocks]);
+  }, [hasSelectedMenu, selectedDate, totalMinutes, reservationBlocks]);
 
   useEffect(() => {
     if (!selectedTime) return;
@@ -603,6 +619,8 @@ function ReservePageContent() {
   }, [selectedTime, selectedDate, availableTimeOptions]);
 
   const timeBreakdown = useMemo(() => {
+    if (!hasSelectedMenu) return [];
+
     const items = [
       {
         label: mainMenuName || "メインメニュー未入力",
@@ -625,9 +643,11 @@ function ReservePageContent() {
     });
 
     return items.filter((item) => item.minutes > 0);
-  }, [mainMenuName, mainMenuMinutes, selectedOff, selectedAddOns]);
+  }, [hasSelectedMenu, mainMenuName, mainMenuMinutes, selectedOff, selectedAddOns]);
 
   const priceBreakdown = useMemo(() => {
+    if (!hasSelectedMenu) return [];
+
     const items = [
       {
         label: mainMenuName || "メインメニュー未入力",
@@ -668,6 +688,7 @@ function ReservePageContent() {
     selectedAddOns,
     selectedStaffFee,
     selectedStaffName,
+    hasSelectedMenu,
   ]);
 
   const hasPriceSuffix = useMemo(() => {
@@ -693,7 +714,7 @@ function ReservePageContent() {
     const timeText = selectedTime || "未選択";
 
     return `${dateText} ${timeText} / ${
-      reservationMenu || "メニュー未入力"
+      reservationMenu || "未選択"
     } / ${selectedStaffName}`;
   }, [selectedDate, selectedTime, reservationMenu, selectedStaffName]);
 
@@ -719,6 +740,11 @@ function ReservePageContent() {
   }
 
   async function handleReserveSubmit() {
+    if (!reservationMenu) {
+      showMessage("メニューを選択してください");
+      return;
+    }
+
     if (!selectedDate) {
       showMessage("希望日を選択してください");
       return;
@@ -741,11 +767,6 @@ function ReservePageContent() {
 
     if (!availableTimeOptions.includes(selectedTime)) {
       showMessage("選択した時間は埋まりました。別の時間を選択してください");
-      return;
-    }
-
-    if (!reservationMenu) {
-      showMessage("メニューを選択してください");
       return;
     }
 
@@ -962,10 +983,12 @@ function ReservePageContent() {
                 value={selectedTime}
                 onChange={(e) => setSelectedTime(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-                disabled={availabilityLoading || !selectedDate}
+                disabled={availabilityLoading || !selectedDate || !hasSelectedMenu}
               >
                 <option value="">
-                  {!selectedDate
+                  {!hasSelectedMenu
+                    ? "先にメニューを選択してください"
+                    : !selectedDate
                     ? "先に希望日を選択してください"
                     : availabilityLoading
                     ? "空き時間を確認中..."
@@ -1001,6 +1024,7 @@ function ReservePageContent() {
                 onChange={(e) => setSelectedMenuId(e.target.value)}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               >
+                <option value="">選択してください</option>
                 {mainMenus.map((menu) => (
                   <option key={menu.id} value={menu.id}>
                     {menu.label} / {formatYen(menu.price)} /{" "}
@@ -1193,15 +1217,21 @@ function ReservePageContent() {
               <div className="rounded-2xl bg-white p-3">
                 <div className="text-xs text-slate-500">合計金額目安</div>
                 <div className="mt-1 text-lg font-black text-slate-900">
-                  {formatYen(totalPrice)}
-                  {hasPriceSuffix ? "〜" : ""}
+                  {hasSelectedMenu ? (
+                    <>
+                      {formatYen(totalPrice)}
+                      {hasPriceSuffix ? "〜" : ""}
+                    </>
+                  ) : (
+                    "未選択"
+                  )}
                 </div>
               </div>
 
               <div className="rounded-2xl bg-white p-3">
                 <div className="text-xs text-slate-500">所要時間目安</div>
                 <div className="mt-1 text-lg font-black text-slate-900">
-                  {formatMinutes(totalMinutes)}
+                  {hasSelectedMenu ? formatMinutes(totalMinutes) : "未選択"}
                 </div>
               </div>
             </div>
@@ -1209,7 +1239,9 @@ function ReservePageContent() {
             <div className="mt-4 rounded-2xl bg-white p-3">
               <div className="text-sm font-bold text-slate-900">時間内訳</div>
               <div className="mt-2 space-y-1 text-sm text-slate-600">
-                {timeBreakdown.map((item) => (
+                {!hasSelectedMenu ? (
+                  <div>未選択</div>
+                ) : timeBreakdown.map((item) => (
                   <div
                     key={`${item.label}-${item.minutes}`}
                     className="flex justify-between gap-3"
@@ -1226,7 +1258,9 @@ function ReservePageContent() {
             <div className="mt-3 rounded-2xl bg-rose-50/70 p-3">
               <div className="text-sm font-bold text-slate-900">金額内訳</div>
               <div className="mt-2 space-y-1 text-sm text-slate-600">
-                {priceBreakdown.map((item) => (
+                {!hasSelectedMenu ? (
+                  <div>未選択</div>
+                ) : priceBreakdown.map((item) => (
                   <div
                     key={`${item.label}-${item.price}`}
                     className="flex justify-between gap-3"
@@ -1242,8 +1276,14 @@ function ReservePageContent() {
               <div className="mt-3 flex justify-between border-t border-rose-100 pt-3 text-sm font-bold text-slate-900">
                 <span>合計金額目安</span>
                 <span>
-                  {formatYen(totalPrice)}
-                  {hasPriceSuffix ? "〜" : ""}
+                  {hasSelectedMenu ? (
+                    <>
+                      {formatYen(totalPrice)}
+                      {hasPriceSuffix ? "〜" : ""}
+                    </>
+                  ) : (
+                    "未選択"
+                  )}
                 </span>
               </div>
             </div>
@@ -1262,7 +1302,9 @@ function ReservePageContent() {
           <button
             type="button"
             onClick={handleReserveSubmit}
-            disabled={sending || availabilityLoading || !selectedTime}
+            disabled={
+              sending || availabilityLoading || !selectedTime || !hasSelectedMenu
+            }
             className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
             {sending ? "送信中..." : "この内容で予約希望を送る"}
