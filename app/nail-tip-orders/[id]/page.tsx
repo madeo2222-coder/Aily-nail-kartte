@@ -161,7 +161,17 @@ export default async function NailTipOrderDetailPage({
     .maybeSingle<NailTipOrderPaymentRow>();
 
   const productName = extractLine(order.design_request, "選択商品：");
-  const productPrice = extractLine(order.design_request, "商品価格：");
+  const savedProductPrice = extractLine(order.design_request, "商品価格：");
+  const estimatedProductPrice = extractLine(order.design_request, "価格目安：");
+  const isAwaitingFormalQuote = Boolean(
+    order.design_request
+      ?.split("\n")
+      .some((line) => line.trim() === "正式見積り前")
+  );
+  const productPrice =
+    typeof order.product_price === "number" && order.product_price > 0
+      ? `¥${order.product_price.toLocaleString("ja-JP")}`
+      : estimatedProductPrice || savedProductPrice || "未登録";
   const productStone = extractLine(order.design_request, "商品ストーン：");
   const productTheme = extractLine(order.design_request, "商品テーマ：");
 
@@ -214,10 +224,17 @@ export default async function NailTipOrderDetailPage({
             </div>
 
             <div className="rounded-2xl bg-amber-50 p-4">
-              <div className="text-xs text-amber-600">商品価格</div>
-              <div className="mt-1 font-bold text-amber-900">
-                {productPrice || "未登録"}
+              <div className="text-xs text-amber-600">
+                {isAwaitingFormalQuote ? "価格目安" : "商品価格"}
               </div>
+              <div className="mt-1 font-bold text-amber-900">
+                {productPrice}
+              </div>
+              {isAwaitingFormalQuote ? (
+                <div className="mt-1 text-xs font-bold text-amber-700">
+                  正式見積り前
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-2xl bg-pink-50 p-4">

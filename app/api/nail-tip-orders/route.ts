@@ -38,7 +38,9 @@ export async function POST(request: Request) {
 
     const designRequest = [
       `選択商品：${product.name}`,
-      `商品価格：¥${product.price.toLocaleString("ja-JP")}`,
+      `価格目安：${product.startingPrice.toLocaleString("ja-JP")}円〜`,
+      "正式見積り前",
+      "天然石の種類・大きさ・個数、デザイン内容によって価格が変わります。天然石の追加、大粒・希少な天然石、特殊加工には追加料金が発生する場合があります。ご注文内容を確認後、制作前に正式なお見積りをご案内します。",
       `商品ストーン：${product.stone}`,
       `商品テーマ：${product.fortune}`,
       "",
@@ -64,7 +66,7 @@ export async function POST(request: Request) {
         delivery_request: deliveryRequest,
         product_code: product.code,
         product_name_snapshot: product.name,
-        product_price: product.price,
+        product_price: null,
         status: "requested",
       })
       .select("id")

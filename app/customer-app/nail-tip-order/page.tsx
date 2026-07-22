@@ -73,8 +73,8 @@ const signedInNavItems = [
   { key: "mypage", label: "マイ", icon: "👤", href: "" },
 ];
 
-function formatYen(value: number) {
-  return `¥${value.toLocaleString("ja-JP")}`;
+function formatStartingPrice(value: number) {
+  return `${value.toLocaleString("ja-JP")}円〜`;
 }
 
 function findRecommendedProduct(stone: string) {
@@ -258,6 +258,15 @@ function NailTipOrderContent() {
             診断結果に近い商品を自動でおすすめします。別の商品も選択できます。
           </p>
 
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="font-bold text-amber-900">
+              開運ネイルチップ：10,000円〜
+            </div>
+            <p className="mt-2 text-sm leading-6 text-amber-900/80">
+              天然石の種類・大きさ・個数、デザイン内容によって価格が変わります。天然石の追加、大粒・希少な天然石、特殊加工には追加料金が発生する場合があります。ご注文内容を確認後、制作前に正式なお見積りをご案内します。
+            </p>
+          </div>
+
           <div className="mt-4 space-y-3">
             {nailTipProducts.map((product) => {
               const isSelected = selectedProductId === product.code;
@@ -295,7 +304,7 @@ function NailTipOrderContent() {
 
                     <div className="shrink-0 text-left sm:text-right">
                       <div className={`text-2xl font-black ${product.textClassName}`}>
-                        {formatYen(product.price)}
+                        {formatStartingPrice(product.startingPrice)}
                       </div>
                       <div className="mt-2 text-xl">
                         {isSelected ? "☑" : "□"}
@@ -319,7 +328,10 @@ function NailTipOrderContent() {
               {selectedProduct.name}
             </div>
             <div className="mt-1 text-sm font-bold text-slate-600">
-              {formatYen(selectedProduct.price)} / {selectedProduct.stone}
+              {formatStartingPrice(selectedProduct.startingPrice)} / {selectedProduct.stone}
+            </div>
+            <div className="mt-2 text-xs leading-5 text-slate-500">
+              現在表示している価格は目安です。注文送信後に正式なお見積りをご案内します。
             </div>
           </div>
 
