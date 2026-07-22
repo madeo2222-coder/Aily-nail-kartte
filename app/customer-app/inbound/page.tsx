@@ -178,6 +178,7 @@ export default function InboundReservePage() {
   }, [selectedMenuId]);
 
   const copy = inboundTranslations[language];
+  const isRtl = language === "ar";
 
   const selectedOrderType = useMemo(() => {
     return (
@@ -415,7 +416,10 @@ export default function InboundReservePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 pb-10">
+    <main
+      dir={isRtl ? "rtl" : "ltr"}
+      className="min-h-screen bg-slate-50 pb-10"
+    >
       <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 p-5 text-white shadow">
           <div className="text-xs font-bold tracking-[0.25em] text-white/80">
@@ -459,7 +463,10 @@ export default function InboundReservePage() {
 
           {googleUserEmail ? (
             <div className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-              {copy.loggedInAs} {googleUserEmail}
+              {copy.loggedInAs}{" "}
+              <span dir="ltr" className="inline-block">
+                {googleUserEmail}
+              </span>
             </div>
           ) : (
             <button
@@ -621,7 +628,9 @@ export default function InboundReservePage() {
                     setServiceType("tips");
                     setOrderType(item.value);
                   }}
-                  className={`rounded-3xl border p-4 text-left ${
+                  className={`rounded-3xl border p-4 ${
+                    isRtl ? "text-right" : "text-left"
+                  } ${
                     serviceType === "tips" && orderType === item.value
                       ? "border-pink-300 bg-pink-50"
                       : "border-slate-200 bg-white"
@@ -640,7 +649,9 @@ export default function InboundReservePage() {
             <button
               type="button"
               onClick={() => setServiceType("salon")}
-              className={`rounded-3xl border p-4 text-left ${
+              className={`rounded-3xl border p-4 ${
+                isRtl ? "text-right" : "text-left"
+              } ${
                 serviceType === "salon"
                   ? "border-purple-300 bg-purple-50"
                   : "border-slate-200 bg-white"
@@ -659,6 +670,7 @@ export default function InboundReservePage() {
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">{copy.language}</div>
           <select
+            dir="ltr"
             value={language}
             onChange={(event) => {
               if (isInboundLanguage(event.target.value)) {
@@ -714,7 +726,9 @@ export default function InboundReservePage() {
                       key={menu.id}
                       type="button"
                       onClick={() => setSelectedMenuId(menu.id)}
-                      className={`w-full rounded-2xl border p-4 text-left ${
+                      className={`w-full rounded-2xl border p-4 ${
+                        isRtl ? "text-right" : "text-left"
+                      } ${
                         selected
                           ? "border-purple-300 bg-purple-50"
                           : "border-slate-200 bg-white"
@@ -756,6 +770,7 @@ export default function InboundReservePage() {
                   </label>
                   <input
                     type="date"
+                    dir="ltr"
                     value={selectedDate}
                     min={todayText}
                     max={maxReservationDate}
@@ -769,6 +784,7 @@ export default function InboundReservePage() {
                     {copy.time}
                   </label>
                   <select
+                    dir="ltr"
                     value={selectedTime}
                     onChange={(event) => setSelectedTime(event.target.value)}
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
@@ -810,6 +826,7 @@ export default function InboundReservePage() {
               </label>
               <input
                 type="email"
+                dir="ltr"
                 value={customerEmail}
                 onChange={(event) => setCustomerEmail(event.target.value)}
                 placeholder={copy.placeholders.email}
@@ -836,6 +853,7 @@ export default function InboundReservePage() {
                     {copy.instagram}
                   </label>
                   <input
+                    dir="ltr"
                     value={instagramId}
                     onChange={(event) => setInstagramId(event.target.value)}
                     placeholder={copy.placeholders.instagram}
@@ -940,6 +958,7 @@ export default function InboundReservePage() {
                         {copy.postalCode}
                       </label>
                       <input
+                        dir="ltr"
                         value={shippingPostalCode}
                         onChange={(event) =>
                           setShippingPostalCode(event.target.value)
@@ -954,6 +973,7 @@ export default function InboundReservePage() {
                         {copy.phone}
                       </label>
                       <input
+                        dir="ltr"
                         value={shippingPhone}
                         onChange={(event) =>
                           setShippingPhone(event.target.value)
