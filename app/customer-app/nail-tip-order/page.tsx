@@ -276,8 +276,8 @@ function NailTipOrderContent() {
                       : "hover:ring-2 hover:ring-slate-300"
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
                       <div className={`text-xs font-black ${product.textClassName}`}>
                         {product.badge}
                         {isRecommended ? " / 診断おすすめ" : ""}
@@ -293,7 +293,7 @@ function NailTipOrderContent() {
                       </div>
                     </div>
 
-                    <div className="shrink-0 text-right">
+                    <div className="shrink-0 text-left sm:text-right">
                       <div className={`text-2xl font-black ${product.textClassName}`}>
                         {formatYen(product.price)}
                       </div>

@@ -3,19 +3,15 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  inboundLanguageOptions,
+  inboundTranslations,
+  isInboundLanguage,
+  type InboundLanguage,
+} from "./translations";
 
 const salonId = "e120ed90-fded-41b8-b3fe-f486e84f2418";
 const uploadBucketName = "visit-photos";
-
-const languageOptions = [
-  { value: "en", label: "English" },
-  { value: "ja", label: "日本語" },
-  { value: "ko", label: "한국어" },
-  { value: "zh-CN", label: "简体中文" },
-  { value: "zh-TW", label: "繁體中文" },
-  { value: "th", label: "ไทย" },
-  { value: "es", label: "Español" },
-];
 
 const inboundMenus = [
   {
@@ -150,7 +146,7 @@ export default function InboundReservePage() {
   );
 
   const [serviceType, setServiceType] = useState<"salon" | "tips">("tips");
-  const [language, setLanguage] = useState("en");
+  const [language, setLanguage] = useState<InboundLanguage>("en");
   const [guestCount, setGuestCount] = useState(2);
   const [selectedMenuId, setSelectedMenuId] = useState(inboundMenus[0].id);
   const [selectedDate, setSelectedDate] = useState("");
@@ -181,12 +177,14 @@ export default function InboundReservePage() {
     );
   }, [selectedMenuId]);
 
+  const copy = inboundTranslations[language];
+
   const selectedOrderType = useMemo(() => {
     return (
-      orderTypeOptions.find((item) => item.value === orderType) ||
-      orderTypeOptions[0]
+      copy.orderTypes[orderType as keyof typeof copy.orderTypes] ||
+      copy.orderTypes.anime_character
     );
-  }, [orderType]);
+  }, [copy, orderType]);
 
   const totalPrice = selectedMenu.price * guestCount;
   const durationMinutes = selectedMenu.minutes;
@@ -230,12 +228,12 @@ export default function InboundReservePage() {
       });
 
       if (error) {
-        showMessage(error.message);
+        showMessage(copy.messages.googleFailed);
         setGoogleLoading(false);
       }
     } catch (error) {
       console.error(error);
-      showMessage("Google login failed. Please try again.");
+      showMessage(copy.messages.googleFailed);
       setGoogleLoading(false);
     }
   }
@@ -284,10 +282,10 @@ export default function InboundReservePage() {
   }
 
   async function handleSalonSubmit() {
-    if (!selectedDate) return showMessage("Please select a date.");
-    if (!selectedTime) return showMessage("Please select a time.");
-    if (!customerName.trim()) return showMessage("Please enter your name.");
-    if (!customerEmail.trim()) return showMessage("Please enter your email.");
+    if (!selectedDate) return showMessage(copy.messages.dateRequired);
+    if (!selectedTime) return showMessage(copy.messages.timeRequired);
+    if (!customerName.trim()) return showMessage(copy.messages.nameRequired);
+    if (!customerEmail.trim()) return showMessage(copy.messages.emailRequired);
 
     setSending(true);
 
@@ -331,37 +329,37 @@ export default function InboundReservePage() {
       const json = await response.json();
 
       if (!response.ok || !json.ok) {
-        showMessage(json.error || "Reservation failed.");
+        showMessage(copy.messages.reservationFailed);
         setSending(false);
         return;
       }
 
-      showMessage("Reservation request sent. We will contact you by email.");
+      showMessage(copy.messages.reservationSuccess);
       setSelectedTime("");
       setNote("");
     } catch (error) {
       console.error(error);
-      showMessage("Network error. Please try again.");
+      showMessage(copy.messages.networkError);
     } finally {
       setSending(false);
     }
   }
 
   async function handleTipsSubmit() {
-    if (!customerName.trim()) return showMessage("Please enter your name.");
-    if (!customerEmail.trim()) return showMessage("Please enter your email.");
-    if (!country.trim()) return showMessage("Please enter your country.");
+    if (!customerName.trim()) return showMessage(copy.messages.nameRequired);
+    if (!customerEmail.trim()) return showMessage(copy.messages.emailRequired);
+    if (!country.trim()) return showMessage(copy.messages.countryRequired);
     if (!recipientName.trim())
-      return showMessage("Please enter the recipient name.");
+      return showMessage(copy.messages.recipientRequired);
     if (!shippingAddress.trim())
-      return showMessage("Please enter your shipping address.");
-    if (!shippingCity.trim()) return showMessage("Please enter your city.");
+      return showMessage(copy.messages.addressRequired);
+    if (!shippingCity.trim()) return showMessage(copy.messages.cityRequired);
     if (!shippingPostalCode.trim())
-      return showMessage("Please enter your postal code.");
+      return showMessage(copy.messages.postalRequired);
     if (!shippingPhone.trim())
-      return showMessage("Please enter your phone number.");
+      return showMessage(copy.messages.phoneRequired);
     if (!tipDesignRequest.trim())
-      return showMessage("Please tell us your design request.");
+      return showMessage(copy.messages.designRequired);
 
     setSending(true);
 
@@ -372,9 +370,7 @@ export default function InboundReservePage() {
         imageUrls = await uploadDesignImages();
       } catch (uploadError) {
         console.error("Reference image upload failed:", uploadError);
-        showMessage(
-          "Reference image upload failed, but we will send your request without images."
-        );
+        showMessage(copy.messages.uploadFailed);
       }
 
       const response = await fetch("/api/inbound-nail-tip-requests", {
@@ -401,24 +397,18 @@ export default function InboundReservePage() {
       const json = await response.json();
 
       if (!response.ok || !json.ok) {
-        showMessage(json.error || "Custom nail tips request failed.");
+        showMessage(copy.messages.requestFailed);
         setSending(false);
         return;
       }
 
-      showMessage(
-        "Custom nail tips request sent. We will contact you by email."
-      );
+      showMessage(copy.messages.requestSuccess);
       setTipDesignRequest("");
       setDesignFiles([]);
       setNote("");
     } catch (error) {
       console.error(error);
-      showMessage(
-        error instanceof Error
-          ? error.message
-          : "Network error. Please try again."
-      );
+      showMessage(copy.messages.networkError);
     } finally {
       setSending(false);
     }
@@ -432,21 +422,16 @@ export default function InboundReservePage() {
             AILY NAIL STUDIO
           </div>
           <h1 className="mt-3 text-2xl font-black leading-tight">
-            International Custom Nail Tips
+            {copy.heroTitle}
           </h1>
           <p className="mt-3 text-sm leading-6 text-white/90">
-            This page accepts custom nail tip consultations and worldwide
-            shipping requests.
+            {copy.heroDescription}
           </p>
 
           <div className="mt-4 rounded-2xl bg-white/15 p-4 text-sm leading-6 text-white/95 backdrop-blur-sm">
-            <p>
-              Online payment is currently unavailable. We will review your
-              request and contact you by email with a quotation and further
-              instructions.
-            </p>
+            <p>{copy.paymentNotice}</p>
             <div className="mt-3 border-t border-white/20 pt-3 text-xs leading-5 text-white/85">
-              海外向けカスタムネイルチップの相談受付ページです。現在、オンラインカード決済は準備中です。受付後、内容を確認して見積りと今後の手続きをメールで案内します。
+              {copy.localNote}
             </div>
           </div>
 
@@ -454,34 +439,27 @@ export default function InboundReservePage() {
             href="/customer-app/nail-tip-order"
             className="mt-4 block rounded-2xl border border-white/30 px-4 py-3 text-center text-sm font-bold text-white"
           >
-            Japan / 国内向けネイルチップ
+            {copy.japanLink}
           </Link>
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-xs font-bold">
-            <div className="rounded-2xl bg-white/20 px-3 py-2">
-              🇯🇵 Made in Japan
-            </div>
-            <div className="rounded-2xl bg-white/20 px-3 py-2">
-              🌏 Worldwide Shipping
-            </div>
-            <div className="rounded-2xl bg-white/20 px-3 py-2">
-              🔮 Fortune Design
-            </div>
-            <div className="rounded-2xl bg-white/20 px-3 py-2">
-              💎 Power Stone
-            </div>
+            {copy.badges.map((badge) => (
+              <div key={badge} className="rounded-2xl bg-white/20 px-3 py-2">
+                {badge}
+              </div>
+            ))}
           </div>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">Quick login</div>
+          <div className="text-base font-bold text-slate-900">{copy.quickLogin}</div>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Continue with Google to automatically fill your name and email.
+            {copy.quickLoginDescription}
           </p>
 
           {googleUserEmail ? (
             <div className="mt-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
-              Logged in as {googleUserEmail}
+              {copy.loggedInAs} {googleUserEmail}
             </div>
           ) : (
             <button
@@ -490,83 +468,83 @@ export default function InboundReservePage() {
               disabled={googleLoading}
               className="mt-4 w-full rounded-2xl border bg-white px-4 py-3 text-sm font-black text-slate-800 shadow-sm disabled:opacity-60"
             >
-              {googleLoading ? "Connecting..." : "Continue with Google"}
+              {googleLoading ? copy.connecting : copy.continueGoogle}
             </button>
           )}
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-lg font-black text-slate-900">
-            Design Portfolio
+            {copy.portfolioTitle}
           </div>
 
           <p className="mt-2 text-sm text-slate-500">
-            100% hand painted custom nail tips in Japan.
+            {copy.portfolioDescription}
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-3">
             <div>
               <img
                 src="/inbound-gallery/one-piece1.jpg"
-                alt="Anime character nail tips"
+                alt={copy.portfolioCaptions[0]}
                 className="h-40 w-full rounded-2xl object-cover"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Anime Character
+                {copy.portfolioCaptions[0]}
               </div>
             </div>
 
             <div>
               <img
                 src="/inbound-gallery/attack-on-titan.jpeg"
-                alt="Custom character nail tips"
+                alt={copy.portfolioCaptions[1]}
                 className="h-40 w-full rounded-2xl object-cover"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Character Art
+                {copy.portfolioCaptions[1]}
               </div>
             </div>
 
             <div>
               <img
                 src="/inbound-gallery/demon-slayer.jpeg"
-                alt="Japanese fortune nail tips"
+                alt={copy.portfolioCaptions[2]}
                 className="h-40 w-full rounded-2xl object-cover"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Fortune Nail
+                {copy.portfolioCaptions[2]}
               </div>
             </div>
 
             <div>
               <img
                 src="/inbound-gallery/jojo.jpeg"
-                alt="Power stone nail tips"
+                alt={copy.portfolioCaptions[3]}
                 className="h-40 w-full rounded-2xl object-cover"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Power Stone
+                {copy.portfolioCaptions[3]}
               </div>
             </div>
 
             <div className="col-span-2">
               <img
                 src="/inbound-gallery/dragon-ball.jpeg"
-                alt="Hand painted process"
+                alt={copy.portfolioCaptions[4]}
                 className="h-72 w-full rounded-2xl bg-white object-contain"
               />
               <div className="mt-2 text-center text-xs font-bold">
-                Hand Painted Process
+                {copy.portfolioCaptions[4]}
               </div>
             </div>
           </div>
 
           <div className="mt-4 rounded-2xl bg-pink-50 p-4 text-center">
             <div className="text-lg font-black text-pink-700">
-              Starting from ¥15,000
+              {copy.startingPrice}
             </div>
             <div className="mt-1 text-sm text-pink-600">
-              Worldwide Shipping Available
+              {copy.worldwideAvailable}
             </div>
           </div>
         </section>
@@ -584,79 +562,80 @@ export default function InboundReservePage() {
           }}
           className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-4 text-sm font-black text-white shadow-sm"
         >
-          ✨ Request Custom Nail Tips
+          {copy.requestCta}
         </button>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-lg font-black text-slate-900">
-            🌏 Worldwide Shipping Available
+            {copy.shippingTitle}
           </div>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            We create custom anime, fortune, Sanmeigaku, power-stone, idol,
-            game, bridal, and original design nail tips. Send us your request.
-            Our staff will reply by email with an estimate, production time,
-            and further instructions.
+            {copy.shippingDescription}
           </p>
 
           <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-            <div className="rounded-2xl bg-pink-50 p-3 font-bold text-pink-700">
-              Anime / Character
-            </div>
-            <div className="rounded-2xl bg-purple-50 p-3 font-bold text-purple-700">
-              Fortune / Sanmeigaku
-            </div>
-            <div className="rounded-2xl bg-orange-50 p-3 font-bold text-orange-700">
-              Power Stone
-            </div>
-            <div className="rounded-2xl bg-blue-50 p-3 font-bold text-blue-700">
-              Luxury Custom
-            </div>
+            {copy.categories.map((category, index) => (
+              <div
+                key={category}
+                className={`rounded-2xl p-3 font-bold ${[
+                  "bg-pink-50 text-pink-700",
+                  "bg-purple-50 text-purple-700",
+                  "bg-orange-50 text-orange-700",
+                  "bg-blue-50 text-blue-700",
+                ][index]}`}
+              >
+                {category}
+              </div>
+            ))}
           </div>
 
           <div className="mt-4 rounded-2xl bg-slate-50 p-4">
             <div className="text-xs font-bold tracking-[0.2em] text-slate-400">
-              SHIPPING TO
+              {copy.shippingTo}
             </div>
             <div className="mt-2 text-sm font-bold leading-6 text-slate-700">
-              USA / Canada / France / Germany / Korea / Thailand / Singapore /
-              Australia / and more
+              {copy.countries}
             </div>
           </div>
 
           <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-            Online payment is currently unavailable. Please submit a
-            consultation request first, and we will contact you by email.
+            {copy.paymentShort}
           </div>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">
-            What would you like?
+            {copy.whatWouldYouLike}
           </div>
 
           <div className="mt-3 grid grid-cols-1 gap-3">
-            {orderTypeOptions.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => {
-                  setServiceType("tips");
-                  setOrderType(item.value);
-                }}
-                className={`rounded-3xl border p-4 text-left ${
-                  serviceType === "tips" && orderType === item.value
-                    ? "border-pink-300 bg-pink-50"
-                    : "border-slate-200 bg-white"
-                }`}
-              >
-                <div className="text-lg font-black text-slate-900">
-                  {item.title}
-                </div>
-                <div className="mt-1 text-sm leading-6 text-slate-500">
-                  {item.description}
-                </div>
-              </button>
-            ))}
+            {orderTypeOptions.map((item) => {
+              const translated =
+                copy.orderTypes[item.value as keyof typeof copy.orderTypes];
+
+              return (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => {
+                    setServiceType("tips");
+                    setOrderType(item.value);
+                  }}
+                  className={`rounded-3xl border p-4 text-left ${
+                    serviceType === "tips" && orderType === item.value
+                      ? "border-pink-300 bg-pink-50"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <div className="text-lg font-black text-slate-900">
+                    {translated[1]}
+                  </div>
+                  <div className="mt-1 text-sm leading-6 text-slate-500">
+                    {translated[2]}
+                  </div>
+                </button>
+              );
+            })}
 
             <button
               type="button"
@@ -668,23 +647,27 @@ export default function InboundReservePage() {
               }`}
             >
               <div className="text-lg font-black text-slate-900">
-                💅 Salon Reservation in Fukuoka
+                {copy.salonTitle}
               </div>
               <div className="mt-1 text-sm leading-6 text-slate-500">
-                Visit our salon in Fukuoka. Available for 1 or 2 guests.
+                {copy.salonDescription}
               </div>
             </button>
           </div>
         </section>
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
-          <div className="text-base font-bold text-slate-900">Language</div>
+          <div className="text-base font-bold text-slate-900">{copy.language}</div>
           <select
             value={language}
-            onChange={(event) => setLanguage(event.target.value)}
+            onChange={(event) => {
+              if (isInboundLanguage(event.target.value)) {
+                setLanguage(event.target.value);
+              }
+            }}
             className="mt-3 w-full rounded-2xl border bg-white px-3 py-3 text-sm"
           >
-            {languageOptions.map((item) => (
+            {inboundLanguageOptions.map((item) => (
               <option key={item.value} value={item.value}>
                 {item.label}
               </option>
@@ -696,7 +679,7 @@ export default function InboundReservePage() {
           <>
             <section className="rounded-3xl border bg-white p-4 shadow-sm">
               <div className="text-base font-bold text-slate-900">
-                Number of guests
+                {copy.guests}
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -711,18 +694,20 @@ export default function InboundReservePage() {
                         : "border-slate-200 bg-white text-slate-700"
                     }`}
                   >
-                    {count} {count === 1 ? "person" : "people"}
+                    {count} {count === 1 ? copy.person : copy.people}
                   </button>
                 ))}
               </div>
             </section>
 
             <section className="rounded-3xl border bg-white p-4 shadow-sm">
-              <div className="text-base font-bold text-slate-900">Menu</div>
+              <div className="text-base font-bold text-slate-900">{copy.menu}</div>
 
               <div className="mt-3 space-y-2">
                 {inboundMenus.map((menu) => {
                   const selected = menu.id === selectedMenuId;
+                  const translatedMenu =
+                    copy.menus[menu.id as keyof typeof copy.menus];
 
                   return (
                     <button
@@ -738,10 +723,10 @@ export default function InboundReservePage() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <div className="font-black text-slate-900">
-                            {menu.label}
+                            {translatedMenu[0]}
                           </div>
                           <div className="mt-1 text-xs leading-5 text-slate-500">
-                            {menu.description}
+                            {translatedMenu[1]}
                           </div>
                         </div>
                         <div className="text-right">
@@ -749,7 +734,7 @@ export default function InboundReservePage() {
                             {formatYen(menu.price)}
                           </div>
                           <div className="mt-1 text-xs text-slate-500">
-                            {menu.minutes} min
+                            {menu.minutes} {copy.minutes}
                           </div>
                         </div>
                       </div>
@@ -761,13 +746,13 @@ export default function InboundReservePage() {
 
             <section className="rounded-3xl border bg-white p-4 shadow-sm">
               <div className="text-base font-bold text-slate-900">
-                Date and time
+                {copy.dateAndTime}
               </div>
 
               <div className="mt-4 space-y-4">
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    Date
+                    {copy.date}
                   </label>
                   <input
                     type="date"
@@ -781,14 +766,14 @@ export default function InboundReservePage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    Time
+                    {copy.time}
                   </label>
                   <select
                     value={selectedTime}
                     onChange={(event) => setSelectedTime(event.target.value)}
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   >
-                    <option value="">Select time</option>
+                    <option value="">{copy.selectTime}</option>
                     {timeOptions.map((time) => (
                       <option key={time} value={time}>
                         {time}
@@ -803,31 +788,31 @@ export default function InboundReservePage() {
 
         <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="text-base font-bold text-slate-900">
-            Customer information
+            {copy.customerInformation}
           </div>
 
           <div className="mt-4 space-y-4">
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-700">
-                Name
+                {copy.name}
               </label>
               <input
                 value={customerName}
                 onChange={(event) => setCustomerName(event.target.value)}
-                placeholder="Your name"
+                placeholder={copy.placeholders.name}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               />
             </div>
 
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-700">
-                Email
+                {copy.email}
               </label>
               <input
                 type="email"
                 value={customerEmail}
                 onChange={(event) => setCustomerEmail(event.target.value)}
-                placeholder="you@example.com"
+                placeholder={copy.placeholders.email}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
               />
             </div>
@@ -836,31 +821,31 @@ export default function InboundReservePage() {
               <>
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    Country
+                    {copy.country}
                   </label>
                   <input
                     value={country}
                     onChange={(event) => setCountry(event.target.value)}
-                    placeholder="France / USA / Korea / Thailand..."
+                    placeholder={copy.placeholders.country}
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
                 </div>
 
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    Instagram ID
+                    {copy.instagram}
                   </label>
                   <input
                     value={instagramId}
                     onChange={(event) => setInstagramId(event.target.value)}
-                    placeholder="@your_instagram"
+                    placeholder={copy.placeholders.instagram}
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
                 </div>
 
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    Order Type
+                    {copy.orderType}
                   </label>
 
                   <select
@@ -870,42 +855,46 @@ export default function InboundReservePage() {
                   >
                     {orderTypeOptions.map((item) => (
                       <option key={item.value} value={item.value}>
-                        {item.label}
+                        {
+                          copy.orderTypes[
+                            item.value as keyof typeof copy.orderTypes
+                          ][0]
+                        }
                       </option>
                     ))}
                   </select>
 
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    {selectedOrderType.description}
+                    {selectedOrderType[2]}
                   </p>
                 </div>
 
                 <div className="rounded-3xl border border-pink-100 bg-pink-50 p-4">
                   <div className="text-base font-black text-slate-900">
-                    Shipping information
+                    {copy.shippingInformation}
                   </div>
                   <p className="mt-1 text-xs leading-5 text-slate-500">
-                    Please enter the shipping address for worldwide delivery.
+                    {copy.shippingInformationDescription}
                   </p>
 
                   <div className="mt-4 space-y-4">
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-700">
-                        Recipient Name
+                        {copy.recipientName}
                       </label>
                       <input
                         value={recipientName}
                         onChange={(event) =>
                           setRecipientName(event.target.value)
                         }
-                        placeholder="Full name for delivery"
+                        placeholder={copy.placeholders.recipient}
                         className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                       />
                     </div>
 
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-700">
-                        Shipping Address
+                        {copy.address}
                       </label>
                       <textarea
                         value={shippingAddress}
@@ -913,63 +902,63 @@ export default function InboundReservePage() {
                           setShippingAddress(event.target.value)
                         }
                         rows={3}
-                        placeholder="Street address, apartment, building"
+                        placeholder={copy.placeholders.address}
                         className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                       />
                     </div>
 
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-700">
-                        City
+                        {copy.city}
                       </label>
                       <input
                         value={shippingCity}
                         onChange={(event) =>
                           setShippingCity(event.target.value)
                         }
-                        placeholder="City"
+                        placeholder={copy.placeholders.city}
                         className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                       />
                     </div>
 
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-700">
-                        State / Province
+                        {copy.state}
                       </label>
                       <input
                         value={shippingState}
                         onChange={(event) =>
                           setShippingState(event.target.value)
                         }
-                        placeholder="State / Province"
+                        placeholder={copy.placeholders.state}
                         className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                       />
                     </div>
 
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-700">
-                        Postal Code
+                        {copy.postalCode}
                       </label>
                       <input
                         value={shippingPostalCode}
                         onChange={(event) =>
                           setShippingPostalCode(event.target.value)
                         }
-                        placeholder="Postal code"
+                        placeholder={copy.placeholders.postal}
                         className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                       />
                     </div>
 
                     <div>
                       <label className="mb-2 block text-sm font-bold text-slate-700">
-                        Phone Number
+                        {copy.phone}
                       </label>
                       <input
                         value={shippingPhone}
                         onChange={(event) =>
                           setShippingPhone(event.target.value)
                         }
-                        placeholder="+1 123 456 7890"
+                        placeholder={copy.placeholders.phone}
                         className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                       />
                     </div>
@@ -978,7 +967,7 @@ export default function InboundReservePage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    Reference images
+                    {copy.referenceImages}
                   </label>
                   <input
                     type="file"
@@ -990,7 +979,7 @@ export default function InboundReservePage() {
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
                   <p className="mt-2 text-xs leading-5 text-slate-500">
-                    You can upload up to 3 reference images.
+                    {copy.referenceImagesHelp}
                   </p>
 
                   {designFiles.length > 0 ? (
@@ -1004,7 +993,7 @@ export default function InboundReservePage() {
 
                 <div>
                   <label className="mb-2 block text-sm font-bold text-slate-700">
-                    {selectedOrderType.requestLabel}
+                    {selectedOrderType[3]}
                   </label>
                   <textarea
                     value={tipDesignRequest}
@@ -1012,7 +1001,7 @@ export default function InboundReservePage() {
                       setTipDesignRequest(event.target.value)
                     }
                     rows={5}
-                    placeholder={selectedOrderType.placeholder}
+                    placeholder={selectedOrderType[4]}
                     className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                   />
                 </div>
@@ -1020,13 +1009,13 @@ export default function InboundReservePage() {
             ) : (
               <div>
                 <label className="mb-2 block text-sm font-bold text-slate-700">
-                  Request / Note
+                  {copy.requestNote}
                 </label>
                 <textarea
                   value={note}
                   onChange={(event) => setNote(event.target.value)}
                   rows={4}
-                  placeholder="Please tell us your design request."
+                  placeholder={copy.placeholders.note}
                   className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
                 />
               </div>
@@ -1039,41 +1028,41 @@ export default function InboundReservePage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-base font-bold text-slate-900">
-                  Summary
+                  {copy.summary}
                 </div>
                 <div className="mt-1 text-sm text-slate-500">
-                  Estimated price and service time
+                  {copy.summaryDescription}
                 </div>
               </div>
               <div className="rounded-full bg-purple-100 px-3 py-1 text-xs font-black text-purple-700">
-                {guestCount} guests
+                {guestCount} {copy.people}
               </div>
             </div>
 
             <div className="mt-4 rounded-2xl bg-slate-50 p-4">
               <div className="text-sm font-black text-slate-900">
-                {selectedMenu.label}
+                {
+                  copy.menus[selectedMenu.id as keyof typeof copy.menus][0]
+                }
               </div>
               <div className="mt-2 grid grid-cols-2 gap-3">
                 <div className="rounded-2xl bg-white p-3">
-                  <div className="text-xs text-slate-500">Total price</div>
+                  <div className="text-xs text-slate-500">{copy.totalPrice}</div>
                   <div className="mt-1 text-lg font-black text-slate-900">
                     {formatYen(totalPrice)}
                   </div>
                 </div>
                 <div className="rounded-2xl bg-white p-3">
-                  <div className="text-xs text-slate-500">Time</div>
+                  <div className="text-xs text-slate-500">{copy.time}</div>
                   <div className="mt-1 text-lg font-black text-slate-900">
-                    {durationMinutes} min
+                    {durationMinutes} {copy.minutes}
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">
-              Please arrive on time. Late arrival may shorten the service time.
-              No-show or same-day cancellation may be charged a cancellation
-              fee.
+              {copy.cancellation}
             </div>
 
             <button
@@ -1082,32 +1071,28 @@ export default function InboundReservePage() {
               disabled={sending}
               className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
             >
-              {sending ? "Sending..." : "Send reservation request"}
+              {sending ? copy.sending : copy.sendReservation}
             </button>
           </section>
         ) : (
           <section className="rounded-3xl border bg-white p-4 shadow-sm">
             <div className="text-base font-bold text-slate-900">
-              Custom Nail Tips Request
+              {copy.customRequest}
             </div>
 
             <div className="mt-3 rounded-2xl bg-pink-50 p-4 text-sm leading-6 text-pink-800">
-              Worldwide shipping is available. After reviewing your design, our
-              staff will send you an estimate, production time, and further
-              instructions by email. Online payment is currently unavailable.
+              {copy.customRequestNotice}
             </div>
 
             <div className="mt-4 rounded-2xl border border-pink-100 bg-white p-4">
               <div className="text-sm font-black text-slate-900">
-                How It Works
+                {copy.howItWorks}
               </div>
 
               <div className="mt-3 space-y-2 text-sm text-slate-700">
-                <div>1️⃣ Send your design request</div>
-                <div>2️⃣ Receive quote & production schedule</div>
-                <div>3️⃣ Receive further instructions by email</div>
-                <div>4️⃣ We hand paint your nail tips</div>
-                <div>5️⃣ Worldwide shipping from Japan</div>
+                {copy.steps.map((step) => (
+                  <div key={step}>{step}</div>
+                ))}
               </div>
             </div>
 
@@ -1117,7 +1102,7 @@ export default function InboundReservePage() {
               disabled={sending}
               className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
             >
-              {sending ? "Sending..." : "Send custom nail tips request"}
+              {sending ? copy.uploadingAndSending : copy.sendCustom}
             </button>
           </section>
         )}
