@@ -27,7 +27,7 @@ const en = {
   portfolioTitle: "Design Portfolio",
   portfolioDescription: "Custom nail tips hand painted in Japan.",
   portfolioCaptions: ["Anime Character", "Character Art", "Fortune-inspired Nail", "Gem-inspired Nail", "Hand Painted Process"],
-  startingPrice: "Starting from ¥15,000",
+  startingPrice: "2 custom nail tips from JPY 15,000",
   worldwideAvailable: "Worldwide Shipping Requests Welcome",
   requestCta: "✨ Request Custom Nail Tips",
   shippingTitle: "🌏 Worldwide Shipping Requests Welcome",
@@ -82,6 +82,52 @@ const en = {
   sending: "Sending...",
   uploadingAndSending: "Uploading images and sending...",
   sendCustom: "Send custom nail tips request",
+  orderGuide: {
+    title: "Pricing and Order Information",
+    priceTitle: "Price",
+    priceLead: "Custom nail tips: From JPY 15,000 for 2 tips.",
+    priceDetails: [
+      "The final price depends on the design, materials, decorations, and level of detail.",
+      "After reviewing your request, we will provide a formal quotation before production begins.",
+      "International shipping, customs duties, import taxes, and customs clearance fees are not included in the product price.",
+    ],
+    sections: [
+      {
+        title: "Intellectual Property Notice",
+        body: "We do not accept requests to reproduce existing characters, titles, logos, symbols, costumes, or other distinctive elements from anime, manga, games, films, or similar works exactly as they appear. If you send reference images, we will use only the colors, mood, abstract theme, or general motifs as inspiration and propose an original Aily Nail Studio design. To respect third-party copyrights, trademarks, and other intellectual property rights, we may ask you to modify a request or may decline production.",
+      },
+      {
+        title: "Production Time",
+        body: "Production normally takes approximately 14–21 days after payment, sizing, and the design are all confirmed. Complex designs, order volume, or material availability may require additional time. Shipping time is not included. You may tell us your preferred date in advance, but delivery by that date cannot be guaranteed.",
+      },
+      {
+        title: "International Shipping",
+        body: "International shipping is charged separately from the product price. The formal quotation will include the shipping charge after we confirm the destination country or region. The carrier, shipping method, and tracking availability will be explained individually according to the order and destination.",
+      },
+      {
+        title: "Customs Duties and Import Taxes",
+        body: "Any customs duties, import taxes, customs clearance fees, or similar charges at the destination are the buyer’s responsibility. These costs vary by country or region and may not be known in advance. We do not promise to cover costs arising from refusal of delivery or return due to customs charges.",
+      },
+      {
+        title: "Sizing",
+        body: "Please measure the required nail sizes using the method we provide and submit the measurements before production begins. Remaking tips because of incorrect measurements or information supplied by the buyer will normally incur an additional charge. If you are unsure about sizing, please contact us before production begins.",
+      },
+      {
+        title: "Cancellation, Changes, and Refunds",
+        body: "You may cancel before accepting the formal quotation and making payment. Because each order is custom-made, buyer-requested cancellation, refund, or changes are generally unavailable after payment or production begins. If we made a production error, the item clearly differs from the confirmed order, or it arrives damaged, we will review photographs and other details and explain an appropriate solution such as remaking or refunding. Damage after use, normal wear, and incorrect sizing supplied by the buyer are not eligible for free service. Shipping incidents are reviewed individually after checking the delivery status; refunds are not automatic.",
+      },
+    ],
+    processTitle: "Order Process",
+    processSteps: [
+      "1. Send an inquiry through the international consultation form.",
+      "2. Aily Nail Studio reviews your request.",
+      "3. We confirm the design, sizes, shipping charge, and other details by email.",
+      "4. We send a formal quotation.",
+      "5. You approve the quotation and we confirm payment.",
+      "6. Production begins.",
+      "7. We ship the completed order.",
+    ],
+  },
   messages: {
     googleFailed: "Google login failed. Please try again.", dateRequired: "Please select a date.", timeRequired: "Please select a time.", nameRequired: "Please enter your name.", emailRequired: "Please enter your email.", countryRequired: "Please enter your country.", recipientRequired: "Please enter the recipient name.", addressRequired: "Please enter your shipping address.", cityRequired: "Please enter your city.", postalRequired: "Please enter your postal code.", phoneRequired: "Please enter your phone number.", designRequired: "Please tell us your design request.", uploadFailed: "Reference image upload failed, but we will send your request without images.", reservationFailed: "Reservation failed.", reservationSuccess: "Reservation request sent. We will contact you by email.", requestFailed: "Custom nail tips request failed.", requestSuccess: "Custom nail tips request sent. We will contact you by email.", networkError: "Network error. Please try again.",
   },
@@ -102,6 +148,19 @@ const en = {
 
 const ja: typeof en = {
   ...en,
+  orderGuide: {
+    title: "価格・制作・ご注文に関するご案内", priceTitle: "価格", priceLead: "カスタムネイルチップは2本15,000円から承ります。",
+    priceDetails: ["最終価格は、デザインの複雑さ、使用素材、装飾内容によって変わります。", "ご相談内容を確認後、制作開始前に正式な見積りをご案内します。", "海外送料、関税、輸入税、通関手数料は商品価格に含まれません。"],
+    sections: [
+      { title: "知的財産権に関するご案内", body: "アニメ・漫画・ゲーム・映画などの既存キャラクター、作品名、ロゴ、マーク、衣装、その他の作品固有の表現を、そのまま再現する制作はお受けしておりません。参考画像をお送りいただいた場合は、色合いや雰囲気、抽象的なテーマ、一般的なモチーフのみを参考にしながら、Aily Nail Studio独自のオリジナルデザインをご提案します。第三者の著作権、商標権、その他の知的財産権に配慮し、権利を侵害する可能性があるご依頼については、デザインの変更をお願いするか、制作をお断りする場合があります。" },
+      { title: "制作期間", body: "入金、サイズ、デザインのすべてが確定してから、通常14〜21日程度です。複雑なデザイン、注文状況、材料の調達状況により延びる場合があります。発送期間は制作期間に含まれません。希望日は事前相談として承りますが、その日までの完成や配送は保証できません。" },
+      { title: "海外送料", body: "海外送料は商品代金とは別料金です。配送先の国・地域を確認後、正式な見積りでご案内します。配送会社、配送方法、追跡の有無は、注文内容と配送先に応じて個別にご案内します。" },
+      { title: "関税・輸入税", body: "配送先で発生する関税、輸入税、通関手数料などは購入者のご負担です。金額は国・地域により異なり、当店では事前に確定できない場合があります。通関費用を理由とする受取拒否や返送で発生する費用を、当店が負担することはお約束できません。" },
+      { title: "サイズ確認", body: "指定の方法で必要な爪のサイズを測定し、制作開始前に申告・確定してください。購入者による測定や申告の間違いを理由とする作り直しは、原則として有料です。サイズに不安がある場合は、制作開始前にご相談ください。" },
+      { title: "キャンセル・変更・返金", body: "正式見積りの承諾および入金前はキャンセルできます。入金後または制作開始後はオーダーメイド商品のため、購入者都合によるキャンセル・返金・変更は原則としてお受けできません。当店の制作ミス、注文確定内容との明らかな相違、到着時の破損は、写真等で確認後、再制作または返金など適切な方法を個別にご案内します。使用後の破損、通常の摩耗、購入者によるサイズの申告間違いは無償対応の対象外です。配送事故は配送状況を確認して個別対応し、無条件の返金はお約束しません。" },
+    ],
+    processTitle: "ご注文の流れ", processSteps: ["1. 海外相談フォームから問い合わせ", "2. 店舗が内容を確認", "3. メールでデザイン、サイズ、送料等を確認", "4. 正式な見積りをご案内", "5. 購入者の承諾と入金を確認", "6. 制作開始", "7. 完成後に発送"],
+  },
   heroTitle: "海外向けカスタムネイルチップ",
   heroDescription: "海外向けのカスタムネイルチップ相談と、海外配送のご希望を受け付けています。",
   paymentNotice: "現在、オンライン決済はご利用いただけません。内容を確認後、見積りと今後の手続きをメールでご案内します。",
@@ -116,7 +175,7 @@ const ja: typeof en = {
   portfolioTitle: "作品紹介",
   portfolioDescription: "日本で一点ずつ手描きするカスタムネイルチップです。",
   portfolioCaptions: ["アニメキャラクター", "キャラクターアート", "運勢テーマネイル", "ジュエリー風ネイル", "手描き制作風景"],
-  startingPrice: "価格目安 ¥15,000〜",
+  startingPrice: "ネイルチップ2本 ¥15,000〜",
   worldwideAvailable: "海外配送のご相談を承ります",
   requestCta: "✨ カスタムネイルチップを相談する",
   shippingTitle: "🌏 海外配送のご相談を承ります",
@@ -145,9 +204,22 @@ const ja: typeof en = {
 
 const zhTW: typeof en = {
   ...en,
+  orderGuide: {
+    title: "價格、製作與訂購須知", priceTitle: "價格", priceLead: "客製化美甲貼片2片，價格自 JPY 15,000 起。",
+    priceDetails: ["最終價格會依設計複雜度、使用材料與裝飾內容而異。", "確認諮詢內容後，我們會在開始製作前提供正式報價。", "海外運費、關稅、進口稅及清關手續費不包含在商品價格內。"],
+    sections: [
+      { title: "智慧財產權須知", body: "我們不接受原樣重現動漫、漫畫、遊戲、電影等現有角色、作品名稱、標誌、圖樣、服裝或其他作品特有表現的委託。若您提供參考圖片，我們只會參考色調、氛圍、抽象主題及一般性圖案，並提出 Aily Nail Studio 的原創設計。為尊重第三方著作權、商標權及其他智慧財產權，對於可能涉及侵權的需求，我們可能請您調整設計或婉拒製作。" },
+      { title: "製作時間", body: "付款、尺寸與設計全部確認後，通常約需14至21天。複雜設計、訂單量或材料採購狀況可能使製作時間延長。配送時間不包含在製作期內。您可事先告知期望日期，但我們無法保證於該日期前完成或送達。" },
+      { title: "海外運費", body: "海外運費另計，不包含在商品價格內。確認配送國家或地區後，正式報價會列出運費。承運公司、配送方式及是否提供追蹤，將依訂單內容與目的地個別說明。" },
+      { title: "關稅與進口稅", body: "目的地產生的關稅、進口稅、清關手續費等由購買者負擔。費用依國家或地區而異，本店可能無法事先確定。若因清關費用拒收或退回，本店不承諾負擔相關費用。" },
+      { title: "尺寸確認", body: "請依指定方法測量所需指甲尺寸，並於開始製作前申報及確認。若因購買者測量或申報錯誤需要重新製作，原則上將另行收費。如對尺寸有疑問，請在開始製作前與我們聯絡。" },
+      { title: "取消、變更與退款", body: "接受正式報價並付款前可取消。付款後或開始製作後，因商品為客製化製作，原則上不接受因購買者因素提出的取消、退款或變更。若為本店製作錯誤、與確認訂單明顯不符或到貨時破損，我們會在確認照片等資料後，個別說明重新製作、退款或其他適當處理方式。使用後破損、正常耗損及購買者尺寸申報錯誤不在免費處理範圍。配送事故會在確認配送狀況後個別處理，不保證無條件退款。" },
+    ],
+    processTitle: "訂購流程", processSteps: ["1. 透過海外諮詢表單提出需求", "2. 店家確認內容", "3. 透過電子郵件確認設計、尺寸與運費等", "4. 提供正式報價", "5. 確認購買者同意報價並完成付款", "6. 開始製作", "7. 完成後寄出"],
+  },
   heroTitle: "國際客製化美甲貼片", heroDescription: "本頁受理客製化美甲貼片諮詢與全球配送需求。", paymentNotice: "目前暫不提供線上付款。我們確認您的需求後，會以電子郵件寄送報價與後續流程說明。", localNote: "這是面向海外顧客的客製化美甲貼片諮詢頁面。我們會確認需求後提供報價與下一步說明。", japanLink: "Japan / 日本國內美甲貼片",
   badges: ["🇯🇵 日本製作", "🌏 全球配送諮詢", "🔮 運勢主題設計", "💎 珠寶風格設計"], quickLogin: "快速填寫", quickLoginDescription: "使用 Google 繼續，即可自動填入姓名與電子郵件。", loggedInAs: "已登入：", connecting: "連線中...", continueGoogle: "使用 Google 繼續",
-  portfolioTitle: "作品展示", portfolioDescription: "在日本逐件手繪製作的客製化美甲貼片。", portfolioCaptions: ["動漫角色", "角色彩繪", "運勢主題美甲", "珠寶風格美甲", "手繪製作過程"], startingPrice: "參考價格 ¥15,000 起", worldwideAvailable: "歡迎洽詢全球配送", requestCta: "✨ 諮詢客製化美甲貼片",
+  portfolioTitle: "作品展示", portfolioDescription: "在日本逐件手繪製作的客製化美甲貼片。", portfolioCaptions: ["動漫角色", "角色彩繪", "運勢主題美甲", "珠寶風格美甲", "手繪製作過程"], startingPrice: "美甲貼片2片 JPY 15,000 起", worldwideAvailable: "歡迎洽詢全球配送", requestCta: "✨ 諮詢客製化美甲貼片",
   shippingTitle: "🌏 歡迎洽詢全球配送", shippingDescription: "我們可依需求製作動漫、運勢與算命學主題、珠寶風格、偶像、遊戲、婚禮及原創設計美甲貼片。送出表單後，工作人員會以電子郵件提供報價與後續說明。", categories: ["動漫／角色", "運勢／算命學主題", "珠寶風格", "奢華客製"], shippingTo: "可諮詢配送地區", countries: "美國 / 加拿大 / 法國 / 德國 / 韓國 / 泰國 / 新加坡 / 澳洲等", paymentShort: "目前暫不提供線上付款。請先送出諮詢表單，我們確認後會以電子郵件與您聯絡。",
   whatWouldYouLike: "您想訂製哪一類？", salonTitle: "💅 預約福岡美甲沙龍", salonDescription: "預約親臨福岡店面，可供1至2位顧客預約。", language: "顯示語言", guests: "來店人數", person: "位", people: "位", menu: "服務項目", minutes: "分鐘", dateAndTime: "日期與時間", date: "日期", time: "時間", selectTime: "請選擇時間",
   customerInformation: "顧客資料", name: "姓名", email: "電子郵件", country: "國家／地區", instagram: "Instagram ID", orderType: "訂製類型", shippingInformation: "配送資料", shippingInformationDescription: "請輸入海外配送地址。", recipientName: "收件人姓名", address: "地址", city: "城市", state: "州／省／縣市", postalCode: "郵遞區號", phone: "電話號碼", referenceImages: "參考圖片", referenceImagesHelp: "最多可上傳3張參考圖片。", requestNote: "需求／備註",
@@ -160,9 +232,22 @@ const zhTW: typeof en = {
 
 const zhCN: typeof en = {
   ...en,
+  orderGuide: {
+    title: "价格、制作与订购须知", priceTitle: "价格", priceLead: "定制美甲贴片2片，价格自 JPY 15,000 起。",
+    priceDetails: ["最终价格会根据设计复杂度、使用材料和装饰内容而有所不同。", "确认咨询内容后，我们会在开始制作前提供正式报价。", "海外运费、关税、进口税和清关手续费不包含在商品价格内。"],
+    sections: [
+      { title: "知识产权须知", body: "我们不接受原样重现动漫、漫画、游戏、电影等现有角色、作品名称、标志、图案、服装或其他作品特有表现的委托。如果您提供参考图片，我们只会参考色调、氛围、抽象主题和一般性图案，并提出 Aily Nail Studio 的原创设计。为尊重第三方著作权、商标权及其他知识产权，对于可能涉及侵权的需求，我们可能会请您调整设计或婉拒制作。" },
+      { title: "制作时间", body: "付款、尺寸和设计全部确认后，通常约需14至21天。复杂设计、订单量或材料采购情况可能会延长制作时间。配送时间不包含在制作期内。您可以提前告知期望日期，但我们无法保证在该日期前完成或送达。" },
+      { title: "海外运费", body: "海外运费另计，不包含在商品价格内。确认配送国家或地区后，正式报价中会列出运费。承运公司、配送方式和是否提供追踪，将根据订单内容和目的地单独说明。" },
+      { title: "关税和进口税", body: "目的地产生的关税、进口税、清关手续费等由购买者承担。费用因国家或地区而异，本店可能无法提前确定。如果因清关费用拒收或退回，本店不承诺承担相关费用。" },
+      { title: "尺寸确认", body: "请按照指定方法测量所需指甲尺寸，并在开始制作前申报和确认。如果因购买者测量或申报错误需要重新制作，原则上将另行收费。如对尺寸有疑问，请在开始制作前联系我们。" },
+      { title: "取消、变更和退款", body: "接受正式报价并付款前可以取消。付款后或开始制作后，由于商品为定制制作，原则上不接受因购买者原因提出的取消、退款或变更。如果是本店制作错误、与确认订单明显不符或到货时破损，我们会在确认照片等资料后，单独说明重新制作、退款或其他适当处理方式。使用后破损、正常磨损和购买者尺寸申报错误不属于免费处理范围。配送事故会在确认配送状态后单独处理，不保证无条件退款。" },
+    ],
+    processTitle: "订购流程", processSteps: ["1. 通过海外咨询表单提出需求", "2. 店铺确认内容", "3. 通过电子邮件确认设计、尺寸和运费等", "4. 提供正式报价", "5. 确认购买者同意报价并完成付款", "6. 开始制作", "7. 完成后寄出"],
+  },
   heroTitle: "国际定制美甲贴片", heroDescription: "本页面受理定制美甲贴片咨询和全球配送需求。", paymentNotice: "目前暂不支持在线付款。我们确认您的需求后，会通过电子邮件发送报价和后续流程说明。", localNote: "这是面向海外顾客的定制美甲贴片咨询页面。我们会在确认需求后提供报价和下一步说明。", japanLink: "Japan / 日本国内美甲贴片",
   badges: ["🇯🇵 日本制作", "🌏 全球配送咨询", "🔮 运势主题设计", "💎 珠宝风格设计"], quickLogin: "快速填写", quickLoginDescription: "使用 Google 继续，可自动填写姓名和电子邮箱。", loggedInAs: "已登录：", connecting: "正在连接...", continueGoogle: "使用 Google 继续",
-  portfolioTitle: "作品展示", portfolioDescription: "在日本逐件手绘制作的定制美甲贴片。", portfolioCaptions: ["动漫角色", "角色彩绘", "运势主题美甲", "珠宝风格美甲", "手绘制作过程"], startingPrice: "参考价格 ¥15,000 起", worldwideAvailable: "欢迎咨询全球配送", requestCta: "✨ 咨询定制美甲贴片",
+  portfolioTitle: "作品展示", portfolioDescription: "在日本逐件手绘制作的定制美甲贴片。", portfolioCaptions: ["动漫角色", "角色彩绘", "运势主题美甲", "珠宝风格美甲", "手绘制作过程"], startingPrice: "美甲贴片2片 JPY 15,000 起", worldwideAvailable: "欢迎咨询全球配送", requestCta: "✨ 咨询定制美甲贴片",
   shippingTitle: "🌏 欢迎咨询全球配送", shippingDescription: "我们可根据需求制作动漫、运势与 Sanmeigaku 主题、珠宝风格、偶像、游戏、婚礼及原创设计美甲贴片。提交表单后，工作人员会通过电子邮件提供报价和后续说明。", categories: ["动漫／角色", "运势／Sanmeigaku 主题", "珠宝风格", "奢华定制"], shippingTo: "可咨询配送地区", countries: "美国 / 加拿大 / 法国 / 德国 / 韩国 / 泰国 / 新加坡 / 澳大利亚等", paymentShort: "目前暂不支持在线付款。请先提交咨询表单，我们确认后会通过电子邮件与您联系。",
   whatWouldYouLike: "您想定制哪一类？", salonTitle: "💅 预约福冈美甲沙龙", salonDescription: "预约到访福冈门店，可供1至2位顾客预约。", language: "显示语言", guests: "到店人数", person: "位", people: "位", menu: "服务项目", minutes: "分钟", dateAndTime: "日期和时间", date: "日期", time: "时间", selectTime: "请选择时间",
   customerInformation: "顾客信息", name: "姓名", email: "电子邮箱", country: "国家／地区", instagram: "Instagram ID", orderType: "定制类型", shippingInformation: "配送信息", shippingInformationDescription: "请输入海外配送地址。", recipientName: "收件人姓名", address: "地址", city: "城市", state: "州／省", postalCode: "邮政编码", phone: "电话号码", referenceImages: "参考图片", referenceImagesHelp: "最多可上传3张参考图片。", requestNote: "需求／备注",
@@ -175,9 +260,22 @@ const zhCN: typeof en = {
 
 const ko: typeof en = {
   ...en,
+  orderGuide: {
+    title: "가격·제작·주문 안내", priceTitle: "가격", priceLead: "맞춤 네일팁 2개는 JPY 15,000부터입니다.",
+    priceDetails: ["최종 가격은 디자인의 복잡도, 사용 소재, 장식 내용에 따라 달라집니다.", "상담 내용을 확인한 후 제작 시작 전에 정식 견적을 안내해 드립니다.", "해외 배송비, 관세, 수입세 및 통관 수수료는 상품 가격에 포함되지 않습니다."],
+    sections: [
+      { title: "지식재산권 안내", body: "애니메이션, 만화, 게임, 영화 등의 기존 캐릭터, 작품명, 로고, 마크, 의상 또는 작품 고유의 표현을 그대로 재현하는 주문은 받지 않습니다. 참고 이미지를 보내주신 경우 색감, 분위기, 추상적인 테마와 일반적인 모티프만 참고하여 Aily Nail Studio만의 오리지널 디자인을 제안합니다. 제3자의 저작권, 상표권 및 기타 지식재산권을 존중하기 위해 권리 침해 가능성이 있는 요청은 디자인 변경을 부탁드리거나 제작을 거절할 수 있습니다." },
+      { title: "제작 기간", body: "결제, 사이즈, 디자인이 모두 확정된 후 일반적으로 약 14~21일이 소요됩니다. 복잡한 디자인, 주문량 또는 재료 수급 상황에 따라 더 오래 걸릴 수 있습니다. 배송 기간은 제작 기간에 포함되지 않습니다. 희망일은 미리 상담하실 수 있지만 해당 날짜까지의 완성이나 배송을 보장하지 않습니다." },
+      { title: "해외 배송비", body: "해외 배송비는 상품 가격과 별도로 청구됩니다. 배송 국가 또는 지역을 확인한 후 정식 견적에 배송비를 안내합니다. 배송업체, 배송 방법 및 추적 가능 여부는 주문 내용과 배송지에 따라 개별 안내합니다." },
+      { title: "관세 및 수입세", body: "배송지에서 발생하는 관세, 수입세, 통관 수수료 등의 비용은 구매자 부담입니다. 금액은 국가나 지역에 따라 다르며 매장에서 미리 확정할 수 없는 경우가 있습니다. 통관 비용을 이유로 수령을 거부하거나 반송할 때 발생하는 비용을 매장이 부담한다고 약속하지 않습니다." },
+      { title: "사이즈 확인", body: "안내된 방법으로 필요한 손톱 사이즈를 측정하여 제작 시작 전에 제출하고 확정해 주세요. 구매자의 측정 또는 입력 오류로 다시 제작하는 경우 원칙적으로 추가 비용이 발생합니다. 사이즈가 불확실하다면 제작 시작 전에 문의해 주세요." },
+      { title: "취소·변경·환불", body: "정식 견적 승인 및 결제 전에는 취소할 수 있습니다. 결제 후 또는 제작 시작 후에는 맞춤 제작 상품의 특성상 구매자 사유의 취소, 환불, 변경은 원칙적으로 어렵습니다. 당점의 제작 실수, 확정 주문 내용과의 명백한 차이 또는 도착 시 파손은 사진 등을 확인한 후 재제작이나 환불 등 적절한 방법을 개별 안내합니다. 사용 후 파손, 정상적인 마모, 구매자의 사이즈 입력 오류는 무상 처리 대상이 아닙니다. 배송 사고는 배송 상태를 확인한 뒤 개별 처리하며 무조건적인 환불을 보장하지 않습니다." },
+    ],
+    processTitle: "주문 절차", processSteps: ["1. 해외 상담 양식으로 문의", "2. 매장에서 요청 내용 확인", "3. 이메일로 디자인, 사이즈, 배송비 등을 확인", "4. 정식 견적 안내", "5. 구매자 승인 및 결제 확인", "6. 제작 시작", "7. 완성 후 발송"],
+  },
   heroTitle: "해외 고객 맞춤 네일팁", heroDescription: "맞춤 네일팁 상담과 해외 배송 요청을 접수하는 페이지입니다.", paymentNotice: "현재 온라인 결제는 이용하실 수 없습니다. 요청 내용을 확인한 후 견적과 다음 절차를 이메일로 안내해 드립니다.", localNote: "해외 고객을 위한 맞춤 네일팁 상담 페이지입니다. 요청 사항을 확인한 뒤 견적과 다음 단계를 안내해 드립니다.", japanLink: "Japan / 일본 국내 네일팁",
   badges: ["🇯🇵 일본 제작", "🌏 해외 배송 상담", "🔮 운세 테마 디자인", "💎 주얼리 스타일 디자인"], quickLogin: "간편 입력", quickLoginDescription: "Google로 계속하면 이름과 이메일을 자동으로 입력할 수 있습니다.", loggedInAs: "로그인 계정:", connecting: "연결 중...", continueGoogle: "Google로 계속하기",
-  portfolioTitle: "디자인 포트폴리오", portfolioDescription: "일본에서 하나씩 손으로 그려 제작하는 맞춤 네일팁입니다.", portfolioCaptions: ["애니메이션 캐릭터", "캐릭터 아트", "운세 테마 네일", "주얼리 스타일 네일", "핸드페인팅 제작 과정"], startingPrice: "예상 가격 ¥15,000부터", worldwideAvailable: "해외 배송 상담 가능", requestCta: "✨ 맞춤 네일팁 상담하기",
+  portfolioTitle: "디자인 포트폴리오", portfolioDescription: "일본에서 하나씩 손으로 그려 제작하는 맞춤 네일팁입니다.", portfolioCaptions: ["애니메이션 캐릭터", "캐릭터 아트", "운세 테마 네일", "주얼리 스타일 네일", "핸드페인팅 제작 과정"], startingPrice: "맞춤 네일팁 2개 JPY 15,000부터", worldwideAvailable: "해외 배송 상담 가능", requestCta: "✨ 맞춤 네일팁 상담하기",
   shippingTitle: "🌏 해외 배송 상담 가능", shippingDescription: "애니메이션, 운세 및 Sanmeigaku 테마, 주얼리 스타일, 아이돌, 게임, 웨딩, 오리지널 디자인 등 원하시는 네일팁을 제작합니다. 양식을 보내주시면 견적과 다음 절차를 이메일로 안내해 드립니다.", categories: ["애니메이션 / 캐릭터", "운세 / Sanmeigaku", "주얼리 스타일", "럭셔리 맞춤 디자인"], shippingTo: "배송 상담 가능 지역", countries: "미국 / 캐나다 / 프랑스 / 독일 / 한국 / 태국 / 싱가포르 / 호주 외", paymentShort: "현재 온라인 결제는 이용하실 수 없습니다. 먼저 상담 양식을 보내주시면 확인 후 이메일로 연락드리겠습니다.",
   whatWouldYouLike: "어떤 디자인을 원하시나요?", salonTitle: "💅 후쿠오카 네일 살롱 예약", salonDescription: "후쿠오카 매장 방문 예약입니다. 1명 또는 2명이 이용할 수 있습니다.", language: "표시 언어", guests: "방문 인원", person: "명", people: "명", menu: "메뉴", minutes: "분", dateAndTime: "날짜 및 시간", date: "날짜", time: "시간", selectTime: "시간을 선택해 주세요",
   customerInformation: "고객 정보", name: "이름", email: "이메일", country: "국가 / 지역", instagram: "Instagram ID", orderType: "주문 유형", shippingInformation: "배송지 정보", shippingInformationDescription: "해외 배송을 받으실 주소를 입력해 주세요.", recipientName: "수령인 이름", address: "주소", city: "도시", state: "주 / 도", postalCode: "우편번호", phone: "전화번호", referenceImages: "참고 이미지", referenceImagesHelp: "참고 이미지는 최대 3장까지 업로드할 수 있습니다.", requestNote: "요청 사항 / 메모",
@@ -190,9 +288,22 @@ const ko: typeof en = {
 
 const fr: typeof en = {
   ...en,
+  orderGuide: {
+    title: "Tarifs, fabrication et commande", priceTitle: "Tarif", priceLead: "2 press-on nails personnalisés : à partir de 15 000 JPY.",
+    priceDetails: ["Le prix final dépend de la complexité du design, des matériaux et des décorations choisis.", "Après étude de votre demande, nous vous enverrons un devis officiel avant le début de la fabrication.", "Les frais d’expédition internationale, droits de douane, taxes d’importation et frais de dédouanement ne sont pas compris dans le prix du produit."],
+    sections: [
+      { title: "Propriété intellectuelle", body: "Nous n’acceptons pas les demandes visant à reproduire à l’identique des personnages existants, titres d’œuvres, logos, symboles, costumes ou autres éléments distinctifs issus d’anime, mangas, jeux, films ou œuvres similaires. Si vous envoyez des images de référence, nous nous inspirerons uniquement des couleurs, de l’ambiance, d’un thème abstrait ou de motifs généraux afin de proposer une création originale Aily Nail Studio. Dans le respect des droits d’auteur, marques et autres droits de propriété intellectuelle de tiers, nous pouvons demander une modification du design ou refuser la fabrication." },
+      { title: "Délai de fabrication", body: "La fabrication prend généralement environ 14 à 21 jours après confirmation du paiement, des tailles et du design. Un design complexe, le volume de commandes ou la disponibilité des matériaux peuvent prolonger ce délai. Le temps d’expédition n’est pas inclus. Vous pouvez nous indiquer une date souhaitée, mais nous ne pouvons garantir la réalisation ou la livraison avant cette date." },
+      { title: "Frais d’expédition internationale", body: "Les frais d’expédition sont facturés séparément du prix du produit. Ils seront indiqués dans le devis officiel après confirmation du pays ou de la région de destination. Le transporteur, le mode d’envoi et la disponibilité du suivi seront précisés selon la commande et la destination." },
+      { title: "Droits de douane et taxes d’importation", body: "Les droits de douane, taxes d’importation, frais de dédouanement et autres frais à destination sont à la charge de l’acheteur. Leur montant varie selon le pays ou la région et peut ne pas être connu à l’avance. Nous ne nous engageons pas à prendre en charge les frais résultant d’un refus de livraison ou d’un retour motivé par ces frais." },
+      { title: "Vérification des tailles", body: "Mesurez les tailles d’ongles nécessaires selon la méthode indiquée et confirmez-les avant le début de la fabrication. Une nouvelle fabrication due à une erreur de mesure ou de déclaration de l’acheteur sera en principe facturée. En cas de doute, contactez-nous avant le début de la fabrication." },
+      { title: "Annulation, modification et remboursement", body: "Vous pouvez annuler avant d’accepter le devis officiel et d’effectuer le paiement. Après paiement ou début de la fabrication, les annulations, remboursements ou modifications demandés par l’acheteur ne sont généralement pas possibles, car chaque produit est réalisé sur mesure. En cas d’erreur de fabrication de notre part, de différence manifeste avec la commande confirmée ou de dommage à l’arrivée, nous examinerons les photos et proposerons individuellement une solution appropriée, telle qu’une nouvelle fabrication ou un remboursement. Les dommages après utilisation, l’usure normale et les erreurs de taille déclarées par l’acheteur ne sont pas couverts gratuitement. Les incidents de transport sont traités individuellement après vérification du suivi, sans remboursement automatique." },
+    ],
+    processTitle: "Étapes de la commande", processSteps: ["1. Envoyez une demande via le formulaire international", "2. Aily Nail Studio examine votre demande", "3. Nous confirmons le design, les tailles et les frais d’expédition par e-mail", "4. Nous envoyons un devis officiel", "5. Vous acceptez le devis et nous confirmons le paiement", "6. La fabrication commence", "7. La commande terminée est expédiée"],
+  },
   heroTitle: "Press-on nails personnalisés à l’international", heroDescription: "Cette page recueille vos demandes de press-on nails sur mesure et d’expédition internationale.", paymentNotice: "Le paiement en ligne est actuellement indisponible. Après étude de votre demande, nous vous enverrons un devis et les prochaines étapes par e-mail.", localNote: "Ce formulaire est destiné aux demandes internationales de press-on nails personnalisés. Nous vous communiquerons un devis et la suite de la procédure après examen.", japanLink: "Japan / Press-on nails au Japon",
   badges: ["🇯🇵 Fabriqué au Japon", "🌏 Expédition internationale", "🔮 Design inspiré de la fortune", "💎 Design d’inspiration joaillière"], quickLogin: "Saisie rapide", quickLoginDescription: "Continuez avec Google pour préremplir votre nom et votre adresse e-mail.", loggedInAs: "Connecté(e) avec :", connecting: "Connexion...", continueGoogle: "Continuer avec Google",
-  portfolioTitle: "Galerie de créations", portfolioDescription: "Des press-on nails personnalisés, peints à la main au Japon.", portfolioCaptions: ["Personnage d’anime", "Illustration de personnage", "Nail art inspiré de la fortune", "Nail art d’inspiration joaillière", "Peinture à la main"], startingPrice: "À partir de ¥15 000", worldwideAvailable: "Demandes d’expédition internationale bienvenues", requestCta: "✨ Demander des press-on nails personnalisés",
+  portfolioTitle: "Galerie de créations", portfolioDescription: "Des press-on nails personnalisés, peints à la main au Japon.", portfolioCaptions: ["Personnage d’anime", "Illustration de personnage", "Nail art inspiré de la fortune", "Nail art d’inspiration joaillière", "Peinture à la main"], startingPrice: "2 press-on nails à partir de 15 000 JPY", worldwideAvailable: "Demandes d’expédition internationale bienvenues", requestCta: "✨ Demander des press-on nails personnalisés",
   shippingTitle: "🌏 Expédition internationale sur demande", shippingDescription: "Nous créons des press-on nails sur mesure inspirés des anime, de la fortune et du Sanmeigaku, de la joaillerie, des idols, des jeux, du mariage ou de votre propre idée. Envoyez votre demande : notre équipe vous répondra par e-mail avec un devis et les prochaines étapes.", categories: ["Anime / Personnage", "Fortune / Sanmeigaku", "Inspiration joaillière", "Création de luxe"], shippingTo: "DESTINATIONS SUR DEMANDE", countries: "États-Unis / Canada / France / Allemagne / Corée / Thaïlande / Singapour / Australie, etc.", paymentShort: "Le paiement en ligne est actuellement indisponible. Envoyez d’abord votre demande ; nous vous contacterons ensuite par e-mail.",
   whatWouldYouLike: "Quel type de création souhaitez-vous ?", salonTitle: "💅 Réservation au salon de Fukuoka", salonDescription: "Réservez une visite dans notre salon de Fukuoka, pour une ou deux personnes.", language: "Langue d’affichage", guests: "Nombre de personnes", person: "personne", people: "personnes", menu: "Prestation", minutes: "min", dateAndTime: "Date et heure", date: "Date", time: "Heure", selectTime: "Sélectionnez une heure",
   customerInformation: "Coordonnées", name: "Nom", email: "E-mail", country: "Pays / Région", instagram: "Identifiant Instagram", orderType: "Type de commande", shippingInformation: "Adresse de livraison", shippingInformationDescription: "Saisissez l’adresse complète pour l’expédition internationale.", recipientName: "Nom du destinataire", address: "Adresse", city: "Ville", state: "Région / Province", postalCode: "Code postal", phone: "Numéro de téléphone", referenceImages: "Images de référence", referenceImagesHelp: "Vous pouvez ajouter jusqu’à 3 images de référence.", requestNote: "Demande / Remarque",
@@ -205,9 +316,22 @@ const fr: typeof en = {
 
 const es: typeof en = {
   ...en,
+  orderGuide: {
+    title: "Precios, producción y pedidos", priceTitle: "Precio", priceLead: "2 uñas postizas personalizadas: desde JPY 15,000.",
+    priceDetails: ["El precio final depende de la complejidad del diseño, los materiales y la decoración.", "Después de revisar tu solicitud, enviaremos una cotización formal antes de comenzar la producción.", "El envío internacional, los aranceles, los impuestos de importación y los gastos de despacho aduanero no están incluidos en el precio del producto."],
+    sections: [
+      { title: "Aviso sobre propiedad intelectual", body: "No aceptamos solicitudes para reproducir exactamente personajes existentes, títulos de obras, logotipos, símbolos, vestuarios u otros elementos distintivos de anime, manga, videojuegos, películas u obras similares. Si envías imágenes de referencia, solo tomaremos como inspiración los colores, el ambiente, el tema abstracto o los motivos generales para proponer un diseño original de Aily Nail Studio. Para respetar los derechos de autor, marcas y demás derechos de propiedad intelectual de terceros, podremos solicitar cambios en el diseño o rechazar la producción." },
+      { title: "Tiempo de producción", body: "La producción suele tardar aproximadamente entre 14 y 21 días después de confirmar el pago, las medidas y el diseño. Los diseños complejos, el volumen de pedidos o la disponibilidad de materiales pueden ampliar el plazo. El tiempo de envío no está incluido. Puedes indicarnos una fecha preferida, pero no garantizamos que el pedido esté terminado o sea entregado antes de esa fecha." },
+      { title: "Envío internacional", body: "El envío internacional se cobra por separado del precio del producto. La cotización formal incluirá el costo después de confirmar el país o la región de destino. La empresa de transporte, el método de envío y la disponibilidad de seguimiento se informarán de manera individual según el pedido y el destino." },
+      { title: "Aranceles e impuestos de importación", body: "Los aranceles, impuestos de importación, gastos de despacho aduanero y otros cargos en destino son responsabilidad del comprador. Los importes varían según el país o la región y pueden no conocerse con anticipación. No nos comprometemos a cubrir costos derivados del rechazo de la entrega o devolución por cargos aduaneros." },
+      { title: "Confirmación de medidas", body: "Mide los tamaños de uña necesarios con el método indicado y confírmalos antes de comenzar la producción. Una nueva fabricación por medidas o datos incorrectos proporcionados por el comprador normalmente tendrá un costo adicional. Si tienes dudas, consúltanos antes del inicio de la producción." },
+      { title: "Cancelaciones, cambios y reembolsos", body: "Puedes cancelar antes de aceptar la cotización formal y realizar el pago. Después del pago o del inicio de la producción, por tratarse de un producto personalizado, no se aceptan en general cancelaciones, reembolsos ni cambios por motivos del comprador. Si cometemos un error de fabricación, el producto difiere claramente del pedido confirmado o llega dañado, revisaremos fotografías y otros datos para ofrecer de forma individual una solución adecuada, como una nueva fabricación o un reembolso. Los daños tras el uso, el desgaste normal y los errores de medida del comprador no están cubiertos gratuitamente. Los incidentes de envío se revisan individualmente tras comprobar el estado de la entrega; los reembolsos no son automáticos." },
+    ],
+    processTitle: "Proceso del pedido", processSteps: ["1. Envía una consulta mediante el formulario internacional", "2. Aily Nail Studio revisa la solicitud", "3. Confirmamos por correo electrónico el diseño, las medidas y el envío", "4. Enviamos una cotización formal", "5. Apruebas la cotización y confirmamos el pago", "6. Comienza la producción", "7. Enviamos el pedido terminado"],
+  },
   heroTitle: "Uñas postizas personalizadas internacionales", heroDescription: "Esta página recibe consultas de uñas postizas personalizadas y solicitudes de envío internacional.", paymentNotice: "El pago en línea no está disponible actualmente. Revisaremos tu solicitud y te enviaremos por correo electrónico una cotización y los siguientes pasos.", localNote: "Este formulario está destinado a pedidos internacionales de uñas postizas personalizadas. Tras revisar tu solicitud, te enviaremos una cotización y las instrucciones para continuar.", japanLink: "Japan / Uñas postizas para Japón",
   badges: ["🇯🇵 Hechas en Japón", "🌏 Envíos internacionales", "🔮 Diseño inspirado en la fortuna", "💎 Diseño inspirado en joyería"], quickLogin: "Acceso rápido", quickLoginDescription: "Continúa con Google para completar automáticamente tu nombre y correo electrónico.", loggedInAs: "Sesión iniciada como:", connecting: "Conectando...", continueGoogle: "Continuar con Google",
-  portfolioTitle: "Galería de diseños", portfolioDescription: "Uñas postizas personalizadas, pintadas a mano en Japón.", portfolioCaptions: ["Personaje de anime", "Arte de personajes", "Uñas inspiradas en la fortuna", "Uñas inspiradas en joyería", "Proceso de pintura a mano"], startingPrice: "Desde ¥15,000", worldwideAvailable: "Aceptamos solicitudes de envío internacional", requestCta: "✨ Solicitar uñas postizas personalizadas",
+  portfolioTitle: "Galería de diseños", portfolioDescription: "Uñas postizas personalizadas, pintadas a mano en Japón.", portfolioCaptions: ["Personaje de anime", "Arte de personajes", "Uñas inspiradas en la fortuna", "Uñas inspiradas en joyería", "Proceso de pintura a mano"], startingPrice: "2 uñas postizas desde JPY 15,000", worldwideAvailable: "Aceptamos solicitudes de envío internacional", requestCta: "✨ Solicitar uñas postizas personalizadas",
   shippingTitle: "🌏 Envíos internacionales bajo solicitud", shippingDescription: "Creamos uñas postizas personalizadas inspiradas en anime, fortuna y Sanmeigaku, joyería, idols, videojuegos, bodas y diseños originales. Envíanos tu solicitud y nuestro equipo responderá por correo electrónico con una cotización y los siguientes pasos.", categories: ["Anime / Personaje", "Fortuna / Sanmeigaku", "Inspiración en joyería", "Personalización de lujo"], shippingTo: "DESTINOS DISPONIBLES BAJO SOLICITUD", countries: "Estados Unidos / Canadá / Francia / Alemania / Corea / Tailandia / Singapur / Australia y más", paymentShort: "El pago en línea no está disponible actualmente. Envía primero una solicitud de consulta y nos comunicaremos contigo por correo electrónico.",
   whatWouldYouLike: "¿Qué tipo de diseño deseas?", salonTitle: "💅 Reserva en el salón de Fukuoka", salonDescription: "Visita nuestro salón en Fukuoka. Disponible para una o dos personas.", language: "Idioma", guests: "Número de personas", person: "persona", people: "personas", menu: "Servicio", minutes: "min", dateAndTime: "Fecha y hora", date: "Fecha", time: "Hora", selectTime: "Selecciona una hora",
   customerInformation: "Información del cliente", name: "Nombre", email: "Correo electrónico", country: "País / Región", instagram: "Usuario de Instagram", orderType: "Tipo de pedido", shippingInformation: "Dirección de envío", shippingInformationDescription: "Ingresa la dirección completa para el envío internacional.", recipientName: "Nombre del destinatario", address: "Dirección", city: "Ciudad", state: "Estado / Provincia", postalCode: "Código postal", phone: "Número de teléfono", referenceImages: "Imágenes de referencia", referenceImagesHelp: "Puedes subir hasta 3 imágenes de referencia.", requestNote: "Solicitud / Nota",
@@ -220,9 +344,22 @@ const es: typeof en = {
 
 const th: typeof en = {
   ...en,
+  orderGuide: {
+    title: "ข้อมูลราคา การผลิต และการสั่งซื้อ", priceTitle: "ราคา", priceLead: "เล็บปลอมสั่งทำ 2 ชิ้น ราคาเริ่มต้น JPY 15,000",
+    priceDetails: ["ราคาสุดท้ายขึ้นอยู่กับความซับซ้อนของดีไซน์ วัสดุ และรายละเอียดการตกแต่ง", "หลังจากตรวจสอบคำขอแล้ว เราจะส่งใบเสนอราคาอย่างเป็นทางการก่อนเริ่มผลิต", "ค่าจัดส่งระหว่างประเทศ ภาษีศุลกากร ภาษีนำเข้า และค่าดำเนินพิธีการศุลกากรไม่รวมอยู่ในราคาสินค้า"],
+    sections: [
+      { title: "ข้อมูลเกี่ยวกับทรัพย์สินทางปัญญา", body: "เราไม่รับคำสั่งให้ทำซ้ำตัวละครที่มีอยู่แล้ว ชื่อผลงาน โลโก้ เครื่องหมาย เครื่องแต่งกาย หรือองค์ประกอบเฉพาะของอนิเมะ มังงะ เกม ภาพยนตร์ หรือผลงานอื่นในรูปแบบเดิมทั้งหมด หากส่งรูปภาพอ้างอิงมา เราจะใช้เฉพาะโทนสี บรรยากาศ ธีมเชิงนามธรรม หรือรูปแบบทั่วไปเป็นแรงบันดาลใจ และเสนอเป็นดีไซน์ต้นฉบับของ Aily Nail Studio เพื่อเคารพลิขสิทธิ์ เครื่องหมายการค้า และสิทธิในทรัพย์สินทางปัญญาของบุคคลที่สาม เราอาจขอให้ปรับดีไซน์หรือปฏิเสธการผลิตหากคำขอมีความเสี่ยงต่อการละเมิดสิทธิ" },
+      { title: "ระยะเวลาการผลิต", body: "โดยปกติใช้เวลาประมาณ 14–21 วันหลังจากยืนยันการชำระเงิน ขนาด และดีไซน์ครบถ้วนแล้ว ดีไซน์ที่ซับซ้อน ปริมาณคำสั่งซื้อ หรือการจัดหาวัสดุอาจทำให้ใช้เวลานานขึ้น ระยะเวลาจัดส่งไม่รวมอยู่ในระยะเวลาผลิต สามารถแจ้งวันที่ต้องการล่วงหน้าได้ แต่เราไม่รับประกันว่าจะผลิตเสร็จหรือจัดส่งถึงภายในวันดังกล่าว" },
+      { title: "ค่าจัดส่งระหว่างประเทศ", body: "ค่าจัดส่งระหว่างประเทศคิดแยกจากราคาสินค้า เราจะแจ้งค่าจัดส่งในใบเสนอราคาอย่างเป็นทางการหลังจากยืนยันประเทศหรือภูมิภาคปลายทาง บริษัทขนส่ง วิธีจัดส่ง และการติดตามพัสดุจะแจ้งเป็นรายกรณีตามรายละเอียดคำสั่งซื้อและปลายทาง" },
+      { title: "ภาษีศุลกากรและภาษีนำเข้า", body: "ภาษีศุลกากร ภาษีนำเข้า ค่าดำเนินพิธีการศุลกากร และค่าใช้จ่ายอื่นที่เกิดขึ้น ณ ปลายทางเป็นความรับผิดชอบของผู้ซื้อ จำนวนเงินแตกต่างกันตามประเทศหรือภูมิภาคและอาจไม่สามารถระบุล่วงหน้าได้ เราไม่รับปากว่าจะรับผิดชอบค่าใช้จ่ายจากการปฏิเสธรับสินค้าหรือการตีกลับเนื่องจากค่าศุลกากร" },
+      { title: "การยืนยันขนาด", body: "โปรดวัดขนาดเล็บที่ต้องการตามวิธีที่เราแจ้ง และยืนยันก่อนเริ่มผลิต หากต้องผลิตใหม่เนื่องจากผู้ซื้อวัดหรือแจ้งขนาดผิด โดยหลักแล้วจะมีค่าใช้จ่ายเพิ่มเติม หากไม่มั่นใจเรื่องขนาด โปรดปรึกษาเราก่อนเริ่มผลิต" },
+      { title: "การยกเลิก การเปลี่ยนแปลง และการคืนเงิน", body: "สามารถยกเลิกได้ก่อนยอมรับใบเสนอราคาอย่างเป็นทางการและชำระเงิน หลังจากชำระเงินหรือเริ่มผลิตแล้ว เนื่องจากเป็นสินค้าสั่งทำ โดยทั่วไปไม่สามารถยกเลิก คืนเงิน หรือเปลี่ยนแปลงด้วยเหตุผลของผู้ซื้อได้ หากร้านผลิตผิด สินค้าแตกต่างจากรายละเอียดที่ยืนยันไว้อย่างชัดเจน หรือเสียหายเมื่อมาถึง เราจะตรวจสอบรูปภาพและข้อมูลอื่นแล้วแจ้งแนวทางที่เหมาะสมเป็นรายกรณี เช่น ผลิตใหม่หรือคืนเงิน ความเสียหายหลังใช้งาน การสึกหรอตามปกติ และการแจ้งขนาดผิดของผู้ซื้อไม่อยู่ในบริการฟรี กรณีอุบัติเหตุระหว่างขนส่งจะตรวจสอบสถานะและดำเนินการเป็นรายกรณี โดยไม่รับประกันการคืนเงินโดยไม่มีเงื่อนไข" },
+    ],
+    processTitle: "ขั้นตอนการสั่งซื้อ", processSteps: ["1. ส่งคำถามผ่านแบบฟอร์มสำหรับลูกค้าต่างประเทศ", "2. Aily Nail Studio ตรวจสอบรายละเอียด", "3. ยืนยันดีไซน์ ขนาด และค่าจัดส่งทางอีเมล", "4. ส่งใบเสนอราคาอย่างเป็นทางการ", "5. ผู้ซื้อยอมรับใบเสนอราคาและร้านยืนยันการชำระเงิน", "6. เริ่มผลิต", "7. จัดส่งหลังผลิตเสร็จ"],
+  },
   heroTitle: "เล็บปลอมสั่งทำสำหรับลูกค้าต่างประเทศ", heroDescription: "หน้านี้รับคำปรึกษาเล็บปลอมสั่งทำและคำขอจัดส่งไปต่างประเทศ", paymentNotice: "ขณะนี้ยังไม่สามารถชำระเงินออนไลน์ได้ หลังจากตรวจสอบคำขอแล้ว เราจะส่งใบเสนอราคาและขั้นตอนต่อไปทางอีเมล", localNote: "แบบฟอร์มนี้สำหรับสอบถามการสั่งทำเล็บปลอมจากต่างประเทศ เราจะตรวจสอบรายละเอียดและแจ้งใบเสนอราคาพร้อมขั้นตอนถัดไป", japanLink: "Japan / เล็บปลอมสำหรับลูกค้าในญี่ปุ่น",
   badges: ["🇯🇵 ผลิตในญี่ปุ่น", "🌏 สอบถามการจัดส่งทั่วโลก", "🔮 ดีไซน์ธีมเสริมดวง", "💎 ดีไซน์สไตล์อัญมณี"], quickLogin: "กรอกข้อมูลอย่างรวดเร็ว", quickLoginDescription: "ดำเนินการต่อด้วย Google เพื่อกรอกชื่อและอีเมลโดยอัตโนมัติ", loggedInAs: "เข้าสู่ระบบด้วย:", connecting: "กำลังเชื่อมต่อ...", continueGoogle: "ดำเนินการต่อด้วย Google",
-  portfolioTitle: "ผลงานการออกแบบ", portfolioDescription: "เล็บปลอมสั่งทำที่วาดด้วยมือทีละชิ้นในญี่ปุ่น", portfolioCaptions: ["ตัวละครอนิเมะ", "งานวาดตัวละคร", "เล็บธีมเสริมดวง", "เล็บสไตล์อัญมณี", "ขั้นตอนการวาดด้วยมือ"], startingPrice: "ราคาเริ่มต้นโดยประมาณ ¥15,000", worldwideAvailable: "ยินดีรับคำขอจัดส่งทั่วโลก", requestCta: "✨ ขอคำปรึกษาเล็บปลอมสั่งทำ",
+  portfolioTitle: "ผลงานการออกแบบ", portfolioDescription: "เล็บปลอมสั่งทำที่วาดด้วยมือทีละชิ้นในญี่ปุ่น", portfolioCaptions: ["ตัวละครอนิเมะ", "งานวาดตัวละคร", "เล็บธีมเสริมดวง", "เล็บสไตล์อัญมณี", "ขั้นตอนการวาดด้วยมือ"], startingPrice: "เล็บปลอม 2 ชิ้น เริ่มต้น JPY 15,000", worldwideAvailable: "ยินดีรับคำขอจัดส่งทั่วโลก", requestCta: "✨ ขอคำปรึกษาเล็บปลอมสั่งทำ",
   shippingTitle: "🌏 สอบถามการจัดส่งทั่วโลกได้", shippingDescription: "เรารับทำเล็บปลอมตามแบบ ทั้งอนิเมะ ธีมเสริมดวงและ Sanmeigaku สไตล์อัญมณี ไอดอล เกม งานแต่งงาน และดีไซน์ต้นฉบับ ส่งคำขอของคุณมา แล้วทีมงานจะตอบกลับทางอีเมลพร้อมใบเสนอราคาและขั้นตอนต่อไป", categories: ["อนิเมะ / ตัวละคร", "เสริมดวง / Sanmeigaku", "สไตล์อัญมณี", "สั่งทำระดับลักชัวรี"], shippingTo: "พื้นที่ที่รับสอบถามการจัดส่ง", countries: "สหรัฐอเมริกา / แคนาดา / ฝรั่งเศส / เยอรมนี / เกาหลี / ไทย / สิงคโปร์ / ออสเตรเลีย และอื่น ๆ", paymentShort: "ขณะนี้ยังไม่สามารถชำระเงินออนไลน์ได้ กรุณาส่งแบบฟอร์มสอบถามก่อน แล้วเราจะติดต่อกลับทางอีเมล",
   whatWouldYouLike: "คุณต้องการดีไซน์แบบใด?", salonTitle: "💅 จองร้านทำเล็บที่ฟุกุโอกะ", salonDescription: "จองเพื่อเข้ารับบริการที่ร้านในฟุกุโอกะ สำหรับ 1 หรือ 2 ท่าน", language: "ภาษาที่แสดง", guests: "จำนวนผู้เข้ารับบริการ", person: "ท่าน", people: "ท่าน", menu: "บริการ", minutes: "นาที", dateAndTime: "วันที่และเวลา", date: "วันที่", time: "เวลา", selectTime: "กรุณาเลือกเวลา",
   customerInformation: "ข้อมูลลูกค้า", name: "ชื่อ", email: "อีเมล", country: "ประเทศ / ภูมิภาค", instagram: "Instagram ID", orderType: "ประเภทคำสั่งทำ", shippingInformation: "ข้อมูลที่อยู่จัดส่ง", shippingInformationDescription: "กรุณากรอกที่อยู่สำหรับการจัดส่งระหว่างประเทศ", recipientName: "ชื่อผู้รับ", address: "ที่อยู่", city: "เมือง / เขต", state: "รัฐ / จังหวัด", postalCode: "รหัสไปรษณีย์", phone: "หมายเลขโทรศัพท์", referenceImages: "รูปภาพอ้างอิง", referenceImagesHelp: "อัปโหลดรูปภาพอ้างอิงได้สูงสุด 3 รูป", requestNote: "คำขอ / หมายเหตุ",
@@ -235,9 +372,22 @@ const th: typeof en = {
 
 const ar: typeof en = {
   ...en,
+  orderGuide: {
+    title: "معلومات الأسعار والتصنيع والطلب", priceTitle: "السعر", priceLead: "ظفران لاصقان مخصصان ابتداءً من JPY 15,000.",
+    priceDetails: ["يعتمد السعر النهائي على تعقيد التصميم والمواد والزخارف ومستوى التفاصيل.", "بعد مراجعة طلبك، سنرسل عرض سعر رسمي قبل بدء التصنيع.", "لا يشمل سعر المنتج رسوم الشحن الدولي أو الجمارك أو ضرائب الاستيراد أو رسوم التخليص الجمركي."],
+    sections: [
+      { title: "إشعار الملكية الفكرية", body: "لا نقبل طلبات إعادة إنتاج الشخصيات الموجودة أو أسماء الأعمال أو الشعارات أو الرموز أو الأزياء أو العناصر المميزة من الأنمي أو المانغا أو الألعاب أو الأفلام أو الأعمال المشابهة بصورة مطابقة. عند إرسال صور مرجعية، سنستخدم فقط الألوان والأجواء والفكرة المجردة والزخارف العامة كمصدر إلهام، ونقترح تصميماً أصلياً من Aily Nail Studio. احتراماً لحقوق النشر والعلامات التجارية وغيرها من حقوق الملكية الفكرية للغير، قد نطلب تعديل التصميم أو نرفض التصنيع إذا كان الطلب قد ينطوي على انتهاك للحقوق." },
+      { title: "مدة التصنيع", body: "تستغرق عملية التصنيع عادةً نحو 14 إلى 21 يوماً بعد تأكيد الدفع والمقاسات والتصميم بالكامل. قد تتطلب التصاميم المعقدة أو كثرة الطلبات أو توفر المواد وقتاً إضافياً. مدة الشحن غير مشمولة. يمكنك إبلاغنا بالتاريخ المفضل مسبقاً، لكننا لا نضمن إتمام الطلب أو وصوله قبل ذلك التاريخ." },
+      { title: "الشحن الدولي", body: "تُحسب رسوم الشحن الدولي بصورة منفصلة عن سعر المنتج. سنذكرها في عرض السعر الرسمي بعد تأكيد دولة أو منطقة الوجهة. سيتم توضيح شركة الشحن وطريقة الإرسال وإمكانية التتبع بشكل فردي وفقاً للطلب والوجهة." },
+      { title: "الرسوم الجمركية وضرائب الاستيراد", body: "يتحمل المشتري الرسوم الجمركية وضرائب الاستيراد ورسوم التخليص وأي رسوم مماثلة في بلد الوجهة. تختلف المبالغ حسب الدولة أو المنطقة وقد لا يمكن تحديدها مسبقاً. لا نتعهد بتغطية التكاليف الناتجة عن رفض الاستلام أو إعادة الشحنة بسبب الرسوم الجمركية." },
+      { title: "تأكيد المقاسات", body: "يرجى قياس أحجام الأظافر المطلوبة بالطريقة التي نقدمها وإرسالها وتأكيدها قبل بدء التصنيع. عادةً ما تترتب رسوم إضافية على إعادة التصنيع بسبب خطأ المشتري في القياس أو البيانات. إذا لم تكوني متأكدة من المقاس، يرجى التواصل معنا قبل بدء التصنيع." },
+      { title: "الإلغاء والتعديل والاسترداد", body: "يمكن الإلغاء قبل قبول عرض السعر الرسمي وإجراء الدفع. بعد الدفع أو بدء التصنيع، لا تُقبل عادةً طلبات الإلغاء أو الاسترداد أو التعديل لأسباب تعود إلى المشتري لأن المنتج مصنوع حسب الطلب. إذا وقع خطأ في التصنيع من جانبنا، أو اختلف المنتج بوضوح عن الطلب المؤكد، أو وصل تالفاً، فسنراجع الصور والتفاصيل ونوضح حلاً مناسباً بشكل فردي، مثل إعادة التصنيع أو الاسترداد. لا تشمل الخدمة المجانية التلف بعد الاستخدام أو التآكل الطبيعي أو أخطاء المقاسات التي يقدمها المشتري. تُراجع حوادث الشحن بعد التحقق من حالة التوصيل، ولا يكون الاسترداد تلقائياً." },
+    ],
+    processTitle: "خطوات الطلب", processSteps: ["1. إرسال استفسار عبر نموذج العملاء الدوليين", "2. تراجع Aily Nail Studio تفاصيل الطلب", "3. نؤكد التصميم والمقاسات ورسوم الشحن عبر البريد الإلكتروني", "4. نرسل عرض سعر رسمياً", "5. يوافق المشتري على العرض ونؤكد استلام الدفع", "6. يبدأ التصنيع", "7. نشحن الطلب بعد اكتماله"],
+  },
   heroTitle: "أظافر لاصقة مخصصة للعملاء الدوليين", heroDescription: "تستقبل هذه الصفحة طلبات استشارة الأظافر اللاصقة المخصصة والشحن الدولي.", paymentNotice: "الدفع عبر الإنترنت غير متاح حالياً. سنراجع طلبك ثم نرسل عرض السعر والخطوات التالية عبر البريد الإلكتروني.", localNote: "هذا النموذج مخصص لطلبات الأظافر اللاصقة الدولية. بعد مراجعة التفاصيل، سنرسل لك عرض السعر وتعليمات المتابعة.", japanLink: "Japan / الأظافر اللاصقة داخل اليابان",
   badges: ["🇯🇵 صُنعت في اليابان", "🌏 استشارات الشحن الدولي", "🔮 تصميم مستوحى من الحظ", "💎 تصميم مستوحى من المجوهرات"], quickLogin: "تعبئة سريعة", quickLoginDescription: "يمكنك المتابعة باستخدام Google لتعبئة الاسم والبريد الإلكتروني تلقائياً.", loggedInAs: "تم تسجيل الدخول باسم:", connecting: "جارٍ الاتصال...", continueGoogle: "المتابعة باستخدام Google",
-  portfolioTitle: "معرض التصاميم", portfolioDescription: "أظافر لاصقة مخصصة ومرسومة يدوياً في اليابان.", portfolioCaptions: ["شخصية أنمي", "رسم شخصيات", "أظافر مستوحاة من الحظ", "أظافر مستوحاة من المجوهرات", "مراحل الرسم اليدوي"], startingPrice: "الأسعار تبدأ من ¥15,000", worldwideAvailable: "نرحب بطلبات الشحن الدولي", requestCta: "✨ طلب استشارة لأظافر لاصقة مخصصة",
+  portfolioTitle: "معرض التصاميم", portfolioDescription: "أظافر لاصقة مخصصة ومرسومة يدوياً في اليابان.", portfolioCaptions: ["شخصية أنمي", "رسم شخصيات", "أظافر مستوحاة من الحظ", "أظافر مستوحاة من المجوهرات", "مراحل الرسم اليدوي"], startingPrice: "ظفران لاصقان ابتداءً من JPY 15,000", worldwideAvailable: "نرحب بطلبات الشحن الدولي", requestCta: "✨ طلب استشارة لأظافر لاصقة مخصصة",
   shippingTitle: "🌏 الشحن الدولي متاح حسب الطلب", shippingDescription: "نصمم أظافر لاصقة مخصصة مستوحاة من الأنمي والحظ وSanmeigaku والمجوهرات والمشاهير والألعاب وحفلات الزفاف والأفكار الأصلية. أرسل طلبك وسيرد فريقنا عبر البريد الإلكتروني بعرض سعر والخطوات التالية.", categories: ["أنمي / شخصيات", "الحظ / Sanmeigaku", "مستوحى من المجوهرات", "تصميم فاخر مخصص"], shippingTo: "وجهات الشحن المتاحة حسب الطلب", countries: "الولايات المتحدة / كندا / فرنسا / ألمانيا / كوريا / تايلاند / سنغافورة / أستراليا وغيرها", paymentShort: "الدفع عبر الإنترنت غير متاح حالياً. يرجى إرسال طلب الاستشارة أولاً، وسنتواصل معك عبر البريد الإلكتروني.",
   whatWouldYouLike: "ما نوع التصميم الذي ترغبين فيه؟", salonTitle: "💅 حجز صالون في فوكوكا", salonDescription: "احجزي زيارة إلى صالوننا في فوكوكا لشخص واحد أو شخصين.", language: "لغة العرض", guests: "عدد الزوار", person: "شخص", people: "أشخاص", menu: "الخدمة", minutes: "دقيقة", dateAndTime: "التاريخ والوقت", date: "التاريخ", time: "الوقت", selectTime: "يرجى اختيار الوقت",
   customerInformation: "بيانات العميل", name: "الاسم", email: "البريد الإلكتروني", country: "الدولة / المنطقة", instagram: "معرّف Instagram", orderType: "نوع الطلب", shippingInformation: "عنوان الشحن", shippingInformationDescription: "يرجى إدخال عنوان الشحن الدولي كاملاً.", recipientName: "اسم المستلم", address: "العنوان", city: "المدينة", state: "الولاية / المنطقة", postalCode: "الرمز البريدي", phone: "رقم الهاتف", referenceImages: "الصور المرجعية", referenceImagesHelp: "يمكنك رفع ما يصل إلى 3 صور مرجعية.", requestNote: "الطلب / ملاحظة",

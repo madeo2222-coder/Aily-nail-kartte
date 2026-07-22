@@ -1043,6 +1043,50 @@ export default function InboundReservePage() {
           </div>
         </section>
 
+        {serviceType === "tips" ? (
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
+            <h2 className="text-lg font-black text-slate-900">
+            {copy.orderGuide.title}
+          </h2>
+
+          <div className="mt-4 rounded-2xl bg-pink-50 p-4">
+            <h3 className="font-black text-pink-800">
+              {copy.orderGuide.priceTitle}
+            </h3>
+            <p dir="auto" className="mt-2 text-base font-black text-pink-700">
+              {copy.orderGuide.priceLead}
+            </p>
+            <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+              {copy.orderGuide.priceDetails.map((detail) => (
+                <p key={detail}>• {detail}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {copy.orderGuide.sections.map((section) => (
+              <article key={section.title} className="rounded-2xl bg-slate-50 p-4">
+                <h3 className="font-black text-slate-900">{section.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  {section.body}
+                </p>
+              </article>
+            ))}
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-purple-100 bg-purple-50 p-4">
+            <h3 className="font-black text-purple-800">
+              {copy.orderGuide.processTitle}
+            </h3>
+            <div className="mt-3 space-y-2 text-sm leading-6 text-slate-700">
+              {copy.orderGuide.processSteps.map((step) => (
+                <p key={step}>{step}</p>
+              ))}
+            </div>
+          </div>
+          </section>
+        ) : null}
+
         {serviceType === "salon" ? (
           <section className="rounded-3xl border bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
@@ -1106,11 +1150,11 @@ export default function InboundReservePage() {
 
             <div className="mt-4 rounded-2xl border border-pink-100 bg-white p-4">
               <div className="text-sm font-black text-slate-900">
-                {copy.howItWorks}
+                {copy.orderGuide.processTitle}
               </div>
 
               <div className="mt-3 space-y-2 text-sm text-slate-700">
-                {copy.steps.map((step) => (
+                {copy.orderGuide.processSteps.map((step) => (
                   <div key={step}>{step}</div>
                 ))}
               </div>
