@@ -99,8 +99,17 @@ function isAllowedCustomerPath(pathname: string) {
 function isAllowedStaffPath(pathname: string) {
   return (
     pathname === "/login" ||
+    pathname === "/auth/callback" ||
+    pathname === "/staff/setup-password" ||
+    pathname === "/staff/auth-error" ||
+    pathname === "/api/staff-auth/login" ||
+    pathname === "/api/staff-auth/logout" ||
     pathname.startsWith("/api/staff-login/")
   );
+}
+
+function isServerAuthenticatedStaffPath(pathname: string) {
+  return pathname === "/dashboard" || pathname === "/owner-dashboard";
 }
 
 function isBlockedApiPathForCustomer(pathname: string) {
@@ -114,6 +123,7 @@ function isStaffProtectedPath(pathname: string) {
   if (isStaticAsset(pathname)) return false;
   if (isAllowedCustomerPath(pathname)) return false;
   if (isAllowedStaffPath(pathname)) return false;
+  if (isServerAuthenticatedStaffPath(pathname)) return false;
 
   return true;
 }
@@ -177,6 +187,7 @@ export function middleware(request: NextRequest) {
   if (
     staffLoggedIn &&
     isOwnerOnlyPath(pathname) &&
+    !isServerAuthenticatedStaffPath(pathname) &&
     staffRole !== "owner"
   ) {
     return NextResponse.redirect(
