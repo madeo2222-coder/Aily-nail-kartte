@@ -539,7 +539,11 @@ export default function ReservationsCalendarPage() {
         .select("*")
         .order("start_at", { ascending: true }),
       supabase.from("customers").select("id, name"),
-      supabase.from("staffs").select("id, name"),
+      supabase
+        .from("staffs")
+        .select("id, name")
+        .eq("role", "staff")
+        .eq("is_active", true),
       supabase
         .from("visits")
         .select("customer_id, visit_date, menu_name, menu, memo, next_proposal")

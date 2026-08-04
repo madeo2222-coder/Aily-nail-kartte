@@ -365,6 +365,8 @@ export default function EditReservationPage() {
         supabase
           .from("staffs")
           .select("id, name, salon_id")
+          .eq("role", "staff")
+          .eq("is_active", true)
           .order("created_at", { ascending: true }),
       ]);
 

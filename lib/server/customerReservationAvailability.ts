@@ -130,6 +130,8 @@ export async function getCustomerReservationAvailability({
       .from("staffs")
       .select("id, name")
       .eq("salon_id", salonId)
+      .eq("role", "staff")
+      .eq("is_active", true)
       .eq("customer_booking_enabled", true)
       .order("created_at", { ascending: true }),
     supabase

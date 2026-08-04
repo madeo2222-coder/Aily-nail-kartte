@@ -237,7 +237,9 @@ export async function POST(request: Request) {
     const { data: staffData, error: staffError } = await supabase
       .from("staffs")
       .select("id, name, salon_id")
-      .eq("salon_id", salonId);
+      .eq("salon_id", salonId)
+      .eq("role", "staff")
+      .eq("is_active", true);
 
     if (staffError) {
       return NextResponse.json({ ok: false, error: staffError.message }, { status: 500 });

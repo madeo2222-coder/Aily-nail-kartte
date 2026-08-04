@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
       .from("staffs")
       .select("id, name")
       .eq("salon_id", salonId)
+      .eq("role", "staff")
+      .eq("is_active", true)
       .eq("customer_booking_enabled", true)
       .order("name", { ascending: true });
 
