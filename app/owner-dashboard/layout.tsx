@@ -2,10 +2,11 @@ import { ReactNode } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
+import {
+  STAFF_SESSION_COOKIE,
+  verifyLegacyStaffSession,
+} from "@/lib/auth/staffLegacySession";
 import { authenticateStaff } from "@/lib/server/staffAuthentication";
-
-const STAFF_SESSION_COOKIE = "staff_session";
-const STAFF_ROLE_COOKIE = "staff_role";
 
 type OwnerDashboardLayoutProps = {
   children: ReactNode;
@@ -15,17 +16,18 @@ export default async function OwnerDashboardLayout({
   children,
 }: OwnerDashboardLayoutProps) {
   const cookieStore = await cookies();
-  const hasLegacyStaffSession = cookieStore.has(STAFF_SESSION_COOKIE);
-  const legacyRole = cookieStore.get(STAFF_ROLE_COOKIE)?.value;
+  const legacyStaffSession = await verifyLegacyStaffSession(
+    cookieStore.get(STAFF_SESSION_COOKIE)?.value
+  );
 
-  if (hasLegacyStaffSession && legacyRole === "owner") {
+  if (legacyStaffSession?.role === "owner") {
     return children;
   }
 
   const staffAuthentication = await authenticateStaff();
 
   if (!staffAuthentication.ok) {
-    redirect(hasLegacyStaffSession ? "/dashboard" : "/login");
+    redirect(legacyStaffSession ? "/dashboard" : "/login");
   }
 
   if (staffAuthentication.staff.role !== "owner") {

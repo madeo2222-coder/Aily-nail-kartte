@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  STAFF_SESSION_COOKIE,
+  verifyLegacyStaffSession,
+} from "@/lib/auth/staffLegacySession";
+
 const CUSTOMER_SESSION_COOKIE = "customer_line_session";
-const STAFF_SESSION_COOKIE = "staff_session";
-const STAFF_ROLE_COOKIE = "staff_role";
 
 const OWNER_ONLY_PATHS = [
   "/owner-dashboard",
@@ -21,19 +24,6 @@ const OWNER_ONLY_PATHS = [
 
 function hasCustomerSession(request: NextRequest) {
   return request.cookies.has(CUSTOMER_SESSION_COOKIE);
-}
-
-function hasStaffSession(request: NextRequest) {
-  return request.cookies.has(STAFF_SESSION_COOKIE);
-}
-
-function getStaffRole(request: NextRequest) {
-  const role = request.cookies.get(STAFF_ROLE_COOKIE)?.value;
-
-  if (role === "owner") return "owner";
-  if (role === "staff") return "staff";
-
-  return null;
 }
 
 function isStaticAsset(pathname: string) {
@@ -135,7 +125,7 @@ function isOwnerOnlyPath(pathname: string) {
   );
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isStaticAsset(pathname)) {
@@ -143,8 +133,11 @@ export function middleware(request: NextRequest) {
   }
 
   const customerLoggedIn = hasCustomerSession(request);
-  const staffLoggedIn = hasStaffSession(request);
-  const staffRole = getStaffRole(request);
+  const legacyStaffSession = await verifyLegacyStaffSession(
+    request.cookies.get(STAFF_SESSION_COOKIE)?.value
+  );
+  const staffLoggedIn = Boolean(legacyStaffSession);
+  const staffRole = legacyStaffSession?.role ?? null;
 
   if (customerLoggedIn) {
     if (isBlockedApiPathForCustomer(pathname)) {

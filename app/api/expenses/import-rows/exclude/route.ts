@@ -18,7 +18,7 @@ function getSupabaseAdmin() {
 }
 
 export async function POST(req: NextRequest) {
-  const authError = requireStaffSession(req);
+  const authError = await requireStaffSession(req);
   if (authError) return authError;
 
   try {

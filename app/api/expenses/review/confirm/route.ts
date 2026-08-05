@@ -104,7 +104,7 @@ function toNumber(value: unknown): number | null {
 }
 
 export async function POST(request: NextRequest) {
-  const authError = requireStaffSession(request);
+  const authError = await requireStaffSession(request);
   if (authError) return authError;
 
   try {

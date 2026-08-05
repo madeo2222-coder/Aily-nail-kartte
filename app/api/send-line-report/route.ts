@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 export async function POST(req: NextRequest) {
-  const authError = requireStaffSession(req);
+  const authError = await requireStaffSession(req);
   if (authError) return authError;
 
   try {

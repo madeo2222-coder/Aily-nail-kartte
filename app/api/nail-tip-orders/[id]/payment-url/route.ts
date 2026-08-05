@@ -77,7 +77,7 @@ export async function POST(
   let stage = "request-validation";
 
   try {
-    const authError = requireStaffSession(request);
+    const authError = await requireStaffSession(request);
 
     if (authError) {
       return authError;

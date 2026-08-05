@@ -1,9 +1,11 @@
 import { google } from "googleapis";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import {
+  STAFF_SESSION_COOKIE,
+  verifyLegacyStaffSession,
+} from "@/lib/auth/staffLegacySession";
 import { syncHpbMailText } from "@/lib/hpb-mail-sync";
-
-const STAFF_SESSION_COOKIE = "staff_session";
 
 function decodeBase64Url(value: string) {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -181,9 +183,11 @@ export async function GET(request: Request) {
 export async function POST() {
   try {
     const cookieStore = await cookies();
-    const hasStaffSession = cookieStore.has(STAFF_SESSION_COOKIE);
+    const staffSession = await verifyLegacyStaffSession(
+      cookieStore.get(STAFF_SESSION_COOKIE)?.value
+    );
 
-    if (!hasStaffSession) {
+    if (!staffSession) {
       return NextResponse.json(
         { ok: false, error: "Unauthorized" },
         { status: 401 }

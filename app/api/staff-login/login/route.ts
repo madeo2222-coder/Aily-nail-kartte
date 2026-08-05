@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const STAFF_SESSION_COOKIE = "staff_session";
-const STAFF_ROLE_COOKIE = "staff_role";
+import {
+  createLegacyStaffSession,
+  STAFF_ROLE_COOKIE,
+  STAFF_SESSION_COOKIE,
+} from "@/lib/auth/staffLegacySession";
 
 type LoginRole = "staff" | "owner";
 
@@ -72,6 +75,14 @@ export async function POST(request: NextRequest) {
     }
 
     const redirectTo = getRedirectPath(role);
+    const staffSession = await createLegacyStaffSession(role);
+
+    if (!staffSession) {
+      return NextResponse.json(
+        { ok: false, error: "ログインに失敗しました。" },
+        { status: 500 }
+      );
+    }
 
     const response = NextResponse.json({
       ok: true,
@@ -89,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     response.cookies.set(
       STAFF_SESSION_COOKIE,
-      "active",
+      staffSession,
       cookieOptions
     );
 

@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const STAFF_SESSION_COOKIE = "staff_session";
+import {
+  STAFF_SESSION_COOKIE,
+  verifyLegacyStaffSession,
+} from "@/lib/auth/staffLegacySession";
 
-export function requireStaffSession(request: NextRequest) {
+export async function requireStaffSession(request: NextRequest) {
   const staffSession = request.cookies.get(STAFF_SESSION_COOKIE)?.value;
 
-  if (!staffSession) {
+  if (!(await verifyLegacyStaffSession(staffSession))) {
     return NextResponse.json(
       { error: "スタッフ認証が必要です。" },
       { status: 401 }

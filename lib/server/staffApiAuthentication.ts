@@ -3,12 +3,13 @@ import "server-only";
 import { cookies } from "next/headers";
 
 import {
+  STAFF_SESSION_COOKIE,
+  verifyLegacyStaffSession,
+} from "@/lib/auth/staffLegacySession";
+import {
   authenticateStaff,
   type StaffRole,
 } from "@/lib/server/staffAuthentication";
-
-const STAFF_SESSION_COOKIE = "staff_session";
-const STAFF_ROLE_COOKIE = "staff_role";
 
 type SupabaseStaffApiPrincipal = {
   authenticationMode: "supabase";
@@ -39,10 +40,6 @@ export type StaffApiAuthenticationOptions = {
 export type StaffApiAuthenticationResult =
   | { ok: true; principal: StaffApiPrincipal }
   | { ok: false; status: 401 | 403 | 500; error: string };
-
-function isStaffRole(value: string | undefined): value is StaffRole {
-  return value === "owner" || value === "staff";
-}
 
 export async function authenticateStaffApi(
   options: StaffApiAuthenticationOptions = {}
@@ -99,8 +96,9 @@ export async function authenticateStaffApi(
 
   const cookieStore = await cookies();
   const staffSession = cookieStore.get(STAFF_SESSION_COOKIE)?.value;
+  const legacySession = await verifyLegacyStaffSession(staffSession);
 
-  if (staffSession !== "active") {
+  if (!legacySession) {
     return {
       ok: false,
       status: 401,
@@ -116,16 +114,7 @@ export async function authenticateStaffApi(
     };
   }
 
-  const storedRole = cookieStore.get(STAFF_ROLE_COOKIE)?.value;
-  if (!isStaffRole(storedRole)) {
-    return {
-      ok: false,
-      status: 403,
-      error: "この操作を行う権限がありません。",
-    };
-  }
-
-  const legacyRole = storedRole;
+  const legacyRole = legacySession.role;
 
   if (allowedRoles && !allowedRoles.includes(legacyRole)) {
     return {

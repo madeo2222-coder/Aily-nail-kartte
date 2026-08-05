@@ -51,7 +51,7 @@ function toReviewStatus(value: unknown): ReviewStatus | undefined {
 }
 
 export async function PATCH(request: NextRequest) {
-  const authError = requireStaffSession(request);
+  const authError = await requireStaffSession(request);
   if (authError) return authError;
 
   try {
