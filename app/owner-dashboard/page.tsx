@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 
 type OwnerMenuItem = {
   title: string;
@@ -190,13 +191,41 @@ const menuSections: OwnerMenuSection[] = [
 ];
 
 export default function OwnerDashboardPage() {
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutErrorMessage, setLogoutErrorMessage] = useState("");
+
   async function handleStaffLogout() {
+    if (loggingOut) return;
+
+    setLoggingOut(true);
+    setLogoutErrorMessage("");
+
     try {
-      await fetch("/api/staff-login/logout", {
+      const response = await fetch("/api/staff-auth/logout", {
         method: "POST",
       });
-    } finally {
+
+      const json: unknown = await response.json();
+
+      if (
+        !response.ok ||
+        typeof json !== "object" ||
+        json === null ||
+        Array.isArray(json) ||
+        !("ok" in json) ||
+        json.ok !== true ||
+        !("redirectTo" in json) ||
+        json.redirectTo !== "/login"
+      ) {
+        setLogoutErrorMessage("ログアウトに失敗しました。");
+        return;
+      }
+
       window.location.href = "/login";
+    } catch {
+      setLogoutErrorMessage("ログアウトに失敗しました。");
+    } finally {
+      setLoggingOut(false);
     }
   }
 
@@ -237,11 +266,18 @@ export default function OwnerDashboardPage() {
               <button
                 type="button"
                 onClick={handleStaffLogout}
+                disabled={loggingOut}
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/30 bg-white/10 px-3 py-3 text-center text-sm font-bold text-white backdrop-blur"
               >
-                ログアウト
+                {loggingOut ? "ログアウト中..." : "ログアウト"}
               </button>
             </div>
+
+            {logoutErrorMessage ? (
+              <p className="text-sm font-bold text-rose-100 lg:text-right">
+                {logoutErrorMessage}
+              </p>
+            ) : null}
           </div>
         </section>
 

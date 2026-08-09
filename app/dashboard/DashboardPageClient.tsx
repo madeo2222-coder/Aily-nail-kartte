@@ -359,18 +359,45 @@ export default function DashboardPageClient() {
   const [todayReservations, setTodayReservations] = useState<
     TodayReservation[]
   >([]);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutErrorMessage, setLogoutErrorMessage] = useState("");
 
   useEffect(() => {
     void fetchDashboardData();
   }, []);
 
   async function handleStaffLogout() {
+    if (loggingOut) return;
+
+    setLoggingOut(true);
+    setLogoutErrorMessage("");
+
     try {
-      await fetch("/api/staff-login/logout", {
+      const response = await fetch("/api/staff-auth/logout", {
         method: "POST",
       });
-    } finally {
+
+      const json: unknown = await response.json();
+
+      if (
+        !response.ok ||
+        typeof json !== "object" ||
+        json === null ||
+        Array.isArray(json) ||
+        !("ok" in json) ||
+        json.ok !== true ||
+        !("redirectTo" in json) ||
+        json.redirectTo !== "/login"
+      ) {
+        setLogoutErrorMessage("ログアウトに失敗しました。");
+        return;
+      }
+
       window.location.href = "/login";
+    } catch {
+      setLogoutErrorMessage("ログアウトに失敗しました。");
+    } finally {
+      setLoggingOut(false);
     }
   }
 
@@ -649,11 +676,18 @@ export default function DashboardPageClient() {
               <button
                 type="button"
                 onClick={handleStaffLogout}
+                disabled={loggingOut}
                 className="inline-flex min-h-12 items-center justify-center rounded-2xl border border-white/40 bg-white/15 px-3 py-3 text-center text-sm font-bold text-white backdrop-blur"
               >
-                ログアウト
+                {loggingOut ? "ログアウト中..." : "ログアウト"}
               </button>
             </div>
+
+            {logoutErrorMessage ? (
+              <p className="mt-3 text-sm font-bold text-rose-100">
+                {logoutErrorMessage}
+              </p>
+            ) : null}
           </div>
         </section>
 
