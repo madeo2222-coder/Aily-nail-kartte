@@ -90,6 +90,7 @@ function isAllowedStaffPath(pathname: string) {
   return (
     pathname === "/login" ||
     pathname === "/auth/callback" ||
+    pathname === "/staff/verify-google" ||
     pathname === "/staff/setup-password" ||
     pathname === "/staff/auth-error" ||
     pathname === "/api/staff-auth/login" ||
