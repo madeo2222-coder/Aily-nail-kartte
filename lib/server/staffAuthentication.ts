@@ -1,5 +1,7 @@
 import "server-only";
 
+import { isAuthSessionMissingError } from "@supabase/supabase-js";
+
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type StaffRole = "owner" | "staff";
@@ -71,7 +73,11 @@ export async function authenticateStaff(): Promise<StaffAuthenticationResult> {
     } = await supabase.auth.getUser();
 
     if (!user) {
-      if (authError && !isUnauthenticatedStatus(authError.status)) {
+      if (
+        authError &&
+        !isAuthSessionMissingError(authError) &&
+        !isUnauthenticatedStatus(authError.status)
+      ) {
         return {
           ok: false,
           category: "internal_error",
