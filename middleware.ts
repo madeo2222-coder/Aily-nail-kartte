@@ -95,6 +95,7 @@ function isAllowedStaffPath(pathname: string) {
     pathname === "/staff/auth-error" ||
     pathname === "/api/staff-auth/login" ||
     pathname === "/api/staff-auth/logout" ||
+    pathname === "/api/visits" ||
     pathname.startsWith("/api/staff-login/")
   );
 }
