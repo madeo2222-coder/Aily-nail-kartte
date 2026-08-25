@@ -208,7 +208,7 @@ function parseRequestBody(value: unknown) {
     typeof price !== "number" ||
     !Number.isFinite(price) ||
     !Number.isSafeInteger(price) ||
-    price < 0 ||
+    price < 1 ||
     price > MAX_POSTGRES_INTEGER
   ) {
     return { ok: false as const };
