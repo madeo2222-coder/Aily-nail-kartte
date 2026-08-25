@@ -45,7 +45,6 @@ export async function GET(request: Request) {
         `
         id,
         design_request,
-        payment_url,
         payment_due_at,
         payment_status,
         status,

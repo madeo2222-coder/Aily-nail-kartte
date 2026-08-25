@@ -261,7 +261,6 @@ export default function CustomerAppMyPage() {
 type NailTipOrderRow = {
   id: string;
   design_request: string | null;
-  payment_url: string | null;
   payment_due_at: string | null;
   status: string | null;
   created_at: string | null;
@@ -373,7 +372,6 @@ const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
     id,
     customer_id,
     design_request,
-    payment_url,
     payment_due_at,
     status,
     created_at,
@@ -803,16 +801,6 @@ if (nailTipOrderError) {
     </div>
   </div>
 ) : null}
-          {order.payment_url ? (
-            <a
-              href={order.payment_url}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 block rounded-xl bg-violet-600 px-3 py-2 text-center text-sm font-bold text-white"
-            >
-              お支払いはこちら
-            </a>
-          ) : null}
         </div>
       ))}
     </div>

@@ -23,7 +23,6 @@ type InboundNailTipRequestRow = {
   image_urls: string[] | null;
   status: string | null;
   quote_amount: number | null;
-  payment_url: string | null;
   payment_status: string | null;
   shipping_company: string | null;
   tracking_number: string | null;
@@ -371,22 +370,6 @@ export default async function InboundNailTipRequestsPage({
                     </div>
                   </div>
 
-                  {request.payment_url ? (
-                    <div className="mt-4 rounded-2xl bg-emerald-50 p-4">
-                      <div className="text-xs font-bold text-emerald-700">
-                        DG決済URL
-                      </div>
-                      <a
-                        href={request.payment_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-2 block break-all text-sm font-bold text-emerald-900 underline"
-                      >
-                        {request.payment_url}
-                      </a>
-                    </div>
-                  ) : null}
-
                   <div className="mt-4 rounded-2xl bg-pink-50 p-4">
                     <div className="text-xs font-bold text-pink-600">
                       相談内容
@@ -441,10 +424,10 @@ export default async function InboundNailTipRequestsPage({
                   )}
 
                   {request.status === "quoted" && (
-                    <PaymentUrlForm
-                      requestId={request.id}
-                      defaultUrl={request.payment_url}
-                    />
+                    <>
+                      <PaymentUrlForm />
+                      <SendQuoteButton requestId={request.id} />
+                    </>
                   )}
 
                   {request.status === "payment_waiting" && (
