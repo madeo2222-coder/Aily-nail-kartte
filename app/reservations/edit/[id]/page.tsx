@@ -997,3 +997,129 @@ export default function EditReservationPage() {
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   状態
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as ReservationStatus)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                >
+                  {STATUS_OPTIONS.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  「予約確定」はデータ上は confirmed として保存され、顧客マイページでは予約確定と表示されます。
+                </p>
+              </div>
+
+              {status === "キャンセル" &&
+              !isExternalBlock &&
+              !wasInitiallyCancelled ? (
+                <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50/60 p-4">
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">
+                      キャンセル通知
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-600">
+                      キャンセル確定後、LINE連携済みのお客様へ通知します。未連携や送信失敗の場合も、予約のキャンセルは取り消されません。
+                    </p>
+                  </div>
+
+                  <label className="flex items-start gap-3 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={sendCancellationLine}
+                      onChange={(e) => setSendCancellationLine(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-rose-300 text-rose-600"
+                    />
+                    <span>顧客へキャンセルLINEを送信する</span>
+                  </label>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      キャンセル理由
+                    </label>
+                    <select
+                      value={cancellationReason}
+                      onChange={(e) =>
+                        setCancellationReason(e.target.value as CancellationReason)
+                      }
+                      className="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                    >
+                      <option value="overlap">予約枠の重複</option>
+                      <option value="customer_request">お客様のご都合</option>
+                      <option value="salon_convenience">店舗の都合</option>
+                      <option value="other">その他</option>
+                    </select>
+                  </div>
+
+                  {cancellationReason === "other" ? (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        理由の詳細
+                      </label>
+                      <input
+                        type="text"
+                        value={cancellationReasonText}
+                        onChange={(e) => setCancellationReasonText(e.target.value)}
+                        maxLength={200}
+                        placeholder="キャンセル理由を入力してください"
+                        className="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  メモ
+                </label>
+                <textarea
+                  rows={5}
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  placeholder="スタッフ用メモ"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                />
+                {galleryReference.hasGallery ? (
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    参考写真URLは上に画像表示しています。保存時には内部メモとして残ります。
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <button
+                type="submit"
+                disabled={saving || confirming}
+                className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {saving ? "更新中..." : "更新する"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting || confirming || saving}
+                className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
+              >
+                {deleting ? "削除中..." : isExternalBlock ? "ブロックを削除する" : "削除する"}
+              </button>
+
+              <Link
+                href={backHref}
+                className="rounded-2xl border border-rose-200 bg-white py-4 text-center text-sm font-bold text-slate-700"
+              >
+                キャンセル
+              </Link>
+            </div>
+          </form>
+        )}
+      </div>
+    </main>
+  );
+}
