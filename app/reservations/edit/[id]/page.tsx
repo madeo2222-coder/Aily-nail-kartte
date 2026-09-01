@@ -57,6 +57,23 @@ type ReservationStatus =
   | "完了"
   | "キャンセル";
 
+type CancellationReason =
+  | "overlap"
+  | "customer_request"
+  | "salon_convenience"
+  | "other";
+
+type CancellationResult = {
+  ok?: boolean;
+  cancelled?: boolean;
+  alreadyCancelled?: boolean;
+  error?: string;
+  line?: {
+    status?: "sent" | "skipped" | "not_linked" | "failed";
+    message?: string;
+  };
+};
+
 const STATUS_OPTIONS: { value: ReservationStatus; label: string }[] = [
   { value: "予約", label: "予約申請中" },
   { value: "confirmed", label: "予約確定" },
@@ -325,6 +342,11 @@ export default function EditReservationPage() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [status, setStatus] = useState<ReservationStatus>("予約");
+  const [wasInitiallyCancelled, setWasInitiallyCancelled] = useState(false);
+  const [sendCancellationLine, setSendCancellationLine] = useState(false);
+  const [cancellationReason, setCancellationReason] =
+    useState<CancellationReason>("overlap");
+  const [cancellationReasonText, setCancellationReasonText] = useState("");
   const [memo, setMemo] = useState("");
   const [galleryReference, setGalleryReference] = useState<GalleryReference>({
     hasGallery: false,
@@ -398,6 +420,7 @@ export default function EditReservationPage() {
     setStartTime(extractTime(reservation.start_at));
     setEndTime(extractTime(reservation.end_at));
     setStatus(normalizeStatus(reservation.status));
+    setWasInitiallyCancelled(isCancelledStatus(reservation.status));
     setGalleryReference(nextGalleryReference);
     setMemo(removeGalleryReferenceLines(rawMemo));
 
@@ -575,10 +598,70 @@ export default function EditReservationPage() {
   }
 }
 
+  async function cancelReservation() {
+    if (cancellationReason === "other" && !cancellationReasonText.trim()) {
+      setErrorMessage("キャンセル理由を入力してください");
+      return;
+    }
+
+    const lineConfirmation = sendCancellationLine
+      ? "顧客へのキャンセルLINE送信を試みます。"
+      : "顧客へキャンセルLINEは送信しません。";
+    const confirmed = window.confirm(
+      `この予約をキャンセルしますか？\n${lineConfirmation}`
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(`/api/reservations/${reservationId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sendLine: sendCancellationLine,
+          reason: cancellationReason,
+          reasonText: cancellationReasonText,
+        }),
+      });
+      const result = (await response.json()) as CancellationResult;
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(result.error || "予約のキャンセルに失敗しました");
+        return;
+      }
+
+      setStatus("キャンセル");
+      setWasInitiallyCancelled(true);
+      setSuccessMessage(
+        result.line?.message ||
+          (result.alreadyCancelled
+            ? "予約は既にキャンセル済みです。LINEは再送していません。"
+            : "予約をキャンセルしました。")
+      );
+    } catch {
+      setErrorMessage("予約のキャンセル処理に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (!reservationId) return;
+
+    if (
+      isCancelledStatus(status) &&
+      !isExternalBlock &&
+      !wasInitiallyCancelled
+    ) {
+      await cancelReservation();
+      return;
+    }
 
     const dateTime = validateRequiredFields();
     if (!dateTime) return;
@@ -914,70 +997,3 @@ export default function EditReservationPage() {
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   状態
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as ReservationStatus)}
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                >
-                  {STATUS_OPTIONS.map((item) => (
-                    <option key={item.value} value={item.value}>
-                      {item.label}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-2 text-xs leading-5 text-slate-500">
-                  「予約確定」はデータ上は confirmed として保存され、顧客マイページでは予約確定と表示されます。
-                </p>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  メモ
-                </label>
-                <textarea
-                  rows={5}
-                  value={memo}
-                  onChange={(e) => setMemo(e.target.value)}
-                  placeholder="スタッフ用メモ"
-                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-                />
-                {galleryReference.hasGallery ? (
-                  <p className="mt-2 text-xs leading-5 text-slate-500">
-                    参考写真URLは上に画像表示しています。保存時には内部メモとして残ります。
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-3">
-              <button
-                type="submit"
-                disabled={saving || confirming}
-                className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
-              >
-                {saving ? "更新中..." : "更新する"}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleting || confirming || saving}
-                className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
-              >
-                {deleting ? "削除中..." : isExternalBlock ? "ブロックを削除する" : "削除する"}
-              </button>
-
-              <Link
-                href={backHref}
-                className="rounded-2xl border border-rose-200 bg-white py-4 text-center text-sm font-bold text-slate-700"
-              >
-                キャンセル
-              </Link>
-            </div>
-          </form>
-        )}
-      </div>
-    </main>
-  );
-}
