@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 
 import { authenticateStaff } from "@/lib/server/staffAuthentication";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createLegacyStaffSession,
+  STAFF_ROLE_COOKIE,
+  STAFF_SESSION_COOKIE,
+} from "@/lib/auth/staffLegacySession";
 
 const MAXIMUM_EMAIL_LENGTH = 320;
 const MAXIMUM_PASSWORD_LENGTH = 1024;
@@ -116,12 +121,39 @@ export async function POST(request: Request) {
     const { role } = staffAuthentication.staff;
     const redirectTo =
       role === "owner" ? "/owner-dashboard" : "/dashboard";
+    const staffSession = await createLegacyStaffSession(role);
 
-    return NextResponse.json({
+    if (!staffSession) {
+      return internalErrorResponse();
+    }
+
+    const response = NextResponse.json({
       ok: true,
       role,
       redirectTo,
     });
+
+    const cookieOptions = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax" as const,
+      path: "/",
+      maxAge: 60 * 60 * 12,
+    };
+
+    response.cookies.set(
+      STAFF_SESSION_COOKIE,
+      staffSession,
+      cookieOptions
+    );
+
+    response.cookies.set(
+      STAFF_ROLE_COOKIE,
+      role,
+      cookieOptions
+    );
+
+    return response;
   } catch {
     return internalErrorResponse();
   }
