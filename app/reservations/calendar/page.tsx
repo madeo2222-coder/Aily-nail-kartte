@@ -192,6 +192,11 @@ function timeTextToMinute(time: string) {
   return h * 60 + m;
 }
 
+function getContractorStaffName(memo: string | null) {
+  const matched = memo?.match(/(?:^|\n)施術スタッフ[：:]\s*(.+)/);
+  return matched?.[1]?.trim() || "";
+}
+
 function addDaysText(dateText: string, days: number) {
   const date = new Date(`${dateText}T00:00:00+09:00`);
   date.setDate(date.getDate() + days);
@@ -770,11 +775,14 @@ export default function ReservationsCalendarPage() {
         : "指名なし";
       const source = block.source || "外部";
       const title = block.title || `${source}予約`;
+      const isContractorBooking =
+        staffName === "業務委託" || source === "業務委託";
+      const contractorStaffName = getContractorStaffName(block.memo);
 
       return {
         id: `external-${block.id}`,
         customerId: null,
-        customerName: source,
+        customerName: isContractorBooking ? title : source,
         visitCount: 0,
         allergy: "",
         caution: "",
@@ -783,9 +791,11 @@ export default function ReservationsCalendarPage() {
         nextProposal: "",
         staffId,
         staffName,
-        menuName: title,
+        menuName: isContractorBooking
+          ? `施術：${contractorStaffName || "スタッフ名未入力"}`
+          : title,
         status: "外部ブロック",
-        source,
+        source: isContractorBooking ? "業務委託" : source,
         memo: [source, title, block.memo || "", "外部ブロック"]
           .filter(Boolean)
           .join(" "),
