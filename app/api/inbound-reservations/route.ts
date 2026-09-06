@@ -239,7 +239,8 @@ export async function POST(request: Request) {
       .select("id, name, salon_id")
       .eq("salon_id", salonId)
       .eq("role", "staff")
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .eq("customer_booking_enabled", true);
 
     if (staffError) {
       return NextResponse.json({ ok: false, error: staffError.message }, { status: 500 });
