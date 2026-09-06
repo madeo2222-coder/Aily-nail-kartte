@@ -41,12 +41,17 @@ export default function ExternalCalendarBlocksPage() {
   const [endTime, setEndTime] = useState("11:00");
   const [title, setTitle] = useState("");
   const [memo, setMemo] = useState("");
+  const [contractorStaffName, setContractorStaffName] = useState("");
+
+  const selectedStaff = staffs.find((staff) => staff.id === staffId);
+  const isContractorBooking = selectedStaff?.name?.trim() === "業務委託";
 
   useEffect(() => {
     async function loadStaffs() {
       const { data } = await supabase
         .from("staffs")
         .select("id,name")
+        .eq("is_active", true)
         .order("name");
 
       setStaffs((data || []) as StaffRow[]);
@@ -66,6 +71,11 @@ export default function ExternalCalendarBlocksPage() {
       return;
     }
 
+    if (isContractorBooking && (!title.trim() || !contractorStaffName.trim())) {
+      alert("お客さま名と施術スタッフ名を入力してください");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -75,13 +85,15 @@ export default function ExternalCalendarBlocksPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          source,
+          source: isContractorBooking ? "業務委託" : source,
           staffId,
           date,
           startTime,
           endTime,
           title,
-          memo,
+          memo: isContractorBooking
+            ? `施術スタッフ：${contractorStaffName.trim()}`
+            : memo,
         }),
       });
 
@@ -95,6 +107,7 @@ export default function ExternalCalendarBlocksPage() {
 
       setTitle("");
       setMemo("");
+      setContractorStaffName("");
     } catch (error) {
       console.error(error);
 
@@ -115,22 +128,28 @@ export default function ExternalCalendarBlocksPage() {
       </h1>
 
       <div className="space-y-4 rounded-2xl border bg-white p-4">
-        <div>
-          <label className="mb-2 block text-sm font-medium">
-            予約元
-          </label>
+        {!isContractorBooking ? (
+          <div>
+            <label className="mb-2 block text-sm font-medium">
+              予約元
+            </label>
 
-          <select
-            value={source}
-            onChange={(e) => setSource(e.target.value)}
-            className="w-full rounded-xl border p-3"
-          >
-            <option>HPB</option>
-            <option>ミニモ</option>
-            <option>電話</option>
-            <option>その他</option>
-          </select>
-        </div>
+            <select
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              className="w-full rounded-xl border p-3"
+            >
+              <option>HPB</option>
+              <option>ミニモ</option>
+              <option>電話</option>
+              <option>その他</option>
+            </select>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-violet-50 px-3 py-2 text-sm font-bold text-violet-800">
+            業務委託の予定としてカレンダーへ登録します。
+          </div>
+        )}
 
         <div>
           <label className="mb-2 block text-sm font-medium">
@@ -201,30 +220,46 @@ export default function ExternalCalendarBlocksPage() {
 
         <div>
           <label className="mb-2 block text-sm font-medium">
-            タイトル
+            {isContractorBooking ? "お客さま名" : "タイトル"}
           </label>
 
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="例：HPB予約"
+            placeholder={isContractorBooking ? "例：山田 花子" : "例：HPB予約"}
             className="w-full rounded-xl border p-3"
           />
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium">
-            メモ
-          </label>
+        {isContractorBooking ? (
+          <div>
+            <label className="mb-2 block text-sm font-medium">
+              施術スタッフ名
+            </label>
 
-          <textarea
-            rows={4}
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            className="w-full rounded-xl border p-3"
-          />
-        </div>
+            <input
+              type="text"
+              value={contractorStaffName}
+              onChange={(e) => setContractorStaffName(e.target.value)}
+              placeholder="例：田中 美咲"
+              className="w-full rounded-xl border p-3"
+            />
+          </div>
+        ) : (
+          <div>
+            <label className="mb-2 block text-sm font-medium">
+              メモ
+            </label>
+
+            <textarea
+              rows={4}
+              value={memo}
+              onChange={(e) => setMemo(e.target.value)}
+              className="w-full rounded-xl border p-3"
+            />
+          </div>
+        )}
 
         <button
           type="button"
