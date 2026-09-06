@@ -57,6 +57,23 @@ type ReservationStatus =
   | "完了"
   | "キャンセル";
 
+type CancellationReason =
+  | "overlap"
+  | "customer_request"
+  | "salon_convenience"
+  | "other";
+
+type CancellationResult = {
+  ok?: boolean;
+  cancelled?: boolean;
+  alreadyCancelled?: boolean;
+  error?: string;
+  line?: {
+    status?: "sent" | "skipped" | "not_linked" | "failed";
+    message?: string;
+  };
+};
+
 const STATUS_OPTIONS: { value: ReservationStatus; label: string }[] = [
   { value: "予約", label: "予約申請中" },
   { value: "confirmed", label: "予約確定" },
@@ -325,6 +342,11 @@ export default function EditReservationPage() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [status, setStatus] = useState<ReservationStatus>("予約");
+  const [wasInitiallyCancelled, setWasInitiallyCancelled] = useState(false);
+  const [sendCancellationLine, setSendCancellationLine] = useState(false);
+  const [cancellationReason, setCancellationReason] =
+    useState<CancellationReason>("overlap");
+  const [cancellationReasonText, setCancellationReasonText] = useState("");
   const [memo, setMemo] = useState("");
   const [galleryReference, setGalleryReference] = useState<GalleryReference>({
     hasGallery: false,
@@ -398,6 +420,7 @@ export default function EditReservationPage() {
     setStartTime(extractTime(reservation.start_at));
     setEndTime(extractTime(reservation.end_at));
     setStatus(normalizeStatus(reservation.status));
+    setWasInitiallyCancelled(isCancelledStatus(reservation.status));
     setGalleryReference(nextGalleryReference);
     setMemo(removeGalleryReferenceLines(rawMemo));
 
@@ -575,10 +598,70 @@ export default function EditReservationPage() {
   }
 }
 
+  async function cancelReservation() {
+    if (cancellationReason === "other" && !cancellationReasonText.trim()) {
+      setErrorMessage("キャンセル理由を入力してください");
+      return;
+    }
+
+    const lineConfirmation = sendCancellationLine
+      ? "顧客へのキャンセルLINE送信を試みます。"
+      : "顧客へキャンセルLINEは送信しません。";
+    const confirmed = window.confirm(
+      `この予約をキャンセルしますか？\n${lineConfirmation}`
+    );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(`/api/reservations/${reservationId}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sendLine: sendCancellationLine,
+          reason: cancellationReason,
+          reasonText: cancellationReasonText,
+        }),
+      });
+      const result = (await response.json()) as CancellationResult;
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(result.error || "予約のキャンセルに失敗しました");
+        return;
+      }
+
+      setStatus("キャンセル");
+      setWasInitiallyCancelled(true);
+      setSuccessMessage(
+        result.line?.message ||
+          (result.alreadyCancelled
+            ? "予約は既にキャンセル済みです。LINEは再送していません。"
+            : "予約をキャンセルしました。")
+      );
+    } catch {
+      setErrorMessage("予約のキャンセル処理に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
     if (!reservationId) return;
+
+    if (
+      isCancelledStatus(status) &&
+      !isExternalBlock &&
+      !wasInitiallyCancelled
+    ) {
+      await cancelReservation();
+      return;
+    }
 
     const dateTime = validateRequiredFields();
     if (!dateTime) return;
@@ -930,6 +1013,65 @@ export default function EditReservationPage() {
                   「予約確定」はデータ上は confirmed として保存され、顧客マイページでは予約確定と表示されます。
                 </p>
               </div>
+
+              {status === "キャンセル" &&
+              !isExternalBlock &&
+              !wasInitiallyCancelled ? (
+                <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50/60 p-4">
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">
+                      キャンセル通知
+                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-600">
+                      キャンセル確定後、LINE連携済みのお客様へ通知します。未連携や送信失敗の場合も、予約のキャンセルは取り消されません。
+                    </p>
+                  </div>
+
+                  <label className="flex items-start gap-3 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={sendCancellationLine}
+                      onChange={(e) => setSendCancellationLine(e.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-rose-300 text-rose-600"
+                    />
+                    <span>顧客へキャンセルLINEを送信する</span>
+                  </label>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      キャンセル理由
+                    </label>
+                    <select
+                      value={cancellationReason}
+                      onChange={(e) =>
+                        setCancellationReason(e.target.value as CancellationReason)
+                      }
+                      className="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                    >
+                      <option value="overlap">予約枠の重複</option>
+                      <option value="customer_request">お客様のご都合</option>
+                      <option value="salon_convenience">店舗の都合</option>
+                      <option value="other">その他</option>
+                    </select>
+                  </div>
+
+                  {cancellationReason === "other" ? (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        理由の詳細
+                      </label>
+                      <input
+                        type="text"
+                        value={cancellationReasonText}
+                        onChange={(e) => setCancellationReasonText(e.target.value)}
+                        maxLength={200}
+                        placeholder="キャンセル理由を入力してください"
+                        className="w-full rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
