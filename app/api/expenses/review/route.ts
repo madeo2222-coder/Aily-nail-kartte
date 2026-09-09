@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+type ExpenseImportRow = {
+  id: string;
+  import_id?: string | null;
+  expense_date?: string | null;
+  amount?: number | string | null;
+  vendor_raw?: string | null;
+  description_raw?: string | null;
+  payment_method?: string | null;
+  receipt_status?: string | null;
+  review_status?: string | null;
+  duplicate_flag?: boolean | null;
+  matched_expense_id?: string | null;
+  excluded_flag?: boolean | null;
+};
+
 export async function GET() {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -55,7 +70,7 @@ export async function GET() {
     }
 
     const rows =
-      data?.map((row: any) => ({
+      (data as ExpenseImportRow[] | null)?.map((row) => ({
         id: row.id,
         import_id: row.import_id ?? null,
         expense_date: row.expense_date ?? null,
