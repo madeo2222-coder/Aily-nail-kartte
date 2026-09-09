@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -12,7 +13,10 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authenticationError = await requireStaffSession(request);
+  if (authenticationError) return authenticationError;
+
   try {
     const supabase = getSupabaseAdmin();
 

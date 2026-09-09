@@ -124,7 +124,7 @@ function isOwnerOnlyPath(pathname: string) {
   );
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (isStaticAsset(pathname)) {
@@ -190,6 +190,6 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = {
+export const proxyConfig = {
   matcher: ["/:path*"],
 };
