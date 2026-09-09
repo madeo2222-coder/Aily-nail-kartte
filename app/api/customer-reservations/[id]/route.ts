@@ -568,6 +568,43 @@ export async function PATCH(
 
     const salonId = getString(reservation, ["salon_id"]);
 
+    if (!salonId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "予約店舗を確認できません",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (staffId) {
+      const { data: selectedStaff, error: selectedStaffError } =
+        await supabaseAdmin
+          .from("staffs")
+          .select("id")
+          .eq("id", staffId)
+          .eq("salon_id", salonId)
+          .eq("role", "staff")
+          .eq("is_active", true)
+          .eq("customer_booking_enabled", true)
+          .maybeSingle();
+
+      if (selectedStaffError) {
+        throw new Error(selectedStaffError.message);
+      }
+
+      if (!selectedStaff) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: "選択した担当者は現在予約できません",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     let overlapQuery = supabaseAdmin
       .from("reservations")
       .select("id, status, staff_id, start_at, end_at")
@@ -575,9 +612,7 @@ export async function PATCH(
       .lt("start_at", endIso)
       .gt("end_at", startIso);
 
-    if (salonId) {
-      overlapQuery = overlapQuery.eq("salon_id", salonId);
-    }
+    overlapQuery = overlapQuery.eq("salon_id", salonId);
 
     if (staffId) {
       overlapQuery = overlapQuery.eq("staff_id", staffId);
@@ -602,6 +637,35 @@ export async function PATCH(
             : "その時間帯には既に予約があります",
         },
         { status: 400 }
+      );
+    }
+
+    const { data: externalBlocks, error: externalBlocksError } =
+      await supabaseAdmin
+        .from("external_calendar_blocks")
+        .select("staff_id")
+        .eq("salon_id", salonId)
+        .lt("start_at", endIso)
+        .gt("end_at", startIso);
+
+    if (externalBlocksError) {
+      throw new Error(externalBlocksError.message);
+    }
+
+    const hasExternalBlock = (externalBlocks || []).some(
+      (block) =>
+        !staffId || !block.staff_id || block.staff_id === staffId
+    );
+
+    if (hasExternalBlock) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: staffId
+            ? "選択した担当者はその時間帯に外部予定があります"
+            : "その時間帯には外部予定があります",
+        },
+        { status: 409 }
       );
     }
 

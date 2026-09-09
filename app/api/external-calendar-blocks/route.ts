@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +26,29 @@ function buildLocalTimestamp(dateText: string, timeText: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const authentication = await authenticateStaffApi({
+    allowedRoles: ["owner", "staff"],
+    legacyAllowed: false,
+    salonContextRequired: true,
+  });
+
+  if (!authentication.ok) {
+    return NextResponse.json(
+      { ok: false, error: authentication.error },
+      { status: authentication.status }
+    );
+  }
+
+  if (authentication.principal.authenticationMode !== "supabase") {
+    return NextResponse.json(
+      { ok: false, error: "この予定を登録する権限がありません" },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = await req.json();
 
-    const salonId = String(body.salonId || "").trim() || null;
     const staffId = String(body.staffId || "").trim() || null;
     const source = String(body.source || "manual").trim();
     const title = String(body.title || "").trim() || null;
@@ -73,8 +93,30 @@ export async function POST(req: NextRequest) {
 
     const supabase = getSupabaseAdmin();
 
+    const { data: staff, error: staffError } = await supabase
+      .from("staffs")
+      .select("id")
+      .eq("id", staffId)
+      .eq("salon_id", authentication.principal.salonId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (staffError) {
+      return NextResponse.json(
+        { ok: false, error: "スタッフ情報の確認に失敗しました" },
+        { status: 500 }
+      );
+    }
+
+    if (!staff) {
+      return NextResponse.json(
+        { ok: false, error: "このスタッフの予定を登録する権限がありません" },
+        { status: 403 }
+      );
+    }
+
     const { error } = await supabase.from("external_calendar_blocks").insert({
-      salon_id: salonId,
+      salon_id: authentication.principal.salonId,
       staff_id: staffId,
       source,
       title,

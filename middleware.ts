@@ -57,8 +57,6 @@ function isCustomerAllowedApiPath(pathname: string) {
     pathname.startsWith("/api/webhook/") ||
     pathname === "/api/reservations" ||
     pathname.startsWith("/api/reservations/") ||
-    pathname === "/api/external-calendar-blocks" ||
-    pathname.startsWith("/api/external-calendar-blocks/") ||
     pathname === "/api/send-reservation-confirmed-line" ||
     pathname.startsWith("/api/send-reservation-confirmed-line/") ||
     pathname === "/api/send-reservation-reminder-line" ||
@@ -80,8 +78,6 @@ function isAllowedCustomerPath(pathname: string) {
     pathname === "/customer-intake" ||
     pathname.startsWith("/customer-intake/") ||
     pathname.startsWith("/nail-tip-order-pay/") ||
-    pathname === "/external-calendar-blocks" ||
-    pathname.startsWith("/external-calendar-blocks/") ||
     isCustomerAllowedApiPath(pathname)
   );
 }
