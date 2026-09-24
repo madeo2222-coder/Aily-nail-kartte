@@ -12,7 +12,13 @@ function decodeBase64Url(value: string) {
   return Buffer.from(base64, "base64").toString("utf-8");
 }
 
-function extractPlainText(payload: any): string {
+type GmailMessagePart = {
+  mimeType?: string | null;
+  body?: { data?: string | null } | null;
+  parts?: GmailMessagePart[] | null;
+};
+
+function extractPlainText(payload: GmailMessagePart | null | undefined): string {
   if (!payload) return "";
 
   if (payload.mimeType === "text/plain" && payload.body?.data) {

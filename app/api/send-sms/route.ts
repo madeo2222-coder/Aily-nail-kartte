@@ -51,12 +51,12 @@ ${proposal ?? "なし"}
       success: true,
       sid: result.sid,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("SMS送信APIエラー:", error);
 
     return NextResponse.json(
       {
-        error: error?.message || "SMS送信に失敗しました",
+        error: error instanceof Error ? error.message : "SMS送信に失敗しました",
       },
       { status: 500 }
     );

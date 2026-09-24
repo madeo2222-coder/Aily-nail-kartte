@@ -64,7 +64,7 @@ function decodeCsv(buffer: Buffer): string {
 
   for (const encoding of candidates) {
     try {
-      const decoder = new TextDecoder(encoding as any);
+      const decoder = new TextDecoder(encoding);
       const text = decoder.decode(buffer);
 
       const looksGood =
