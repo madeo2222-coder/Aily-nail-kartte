@@ -3,6 +3,16 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+type VisitAmountRow = {
+  price?: number | string | null;
+  visit_date?: string | null;
+};
+
+type ExpenseAmountRow = {
+  amount?: number | string | null;
+  expense_date?: string | null;
+};
+
 function formatYen(value: number) {
   return `¥${Math.round(value).toLocaleString("ja-JP")}`;
 }
@@ -33,7 +43,7 @@ export default function FinancePage() {
 
     let salesTotal = 0;
 
-    (visits || []).forEach((v: any) => {
+    (visits as VisitAmountRow[] | null)?.forEach((v) => {
       if (v.visit_date?.startsWith(selectedMonth)) {
         salesTotal += Number(v.price || 0);
       }
@@ -46,7 +56,7 @@ export default function FinancePage() {
 
     let expenseTotal = 0;
 
-    (expensesData || []).forEach((e: any) => {
+    (expensesData as ExpenseAmountRow[] | null)?.forEach((e) => {
       if (e.expense_date?.startsWith(selectedMonth)) {
         expenseTotal += Number(e.amount || 0);
       }
