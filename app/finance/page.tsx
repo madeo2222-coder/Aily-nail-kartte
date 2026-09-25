@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type VisitAmountRow = {
@@ -31,7 +31,7 @@ export default function FinancePage() {
   const [sales, setSales] = useState(0);
   const [expenses, setExpenses] = useState(0);
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     // 売上取得
     const { data: visits } = await supabase
       .from("visits")
@@ -60,11 +60,11 @@ export default function FinancePage() {
 
     setSales(salesTotal);
     setExpenses(expenseTotal);
-  }
+  }, [selectedMonth]);
 
   useEffect(() => {
     void Promise.resolve().then(fetchData);
-  }, [selectedMonth]);
+  }, [fetchData]);
 
   const profit = sales - expenses;
   const profitRate = sales > 0 ? (profit / sales) * 100 : 0;

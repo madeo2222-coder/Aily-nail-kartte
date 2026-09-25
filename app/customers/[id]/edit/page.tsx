@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 
@@ -15,7 +15,7 @@ export default function CustomerEditPage() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
-  async function fetchCustomer() {
+  const fetchCustomer = useCallback(async () => {
     setFetching(true);
 
     const { data, error } = await supabase
@@ -35,12 +35,12 @@ export default function CustomerEditPage() {
     setNameKana(data?.name_kana || "");
     setPhone(data?.phone || "");
     setFetching(false);
-  }
+  }, [customerId]);
 
   useEffect(() => {
     if (!customerId) return;
     void Promise.resolve().then(fetchCustomer);
-  }, [customerId]);
+  }, [customerId, fetchCustomer]);
 
   function normalizePhone(value: string) {
     const raw = value.replace(/[^\d+]/g, "");
