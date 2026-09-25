@@ -106,7 +106,6 @@ export default function EditVisitPage() {
   const [visitDate, setVisitDate] = useState("");
   const [menuName, setMenuName] = useState("");
   const [price, setPrice] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("現金");
   const [memo, setMemo] = useState("");
   const [nextVisitDate, setNextVisitDate] = useState("");
   const [nextProposal, setNextProposal] = useState("");
@@ -211,7 +210,6 @@ export default function EditVisitPage() {
     setPrice(
       visit.price === null || visit.price === undefined ? "" : String(visit.price)
     );
-    setPaymentMethod(visit.payment_method || "現金");
     setMemo(visit.memo || "");
     setNextVisitDate(visit.next_visit_date || "");
     setNextProposal(visit.next_proposal || visit.next_suggestion || "");
