@@ -14,10 +14,6 @@ export default function InactiveCustomersPage() {
   const [customers, setCustomers] = useState<CustomerWithLastVisit[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchInactiveCustomers();
-  }, []);
-
   async function fetchInactiveCustomers() {
     setLoading(true);
 
@@ -68,6 +64,10 @@ export default function InactiveCustomersPage() {
     setCustomers(inactive);
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchInactiveCustomers);
+  }, []);
 
   return (
     <div className="p-4 pb-24">
