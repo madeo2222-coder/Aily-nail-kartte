@@ -21,10 +21,6 @@ export default function ReviewsPage() {
   const [errorMessage, setErrorMessage] = useState("")
   const [search, setSearch] = useState("")
 
-  useEffect(() => {
-    void loadCustomers()
-  }, [])
-
   async function loadCustomers() {
     setLoading(true)
     setErrorMessage("")
@@ -44,6 +40,10 @@ export default function ReviewsPage() {
     setCustomers(data ?? [])
     setLoading(false)
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(loadCustomers)
+  }, [])
 
   function formatDate(date: string | null) {
     if (!date) return "未登録"
