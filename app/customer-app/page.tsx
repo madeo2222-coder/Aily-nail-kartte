@@ -180,7 +180,6 @@ export default function CustomerAppPage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  const [customerId, setCustomerId] = useState("");
   const [customerName, setCustomerName] = useState("お客様");
   const [salonName, setSalonName] = useState("Aily Nail Studio");
   const [nextVisitWindow, setNextVisitWindow] = useState(
@@ -210,7 +209,6 @@ export default function CustomerAppPage() {
 
         const currentCustomer = meJson.customer;
         setIsLoggedIn(true);
-        setCustomerId(currentCustomer.id);
         setCustomerName(currentCustomer.name || "お客様");
 
         if (currentCustomer.salon_id) {
