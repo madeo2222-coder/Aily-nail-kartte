@@ -49,10 +49,6 @@ export default function SalesPaymentsClient() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    void moveToCurrentCheckout();
-  }, [searchParams]);
-
   async function moveToCurrentCheckout() {
     setLoading(true);
     setErrorMessage("");
@@ -91,6 +87,10 @@ export default function SalesPaymentsClient() {
 
     router.replace(buildVisitRegistrationUrl(data as VisitRow));
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(moveToCurrentCheckout);
+  }, [searchParams]);
 
   return (
     <main className="min-h-screen bg-rose-50/40">
