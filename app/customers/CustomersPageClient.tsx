@@ -34,10 +34,6 @@ export default function CustomersPageClient() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [keyword, setKeyword] = useState("");
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   async function fetchData() {
     const { data: customersData, error: customersError } = await supabase
       .from("customers")
@@ -61,6 +57,10 @@ export default function CustomersPageClient() {
       setVisits(visitsData);
     }
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchData);
+  }, []);
 
   function getLatestVisit(customerId: string) {
     return visits.find((visit) => visit.customer_id === customerId);
