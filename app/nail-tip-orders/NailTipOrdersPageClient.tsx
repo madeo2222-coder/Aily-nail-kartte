@@ -214,7 +214,7 @@ export default function NailTipOrdersPageClient() {
   }
 
   useEffect(() => {
-    void fetchOrders();
+    void Promise.resolve().then(fetchOrders);
   }, []);
 
   const customerMap = useMemo(() => {
