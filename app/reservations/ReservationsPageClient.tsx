@@ -490,13 +490,15 @@ export default function ReservationsPageClient() {
   }
 
   useEffect(() => {
-    void fetchReservations();
+    void Promise.resolve().then(fetchReservations);
   }, []);
 
   useEffect(() => {
-    if (searchParams.get("view") === "pending") {
-      setShowPendingOnly(true);
-    }
+    void Promise.resolve().then(() => {
+      if (searchParams.get("view") === "pending") {
+        setShowPendingOnly(true);
+      }
+    });
   }, [searchParams]);
 
   const normalizedReservations = useMemo<NormalizedReservation[]>(() => {
@@ -554,14 +556,16 @@ export default function ReservationsPageClient() {
   }, [reservations, customerMap, staffMap]);
 
   useEffect(() => {
-    if (selectedDate) return;
+    void Promise.resolve().then(() => {
+      if (selectedDate) return;
 
-    const today = new Date();
-    const yyyy = today.getFullYear();
-    const mm = String(today.getMonth() + 1).padStart(2, "0");
-    const dd = String(today.getDate()).padStart(2, "0");
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
 
-    setSelectedDate(`${yyyy}-${mm}-${dd}`);
+      setSelectedDate(`${yyyy}-${mm}-${dd}`);
+    });
   }, [selectedDate]);
 
   const staffOptions = useMemo(() => {
