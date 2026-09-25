@@ -106,7 +106,7 @@ export default function EditVisitPage() {
   const [visitDate, setVisitDate] = useState("");
   const [menuName, setMenuName] = useState("");
   const [price, setPrice] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("現金");
+  const [, setPaymentMethod] = useState("現金");
   const [memo, setMemo] = useState("");
   const [nextVisitDate, setNextVisitDate] = useState("");
   const [nextProposal, setNextProposal] = useState("");

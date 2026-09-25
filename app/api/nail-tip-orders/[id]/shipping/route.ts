@@ -33,45 +33,6 @@ function getString(row: AnyRow | null, keys: string[]) {
   return "";
 }
 
-function normalizeShippingDateTime(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) {
-    return new Date().toISOString();
-  }
-
-  const trimmed = value.trim();
-
-  if (/[zZ]$/.test(trimmed) || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
-    const directDate = new Date(trimmed);
-    if (!Number.isNaN(directDate.getTime())) {
-      return directDate.toISOString();
-    }
-  }
-
-  const normalized = trimmed.replace(/\//g, "-").replace(" ", "T");
-  const [datePart, rawTimePart = "00:00"] = normalized.split("T");
-  const [year = "", month = "", day = ""] = datePart.split("-");
-  const [hour = "00", minute = "00"] = rawTimePart.split(":");
-
-  const safeYear = year.padStart(4, "0");
-  const safeMonth = month.padStart(2, "0");
-  const safeDay = day.padStart(2, "0");
-  const safeHour = hour.padStart(2, "0");
-  const safeMinute = minute.padStart(2, "0");
-
-  if (!safeYear || !safeMonth || !safeDay) {
-    return new Date().toISOString();
-  }
-
-  const isoValue = `${safeYear}-${safeMonth}-${safeDay}T${safeHour}:${safeMinute}:00+09:00`;
-  const date = new Date(isoValue);
-
-  if (Number.isNaN(date.getTime())) {
-    return new Date().toISOString();
-  }
-
-  return date.toISOString();
-}
-
 function formatDateTime(value: string | null) {
   if (!value) return "未設定";
 
