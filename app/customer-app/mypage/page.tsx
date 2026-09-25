@@ -129,13 +129,6 @@ function formatDateTime(value: string | null) {
   return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-function formatTime(value: string | null) {
-  const parts = getJstParts(value);
-  if (!parts) return "";
-
-  return `${parts.hour}:${parts.minute}`;
-}
-
 function formatEndTime(startAt: string | null, endAt: string | null) {
   const startParts = getJstParts(startAt);
   const endParts = getJstParts(endAt);
