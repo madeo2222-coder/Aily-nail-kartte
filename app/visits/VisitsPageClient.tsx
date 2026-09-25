@@ -187,10 +187,6 @@ export default function VisitsPageClient() {
   const [quickSelectMode, setQuickSelectMode] = useState<QuickSelectMode>("current");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
 
-  useEffect(() => {
-    void fetchVisits();
-  }, []);
-
   async function fetchVisits() {
     setLoading(true);
 
@@ -274,6 +270,10 @@ export default function VisitsPageClient() {
 
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchVisits);
+  }, []);
 
   const monthOptions = useMemo(() => buildMonthOptions(visits), [visits]);
 
