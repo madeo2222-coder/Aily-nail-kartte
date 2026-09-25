@@ -81,6 +81,27 @@ type CustomerIntake = {
   created_at?: string | null;
 };
 
+type CustomerIntakeQueryRow = {
+  id: number | string;
+  customer_id?: string | null;
+  name?: unknown;
+  phone?: unknown;
+  birth_date?: unknown;
+  allergy?: unknown;
+  skin_trouble?: unknown;
+  constitution?: unknown;
+  avoid_items?: unknown;
+  signer_name?: unknown;
+  signature_data_url?: unknown;
+  check_health?: unknown;
+  check_reaction?: unknown;
+  check_refund?: unknown;
+  check_condition?: unknown;
+  check_photo?: unknown;
+  submitted_at?: unknown;
+  created_at?: unknown;
+};
+
 function formatPrice(value: number | null) {
   if (value === null || value === undefined) return "¥0";
   return `¥${Math.round(value).toLocaleString("ja-JP")}`;
@@ -437,7 +458,7 @@ export default function CustomerDetailPage() {
           console.error("customer_intakes取得エラー:", intakeRes.error);
           setIntake(null);
         } else {
-          const intakeRows = ((intakeRes.data || []) as any[])
+          const intakeRows = (intakeRes.data as CustomerIntakeQueryRow[] | null ?? [])
             .filter((item) => item && item.customer_id)
             .map((item) => ({
               id: item.id,

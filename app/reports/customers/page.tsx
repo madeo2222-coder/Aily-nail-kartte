@@ -9,6 +9,11 @@ type CustomerSales = {
   visit_count: number;
 };
 
+type CustomerSalesQueryRow = {
+  price?: number | string | null;
+  customers?: { name?: string | null } | null;
+};
+
 export default function CustomerReportPage() {
   const [data, setData] = useState<CustomerSales[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +40,7 @@ export default function CustomerReportPage() {
 
     const map: Record<string, CustomerSales> = {};
 
-    (data as any[]).forEach((row) => {
+    (data as CustomerSalesQueryRow[] | null)?.forEach((row) => {
       const name = row.customers?.name || "不明";
       const price = Number(row.price || 0);
 

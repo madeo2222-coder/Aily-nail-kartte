@@ -72,7 +72,7 @@ export default function UpcomingVisitsPage() {
         return;
       }
 
-      const safeVisits: VisitRow[] = (visitsData || []).map((v: any) => ({
+      const safeVisits: VisitRow[] = (visitsData || []).map((v: VisitRow) => ({
         id: v.id,
         customer_id: v.customer_id,
         visit_date: v.visit_date ?? null,

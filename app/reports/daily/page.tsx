@@ -10,6 +10,12 @@ type Visit = {
   price?: number | null;
 };
 
+type VisitQueryRow = {
+  id: string;
+  visit_date?: string | null;
+  price?: number | string | null;
+};
+
 type DailyRow = {
   date: string;
   sales: number;
@@ -54,7 +60,7 @@ export default function DailyReportsPage() {
         return;
       }
 
-      const normalized: Visit[] = (data || []).map((visit: any) => ({
+      const normalized: Visit[] = (data || []).map((visit: VisitQueryRow) => ({
         id: visit.id,
         visit_date: visit.visit_date ?? null,
         price:
