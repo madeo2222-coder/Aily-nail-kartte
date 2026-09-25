@@ -20,10 +20,6 @@ export default function StaffManagePage() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
-    void fetchStaffs();
-  }, []);
-
   async function fetchStaffs() {
     setLoading(true);
 
@@ -43,6 +39,10 @@ export default function StaffManagePage() {
     setStaffs((data as StaffRow[]) || []);
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchStaffs);
+  }, []);
 
   async function handleAddStaff(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
