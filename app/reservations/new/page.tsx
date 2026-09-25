@@ -467,9 +467,11 @@ export default function ReservationNewPage() {
   ]);
 
   useEffect(() => {
-    if (reservationMode === "normal") {
-      setDurationMinutes(calculatedMinutes);
-    }
+    void Promise.resolve().then(() => {
+      if (reservationMode === "normal") {
+        setDurationMinutes(calculatedMinutes);
+      }
+    });
   }, [reservationMode, calculatedMinutes]);
 
   const displayMenu = useMemo(() => {
