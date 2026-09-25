@@ -15,11 +15,6 @@ export default function CustomerEditPage() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
 
-  useEffect(() => {
-    if (!customerId) return;
-    fetchCustomer();
-  }, [customerId]);
-
   async function fetchCustomer() {
     setFetching(true);
 
@@ -41,6 +36,11 @@ export default function CustomerEditPage() {
     setPhone(data?.phone || "");
     setFetching(false);
   }
+
+  useEffect(() => {
+    if (!customerId) return;
+    void Promise.resolve().then(fetchCustomer);
+  }, [customerId]);
 
   function normalizePhone(value: string) {
     const raw = value.replace(/[^\d+]/g, "");

@@ -154,10 +154,6 @@ export default function SalesPage() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    void fetchSales();
-  }, []);
-
   async function fetchSales() {
     setLoading(true);
     setErrorMessage("");
@@ -232,6 +228,10 @@ export default function SalesPage() {
     setPaymentMap(nextPaymentMap);
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchSales);
+  }, []);
 
   const monthOptions = useMemo(() => {
     return buildMonthOptions(visits);

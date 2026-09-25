@@ -191,10 +191,6 @@ export default function HomePage() {
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    void fetchData();
-  }, []);
-
   async function fetchData() {
     setLoading(true);
 
@@ -231,6 +227,10 @@ export default function HomePage() {
 
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchData);
+  }, []);
 
   const today = toDateOnlyString(new Date());
 

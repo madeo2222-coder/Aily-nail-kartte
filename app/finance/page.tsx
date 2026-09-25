@@ -31,10 +31,6 @@ export default function FinancePage() {
   const [sales, setSales] = useState(0);
   const [expenses, setExpenses] = useState(0);
 
-  useEffect(() => {
-    fetchData();
-  }, [selectedMonth]);
-
   async function fetchData() {
     // 売上取得
     const { data: visits } = await supabase
@@ -65,6 +61,10 @@ export default function FinancePage() {
     setSales(salesTotal);
     setExpenses(expenseTotal);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchData);
+  }, [selectedMonth]);
 
   const profit = sales - expenses;
   const profitRate = sales > 0 ? (profit / sales) * 100 : 0;

@@ -37,10 +37,6 @@ export default function SalesDashboardPageClient() {
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  useEffect(() => {
-    fetchVisits();
-  }, []);
-
   async function fetchVisits() {
     setLoading(true);
     setErrorMessage("");
@@ -61,6 +57,10 @@ export default function SalesDashboardPageClient() {
     setVisits((data as Visit[]) || []);
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchVisits);
+  }, []);
 
   const stats = useMemo(() => {
     const todayString = getTodayString();

@@ -230,10 +230,6 @@ export default function MonthlyReportPage() {
     VisitPaymentReportRow[]
   >([]);
 
-  useEffect(() => {
-    void fetchMonthlyData();
-  }, [targetMonth]);
-
   async function fetchMonthlyData() {
     setLoading(true);
     setPageError("");
@@ -298,6 +294,10 @@ export default function MonthlyReportPage() {
     setVisitPayments(normalizePaymentRows(paymentsData || []));
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchMonthlyData);
+  }, [targetMonth]);
 
   const visitMap = useMemo(() => {
     const map = new Map<string, VisitReportRow>();

@@ -18,10 +18,6 @@ type Log = {
 export default function LineFollowLogsPage() {
   const [logs, setLogs] = useState<Log[]>([]);
 
-  useEffect(() => {
-    fetchLogs();
-  }, []);
-
   async function fetchLogs() {
     const { data, error } = await supabase
       .from("line_follow_logs")
@@ -42,6 +38,10 @@ export default function LineFollowLogsPage() {
 
     setLogs(data || []);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchLogs);
+  }, []);
 
   return (
     <div className="p-4">

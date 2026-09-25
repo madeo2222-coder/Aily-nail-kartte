@@ -94,32 +94,31 @@ export default function TaxPage() {
   const copyTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setMounted(true);
+    void Promise.resolve().then(() => {
+      setMounted(true);
 
-    const currentMonth = getCurrentMonthValue();
-    const storedMonth = localStorage.getItem("tax_selected_month") ?? currentMonth;
-    const storedEmail = localStorage.getItem("tax_accountant_email") ?? "";
-    const storedPdfReady = localStorage.getItem("tax_check_pdf_ready") === "1";
-    const storedMonthlyCsvReady =
-      localStorage.getItem("tax_check_monthly_csv_ready") === "1";
-    const storedSalesCsvReady =
-      localStorage.getItem("tax_check_sales_csv_ready") === "1";
-    const storedExpenseCsvReady =
-      localStorage.getItem("tax_check_expense_csv_ready") === "1";
-    const storedEvidenceReady =
-      localStorage.getItem("tax_check_evidence_ready") === "1";
-    const storedBankReady =
-      localStorage.getItem("tax_check_bank_ready") === "1";
+      const currentMonth = getCurrentMonthValue();
+      const storedMonth = localStorage.getItem("tax_selected_month") ?? currentMonth;
+      const storedEmail = localStorage.getItem("tax_accountant_email") ?? "";
+      const storedPdfReady = localStorage.getItem("tax_check_pdf_ready") === "1";
+      const storedMonthlyCsvReady =
+        localStorage.getItem("tax_check_monthly_csv_ready") === "1";
+      const storedSalesCsvReady = localStorage.getItem("tax_check_sales_csv_ready") === "1";
+      const storedExpenseCsvReady =
+        localStorage.getItem("tax_check_expense_csv_ready") === "1";
+      const storedEvidenceReady = localStorage.getItem("tax_check_evidence_ready") === "1";
+      const storedBankReady = localStorage.getItem("tax_check_bank_ready") === "1";
 
-    setSelectedMonth(storedMonth);
-    setAccountantEmail(storedEmail);
-    setSavedAccountantEmail(storedEmail);
-    setCheckPdfReady(storedPdfReady);
-    setCheckMonthlyCsvReady(storedMonthlyCsvReady);
-    setCheckSalesCsvReady(storedSalesCsvReady);
-    setCheckExpenseCsvReady(storedExpenseCsvReady);
-    setCheckEvidenceReady(storedEvidenceReady);
-    setCheckBankReady(storedBankReady);
+      setSelectedMonth(storedMonth);
+      setAccountantEmail(storedEmail);
+      setSavedAccountantEmail(storedEmail);
+      setCheckPdfReady(storedPdfReady);
+      setCheckMonthlyCsvReady(storedMonthlyCsvReady);
+      setCheckSalesCsvReady(storedSalesCsvReady);
+      setCheckExpenseCsvReady(storedExpenseCsvReady);
+      setCheckEvidenceReady(storedEvidenceReady);
+      setCheckBankReady(storedBankReady);
+    });
   }, []);
 
   useEffect(() => {

@@ -178,19 +178,6 @@ export default function ExternalCalendarTasksPage() {
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("both");
   const [staffFilter, setStaffFilter] = useState("all");
 
-  useEffect(() => {
-    const saved = window.localStorage.getItem("naily_external_calendar_done");
-    if (saved) {
-      try {
-        setDoneMap(JSON.parse(saved) as DoneMap);
-      } catch {
-        setDoneMap({});
-      }
-    }
-
-    fetchTasks();
-  }, []);
-
   async function fetchTasks() {
     setLoading(true);
 
@@ -283,6 +270,21 @@ export default function ExternalCalendarTasksPage() {
     setTasks(nextTasks);
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(() => {
+      const saved = window.localStorage.getItem("naily_external_calendar_done");
+      if (saved) {
+        try {
+          setDoneMap(JSON.parse(saved) as DoneMap);
+        } catch {
+          setDoneMap({});
+        }
+      }
+
+      return fetchTasks();
+    });
+  }, []);
 
   const staffOptions = useMemo(() => {
     return Array.from(new Set(tasks.map((task) => task.staffName))).sort((a, b) =>

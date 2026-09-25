@@ -18,10 +18,6 @@ export default function CustomerReportPage() {
   const [data, setData] = useState<CustomerSales[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   async function fetchData() {
     setLoading(true);
 
@@ -63,6 +59,10 @@ export default function CustomerReportPage() {
     setData(result);
     setLoading(false);
   }
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchData);
+  }, []);
 
   function formatYen(value: number) {
     return `¥${value.toLocaleString("ja-JP")}`;
