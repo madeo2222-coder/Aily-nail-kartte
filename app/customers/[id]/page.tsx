@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -280,11 +280,6 @@ export default function CustomerDetailPage() {
   const [intake, setIntake] = useState<CustomerIntake | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!customerId) return;
-    fetchCustomerDetail();
-  }, [customerId]);
-
   const paymentMap = useMemo(() => {
     const nextMap: Record<string, VisitPayment[]> = {};
 
@@ -364,7 +359,7 @@ export default function CustomerDetailPage() {
     };
   }, [visits, latestVisit]);
 
-  async function fetchCustomerDetail() {
+  const fetchCustomerDetail = useCallback(async () => {
     setLoading(true);
 
     try {
@@ -534,8 +529,12 @@ export default function CustomerDetailPage() {
       alert("データ取得中にエラーが発生しました");
     } finally {
       setLoading(false);
-    }
-  }
+    }  }, [customerId]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    void Promise.resolve().then(fetchCustomerDetail);
+  }, [customerId, fetchCustomerDetail]);
 
   async function handleDeleteCustomer() {
     const ok = window.confirm("この顧客を削除しますか？");
