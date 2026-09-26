@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState } from "react";
 
 type Props = {
@@ -27,9 +28,12 @@ export default function PhotoGallery({ photos }: Props) {
             onClick={() => setSelectedUrl(url)}
             className="shrink-0"
           >
-            <img
+            <Image
               src={url}
               alt={`ネイル写真 ${index + 1}`}
+              width={96}
+              height={96}
+              sizes="96px"
               className="h-24 w-24 rounded-xl object-cover border border-gray-200"
             />
           </button>
@@ -42,21 +46,23 @@ export default function PhotoGallery({ photos }: Props) {
           onClick={() => setSelectedUrl(null)}
         >
           <div
-            className="relative max-h-[90vh] max-w-[90vw]"
+            className="relative h-[90vh] w-[90vw]"
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
-              className="absolute right-2 top-2 rounded-full bg-white px-3 py-1 text-sm font-bold text-black shadow"
+              className="absolute right-2 top-2 z-10 rounded-full bg-white px-3 py-1 text-sm font-bold text-black shadow"
               onClick={() => setSelectedUrl(null)}
             >
               ×
             </button>
 
-            <img
+            <Image
               src={selectedUrl}
               alt="拡大写真"
-              className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain"
+              fill
+              sizes="90vw"
+              className="rounded-2xl object-contain"
             />
           </div>
         </div>
