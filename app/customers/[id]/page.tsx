@@ -277,6 +277,7 @@ export default function CustomerDetailPage() {
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
   const [visitPhotos, setVisitPhotos] = useState<VisitPhoto[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [reservationsLoaded, setReservationsLoaded] = useState(false);
   const [intake, setIntake] = useState<CustomerIntake | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -361,6 +362,7 @@ export default function CustomerDetailPage() {
 
   const fetchCustomerDetail = useCallback(async () => {
     setLoading(true);
+    setReservationsLoaded(false);
 
     try {
       const { data: customerData, error: customerError } = await supabase
@@ -441,6 +443,7 @@ export default function CustomerDetailPage() {
         setReservations([]);
       } else {
         setReservations((reservationData || []) as Reservation[]);
+        setReservationsLoaded(true);
       }
 
       try {
@@ -726,7 +729,11 @@ export default function CustomerDetailPage() {
 
           <div className="mt-3 rounded-3xl bg-blue-50 p-4">
             <div className="text-sm font-bold text-blue-700">次回予約</div>
-            {nextReservation ? (
+            {!reservationsLoaded ? (
+              <div role="alert" className="mt-2 text-sm text-amber-800">
+                次回予約を確認できませんでした。時間をおいて再読み込みしてください。
+              </div>
+            ) : nextReservation ? (
               <div className="mt-2 space-y-1 text-sm text-slate-700">
                 <div>
                   日時: {formatDateOnly(getReservationDate(nextReservation))}{" "}
