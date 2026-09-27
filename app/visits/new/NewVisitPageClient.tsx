@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -131,6 +132,7 @@ export default function NewVisitPageClient() {
   ]);
 
   const [visitPhotos, setVisitPhotos] = useState<PhotoPreview[]>([]);
+  const photoPreviewUrls = useRef(new Set<string>());
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
@@ -167,12 +169,12 @@ export default function NewVisitPageClient() {
   ]);
 
   useEffect(() => {
+    const urls = photoPreviewUrls.current;
     return () => {
-      visitPhotos.forEach((photo) => {
-        URL.revokeObjectURL(photo.previewUrl);
-      });
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
     };
-  }, [visitPhotos]);
+  }, []);
 
   async function fetchCustomers() {
     setLoadingCustomers(true);
@@ -287,26 +289,23 @@ export default function NewVisitPageClient() {
       setMessage("");
     }
 
-    const newPhotos = imageFiles.map((file) => ({
-      id: createPhotoId(),
-      file,
-      previewUrl: URL.createObjectURL(file),
-    }));
+    const newPhotos = imageFiles.map((file) => {
+      const previewUrl = URL.createObjectURL(file);
+      photoPreviewUrls.current.add(previewUrl);
+      return { id: createPhotoId(), file, previewUrl };
+    });
 
     setVisitPhotos((previous) => [...previous, ...newPhotos]);
     e.target.value = "";
   }
 
   function removePhoto(photoId: string) {
-    setVisitPhotos((previous) => {
-      const target = previous.find((photo) => photo.id === photoId);
+    const target = visitPhotos.find((photo) => photo.id === photoId);
+    if (target && photoPreviewUrls.current.delete(target.previewUrl)) {
+      URL.revokeObjectURL(target.previewUrl);
+    }
 
-      if (target) {
-        URL.revokeObjectURL(target.previewUrl);
-      }
-
-      return previous.filter((photo) => photo.id !== photoId);
-    });
+    setVisitPhotos((previous) => previous.filter((photo) => photo.id !== photoId));
   }
 
   async function uploadVisitPhotos({
@@ -838,11 +837,16 @@ export default function NewVisitPageClient() {
                     key={photo.id}
                     className="overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
                   >
-                    <img
-                      src={photo.previewUrl}
-                      alt="施術後写真プレビュー"
-                      className="h-36 w-full object-cover"
-                    />
+                    <div className="relative h-36 w-full">
+                      <Image
+                        src={photo.previewUrl}
+                        alt="施術後写真プレビュー"
+                        fill
+                        sizes="(max-width: 640px) calc(50vw - 30px), 264px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    </div>
 
                     <div className="p-2">
                       <button

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { useParams, useRouter } from "next/navigation";
 
@@ -117,11 +117,6 @@ export default function EditVisitPage() {
     createPaymentLine("現金", ""),
   ]);
 
-  useEffect(() => {
-    if (!visitId) return;
-    fetchVisit();
-  }, [visitId]);
-
   const totalPrice = useMemo(() => {
     return toSafeNumber(price);
   }, [price]);
@@ -169,7 +164,7 @@ export default function EditVisitPage() {
     });
   }
 
-  async function fetchVisit() {
+  const fetchVisit = useCallback(async () => {
     setLoading(true);
     setMessage("");
 
@@ -248,8 +243,12 @@ export default function EditVisitPage() {
       ]);
     }
 
-    setLoading(false);
-  }
+    setLoading(false);  }, [visitId]);
+
+  useEffect(() => {
+    if (!visitId) return;
+    void Promise.resolve().then(fetchVisit);
+  }, [visitId, fetchVisit]);
 
   async function handleUpdate(e: React.FormEvent) {
     e.preventDefault();

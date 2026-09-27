@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { createClient } from "@supabase/supabase-js";
 import StatusForm from "./StatusForm";
 import QuoteForm from "./QuoteForm";
@@ -415,11 +416,15 @@ export default async function InboundNailTipRequestsPage({
                             rel="noreferrer"
                             className="overflow-hidden rounded-2xl border bg-slate-50"
                           >
-                            <img
-                              src={url}
-                              alt="参考画像"
-                              className="h-56 w-full object-cover"
-                            />
+                            <div className="relative h-56 w-full">
+                              <Image
+                                src={url}
+                                alt="参考画像"
+                                fill
+                                sizes="(max-width: 767px) calc(100vw - 72px), 288px"
+                                className="object-cover"
+                              />
+                            </div>
                             <div className="break-all px-3 py-2 text-xs text-slate-500">
                               画像を開く
                             </div>

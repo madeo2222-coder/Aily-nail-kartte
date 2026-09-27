@@ -1,9 +1,17 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  ChangeEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import VisitEditPhoto from "./VisitEditPhoto";
 
 type Visit = {
   id: string;
@@ -134,6 +142,7 @@ export default function EditVisitPage() {
 
   const [newFiles, setNewFiles] = useState<File[]>([]);
   const [newPreviews, setNewPreviews] = useState<string[]>([]);
+  const newPreviewUrls = useRef(new Set<string>());
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -261,16 +270,19 @@ export default function EditVisitPage() {
   }, [id]);
 
   useEffect(() => {
+    const urls = newPreviewUrls.current;
     return () => {
-      newPreviews.forEach((url) => URL.revokeObjectURL(url));
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
     };
-  }, [newPreviews]);
+  }, []);
 
   function handleFilesChange(e: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
 
-    newPreviews.forEach((url) => URL.revokeObjectURL(url));
+    newPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    newPreviewUrls.current.clear();
 
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
 
@@ -278,8 +290,11 @@ export default function EditVisitPage() {
       setErrorMessage("写真ファイルのみ選択できます。");
     }
 
+    const previewUrls = imageFiles.map((file) => URL.createObjectURL(file));
+    previewUrls.forEach((url) => newPreviewUrls.current.add(url));
+
     setNewFiles(imageFiles);
-    setNewPreviews(imageFiles.map((file) => URL.createObjectURL(file)));
+    setNewPreviews(previewUrls);
   }
 
   function removeExistingPhoto(photoId: string) {
@@ -289,7 +304,9 @@ export default function EditVisitPage() {
 
   function removeNewPhoto(index: number) {
     const target = newPreviews[index];
-    if (target) URL.revokeObjectURL(target);
+    if (target && newPreviewUrls.current.delete(target)) {
+      URL.revokeObjectURL(target);
+    }
 
     setNewFiles((prev) => prev.filter((_, i) => i !== index));
     setNewPreviews((prev) => prev.filter((_, i) => i !== index));
@@ -791,11 +808,15 @@ export default function EditVisitPage() {
                 {existingPhotos.map((photo) =>
                   photo.image_url ? (
                     <div key={photo.id} className="rounded-xl border p-2">
-                      <a href={photo.image_url} target="_blank" rel="noreferrer">
-                        <img
+                      <a
+                        href={photo.image_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="relative block h-32"
+                      >
+                        <VisitEditPhoto
                           src={photo.image_url}
                           alt="visit photo"
-                          className="h-32 w-full rounded-lg object-cover"
                         />
                       </a>
                       <button
@@ -826,11 +847,13 @@ export default function EditVisitPage() {
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {newPreviews.map((preview, index) => (
                   <div key={`${preview}-${index}`} className="rounded-xl border p-2">
-                    <img
+                    <div className="relative h-32">
+                      <VisitEditPhoto
                       src={preview}
                       alt="new preview"
-                      className="h-32 w-full rounded-lg object-cover"
-                    />
+                        unoptimized
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => removeNewPhoto(index)}

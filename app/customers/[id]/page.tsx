@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -46,18 +46,15 @@ type VisitPhoto = {
 type Reservation = {
   id: string;
   customer_id: string | null;
+  staff_id: string | null;
   status: string | null;
   start_at: string | null;
-  reservation_date: string | null;
-  reservation_time: string | null;
-  date: string | null;
-  time: string | null;
-  visit_date: string | null;
-  reserved_at: string | null;
-  menu_name: string | null;
   menu: string | null;
-  staff_name: string | null;
-  staff: string | null;
+};
+
+type ReservationStaff = {
+  id: string;
+  name: string | null;
 };
 
 type CustomerIntake = {
@@ -226,23 +223,11 @@ function normalizeTimeText(value: string | null | undefined) {
 }
 
 function getReservationDate(reservation: Reservation) {
-  return normalizeDateText(
-    reservation.start_at ||
-      reservation.reservation_date ||
-      reservation.date ||
-      reservation.visit_date ||
-      reservation.reserved_at ||
-      null
-  );
+  return normalizeDateText(reservation.start_at);
 }
 
 function getReservationTime(reservation: Reservation) {
-  return normalizeTimeText(
-    reservation.start_at ||
-      reservation.reservation_time ||
-      reservation.time ||
-      null
-  );
+  return normalizeTimeText(reservation.start_at);
 }
 
 function isActiveReservation(status: string | null) {
@@ -277,13 +262,10 @@ export default function CustomerDetailPage() {
   const [visitPayments, setVisitPayments] = useState<VisitPayment[]>([]);
   const [visitPhotos, setVisitPhotos] = useState<VisitPhoto[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
+  const [reservationStaffNames, setReservationStaffNames] = useState<Record<string, string>>({});
+  const [reservationsLoaded, setReservationsLoaded] = useState(false);
   const [intake, setIntake] = useState<CustomerIntake | null>(null);
   const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!customerId) return;
-    fetchCustomerDetail();
-  }, [customerId]);
 
   const paymentMap = useMemo(() => {
     const nextMap: Record<string, VisitPayment[]> = {};
@@ -364,8 +346,10 @@ export default function CustomerDetailPage() {
     };
   }, [visits, latestVisit]);
 
-  async function fetchCustomerDetail() {
+  const fetchCustomerDetail = useCallback(async () => {
     setLoading(true);
+    setReservationsLoaded(false);
+    setReservationStaffNames({});
 
     try {
       const { data: customerData, error: customerError } = await supabase
@@ -436,16 +420,42 @@ export default function CustomerDetailPage() {
 
       const { data: reservationData, error: reservationError } = await supabase
         .from("reservations")
-        .select(
-          "id, customer_id, status, start_at, reservation_date, reservation_time, date, time, visit_date, reserved_at, menu_name, menu, staff_name, staff"
-        )
+        .select("id, customer_id, staff_id, status, start_at, menu")
         .eq("customer_id", customerId);
 
       if (reservationError) {
         console.error("reservations取得エラー:", reservationError);
         setReservations([]);
       } else {
-        setReservations((reservationData || []) as Reservation[]);
+        const nextReservations = (reservationData || []) as Reservation[];
+        setReservations(nextReservations);
+        setReservationsLoaded(true);
+
+        const staffIds = Array.from(
+          new Set(
+            nextReservations
+              .map((reservation) => reservation.staff_id)
+              .filter((staffId): staffId is string => Boolean(staffId))
+          )
+        );
+
+        if (staffIds.length > 0) {
+          const { data: staffData, error: staffError } = await supabase
+            .from("staffs")
+            .select("id, name")
+            .in("id", staffIds);
+
+          if (staffError) {
+            console.error("予約担当スタッフ取得エラー:", staffError);
+          } else {
+            const nextStaffNames = Object.fromEntries(
+              ((staffData || []) as ReservationStaff[])
+                .filter((staff) => staff.name?.trim())
+                .map((staff) => [staff.id, staff.name!.trim()])
+            );
+            setReservationStaffNames(nextStaffNames);
+          }
+        }
       }
 
       try {
@@ -534,8 +544,12 @@ export default function CustomerDetailPage() {
       alert("データ取得中にエラーが発生しました");
     } finally {
       setLoading(false);
-    }
-  }
+    }  }, [customerId]);
+
+  useEffect(() => {
+    if (!customerId) return;
+    void Promise.resolve().then(fetchCustomerDetail);
+  }, [customerId, fetchCustomerDetail]);
 
   async function handleDeleteCustomer() {
     const ok = window.confirm("この顧客を削除しますか？");
@@ -581,15 +595,14 @@ export default function CustomerDetailPage() {
 
   function getReservationMenu(reservation: Reservation | null) {
     if (!reservation) return "-";
-    if (reservation.menu_name?.trim()) return reservation.menu_name;
     if (reservation.menu?.trim()) return reservation.menu;
     return "-";
   }
 
   function getReservationStaff(reservation: Reservation | null) {
-    if (!reservation) return "-";
-    if (reservation.staff_name?.trim()) return reservation.staff_name;
-    if (reservation.staff?.trim()) return reservation.staff;
+    if (!reservation?.staff_id) return "-";
+    const staffName = reservationStaffNames[reservation.staff_id];
+    if (staffName) return staffName;
     return "-";
   }
 
@@ -727,7 +740,11 @@ export default function CustomerDetailPage() {
 
           <div className="mt-3 rounded-3xl bg-blue-50 p-4">
             <div className="text-sm font-bold text-blue-700">次回予約</div>
-            {nextReservation ? (
+            {!reservationsLoaded ? (
+              <div role="alert" className="mt-2 text-sm text-amber-800">
+                次回予約を確認できませんでした。時間をおいて再読み込みしてください。
+              </div>
+            ) : nextReservation ? (
               <div className="mt-2 space-y-1 text-sm text-slate-700">
                 <div>
                   日時: {formatDateOnly(getReservationDate(nextReservation))}{" "}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -337,11 +338,16 @@ export default function CustomerIntakeDetailPage({ params }: PageProps) {
                   <div className="rounded-2xl bg-gray-50 p-4">
                     <p className="mb-3 text-sm font-bold text-gray-900">署名画像</p>
                     {latestIntake.signature_data_url ? (
-                      <img
-                        src={latestIntake.signature_data_url}
-                        alt="署名"
-                        className="max-h-[280px] w-full rounded-2xl border border-gray-200 bg-white object-contain"
-                      />
+                      <div className="relative h-[220px] w-full overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                        <Image
+                          src={latestIntake.signature_data_url}
+                          alt="署名"
+                          fill
+                          sizes="(max-width: 768px) calc(100vw - 64px), 928px"
+                          className="object-contain"
+                          unoptimized
+                        />
+                      </div>
                     ) : (
                       <div className="flex h-40 items-center justify-center rounded-2xl border border-dashed border-gray-300 text-sm text-gray-400">
                         署名なし

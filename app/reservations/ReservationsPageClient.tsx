@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ReservationReferencePhoto from "./ReservationReferencePhoto";
 
 type ReservationRow = {
   id: string;
@@ -1080,12 +1081,11 @@ export default function ReservationsPageClient() {
                                 href={galleryReference.photoUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="mt-3 block overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
+                                className="relative mt-3 block h-56 overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
                               >
-                                <img
+                                <ReservationReferencePhoto
                                   src={galleryReference.photoUrl}
-                                  alt="Aily Gallery参考デザイン"
-                                  className="h-56 w-full object-cover"
+                                  sizes="(max-width: 768px) calc(100vw - 64px), 640px"
                                 />
                               </a>
                             ) : (

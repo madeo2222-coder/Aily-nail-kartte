@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import CustomerPhoto from "../CustomerPhoto";
 
 type VisitRow = {
   id: string;
@@ -478,12 +479,12 @@ export default function CustomerAppHistoryPage() {
                                 href={photo.image_url}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="block overflow-hidden rounded-2xl border bg-white shadow-sm"
+                                className="relative block h-32 overflow-hidden rounded-2xl border bg-white shadow-sm"
                               >
-                                <img
+                                <CustomerPhoto
                                   src={photo.image_url}
                                   alt="施術写真"
-                                  className="h-32 w-full object-cover"
+                                  sizes="(max-width: 448px) calc(50vw - 55px), 170px"
                                 />
                               </a>
                             ) : null

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -375,12 +376,16 @@ export default function CustomerIntakeListPage() {
                           署名
                         </div>
 
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={intake.signature_data_url}
-                          alt="署名"
-                          className="max-h-40 w-auto"
-                        />
+                        <div className="relative h-40 w-full overflow-hidden rounded-lg">
+                          <Image
+                            src={intake.signature_data_url}
+                            alt="署名"
+                            fill
+                            sizes="(max-width: 1023px) calc(100vw - 80px), 560px"
+                            className="object-contain object-left"
+                            unoptimized
+                          />
+                        </div>
                       </div>
                     ) : null}
                   </div>
