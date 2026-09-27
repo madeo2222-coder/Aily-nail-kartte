@@ -9,6 +9,7 @@ import {
   isInboundLanguage,
   type InboundLanguage,
 } from "./translations";
+import InboundPortfolioGallery from "./InboundPortfolioGallery";
 
 const salonId = "e120ed90-fded-41b8-b3fe-f486e84f2418";
 const uploadBucketName = "visit-photos";
@@ -489,62 +490,7 @@ export default function InboundReservePage() {
             {copy.portfolioDescription}
           </p>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div>
-              <img
-                src="/inbound-gallery/one-piece1.jpg"
-                alt={copy.portfolioCaptions[0]}
-                className="h-40 w-full rounded-2xl object-cover"
-              />
-              <div className="mt-2 text-center text-xs font-bold">
-                {copy.portfolioCaptions[0]}
-              </div>
-            </div>
-
-            <div>
-              <img
-                src="/inbound-gallery/attack-on-titan.jpeg"
-                alt={copy.portfolioCaptions[1]}
-                className="h-40 w-full rounded-2xl object-cover"
-              />
-              <div className="mt-2 text-center text-xs font-bold">
-                {copy.portfolioCaptions[1]}
-              </div>
-            </div>
-
-            <div>
-              <img
-                src="/inbound-gallery/demon-slayer.jpeg"
-                alt={copy.portfolioCaptions[2]}
-                className="h-40 w-full rounded-2xl object-cover"
-              />
-              <div className="mt-2 text-center text-xs font-bold">
-                {copy.portfolioCaptions[2]}
-              </div>
-            </div>
-
-            <div>
-              <img
-                src="/inbound-gallery/jojo.jpeg"
-                alt={copy.portfolioCaptions[3]}
-                className="h-40 w-full rounded-2xl object-cover"
-              />
-              <div className="mt-2 text-center text-xs font-bold">
-                {copy.portfolioCaptions[3]}
-              </div>
-            </div>
-
-            <div className="col-span-2">
-              <img
-                src="/inbound-gallery/dragon-ball.jpeg"
-                alt={copy.portfolioCaptions[4]}
-                className="h-72 w-full rounded-2xl bg-white object-contain"
-              />
-              <div className="mt-2 text-center text-xs font-bold">
-                {copy.portfolioCaptions[4]}
-              </div>
-            </div>
-          </div>
+          <InboundPortfolioGallery captions={copy.portfolioCaptions} />
 
           <div className="mt-4 rounded-2xl bg-pink-50 p-4 text-center">
             <div className="text-lg font-black text-pink-700">
