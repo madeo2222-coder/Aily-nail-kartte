@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import CustomerPhoto from "../CustomerPhoto";
 
 const customMenuId = "custom";
 
@@ -764,12 +765,12 @@ function ReservePageContent() {
                 href={galleryPhotoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-3 block overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
+                className="relative mt-3 block h-64 overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
               >
-                <img
+                <CustomerPhoto
                   src={galleryPhotoUrl}
                   alt="Aily Gallery参考デザイン"
-                  className="h-64 w-full object-cover"
+                  sizes="(max-width: 448px) calc(100vw - 64px), 384px"
                 />
               </a>
             ) : (
