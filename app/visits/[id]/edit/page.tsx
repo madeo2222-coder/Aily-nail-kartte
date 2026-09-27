@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import VisitEditPhoto from "./VisitEditPhoto";
 
 type Visit = {
   id: string;
@@ -791,11 +792,15 @@ export default function EditVisitPage() {
                 {existingPhotos.map((photo) =>
                   photo.image_url ? (
                     <div key={photo.id} className="rounded-xl border p-2">
-                      <a href={photo.image_url} target="_blank" rel="noreferrer">
-                        <img
+                      <a
+                        href={photo.image_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="relative block h-32"
+                      >
+                        <VisitEditPhoto
                           src={photo.image_url}
                           alt="visit photo"
-                          className="h-32 w-full rounded-lg object-cover"
                         />
                       </a>
                       <button
@@ -826,11 +831,13 @@ export default function EditVisitPage() {
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {newPreviews.map((preview, index) => (
                   <div key={`${preview}-${index}`} className="rounded-xl border p-2">
-                    <img
+                    <div className="relative h-32">
+                      <VisitEditPhoto
                       src={preview}
                       alt="new preview"
-                      className="h-32 w-full rounded-lg object-cover"
-                    />
+                        unoptimized
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => removeNewPhoto(index)}
