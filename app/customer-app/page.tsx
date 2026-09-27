@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import CustomerPhoto from "./CustomerPhoto";
 
 type NewsItem = {
   id: string;
@@ -615,11 +616,14 @@ export default function CustomerAppPage() {
               </p>
             </div>
 
-            <Link href="/customer-app/gallery" className="block">
-              <img
+            <Link
+              href="/customer-app/gallery"
+              className="relative block h-64"
+            >
+              <CustomerPhoto
                 src={latestPhoto.imageUrl}
                 alt="最新施術写真"
-                className="h-64 w-full object-cover"
+                sizes="(max-width: 448px) calc(100vw - 32px), 416px"
               />
             </Link>
 

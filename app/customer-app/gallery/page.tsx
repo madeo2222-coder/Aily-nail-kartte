@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import CustomerPhoto from "../CustomerPhoto";
 
 type VisitPhotoRow = {
   id: string;
@@ -234,11 +235,16 @@ export default function CustomerAppGalleryPage() {
                 key={item.id}
                 className="overflow-hidden rounded-3xl border bg-white shadow-sm"
               >
-                <a href={item.imageUrl} target="_blank" rel="noreferrer">
-                  <img
+                <a
+                  href={item.imageUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="relative block h-44"
+                >
+                  <CustomerPhoto
                     src={item.imageUrl}
                     alt="Aily Gallery 施術デザイン"
-                    className="h-44 w-full object-cover"
+                    sizes="(max-width: 448px) calc(50vw - 23px), 202px"
                   />
                 </a>
 
