@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type CustomerRow = {
@@ -38,10 +38,16 @@ export default function KpiReportsPage() {
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
-    const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
+
+    try {
       setLoading(true);
+      setMessage("");
 
       const [customersRes, visitsRes] = await Promise.all([
         supabase.from("customers").select("id, name"),
@@ -62,21 +68,46 @@ export default function KpiReportsPage() {
           .order("visit_date", { ascending: false }),
       ]);
 
-      if (customersRes.error) {
-        console.error("customers fetch error:", customersRes.error.message);
-      }
-
-      if (visitsRes.error) {
-        console.error("visits fetch error:", visitsRes.error.message);
+      if (!isCurrent()) return;
+      if (customersRes.error || visitsRes.error) {
+        const errors = [customersRes.error, visitsRes.error].filter(Boolean);
+        console.error(
+          "KPI fetch error:",
+          errors.map((error) => error?.message).join(" / ")
+        );
+        setMessage(
+          "KPIデータを取得できませんでした。通信状態を確認して再試行してください。"
+        );
+        setCustomers([]);
+        setVisits([]);
+        return;
       }
 
       setCustomers((customersRes.data as CustomerRow[]) || []);
       setVisits((visitsRes.data as VisitRow[]) || []);
-      setLoading(false);
-    };
-
-    fetchAll();
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("KPI fetch error:", error);
+      setMessage(
+        "KPIデータを取得できませんでした。通信状態を確認して再試行してください。"
+      );
+      setCustomers([]);
+      setVisits([]);
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchAll();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
+  }, [fetchAll]);
 
   const customerKpis = useMemo<CustomerKpiRow[]>(() => {
     const map: Record<
@@ -180,11 +211,27 @@ export default function KpiReportsPage() {
         </p>
       </div>
 
+      {message && !loading && (
+        <div
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          role="alert"
+        >
+          <p>{message}</p>
+          <button
+            type="button"
+            onClick={() => void fetchAll()}
+            className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 font-bold text-red-900"
+          >
+            再試行
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="rounded-xl border bg-white p-4 text-sm text-gray-500">
           読み込み中...
         </div>
-      ) : (
+      ) : message ? null : (
         <>
           <div className="mb-4 grid grid-cols-2 gap-3">
             <div className="rounded-2xl border bg-white p-4 shadow-sm">

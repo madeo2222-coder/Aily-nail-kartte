@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -38,12 +38,11 @@ export default function DailyReportsPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
-    fetchVisits();
-  }, []);
-
-  async function fetchVisits() {
+  const fetchVisits = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
     try {
       setLoading(true);
       setMessage("");
@@ -53,6 +52,7 @@ export default function DailyReportsPage() {
         .select("id, visit_date, price")
         .order("visit_date", { ascending: false });
 
+      if (!isCurrent()) return;
       if (error) {
         console.error("visits取得エラー:", error);
         setMessage(`来店情報の取得に失敗しました: ${error.message}`);
@@ -73,13 +73,25 @@ export default function DailyReportsPage() {
 
       setVisits(normalized);
     } catch (err) {
+      if (!isCurrent()) return;
       console.error("予期しないエラー:", err);
-      setMessage("予期しないエラーが発生しました");
+      setMessage("来店情報を取得できませんでした。通信状態を確認して再試行してください。");
       setVisits([]);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchVisits();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
+  }, [fetchVisits]);
 
   const dailyRows = useMemo(() => {
     const now = new Date();
@@ -146,15 +158,22 @@ export default function DailyReportsPage() {
           </Link>
         </div>
 
-        {message && (
-          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600">
-            {message}
+        {message && !loading && (
+          <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-600" role="alert">
+            <p>{message}</p>
+            <button
+              type="button"
+              onClick={() => void fetchVisits()}
+              className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 font-bold text-red-900"
+            >
+              再試行
+            </button>
           </div>
         )}
 
         {loading ? (
           <div className="rounded-2xl bg-white p-6 shadow-sm">読み込み中...</div>
-        ) : (
+        ) : message ? null : (
           <>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div className="rounded-2xl bg-white p-5 shadow-sm">

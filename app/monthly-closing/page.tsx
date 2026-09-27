@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -94,15 +94,13 @@ export default function MonthlyClosingPage() {
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [monthValue, setMonthValue] = useState(toMonthValue(new Date()));
-  const [expensesTableMissing, setExpensesTableMissing] = useState(false);
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    async function load() {
+  const load = useCallback(async () => {
+      const version = ++requestVersion.current;
+      const isCurrent = () => version === requestVersion.current;
       setLoading(true);
       setErrorText("");
-      setExpensesTableMissing(false);
 
       try {
         const [visitsRes, expensesRes] = await Promise.all([
@@ -110,40 +108,41 @@ export default function MonthlyClosingPage() {
           supabase.from("expenses").select("*"),
         ]);
 
-        if (!isMounted) return;
+        if (!isCurrent()) return;
 
         if (visitsRes.error) {
           throw new Error(`visits取得失敗: ${visitsRes.error.message}`);
         }
 
-        const missingExpensesTable =
-          expensesRes.error &&
-          expensesRes.error.message.includes("Could not find the table 'public.expenses'");
-
-        if (expensesRes.error && !missingExpensesTable) {
+        if (expensesRes.error) {
           throw new Error(`expenses取得失敗: ${expensesRes.error.message}`);
         }
 
         setVisits((visitsRes.data || []) as VisitRow[]);
-        setExpenses(missingExpensesTable ? [] : ((expensesRes.data || []) as ExpenseRow[]));
-        setExpensesTableMissing(Boolean(missingExpensesTable));
+        setExpenses((expensesRes.data || []) as ExpenseRow[]);
       } catch (error) {
+        if (!isCurrent()) return;
         const message =
           error instanceof Error ? error.message : "月次締めデータ取得に失敗しました";
         setErrorText(`データ取得でエラーが発生しました：${message}`);
         setVisits([]);
         setExpenses([]);
       } finally {
-        if (isMounted) setLoading(false);
+        if (isCurrent()) setLoading(false);
       }
-    }
+  }, []);
 
-    load();
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void load();
+    });
 
     return () => {
-      isMounted = false;
+      active = false;
+      requestVersion.current += 1;
     };
-  }, []);
+  }, [load]);
 
   const monthlyVisits = useMemo(() => {
     return visits.filter((row) => isInMonth(getVisitDate(row), monthValue));
@@ -296,8 +295,9 @@ export default function MonthlyClosingPage() {
           />
         </div>
 
-        {errorText ? (
+        {errorText && !loading ? (
           <div
+            role="alert"
             style={{
               marginBottom: 16,
               background: "#fff1f2",
@@ -310,11 +310,26 @@ export default function MonthlyClosingPage() {
               whiteSpace: "pre-wrap",
             }}
           >
-            {errorText}
+            <div>{errorText}</div>
+            <button
+              type="button"
+              onClick={() => void load()}
+              style={{
+                marginTop: 12,
+                border: "1px solid #fda4af",
+                background: "#fff",
+                color: "#9f1239",
+                padding: "10px 14px",
+                borderRadius: 10,
+                fontWeight: 700,
+              }}
+            >
+              再試行
+            </button>
           </div>
         ) : null}
 
-        <div style={{ display: "grid", gap: 16, marginBottom: 16 }}>
+        {!errorText ? <div style={{ display: "grid", gap: 16, marginBottom: 16 }}>
           <div
             style={{
               background: "#fff",
@@ -365,26 +380,9 @@ export default function MonthlyClosingPage() {
               {loading ? "..." : formatYen(totalProfit)}
             </div>
           </div>
-        </div>
+        </div> : null}
 
-        {expensesTableMissing ? (
-          <div
-            style={{
-              marginBottom: 16,
-              background: "#fffbeb",
-              color: "#92400e",
-              border: "1px solid #fde68a",
-              borderRadius: 14,
-              padding: 12,
-              fontSize: 14,
-              lineHeight: 1.6,
-            }}
-          >
-            expenses テーブルがまだ無いため、経費は ¥0 として集計しています。
-          </div>
-        ) : null}
-
-        {!loading && monthlyVisits.length === 0 && monthlyExpenses.length === 0 ? (
+        {!loading && !errorText && monthlyVisits.length === 0 && monthlyExpenses.length === 0 ? (
           <div
             style={{
               background: "#fff",

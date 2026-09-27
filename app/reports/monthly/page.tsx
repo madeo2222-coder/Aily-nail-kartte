@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -224,6 +224,7 @@ export default function MonthlyReportPage() {
   );
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState("");
+  const requestVersion = useRef(0);
 
   const [visits, setVisits] = useState<VisitReportRow[]>([]);
   const [visitPayments, setVisitPayments] = useState<
@@ -231,72 +232,89 @@ export default function MonthlyReportPage() {
   >([]);
 
   const fetchMonthlyData = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
     setLoading(true);
     setPageError("");
     setVisits([]);
     setVisitPayments([]);
 
-    const { startText, endText } = getMonthRange(targetMonth);
+    try {
+      const { startText, endText } = getMonthRange(targetMonth);
 
-    const { data: visitsData, error: visitsError } = await supabase
-      .from("visits")
-      .select(
-        "id, visit_date, price, customer_id, menu_name, staff_name"
-      )
-      .gte("visit_date", startText)
-      .lt("visit_date", endText)
-      .order("visit_date", { ascending: true });
-
-    if (visitsError) {
-      console.error("月次来店データ取得エラー:", visitsError);
-      setPageError(
-        `来店データの取得に失敗しました: ${visitsError.message}`
-      );
-      setLoading(false);
-      return;
-    }
-
-    const normalizedVisits = normalizeVisitRows(visitsData || []);
-    setVisits(normalizedVisits);
-
-    const visitIds = normalizedVisits
-      .map((visit) => visit.id)
-      .filter(Boolean);
-
-    if (visitIds.length === 0) {
-      setVisitPayments([]);
-      setLoading(false);
-      return;
-    }
-
-    const { data: paymentsData, error: paymentsError } =
-      await supabase
-        .from("visit_payments")
+      const { data: visitsData, error: visitsError } = await supabase
+        .from("visits")
         .select(
-          "id, visit_id, amount, payment_method, sort_order"
+          "id, visit_date, price, customer_id, menu_name, staff_name"
         )
-        .in("visit_id", visitIds)
-        .order("sort_order", { ascending: true });
+        .gte("visit_date", startText)
+        .lt("visit_date", endText)
+        .order("visit_date", { ascending: true });
 
-    if (paymentsError) {
-      console.error(
-        "月次支払い明細取得エラー:",
-        paymentsError
-      );
-      setPageError(
-        `支払い明細の取得に失敗しました: ${paymentsError.message}`
-      );
+      if (!isCurrent()) return;
+      if (visitsError) {
+        console.error("月次来店データ取得エラー:", visitsError);
+        setPageError(
+          `来店データの取得に失敗しました: ${visitsError.message}`
+        );
+        return;
+      }
+
+      const normalizedVisits = normalizeVisitRows(visitsData || []);
+      setVisits(normalizedVisits);
+
+      const visitIds = normalizedVisits
+        .map((visit) => visit.id)
+        .filter(Boolean);
+
+      if (visitIds.length === 0) {
+        setVisitPayments([]);
+        return;
+      }
+
+      const { data: paymentsData, error: paymentsError } =
+        await supabase
+          .from("visit_payments")
+          .select(
+            "id, visit_id, amount, payment_method, sort_order"
+          )
+          .in("visit_id", visitIds)
+          .order("sort_order", { ascending: true });
+
+      if (!isCurrent()) return;
+      if (paymentsError) {
+        console.error(
+          "月次支払い明細取得エラー:",
+          paymentsError
+        );
+        setPageError(
+          `支払い明細の取得に失敗しました: ${paymentsError.message}`
+        );
+        setVisitPayments([]);
+        return;
+      }
+
+      setVisitPayments(normalizePaymentRows(paymentsData || []));
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("月次レポート取得エラー:", error);
+      setPageError("月次レポートを取得できませんでした。通信状態を確認して再試行してください。");
+      setVisits([]);
       setVisitPayments([]);
-      setLoading(false);
-      return;
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
-
-    setVisitPayments(normalizePaymentRows(paymentsData || []));
-    setLoading(false);
   }, [targetMonth]);
 
   useEffect(() => {
-    void Promise.resolve().then(fetchMonthlyData);
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchMonthlyData();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
   }, [fetchMonthlyData]);
 
   const visitMap = useMemo(() => {
@@ -567,9 +585,14 @@ export default function MonthlyReportPage() {
                 id="targetMonth"
                 type="month"
                 value={targetMonth}
-                onChange={(event) =>
-                  setTargetMonth(event.target.value)
-                }
+                onChange={(event) => {
+                  if (event.target.value === targetMonth) return;
+                  // Invalidate immediately, before the next month's Effect runs.
+                  requestVersion.current += 1;
+                  setLoading(true);
+                  setPageError("");
+                  setTargetMonth(event.target.value);
+                }}
                 className="rounded-xl border border-neutral-300 bg-white px-3 py-3 text-sm outline-none transition focus:border-black"
               />
             </div>
@@ -584,8 +607,16 @@ export default function MonthlyReportPage() {
         </section>
 
         {pageError ? (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {pageError}
+            <button
+              type="button"
+              onClick={() => void fetchMonthlyData()}
+              disabled={loading}
+              className="ml-3 rounded-lg border border-red-300 bg-white px-3 py-2 font-semibold disabled:opacity-50"
+            >
+              再試行
+            </button>
           </div>
         ) : null}
 
@@ -593,7 +624,7 @@ export default function MonthlyReportPage() {
           <div className="rounded-2xl border border-neutral-200 bg-white px-6 py-16 text-center text-sm text-neutral-500 shadow-sm">
             月次レポートを読み込み中...
           </div>
-        ) : (
+        ) : pageError ? null : (
           <>
             <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">

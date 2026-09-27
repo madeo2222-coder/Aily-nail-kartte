@@ -35,6 +35,11 @@ function createHooks() {
       },
       useMemo: (fn) => fn(),
       useCallback: (fn) => fn,
+      useRef(initial) {
+        const index = cursor++;
+        if (!(index in states)) states[index] = { current: initial };
+        return states[index];
+      },
       useEffect: (fn) => { effects.push(fn); },
     },
   };

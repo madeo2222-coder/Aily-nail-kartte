@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type VisitAmountRow = {
@@ -32,8 +32,11 @@ export default function FinancePage() {
   const [expenses, setExpenses] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const requestVersion = useRef(0);
 
   const fetchData = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
     setIsLoading(true);
     setLoadError(false);
 
@@ -46,6 +49,8 @@ export default function FinancePage() {
       if (visitsResult.error || expensesResult.error) {
         throw visitsResult.error ?? expensesResult.error;
       }
+
+      if (!isCurrent()) return;
 
       let salesTotal = 0;
 
@@ -66,15 +71,23 @@ export default function FinancePage() {
       setSales(salesTotal);
       setExpenses(expenseTotal);
     } catch (error) {
+      if (!isCurrent()) return;
       console.error("収支取得エラー:", error);
       setLoadError(true);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   }, [selectedMonth]);
 
   useEffect(() => {
-    void Promise.resolve().then(fetchData);
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchData();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
   }, [fetchData]);
 
   const profit = sales - expenses;
@@ -90,7 +103,13 @@ export default function FinancePage() {
         <input
           type="month"
           value={selectedMonth}
-          onChange={(e) => setSelectedMonth(e.target.value)}
+          onChange={(e) => {
+            if (e.target.value === selectedMonth) return;
+            requestVersion.current += 1;
+            setIsLoading(true);
+            setLoadError(false);
+            setSelectedMonth(e.target.value);
+          }}
           className="mt-1 w-full border rounded-lg p-2"
         />
       </div>
