@@ -85,6 +85,15 @@ async function loadPage({ reservations = [], reservationError = null, rejectRese
       if (name === "react/jsx-runtime") return require(name);
       if (name === "@/lib/supabase") return { supabase };
       if (name === "next/link") return { default: "a" };
+      if (name === "next/image") {
+        return {
+          default: (props) => {
+            const imageProps = { ...props };
+            delete imageProps.unoptimized;
+            return require("react").createElement("img", imageProps);
+          },
+        };
+      }
       if (name === "next/navigation") return {
         useParams: () => ({ id: "customer-1" }),
         useRouter: () => ({ push() { assert.fail("Unexpected navigation"); } }),

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ExpenseReceiptImage from "../ExpenseReceiptImage";
 
 type ExpenseRow = {
   id: string;
@@ -37,6 +38,7 @@ export default function ExpenseEditPage() {
   const expenseId = params?.id;
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<"not-found" | "failed" | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -54,12 +56,13 @@ export default function ExpenseEditPage() {
     }
   }, [expenseId, router]);
 
-  useEffect(() => {
-    const fetchExpense = async () => {
-      if (!expenseId || expenseId === "[id]") return;
+  const fetchExpense = useCallback(async () => {
+    if (!expenseId || expenseId === "[id]") return;
 
-      setIsLoading(true);
+    setIsLoading(true);
+    setLoadError(null);
 
+    try {
       const { data, error } = await supabase
         .from("expenses")
         .select("id, expense_date, category, amount, memo, receipt_url")
@@ -68,8 +71,7 @@ export default function ExpenseEditPage() {
 
       if (error || !data) {
         console.error("経費詳細取得エラー:", error);
-        alert(`経費データの取得に失敗しました: ${error?.message ?? "not found"}`);
-        router.push("/expenses");
+        setLoadError(error ? (error.code === "PGRST116" ? "not-found" : "failed") : "not-found");
         return;
       }
 
@@ -84,11 +86,17 @@ export default function ExpenseEditPage() {
       setAmount(String(row.amount ?? ""));
       setMemo(row.memo ?? "");
       setReceiptUrl(row.receipt_url ?? null);
+    } catch (error) {
+      console.error("経費詳細取得エラー:", error);
+      setLoadError("failed");
+    } finally {
       setIsLoading(false);
-    };
+    }
+  }, [expenseId]);
 
-    void fetchExpense();
-  }, [expenseId, router]);
+  useEffect(() => {
+    void Promise.resolve().then(fetchExpense);
+  }, [fetchExpense]);
 
   const uploadReceiptImage = async () => {
     if (!receiptFile) return receiptUrl;
@@ -215,6 +223,41 @@ export default function ExpenseEditPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <main className="p-4 pb-24 max-w-xl mx-auto">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
+          <h1 className="text-lg font-bold text-red-900">
+            {loadError === "not-found"
+              ? "経費データが見つかりません"
+              : "経費データを取得できませんでした"}
+          </h1>
+          <p className="mt-2 text-sm text-red-800">
+            {loadError === "not-found"
+              ? "削除済み、または参照できない経費の可能性があります。"
+              : "通信状況を確認して、もう一度お試しください。"}
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => void fetchExpense()}
+              className="rounded-xl border border-red-300 bg-white px-4 py-3 font-medium text-red-900"
+            >
+              再試行
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/expenses")}
+              className="rounded-xl border border-red-300 bg-white px-4 py-3 font-medium text-red-900"
+            >
+              経費一覧に戻る
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="p-4 pb-24 max-w-xl mx-auto">
       <div className="mb-6">
@@ -282,11 +325,7 @@ export default function ExpenseEditPage() {
 
           {receiptUrl && (
             <div className="mb-3">
-              <img
-                src={receiptUrl}
-                alt="レシート"
-                className="w-full rounded-xl border"
-              />
+              <ExpenseReceiptImage src={receiptUrl} variant="detail" />
             </div>
           )}
 

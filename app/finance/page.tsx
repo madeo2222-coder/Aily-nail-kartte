@@ -30,36 +30,47 @@ export default function FinancePage() {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [sales, setSales] = useState(0);
   const [expenses, setExpenses] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const fetchData = useCallback(async () => {
-    // 売上取得
-    const { data: visits } = await supabase
-      .from("visits")
-      .select("price, visit_date");
+    setIsLoading(true);
+    setLoadError(false);
 
-    let salesTotal = 0;
+    try {
+      const [visitsResult, expensesResult] = await Promise.all([
+        supabase.from("visits").select("price, visit_date"),
+        supabase.from("expenses").select("amount, expense_date"),
+      ]);
 
-    (visits as VisitAmountRow[] | null)?.forEach((v) => {
-      if (v.visit_date?.startsWith(selectedMonth)) {
-        salesTotal += Number(v.price || 0);
+      if (visitsResult.error || expensesResult.error) {
+        throw visitsResult.error ?? expensesResult.error;
       }
-    });
 
-    // 経費取得
-    const { data: expensesData } = await supabase
-      .from("expenses")
-      .select("amount, expense_date");
+      let salesTotal = 0;
 
-    let expenseTotal = 0;
+      (visitsResult.data as VisitAmountRow[] | null)?.forEach((visit) => {
+        if (visit.visit_date?.startsWith(selectedMonth)) {
+          salesTotal += Number(visit.price || 0);
+        }
+      });
 
-    (expensesData as ExpenseAmountRow[] | null)?.forEach((e) => {
-      if (e.expense_date?.startsWith(selectedMonth)) {
-        expenseTotal += Number(e.amount || 0);
-      }
-    });
+      let expenseTotal = 0;
 
-    setSales(salesTotal);
-    setExpenses(expenseTotal);
+      (expensesResult.data as ExpenseAmountRow[] | null)?.forEach((expense) => {
+        if (expense.expense_date?.startsWith(selectedMonth)) {
+          expenseTotal += Number(expense.amount || 0);
+        }
+      });
+
+      setSales(salesTotal);
+      setExpenses(expenseTotal);
+    } catch (error) {
+      console.error("収支取得エラー:", error);
+      setLoadError(true);
+    } finally {
+      setIsLoading(false);
+    }
   }, [selectedMonth]);
 
   useEffect(() => {
@@ -84,8 +95,28 @@ export default function FinancePage() {
         />
       </div>
 
+      {isLoading && (
+        <div className="rounded-xl border p-4 text-sm text-gray-500">集計中...</div>
+      )}
+
+      {!isLoading && loadError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4" role="alert">
+          <p className="font-bold text-red-900">収支データを取得できませんでした</p>
+          <p className="mt-1 text-sm text-red-800">
+            売上・経費を0円として表示せず、集計を停止しています。
+          </p>
+          <button
+            type="button"
+            onClick={() => void fetchData()}
+            className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-bold text-red-900"
+          >
+            再試行
+          </button>
+        </div>
+      )}
+
       {/* カード */}
-      <div className="space-y-4">
+      {!isLoading && !loadError && <div className="space-y-4">
         <div className="rounded-xl border p-4">
           <p className="text-sm text-gray-500">売上</p>
           <p className="text-2xl font-bold">{formatYen(sales)}</p>
@@ -109,7 +140,7 @@ export default function FinancePage() {
             利益率 {formatPercent(profitRate)}
           </p>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -14,33 +14,45 @@ export default function CustomerEditPage() {
   const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const [loadError, setLoadError] = useState<"not-found" | "failed" | null>(null);
 
   const fetchCustomer = useCallback(async () => {
     setFetching(true);
+    setLoadError(null);
 
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, name, name_kana, phone")
-      .eq("id", customerId)
-      .single();
-
-    if (error) {
-      console.error("顧客取得エラー:", error);
-      alert("顧客情報の取得に失敗しました");
+    if (!customerId) {
+      setLoadError("not-found");
       setFetching(false);
       return;
     }
 
-    setName(data?.name || "");
-    setNameKana(data?.name_kana || "");
-    setPhone(data?.phone || "");
-    setFetching(false);
+    try {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("id, name, name_kana, phone")
+        .eq("id", customerId)
+        .single();
+
+      if (error || !data) {
+        console.error("顧客取得エラー:", error);
+        setLoadError(error ? (error.code === "PGRST116" ? "not-found" : "failed") : "not-found");
+        return;
+      }
+
+      setName(data.name || "");
+      setNameKana(data.name_kana || "");
+      setPhone(data.phone || "");
+    } catch (error) {
+      console.error("顧客取得エラー:", error);
+      setLoadError("failed");
+    } finally {
+      setFetching(false);
+    }
   }, [customerId]);
 
   useEffect(() => {
-    if (!customerId) return;
     void Promise.resolve().then(fetchCustomer);
-  }, [customerId, fetchCustomer]);
+  }, [fetchCustomer]);
 
   function normalizePhone(value: string) {
     const raw = value.replace(/[^\d+]/g, "");
@@ -96,6 +108,46 @@ export default function CustomerEditPage() {
           <div className="rounded-[28px] border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
             読み込み中...
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-2xl p-4 pb-24">
+          <section
+            className="rounded-[28px] border border-red-200 bg-white p-5 shadow-sm"
+            role="alert"
+          >
+            <h1 className="text-lg font-bold text-red-900">
+              {loadError === "not-found"
+                ? "顧客情報が見つかりません"
+                : "顧客情報を取得できませんでした"}
+            </h1>
+            <p className="mt-2 text-sm text-red-800">
+              {loadError === "not-found"
+                ? "削除済み、または参照できない顧客の可能性があります。"
+                : "通信状況を確認して、もう一度お試しください。"}
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void fetchCustomer()}
+                className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800"
+              >
+                再試行
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/customers")}
+                className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600"
+              >
+                顧客一覧に戻る
+              </button>
+            </div>
+          </section>
         </div>
       </main>
     );

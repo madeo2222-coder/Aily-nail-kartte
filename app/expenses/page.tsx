@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import ExpenseReceiptImage from "./ExpenseReceiptImage";
 
 type ExpenseRow = {
   id: string;
@@ -159,6 +160,7 @@ function downloadCsv(filename: string, rows: (string | number)[][]) {
 export default function ExpensesPage() {
   const [rows, setRows] = useState<ExpenseRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(buildCurrentMonth());
@@ -172,34 +174,35 @@ export default function ExpensesPage() {
   const fetchExpenses = useCallback(async () => {
     setIsLoading(true);
 
-    const { data, error } = await supabase
-      .from("expenses")
-      .select("id, expense_date, category, amount, memo, receipt_url")
-      .order("expense_date", { ascending: false })
-      .order("id", { ascending: false });
+    setLoadError(null);
+    setIsPreviewOpen(false);
+    try {
+      const { data, error } = await supabase
+        .from("expenses")
+        .select("id, expense_date, category, amount, memo, receipt_url")
+        .order("expense_date", { ascending: false })
+        .order("id", { ascending: false });
+      if (error) throw error;
 
-    if (error) {
+      const nextRows = (data ?? []) as ExpenseRow[];
+      setRows(nextRows);
+
+      const options = buildMonthOptionsFromRows(nextRows);
+      setSelectedMonth((currentMonth) => {
+        const hasCurrentMonth = options.some(
+          (option) => option.value === currentMonth
+        );
+        return hasCurrentMonth || options.length === 0
+          ? currentMonth
+          : options[0].value;
+      });
+    } catch (error) {
       console.error("経費一覧取得エラー:", error);
-      alert(`経費一覧の取得に失敗しました: ${error.message}`);
       setRows([]);
+      setLoadError("経費一覧を取得できませんでした。通信状況を確認して再試行してください。");
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    const nextRows = (data ?? []) as ExpenseRow[];
-    setRows(nextRows);
-
-    const options = buildMonthOptionsFromRows(nextRows);
-    setSelectedMonth((currentMonth) => {
-      const hasCurrentMonth = options.some(
-        (option) => option.value === currentMonth
-      );
-      return hasCurrentMonth || options.length === 0
-        ? currentMonth
-        : options[0].value;
-    });
-
-    setIsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -269,7 +272,10 @@ export default function ExpensesPage() {
   const selectedMonthLabel = getMonthLabel(selectedMonth);
   const documentNumber = getDocumentNumber(selectedMonth);
 
+  const canUseReport = !isLoading && !loadError;
+
   function handleDownloadCSV() {
+    if (!canUseReport) return;
     if (filteredRows.length === 0) {
       alert("出力するデータがありません");
       return;
@@ -300,6 +306,7 @@ export default function ExpensesPage() {
   }
 
   function handlePrint() {
+    if (!canUseReport) return;
     if (filteredRows.length === 0) {
       alert("出力するデータがありません");
       return;
@@ -515,10 +522,9 @@ export default function ExpensesPage() {
 
                     <div className="w-[140px] shrink-0">
                       {row.receipt_url ? (
-                        <img
+                        <ExpenseReceiptImage
                           src={row.receipt_url}
-                          alt="レシート"
-                          className="h-[96px] w-full rounded-xl border object-cover"
+                          variant="report"
                         />
                       ) : (
                         <div className="flex h-[96px] w-full items-center justify-center rounded-xl border text-xs text-slate-400">
@@ -558,8 +564,9 @@ export default function ExpensesPage() {
 
             <button
               type="button"
-              onClick={() => setIsPreviewOpen(true)}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow hover:bg-slate-800"
+              disabled={!canUseReport}
+              onClick={() => { if (canUseReport) setIsPreviewOpen(true); }}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               PDFプレビュー
             </button>
@@ -600,7 +607,9 @@ export default function ExpensesPage() {
           </div>
 
           <div className="text-sm text-gray-700">
-            表示件数: {filteredRows.length}件 / 合計: {formatAmount(totalAmount)}
+            {canUseReport
+              ? `表示件数: ${filteredRows.length}件 / 合計: ${formatAmount(totalAmount)}`
+              : isLoading ? "経費を読み込み中..." : "経費の件数・合計は取得できていません"}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -624,6 +633,7 @@ export default function ExpensesPage() {
 </Link>
             <button
               type="button"
+              disabled={!canUseReport}
               onClick={handleDownloadCSV}
               className="rounded-xl border px-4 py-2 text-sm font-medium"
             >
@@ -634,6 +644,13 @@ export default function ExpensesPage() {
 
         {isLoading ? (
           <div className="rounded-2xl border p-6">読み込み中...</div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-800">
+            <p>{loadError}</p>
+            <button type="button" onClick={() => void fetchExpenses()} className="mt-3 rounded-lg border px-4 py-2">
+              再試行
+            </button>
+          </div>
         ) : filteredRows.length === 0 ? (
           <div className="rounded-2xl border p-6 text-gray-600">
             該当する経費がありません
@@ -646,10 +663,9 @@ export default function ExpensesPage() {
                   <div className="flex-1 space-y-3">
                     {row.receipt_url ? (
                       <div className="w-full max-w-[220px] overflow-hidden rounded-xl border bg-white">
-                        <img
+                        <ExpenseReceiptImage
                           src={row.receipt_url}
-                          alt="レシート"
-                          className="h-[140px] w-full object-cover"
+                          variant="list"
                         />
                       </div>
                     ) : (
@@ -702,7 +718,7 @@ export default function ExpensesPage() {
           </div>
         )}
 
-        {isPreviewOpen ? (
+        {isPreviewOpen && canUseReport ? (
           <div className="fixed inset-0 z-50 bg-black/50 p-4 print:bg-white print:p-0">
             <div className="mx-auto flex h-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl print:max-w-none print:rounded-none print:shadow-none">
               <div className="preview-toolbar flex items-center justify-between border-b px-4 py-3">

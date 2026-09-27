@@ -119,7 +119,7 @@ test("sales checkout surfaces a visit lookup error without redirecting", async (
   assert.deepEqual(redirects, []);
 });
 
-async function loadExpenses({ rows = [], error = null } = {}) {
+async function loadExpenses({ rows = [], error = null, rejectQuery = false } = {}) {
   const compiled = compile("../app/expenses/page.tsx");
   const hookState = createHooks();
   const queries = [];
@@ -133,7 +133,7 @@ async function loadExpenses({ rows = [], error = null } = {}) {
         select(value) { query.select = value; return chain; },
         order(column, options) { query.orders.push([column, options]); return chain; },
         then(resolve, reject) {
-          return Promise.resolve({ data: error ? null : rows, error }).then(resolve, reject);
+          return (rejectQuery ? Promise.reject(new Error("offline")) : Promise.resolve({ data: error ? null : rows, error })).then(resolve, reject);
         },
       };
       return chain;
@@ -147,6 +147,14 @@ async function loadExpenses({ rows = [], error = null } = {}) {
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
       if (name === "@/lib/supabase") return { supabase };
+      if (name === "./ExpenseReceiptImage") {
+        return {
+          default: ({ src }) => require("react").createElement("img", {
+            src,
+            alt: "レシート",
+          }),
+        };
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
     console,
@@ -161,7 +169,27 @@ async function loadExpenses({ rows = [], error = null } = {}) {
   };
   render();
   await settleEffects(hookState.effects);
-  return { alerts, html: render(), queries };
+  return { alerts, html: render(), queries, async retry() {
+    hookState.reset();
+    const tree = exports.default();
+    function findRetry(node) {
+      if (!node || typeof node !== "object") return null;
+      if (node.type === "button" && node.props.children === "再試行") return node;
+      for (const child of [node.props?.children].flat(Infinity)) {
+        const found = findRetry(child);
+        if (found) return found;
+      }
+      return null;
+    }
+    error = null;
+    rejectQuery = false;
+    const retry = findRetry(tree);
+    assert.ok(retry, "retry button exists");
+    retry.props.onClick();
+    const loadingHtml = render();
+    await setImmediate();
+    return { loadingHtml, html: render() };
+  } };
 }
 
 test("expense list performs its canonical ordered query and renders current-month data", async () => {
@@ -188,6 +216,389 @@ test("expense list performs its canonical ordered query and renders current-mont
 
 test("expense list clears stale rows and reports a read error", async () => {
   const { alerts, html } = await loadExpenses({ error: { message: "read failed" } });
-  assert.deepEqual(alerts, ["経費一覧の取得に失敗しました: read failed"]);
+  assert.deepEqual(alerts, []);
+  assert.match(html, /role="alert"/);
+  assert.match(html, /経費一覧を取得できませんでした/);
+  assert.doesNotMatch(html, /該当する経費がありません/);
+  assert.doesNotMatch(html, /表示件数: 0件/);
+  assert.match(html, /disabled=""[^>]*>PDFプレビュー/);
+  assert.match(html, /disabled=""[^>]*>経費明細CSV/);
+});
+
+
+test("expense list distinguishes a successful empty response", async () => {
+  const { html } = await loadExpenses();
   assert.match(html, /該当する経費がありません/);
+  assert.doesNotMatch(html, /role="alert"/);
+  assert.match(html, /表示件数: 0件/);
+});
+
+test("expense list handles network rejection and recovers after retry", async () => {
+  const page = await loadExpenses({ rejectQuery: true });
+  assert.match(page.html, /経費一覧を取得できませんでした/);
+  assert.doesNotMatch(page.html, /該当する経費がありません/);
+  const { loadingHtml, html } = await page.retry();
+  assert.match(loadingHtml, /読み込み中/);
+  assert.match(loadingHtml, /disabled=""[^>]*>PDFプレビュー/);
+  assert.doesNotMatch(html, /role="alert"/);
+  assert.match(html, /該当する経費がありません/);
+  assert.equal(page.queries.length, 2);
+});
+
+async function loadExpenseEdit({ row, error = null, rejectQuery = false } = {}) {
+  const compiled = compile("../app/expenses/[id]/page.tsx");
+  const hookState = createHooks();
+  const queries = [];
+  const redirects = [];
+  const router = { push: (url) => redirects.push(url) };
+  const expense = row ?? {
+    id: "expense-1",
+    expense_date: "2026-09-27",
+    category: "材料費",
+    amount: 2400,
+    memo: "ジェル購入",
+    receipt_url: null,
+  };
+  const supabase = {
+    from(table) {
+      assert.equal(table, "expenses");
+      const query = { table };
+      queries.push(query);
+      const chain = {
+        select(value) { query.select = value; return chain; },
+        eq(key, value) { query.eq = [key, value]; return chain; },
+        async single() {
+          if (rejectQuery) throw new Error("offline");
+          return { data: error ? null : expense, error };
+        },
+      };
+      return chain;
+    },
+    storage: { from() { throw new Error("storage must not be called while loading"); } },
+  };
+  const exports = {};
+  vm.runInNewContext(compiled, {
+    exports,
+    require(name) {
+      if (name === "react") return hookState.hooks;
+      if (name === "react/jsx-runtime") return require(name);
+      if (name === "next/navigation") return {
+        useParams: () => ({ id: "expense-1" }),
+        useRouter: () => router,
+      };
+      if (name === "@/lib/supabase") return { supabase };
+      if (name === "../ExpenseReceiptImage") {
+        return { default: ({ src }) => require("react").createElement("img", { src, alt: "レシート" }) };
+      }
+      throw new Error(`Unexpected import: ${name}`);
+    },
+    console,
+    alert() {},
+    window: { confirm: () => false },
+    fetch: () => { throw new Error("delete API must not be called while loading"); },
+    Date,
+    Math,
+  }, { filename: "expense-edit-page.js" });
+  const render = () => {
+    hookState.reset();
+    return renderToStaticMarkup(exports.default());
+  };
+  render();
+  await settleEffects(hookState.effects);
+  return {
+    get html() { return render(); },
+    queries,
+    redirects,
+    async retry() {
+      hookState.reset();
+      const tree = exports.default();
+      function findRetry(node) {
+        if (!node || typeof node !== "object") return null;
+        if (node.type === "button" && node.props.children === "再試行") return node;
+        for (const child of [node.props?.children].flat(Infinity)) {
+          const found = findRetry(child);
+          if (found) return found;
+        }
+        return null;
+      }
+      error = null;
+      rejectQuery = false;
+      const retry = findRetry(tree);
+      assert.ok(retry, "retry button exists");
+      retry.props.onClick();
+      const loadingHtml = render();
+      await setImmediate();
+      return { loadingHtml, html: render() };
+    },
+  };
+}
+
+test("expense edit loads its exact row and renders the editable values", async () => {
+  const page = await loadExpenseEdit();
+  assert.equal(page.queries.length, 1);
+  assert.equal(page.queries[0].select, "id, expense_date, category, amount, memo, receipt_url");
+  assert.deepEqual(page.queries[0].eq, ["id", "expense-1"]);
+  assert.match(page.html, /value="2026-09-27"/);
+  assert.match(page.html, /value="2400"/);
+  assert.match(page.html, /ジェル購入/);
+  assert.deepEqual(page.redirects, []);
+});
+
+test("expense edit keeps a transient read failure visible without redirecting", async () => {
+  const page = await loadExpenseEdit({ error: { code: "500", message: "read failed" } });
+  assert.match(page.html, /role="alert"/);
+  assert.match(page.html, /経費データを取得できませんでした/);
+  assert.match(page.html, /再試行/);
+  assert.deepEqual(page.redirects, []);
+});
+
+test("expense edit distinguishes a missing row from a transient failure", async () => {
+  const page = await loadExpenseEdit({ error: { code: "PGRST116", message: "0 rows" } });
+  assert.match(page.html, /経費データが見つかりません/);
+  assert.doesNotMatch(page.html, /経費データを取得できませんでした/);
+  assert.deepEqual(page.redirects, []);
+});
+
+test("expense edit recovers from a network rejection after retry", async () => {
+  const page = await loadExpenseEdit({ rejectQuery: true });
+  assert.match(page.html, /経費データを取得できませんでした/);
+  const { loadingHtml, html } = await page.retry();
+  assert.match(loadingHtml, /読み込み中/);
+  assert.match(html, /value="2400"/);
+  assert.doesNotMatch(html, /role="alert"/);
+  assert.equal(page.queries.length, 2);
+});
+
+async function loadCustomerEdit({ row, error = null, rejectQuery = false } = {}) {
+  const compiled = compile("../app/customers/[id]/edit/page.tsx");
+  const hookState = createHooks();
+  const queries = [];
+  const redirects = [];
+  const router = { push: (url) => redirects.push(url) };
+  const customer = row ?? {
+    id: "customer-1",
+    name: "山田 花子",
+    name_kana: "ヤマダ ハナコ",
+    phone: "+819012345678",
+  };
+  const supabase = {
+    from(table) {
+      assert.equal(table, "customers");
+      const query = { table };
+      queries.push(query);
+      const chain = {
+        select(value) { query.select = value; return chain; },
+        eq(key, value) { query.eq = [key, value]; return chain; },
+        async single() {
+          if (rejectQuery) throw new Error("offline");
+          return { data: error ? null : customer, error };
+        },
+      };
+      return chain;
+    },
+  };
+  const exports = {};
+  vm.runInNewContext(compiled, {
+    exports,
+    require(name) {
+      if (name === "react") return hookState.hooks;
+      if (name === "react/jsx-runtime") return require(name);
+      if (name === "next/navigation") return {
+        useParams: () => ({ id: "customer-1" }),
+        useRouter: () => router,
+      };
+      if (name === "@/lib/supabase") return { supabase };
+      throw new Error(`Unexpected import: ${name}`);
+    },
+    console,
+    alert() {},
+  }, { filename: "customer-edit-page.js" });
+  const render = () => {
+    hookState.reset();
+    return renderToStaticMarkup(exports.default());
+  };
+  render();
+  await settleEffects(hookState.effects);
+  return {
+    get html() { return render(); },
+    queries,
+    redirects,
+    async retry() {
+      hookState.reset();
+      const tree = exports.default();
+      function findRetry(node) {
+        if (!node || typeof node !== "object") return null;
+        if (node.type === "button" && node.props.children === "再試行") return node;
+        for (const child of [node.props?.children].flat(Infinity)) {
+          const found = findRetry(child);
+          if (found) return found;
+        }
+        return null;
+      }
+      error = null;
+      rejectQuery = false;
+      const retry = findRetry(tree);
+      assert.ok(retry, "retry button exists");
+      retry.props.onClick();
+      const loadingHtml = render();
+      await setImmediate();
+      return { loadingHtml, html: render() };
+    },
+  };
+}
+
+test("customer edit loads the selected customer before enabling edits", async () => {
+  const page = await loadCustomerEdit();
+  assert.equal(page.queries.length, 1);
+  assert.equal(page.queries[0].select, "id, name, name_kana, phone");
+  assert.deepEqual(page.queries[0].eq, ["id", "customer-1"]);
+  assert.match(page.html, /value="山田 花子"/);
+  assert.match(page.html, /value="\+819012345678"/);
+  assert.deepEqual(page.redirects, []);
+});
+
+test("customer edit blocks an empty form after a transient read failure", async () => {
+  const page = await loadCustomerEdit({ error: { code: "500", message: "read failed" } });
+  assert.match(page.html, /role="alert"/);
+  assert.match(page.html, /顧客情報を取得できませんでした/);
+  assert.match(page.html, /再試行/);
+  assert.doesNotMatch(page.html, /更新する/);
+  assert.deepEqual(page.redirects, []);
+});
+
+test("customer edit distinguishes a missing customer from a read failure", async () => {
+  const page = await loadCustomerEdit({ error: { code: "PGRST116", message: "0 rows" } });
+  assert.match(page.html, /顧客情報が見つかりません/);
+  assert.doesNotMatch(page.html, /顧客情報を取得できませんでした/);
+  assert.doesNotMatch(page.html, /更新する/);
+});
+
+test("customer edit recovers from a rejected query after retry", async () => {
+  const page = await loadCustomerEdit({ rejectQuery: true });
+  assert.match(page.html, /顧客情報を取得できませんでした/);
+  const { loadingHtml, html } = await page.retry();
+  assert.match(loadingHtml, /読み込み中/);
+  assert.match(html, /value="山田 花子"/);
+  assert.doesNotMatch(html, /role="alert"/);
+  assert.equal(page.queries.length, 2);
+});
+
+async function loadFinance({ visits = [], expenses = [], errorTable = null, rejectTable = null } = {}) {
+  const compiled = compile("../app/finance/page.tsx");
+  const hookState = createHooks();
+  const queries = [];
+  const supabase = {
+    from(table) {
+      assert.ok(table === "visits" || table === "expenses");
+      const query = { table };
+      queries.push(query);
+      const chain = {
+        select(value) { query.select = value; return chain; },
+        then(resolve, reject) {
+          if (rejectTable === table) return Promise.reject(new Error("offline")).then(resolve, reject);
+          return Promise.resolve({
+            data: table === "visits" ? visits : expenses,
+            error: errorTable === table ? { message: `${table} failed` } : null,
+          }).then(resolve, reject);
+        },
+      };
+      return chain;
+    },
+  };
+  const exports = {};
+  vm.runInNewContext(compiled, {
+    exports,
+    require(name) {
+      if (name === "react") return hookState.hooks;
+      if (name === "react/jsx-runtime") return require(name);
+      if (name === "@/lib/supabase") return { supabase };
+      throw new Error(`Unexpected import: ${name}`);
+    },
+    console,
+    Date,
+    Promise,
+  }, { filename: "finance-page.js" });
+  const render = () => {
+    hookState.reset();
+    return renderToStaticMarkup(exports.default());
+  };
+  render();
+  await settleEffects(hookState.effects);
+  return {
+    get html() { return render(); },
+    queries,
+    async retry() {
+      hookState.reset();
+      const tree = exports.default();
+      function findRetry(node) {
+        if (!node || typeof node !== "object") return null;
+        if (node.type === "button" && node.props.children === "再試行") return node;
+        for (const child of [node.props?.children].flat(Infinity)) {
+          const found = findRetry(child);
+          if (found) return found;
+        }
+        return null;
+      }
+      errorTable = null;
+      rejectTable = null;
+      const retry = findRetry(tree);
+      assert.ok(retry, "retry button exists");
+      retry.props.onClick();
+      const loadingHtml = render();
+      await setImmediate();
+      return { loadingHtml, html: render() };
+    },
+  };
+}
+
+test("finance totals the selected month only after both queries succeed", async () => {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const page = await loadFinance({
+    visits: [
+      { visit_date: `${month}-02`, price: 12000 },
+      { visit_date: "2020-01-01", price: 999999 },
+    ],
+    expenses: [
+      { expense_date: `${month}-03`, amount: 2500 },
+      { expense_date: "2020-01-01", amount: 999999 },
+    ],
+  });
+  assert.deepEqual(page.queries.map(({ table, select }) => [table, select]), [
+    ["visits", "price, visit_date"],
+    ["expenses", "amount, expense_date"],
+  ]);
+  assert.match(page.html, /¥12,000/);
+  assert.match(page.html, /¥2,500/);
+  assert.match(page.html, /¥9,500/);
+  assert.match(page.html, /利益率 79%/);
+});
+
+test("finance never presents zero totals when one source returns an error", async () => {
+  const page = await loadFinance({ errorTable: "expenses" });
+  assert.match(page.html, /role="alert"/);
+  assert.match(page.html, /収支データを取得できませんでした/);
+  assert.doesNotMatch(page.html, /<p class="text-sm text-gray-500">売上<\/p>/);
+  assert.doesNotMatch(page.html, /<p class="text-sm text-gray-500">経費<\/p>/);
+});
+
+test("finance handles a rejected query without showing stale KPI cards", async () => {
+  const page = await loadFinance({ rejectTable: "visits" });
+  assert.match(page.html, /収支データを取得できませんでした/);
+  assert.doesNotMatch(page.html, /利益率/);
+});
+
+test("finance reloads both sources after a retry", async () => {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const page = await loadFinance({
+    visits: [{ visit_date: `${month}-02`, price: 5000 }],
+    expenses: [{ expense_date: `${month}-03`, amount: 1000 }],
+    rejectTable: "visits",
+  });
+  const { loadingHtml, html } = await page.retry();
+  assert.match(loadingHtml, /集計中/);
+  assert.match(html, /¥5,000/);
+  assert.match(html, /¥1,000/);
+  assert.equal(page.queries.length, 4);
 });

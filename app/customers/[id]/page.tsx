@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
@@ -777,9 +778,12 @@ export default function CustomerDetailPage() {
                       rel="noreferrer"
                       className="block overflow-hidden rounded-3xl border border-rose-100 bg-rose-50 shadow-sm"
                     >
-                      <img
+                      <Image
                         src={photo.image_url}
                         alt="前回施術写真"
+                        width={640}
+                        height={512}
+                        sizes="(max-width: 768px) 50vw, 25vw"
                         className="h-32 w-full object-cover"
                       />
                     </a>
@@ -936,9 +940,13 @@ export default function CustomerDetailPage() {
                 <p className="font-semibold text-slate-700">署名</p>
                 <div className="mt-2 rounded-2xl bg-white p-3">
                   {intake.signature_data_url ? (
-                    <img
+                    <Image
                       src={intake.signature_data_url}
                       alt="署名"
+                      width={1200}
+                      height={480}
+                      sizes="(max-width: 768px) calc(100vw - 4rem), 768px"
+                      unoptimized
                       className="max-h-64 w-full rounded-2xl border bg-white object-contain"
                     />
                   ) : (
@@ -1068,9 +1076,12 @@ export default function CustomerDetailPage() {
                                 rel="noreferrer"
                                 className="block overflow-hidden rounded-3xl border border-rose-100 bg-rose-50 shadow-sm"
                               >
-                                <img
+                                <Image
                                   src={photo.image_url}
                                   alt="施術後写真"
+                                  width={640}
+                                  height={512}
+                                  sizes="(max-width: 768px) 50vw, 25vw"
                                   className="h-32 w-full object-cover"
                                 />
                               </a>
