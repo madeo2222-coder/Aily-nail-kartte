@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ReservationReferencePhoto from "../../ReservationReferencePhoto";
 
 type Salon = {
   id: string;
@@ -845,12 +846,11 @@ export default function EditReservationPage() {
                     href={galleryReference.photoUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-3 block overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
+                    className="relative mt-3 block h-72 overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
                   >
-                    <img
+                    <ReservationReferencePhoto
                       src={galleryReference.photoUrl}
-                      alt="Aily Gallery参考デザイン"
-                      className="h-72 w-full object-cover"
+                      sizes="(max-width: 768px) calc(100vw - 64px), 768px"
                     />
                   </a>
                 ) : (
