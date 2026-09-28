@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import CustomerPhoto from "./CustomerPhoto";
 
@@ -193,15 +193,20 @@ export default function CustomerAppPage() {
   const [nextReservedAt, setNextReservedAt] = useState("");
   const [nextReservationId, setNextReservationId] = useState("");
   const [latestPhoto, setLatestPhoto] = useState<LatestPhoto | null>(null);
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
-    async function fetchPageData() {
-      setLoading(true);
-      setErrorMessage("");
+  const fetchPageData = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
+    setLoading(true);
+    setErrorMessage("");
 
-      try {
+    try {
         const meRes = await fetch("/api/line-login/me", { cache: "no-store" });
+        if (!isCurrent()) return;
+        if (!meRes.ok) throw new Error("ログイン情報を取得できませんでした");
         const meJson = (await meRes.json()) as MeResponse;
+        if (!isCurrent()) return;
 
         if (!meJson.authenticated || !meJson.customer) {
           setIsLoggedIn(false);
@@ -215,11 +220,14 @@ export default function CustomerAppPage() {
         setCustomerName(currentCustomer.name || "お客様");
 
         if (currentCustomer.salon_id) {
-          const { data: salonData } = await supabase
+          const { data: salonData, error: salonError } = await supabase
             .from("salons")
             .select("id, name")
             .eq("id", currentCustomer.salon_id)
-            .single();
+            .maybeSingle();
+
+          if (!isCurrent()) return;
+          if (salonError) throw salonError;
 
           if (salonData) {
             const salon = salonData as SalonRow;
@@ -227,13 +235,16 @@ export default function CustomerAppPage() {
           }
         }
 
-        const { data: latestVisitData } = await supabase
+        const { data: latestVisitData, error: latestVisitError } = await supabase
           .from("visits")
           .select("id, customer_id, visit_date, menu, menu_name, memo, created_at")
           .eq("customer_id", currentCustomer.id)
           .order("visit_date", { ascending: false })
           .order("created_at", { ascending: false })
           .limit(1);
+
+        if (!isCurrent()) return;
+        if (latestVisitError) throw latestVisitError;
 
         const latestVisit =
           ((latestVisitData || [])[0] as VisitRow | undefined) || null;
@@ -246,13 +257,16 @@ export default function CustomerAppPage() {
           setLastMenu(displayMenu);
           setNextVisitWindow(buildVisitWindowText(latestVisit.visit_date));
 
-          const { data: latestPhotoData } = await supabase
+          const { data: latestPhotoData, error: latestPhotoError } = await supabase
             .from("visit_photos")
             .select("id, visit_id, image_url, created_at")
             .eq("visit_id", latestVisit.id)
             .not("image_url", "is", null)
             .order("created_at", { ascending: false })
             .limit(1);
+
+          if (!isCurrent()) return;
+          if (latestPhotoError) throw latestPhotoError;
 
           const photo = (latestPhotoData || [])[0] as
             | {
@@ -283,7 +297,7 @@ export default function CustomerAppPage() {
 
         const nowIso = new Date().toISOString();
 
-        const { data: nextReservationData } = await supabase
+        const { data: nextReservationData, error: nextReservationError } = await supabase
           .from("reservations")
           .select("id, customer_id, staff_id, menu, start_at, status")
           .eq("customer_id", currentCustomer.id)
@@ -291,6 +305,9 @@ export default function CustomerAppPage() {
           .gte("start_at", nowIso)
           .order("start_at", { ascending: true })
           .limit(1);
+
+        if (!isCurrent()) return;
+        if (nextReservationError) throw nextReservationError;
 
         const nextReservation =
           ((nextReservationData || [])[0] as ReservationRow | undefined) ||
@@ -301,11 +318,14 @@ export default function CustomerAppPage() {
           setNextReservedAt(formatDateTime(nextReservation.start_at));
 
           if (nextReservation.staff_id) {
-            const { data: staffData } = await supabase
+            const { data: staffData, error: staffError } = await supabase
               .from("staffs")
               .select("id, name")
               .eq("id", nextReservation.staff_id)
-              .single();
+              .maybeSingle();
+
+            if (!isCurrent()) return;
+            if (staffError) throw staffError;
 
             if (staffData) {
               const staff = staffData as StaffRow;
@@ -318,7 +338,7 @@ export default function CustomerAppPage() {
         }
 
         if (!nextReservation) {
-          const { data: latestReservationData } = await supabase
+          const { data: latestReservationData, error: latestReservationError } = await supabase
             .from("reservations")
             .select("id, customer_id, staff_id, menu, start_at, status")
             .eq("customer_id", currentCustomer.id)
@@ -326,16 +346,22 @@ export default function CustomerAppPage() {
             .order("start_at", { ascending: false })
             .limit(1);
 
+          if (!isCurrent()) return;
+          if (latestReservationError) throw latestReservationError;
+
           const latestReservation =
             ((latestReservationData || [])[0] as ReservationRow | undefined) ||
             null;
 
           if (latestReservation?.staff_id) {
-            const { data: staffData } = await supabase
+            const { data: staffData, error: staffError } = await supabase
               .from("staffs")
               .select("id, name")
               .eq("id", latestReservation.staff_id)
-              .single();
+              .maybeSingle();
+
+            if (!isCurrent()) return;
+            if (staffError) throw staffError;
 
             if (staffData) {
               const staff = staffData as StaffRow;
@@ -343,15 +369,25 @@ export default function CustomerAppPage() {
             }
           }
         }
-      } catch {
-        setErrorMessage("読み込みに失敗しました。");
-      } finally {
-        setLoading(false);
-      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("顧客ホーム取得エラー:", error);
+      setErrorMessage("読み込みに失敗しました。");
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
-
-    fetchPageData();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchPageData();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
+  }, [fetchPageData]);
 
   const heroStatusText = useMemo(() => {
     if (nextReservedAt) {
@@ -381,6 +417,38 @@ export default function CustomerAppPage() {
               Ailyマイページ
             </div>
             <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
+          <div className="rounded-3xl border bg-white p-6 shadow-sm">
+            <div className="text-base font-bold text-slate-900">
+              Ailyマイページ
+            </div>
+            <div role="alert" className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+              {errorMessage}
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-2">
+              <button
+                type="button"
+                onClick={() => void fetchPageData()}
+                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                再試行
+              </button>
+              <Link
+                href="/customer-app/login"
+                className="block w-full rounded-2xl border px-4 py-3 text-center text-sm font-bold text-slate-700"
+              >
+                ログイン画面へ
+              </Link>
+            </div>
           </div>
         </div>
       </main>
@@ -489,31 +557,6 @@ export default function CustomerAppPage() {
               ))}
             </div>
           </section>
-        </div>
-      </main>
-    );
-  }
-
-  if (errorMessage) {
-    return (
-      <main className="min-h-screen bg-slate-50 pb-24">
-        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
-          <div className="rounded-3xl border bg-white p-6 shadow-sm">
-            <div className="text-base font-bold text-slate-900">
-              Ailyマイページ
-            </div>
-            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-              {errorMessage}
-            </div>
-            <div className="mt-4 grid grid-cols-1 gap-2">
-              <Link
-                href="/customer-app/login"
-                className="block w-full rounded-2xl bg-slate-900 px-4 py-3 text-center text-sm font-bold text-white"
-              >
-                ログイン画面へ
-              </Link>
-            </div>
-          </div>
         </div>
       </main>
     );

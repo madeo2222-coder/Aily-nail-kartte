@@ -101,6 +101,46 @@ function extractLine(text: string | null, label: string) {
   return line?.replace(label, "").trim() || "";
 }
 
+function OrderReadError({ id, notFound = false }: { id: string; notFound?: boolean }) {
+  return (
+    <main className="min-h-screen bg-purple-50/40">
+      <div className="mx-auto w-full max-w-[920px] space-y-4 p-4 pb-24">
+        <section
+          className="rounded-3xl border bg-white p-5 shadow-sm"
+          role={notFound ? undefined : "alert"}
+        >
+          <div className="text-lg font-bold text-slate-900">
+            {notFound
+              ? "注文が見つかりません"
+              : "注文情報を取得できませんでした"}
+          </div>
+          {!notFound ? (
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              一時的な通信エラーの可能性があります。再読み込みしてください。
+            </p>
+          ) : null}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {!notFound ? (
+              <Link
+                href={`/nail-tip-orders/${encodeURIComponent(id)}`}
+                className="block rounded-2xl border border-purple-200 bg-purple-50 px-4 py-3 text-center text-sm font-bold text-purple-700"
+              >
+                再読み込み
+              </Link>
+            ) : null}
+            <Link
+              href="/nail-tip-orders"
+              className="block rounded-2xl bg-purple-600 px-4 py-3 text-center text-sm font-bold text-white"
+            >
+              注文一覧へ戻る
+            </Link>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 export default async function NailTipOrderDetailPage({
   params,
 }: {
@@ -109,56 +149,70 @@ export default async function NailTipOrderDetailPage({
   const { id } = await params;
   const supabase = getSupabaseAdmin();
 
-  const { data: orderData, error: orderError } = await supabase
-    .from("nail_tip_orders")
-    .select("*")
-    .eq("id", id)
-    .single();
+  let orderData: unknown = null;
+  let orderError: { code?: string } | null = null;
+
+  try {
+    const result = await supabase
+      .from("nail_tip_orders")
+      .select("*")
+      .eq("id", id)
+      .single();
+    orderData = result.data;
+    orderError = result.error;
+  } catch {
+    return <OrderReadError id={id} />;
+  }
 
   if (orderError || !orderData) {
     return (
-      <main className="min-h-screen bg-purple-50/40">
-        <div className="mx-auto w-full max-w-[920px] space-y-4 p-4 pb-24">
-          <section className="rounded-3xl border bg-white p-5 shadow-sm">
-            <div className="text-lg font-bold text-slate-900">
-              注文が見つかりません
-            </div>
-            <Link
-              href="/nail-tip-orders"
-              className="mt-4 block rounded-2xl bg-purple-600 px-4 py-3 text-center text-sm font-bold text-white"
-            >
-              注文一覧へ戻る
-            </Link>
-          </section>
-        </div>
-      </main>
+      <OrderReadError
+        id={id}
+        notFound={!orderError || orderError.code === "PGRST116"}
+      />
     );
   }
 
   const order = orderData as NailTipOrderRow;
 
   let customer: CustomerRow | null = null;
+  let customerLoadFailed = false;
 
   if (order.customer_id) {
-    const { data: customerData } = await supabase
-      .from("customers")
-      .select("id, name, phone")
-      .eq("id", order.customer_id)
-      .maybeSingle();
+    try {
+      const { data: customerData, error: customerError } = await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("id", order.customer_id)
+        .maybeSingle();
 
-    customer = (customerData as CustomerRow | null) || null;
+      customerLoadFailed = Boolean(customerError);
+      if (!customerError) {
+        customer = (customerData as CustomerRow | null) || null;
+      }
+    } catch {
+      customerLoadFailed = true;
+    }
   }
 
-  const {
-    data: latestPaymentData,
-    error: latestPaymentError,
-  } = await supabase
-    .from("nail_tip_order_payments")
-    .select("order_id, status")
-    .eq("nail_tip_order_id", order.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle<NailTipOrderPaymentRow>();
+  if (customerLoadFailed) return <OrderReadError id={id} />;
+
+  let latestPaymentData: NailTipOrderPaymentRow | null = null;
+  let paymentHistoryLoadFailed = false;
+
+  try {
+    const { data, error } = await supabase
+      .from("nail_tip_order_payments")
+      .select("order_id, status")
+      .eq("nail_tip_order_id", order.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle<NailTipOrderPaymentRow>();
+    latestPaymentData = data;
+    paymentHistoryLoadFailed = Boolean(error);
+  } catch {
+    paymentHistoryLoadFailed = true;
+  }
 
   const productName = extractLine(order.design_request, "選択商品：");
   const savedProductPrice = extractLine(order.design_request, "商品価格：");
@@ -321,7 +375,7 @@ export default async function NailTipOrderDetailPage({
           paidAt={order.paid_at}
           latestPaymentStatus={latestPaymentData?.status || null}
           latestVeriTransOrderId={latestPaymentData?.order_id || null}
-          paymentHistoryLoadFailed={Boolean(latestPaymentError)}
+          paymentHistoryLoadFailed={paymentHistoryLoadFailed}
         />
 <OrderShippingForm
   orderId={order.id}

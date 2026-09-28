@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type CustomerRow = {
@@ -62,6 +62,18 @@ type DiagnosisRow = {
 type MeResponse = {
   authenticated: boolean;
   customer?: CustomerRow | null;
+};
+
+type NailTipOrderRow = {
+  id: string;
+  design_request: string | null;
+  payment_url: string | null;
+  payment_due_at: string | null;
+  status: string | null;
+  created_at: string | null;
+  shipping_company: string | null;
+  tracking_number: string | null;
+  shipped_at: string | null;
 };
 
 const signedInNavItems = [
@@ -248,152 +260,147 @@ export default function CustomerAppMyPage() {
   const [latestDiagnosis, setLatestDiagnosis] = useState<DiagnosisRow | null>(null);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
-  const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
   const [visitCount, setVisitCount] = useState(0);
+  const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
+  const requestVersionRef = useRef(0);
 
-type NailTipOrderRow = {
-  id: string;
-  design_request: string | null;
-  payment_url: string | null;
-  payment_due_at: string | null;
-  status: string | null;
-  created_at: string | null;
-  shipping_company: string | null;
-  tracking_number: string | null;
-  shipped_at: string | null;
-};
+  const fetchMyPage = useCallback(async () => {
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
+    setLoading(true);
+    setLoadError("");
 
-const [nailTipOrders, setNailTipOrders] = useState<NailTipOrderRow[]>([]);
-  useEffect(() => {
-    async function fetchMyPage() {
-      setLoading(true);
-      setMessage("");
+    try {
+      const meRes = await fetch("/api/line-login/me", {
+        cache: "no-store",
+      });
 
-      try {
-        const meRes = await fetch("/api/line-login/me", {
-          cache: "no-store",
-        });
+      if (!meRes.ok) {
+        throw new Error("ログイン情報の取得に失敗しました。");
+      }
 
-        const meJson = (await meRes.json()) as MeResponse;
+      const meJson = (await meRes.json()) as MeResponse;
 
-        if (!meJson.authenticated || !meJson.customer) {
+      if (!meJson.authenticated || !meJson.customer) {
+        if (requestVersion === requestVersionRef.current) {
           setIsLoggedIn(false);
-          setLoading(false);
-          return;
         }
+        return;
+      }
 
-        const currentCustomer = meJson.customer;
+      const currentCustomer = meJson.customer;
+      let nextSalonName = "Aily Nail Studio";
 
+      if (currentCustomer.salon_id) {
+        const { data: salonData, error: salonError } = await supabase
+          .from("salons")
+          .select("id, name")
+          .eq("id", currentCustomer.salon_id)
+          .maybeSingle();
+
+        if (salonError) throw salonError;
+        if (salonData) {
+          const salon = salonData as SalonRow;
+          nextSalonName = salon.name || "Aily Nail Studio";
+        }
+      }
+
+      const { data: visitData, error: visitError } = await supabase
+        .from("visits")
+        .select("id, visit_date, menu, menu_name, created_at")
+        .eq("customer_id", currentCustomer.id)
+        .order("visit_date", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (visitError) throw visitError;
+
+      const { count, error: visitCountError } = await supabase
+        .from("visits")
+        .select("*", { count: "exact", head: true })
+        .eq("customer_id", currentCustomer.id);
+
+      if (visitCountError) throw visitCountError;
+
+      const { data: diagnosisData, error: diagnosisError } = await supabase
+        .from("sanmeigaku_diagnoses")
+        .select("id, customer_id, created_at")
+        .eq("customer_id", currentCustomer.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (diagnosisError) throw diagnosisError;
+
+      const { data: reservationData, error: reservationError } = await supabase
+        .from("reservations")
+        .select(
+          "id, customer_id, staff_id, menu, start_at, end_at, status, memo, created_at"
+        )
+        .eq("customer_id", currentCustomer.id)
+        .order("start_at", { ascending: true })
+        .limit(50);
+
+      if (reservationError) throw reservationError;
+
+      const { data: staffData, error: staffError } = await supabase
+        .from("staffs")
+        .select("id, name")
+        .order("name", { ascending: true });
+
+      if (staffError) throw staffError;
+
+      const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
+        .from("nail_tip_orders")
+        .select(`
+          id,
+          customer_id,
+          design_request,
+          payment_url,
+          payment_due_at,
+          status,
+          created_at,
+          shipping_company,
+          tracking_number,
+          shipped_at
+        `)
+        .eq("customer_id", currentCustomer.id)
+        .order("created_at", { ascending: false });
+
+      if (nailTipOrderError) throw nailTipOrderError;
+
+      if (requestVersion === requestVersionRef.current) {
         setIsLoggedIn(true);
         setCustomer(currentCustomer);
-
-        if (currentCustomer.salon_id) {
-          const { data: salonData } = await supabase
-            .from("salons")
-            .select("id, name")
-            .eq("id", currentCustomer.salon_id)
-            .single();
-
-          if (salonData) {
-            const salon = salonData as SalonRow;
-            setSalonName(salon.name || "Aily Nail Studio");
-          }
-        }
-
-        const { data: visitData } = await supabase
-          .from("visits")
-          .select("id, visit_date, menu, menu_name, created_at")
-          .eq("customer_id", currentCustomer.id)
-          .order("visit_date", { ascending: false })
-          .order("created_at", { ascending: false })
-          .limit(1);
-
+        setSalonName(nextSalonName);
         setLatestVisit(((visitData || [])[0] as VisitRow | undefined) || null);
-
-        const { count } = await supabase
-          .from("visits")
-          .select("*", { count: "exact", head: true })
-          .eq("customer_id", currentCustomer.id);
-
         setVisitCount(count || 0);
-
-        const { data: diagnosisData, error: diagnosisError } = await supabase
-          .from("sanmeigaku_diagnoses")
-          .select("id, customer_id, created_at")
-          .eq("customer_id", currentCustomer.id)
-          .order("created_at", { ascending: false })
-          .limit(1);
-
-        if (diagnosisError) {
-          console.error("sanmeigaku_diagnoses取得エラー:", diagnosisError);
-          setLatestDiagnosis(null);
-        } else {
-          setLatestDiagnosis(
-            ((diagnosisData || [])[0] as DiagnosisRow | undefined) || null
-          );
-        }
-
-        const { data: reservationData, error: reservationError } = await supabase
-          .from("reservations")
-          .select(
-            "id, customer_id, staff_id, menu, start_at, end_at, status, memo, created_at"
-          )
-          .eq("customer_id", currentCustomer.id)
-          .order("start_at", { ascending: true })
-          .limit(50);
-
-        if (reservationError) {
-          console.error("reservations取得エラー:", reservationError);
-          setReservations([]);
-        } else {
-          setReservations((reservationData || []) as ReservationRow[]);
-        }
-
-        const { data: staffData, error: staffError } = await supabase
-          .from("staffs")
-          .select("id, name")
-          .order("name", { ascending: true });
-
-if (staffError) {
-  console.error("staffs取得エラー:", staffError);
-  setStaffs([]);
-} else {
-  setStaffs((staffData || []) as StaffRow[]);
-}
-const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
-  .from("nail_tip_orders")
-  .select(`
-    id,
-    customer_id,
-    design_request,
-    payment_url,
-    payment_due_at,
-    status,
-    created_at,
-    shipping_company,
-    tracking_number,
-    shipped_at
-  `)
-  .eq("customer_id", currentCustomer.id)
-  .order("created_at", { ascending: false });
-
-if (nailTipOrderError) {
-  console.error("ネイルチップ注文取得エラー:", nailTipOrderError);
-  setNailTipOrders([]);
-} else {
-  setNailTipOrders((nailTipOrderData || []) as NailTipOrderRow[]);
-}
-        
-      } catch (error) {
-        console.error("mypage取得エラー:", error);
-        setMessage("マイページ情報の取得に失敗しました。");
-      } finally {
+        setLatestDiagnosis(
+          ((diagnosisData || [])[0] as DiagnosisRow | undefined) || null
+        );
+        setReservations((reservationData || []) as ReservationRow[]);
+        setStaffs((staffData || []) as StaffRow[]);
+        setNailTipOrders((nailTipOrderData || []) as NailTipOrderRow[]);
+      }
+    } catch (error) {
+      console.error("mypage取得エラー:", error);
+      if (requestVersion === requestVersionRef.current) {
+        setLoadError("マイページ情報の取得に失敗しました。");
+      }
+    } finally {
+      if (requestVersion === requestVersionRef.current) {
         setLoading(false);
       }
     }
-
-    fetchMyPage();
   }, []);
+
+  useEffect(() => {
+    fetchMyPage();
+
+    return () => {
+      requestVersionRef.current += 1;
+    };
+  }, [fetchMyPage]);
 
   const customerName = useMemo(() => {
     return customer?.name || "お客様";
@@ -475,6 +482,29 @@ if (nailTipOrderError) {
     );
   }
 
+  if (loadError) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
+          <section
+            role="alert"
+            className="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm"
+          >
+            <h1 className="text-base font-bold text-rose-900">マイページを表示できません</h1>
+            <p className="mt-2 text-sm leading-6 text-rose-700">{loadError}</p>
+            <button
+              type="button"
+              onClick={fetchMyPage}
+              className="mt-4 w-full rounded-xl bg-rose-600 px-4 py-3 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   if (!isLoggedIn) {
     return (
       <main className="min-h-screen bg-slate-50 pb-24">
@@ -522,12 +552,6 @@ if (nailTipOrderError) {
             登録情報、診断結果、来店ポイント、予約状況を確認できます。
           </p>
         </section>
-
-        {message ? (
-          <section className="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm font-bold text-rose-700 shadow-sm">
-            {message}
-          </section>
-        ) : null}
 
         <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-500 to-pink-500 p-5 text-white shadow">
           <div className="text-xs font-black tracking-[0.25em] text-white/80">

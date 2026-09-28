@@ -85,15 +85,33 @@ export default async function NailTipOrderPaymentPage({
   }
 
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from("nail_tip_orders")
-    .select(
-      "id, customer_id, product_name_snapshot, product_price, payment_status, payment_due_at, payment_link_token_hash"
-    )
-    .eq("id", id)
-    .maybeSingle<NailTipOrderRow>();
+  let data: NailTipOrderRow | null = null;
+  let orderLoadFailed = false;
 
-  if (error || !data || !data.payment_link_token_hash) {
+  try {
+    const result = await supabase
+      .from("nail_tip_orders")
+      .select(
+        "id, customer_id, product_name_snapshot, product_price, payment_status, payment_due_at, payment_link_token_hash"
+      )
+      .eq("id", id)
+      .maybeSingle<NailTipOrderRow>();
+    data = result.data;
+    orderLoadFailed = Boolean(result.error);
+  } catch {
+    orderLoadFailed = true;
+  }
+
+  if (orderLoadFailed) {
+    return (
+      <PaymentUnavailable
+        title="お支払い情報を読み込めません"
+        message="一時的な通信エラーの可能性があります。時間をおいて再度お試しください。"
+      />
+    );
+  }
+
+  if (!data || !data.payment_link_token_hash) {
     notFound();
   }
 
@@ -155,17 +173,32 @@ export default async function NailTipOrderPaymentPage({
   }
 
   let customerName = "お客様";
+  let customerLoadFailed = false;
 
   if (data.customer_id) {
-    const { data: customer } = await supabase
-      .from("customers")
-      .select("name")
-      .eq("id", data.customer_id)
-      .maybeSingle<{ name: string | null }>();
+    try {
+      const { data: customer, error: customerError } = await supabase
+        .from("customers")
+        .select("name")
+        .eq("id", data.customer_id)
+        .maybeSingle<{ name: string | null }>();
 
-    if (customer?.name?.trim()) {
-      customerName = customer.name.trim();
+      customerLoadFailed = Boolean(customerError);
+      if (!customerError && customer?.name?.trim()) {
+        customerName = customer.name.trim();
+      }
+    } catch {
+      customerLoadFailed = true;
     }
+  }
+
+  if (customerLoadFailed) {
+    return (
+      <PaymentUnavailable
+        title="お支払い情報を読み込めません"
+        message="一時的な通信エラーの可能性があります。時間をおいて再度お試しください。"
+      />
+    );
   }
 
   return (

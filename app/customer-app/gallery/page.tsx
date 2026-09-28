@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import CustomerPhoto from "../CustomerPhoto";
 
@@ -77,67 +77,71 @@ export default function CustomerAppGalleryPage() {
   const [loading, setLoading] = useState(true);
   const [photos, setPhotos] = useState<VisitPhotoRow[]>([]);
   const [visits, setVisits] = useState<VisitRow[]>([]);
-  const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const requestVersionRef = useRef(0);
 
-  useEffect(() => {
-    async function fetchGallery() {
-      setLoading(true);
-      setMessage("");
+  const fetchGallery = useCallback(async () => {
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
+    setLoading(true);
+    setLoadError("");
 
-      try {
-        const { data: photoData, error: photoError } = await supabase
-          .from("visit_photos")
-          .select("id, visit_id, salon_id, image_url, photo_type, created_at")
-          .not("image_url", "is", null)
-          .order("created_at", { ascending: false })
-          .limit(80);
+    try {
+      const { data: photoData, error: photoError } = await supabase
+        .from("visit_photos")
+        .select("id, visit_id, salon_id, image_url, photo_type, created_at")
+        .not("image_url", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(80);
 
-        if (photoError) {
-          console.error("visit_photos取得エラー:", photoError);
+      if (photoError) throw photoError;
+
+      const nextPhotos = ((photoData || []) as VisitPhotoRow[]).filter(
+        (photo) => photo.image_url && photo.visit_id
+      );
+
+      const visitIds = Array.from(
+        new Set(nextPhotos.map((photo) => photo.visit_id).filter(Boolean))
+      );
+
+      if (visitIds.length === 0) {
+        if (requestVersion === requestVersionRef.current) {
           setPhotos([]);
           setVisits([]);
-          setMessage("ギャラリー写真の取得に失敗しました。");
-          setLoading(false);
-          return;
         }
+        return;
+      }
 
-        const nextPhotos = ((photoData || []) as VisitPhotoRow[]).filter(
-          (photo) => photo.image_url && photo.visit_id
-        );
+      const { data: visitData, error: visitError } = await supabase
+        .from("visits")
+        .select("id, visit_date, menu_name, menu, color, memo")
+        .in("id", visitIds);
 
+      if (visitError) throw visitError;
+
+      if (requestVersion === requestVersionRef.current) {
         setPhotos(nextPhotos);
-
-        const visitIds = Array.from(
-          new Set(nextPhotos.map((photo) => photo.visit_id).filter(Boolean))
-        );
-
-        if (visitIds.length === 0) {
-          setVisits([]);
-          setLoading(false);
-          return;
-        }
-
-        const { data: visitData, error: visitError } = await supabase
-          .from("visits")
-          .select("id, visit_date, menu_name, menu, color, memo")
-          .in("id", visitIds);
-
-        if (visitError) {
-          console.error("visits取得エラー:", visitError);
-          setVisits([]);
-        } else {
-          setVisits((visitData || []) as VisitRow[]);
-        }
-      } catch (error) {
-        console.error("gallery取得エラー:", error);
-        setMessage("ギャラリーの取得中にエラーが発生しました。");
-      } finally {
+        setVisits((visitData || []) as VisitRow[]);
+      }
+    } catch (error) {
+      console.error("gallery取得エラー:", error);
+      if (requestVersion === requestVersionRef.current) {
+        setLoadError("ギャラリーの取得中にエラーが発生しました。");
+      }
+    } finally {
+      if (requestVersion === requestVersionRef.current) {
         setLoading(false);
       }
     }
-
-    fetchGallery();
   }, []);
+
+  useEffect(() => {
+    fetchGallery();
+
+    return () => {
+      requestVersionRef.current += 1;
+    };
+  }, [fetchGallery]);
 
   const visitMap = useMemo(() => {
     const map = new Map<string, VisitRow>();
@@ -195,7 +199,8 @@ export default function CustomerAppGalleryPage() {
           </Link>
         </section>
 
-        <section className="rounded-3xl border bg-white p-4 shadow-sm">
+        {!loadError ? (
+          <section className="rounded-3xl border bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
               <div className="text-base font-bold text-slate-900">
@@ -210,15 +215,26 @@ export default function CustomerAppGalleryPage() {
               {galleryItems.length}枚
             </div>
           </div>
-        </section>
-
-        {message ? (
-          <section className="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm font-bold text-rose-700 shadow-sm">
-            {message}
           </section>
         ) : null}
 
-        {loading ? (
+        {loadError ? (
+          <section
+            role="alert"
+            className="rounded-3xl border border-rose-200 bg-rose-50 p-5 shadow-sm"
+          >
+            <div className="text-sm font-bold text-rose-800">{loadError}</div>
+            <button
+              type="button"
+              onClick={fetchGallery}
+              className="mt-4 w-full rounded-xl bg-rose-600 px-4 py-3 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
+          </section>
+        ) : null}
+
+        {loadError ? null : loading ? (
           <section className="rounded-3xl border bg-white p-4 shadow-sm">
             <div className="text-sm text-slate-500">読み込み中...</div>
           </section>
