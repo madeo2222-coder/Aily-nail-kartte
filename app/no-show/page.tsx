@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -29,15 +29,17 @@ type NoShowRow = {
 export default function NoShowPage() {
   const [rows, setRows] = useState<NoShowRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
-    fetchNoShowList();
-  }, []);
-
-  async function fetchNoShowList() {
-    setLoading(true);
+  const fetchNoShowList = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
 
     try {
+      setLoading(true);
+      setErrorMessage("");
+
       const [customerRes, visitRes] = await Promise.all([
         supabase
           .from("customers")
@@ -49,12 +51,20 @@ export default function NoShowPage() {
           .order("visit_date", { ascending: false }),
       ]);
 
+      if (!isCurrent()) return;
+
       if (customerRes.error) {
-        console.error("customers fetch error:", customerRes.error);
+        console.error("customers fetch error:", customerRes.error.message);
+        setErrorMessage(`顧客データの取得に失敗しました: ${customerRes.error.message}`);
+        setRows([]);
+        return;
       }
 
       if (visitRes.error) {
-        console.error("visits fetch error:", visitRes.error);
+        console.error("visits fetch error:", visitRes.error.message);
+        setErrorMessage(`来店データの取得に失敗しました: ${visitRes.error.message}`);
+        setRows([]);
+        return;
       }
 
       const customers = (customerRes.data || []) as Customer[];
@@ -128,12 +138,27 @@ export default function NoShowPage() {
 
       setRows(result);
     } catch (error) {
+      if (!isCurrent()) return;
       console.error("no-show unexpected error:", error);
+      setErrorMessage(
+        "来店漏れデータを取得できませんでした。通信状態を確認して再試行してください。"
+      );
       setRows([]);
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchNoShowList();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
+  }, [fetchNoShowList]);
 
   function formatDate(dateStr: string) {
     const d = new Date(dateStr);
@@ -149,6 +174,27 @@ export default function NoShowPage() {
 
   if (loading) {
     return <div className="p-4 pb-24">読み込み中...</div>;
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="p-4 pb-24">
+        <h1 className="mb-4 text-xl font-bold">⚠️ 来店漏れ</h1>
+        <div
+          className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm"
+          role="alert"
+        >
+          <p>{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchNoShowList()}
+            className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 font-bold text-red-900"
+          >
+            再試行
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

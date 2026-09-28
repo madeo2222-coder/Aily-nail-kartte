@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -27,32 +27,66 @@ export default function LostCustomersPage() {
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
   const [filter, setFilter] = useState<"all" | "30" | "45" | "60" | "none">("all");
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
-    const fetchAll = async () => {
+  const fetchAll = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
+
+    try {
       setLoading(true);
+      setErrorMessage("");
 
       const [customersRes, visitsRes] = await Promise.all([
         supabase.from("customers").select("id, name").order("created_at", { ascending: false }),
         supabase.from("visits").select("id, customer_id, visit_date").order("visit_date", { ascending: false }),
       ]);
 
+      if (!isCurrent()) return;
+
       if (customersRes.error) {
         console.error("customers fetch error:", customersRes.error.message);
+        setErrorMessage(`顧客データの取得に失敗しました: ${customersRes.error.message}`);
+        setCustomers([]);
+        setVisits([]);
+        return;
       }
 
       if (visitsRes.error) {
         console.error("visits fetch error:", visitsRes.error.message);
+        setErrorMessage(`来店データの取得に失敗しました: ${visitsRes.error.message}`);
+        setCustomers([]);
+        setVisits([]);
+        return;
       }
 
       setCustomers((customersRes.data as CustomerRow[]) || []);
       setVisits((visitsRes.data as VisitRow[]) || []);
-      setLoading(false);
-    };
-
-    fetchAll();
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("lost customers fetch error:", error);
+      setErrorMessage(
+        "失客予備軍データを取得できませんでした。通信状態を確認して再試行してください。"
+      );
+      setCustomers([]);
+      setVisits([]);
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchAll();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
+  }, [fetchAll]);
 
   const today = useMemo(() => {
     const now = new Date();
@@ -203,6 +237,20 @@ export default function LostCustomersPage() {
       {loading ? (
         <div className="rounded-xl border bg-white p-4 text-sm text-gray-500">
           読み込み中...
+        </div>
+      ) : errorMessage ? (
+        <div
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+          role="alert"
+        >
+          <p>{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchAll()}
+            className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 font-bold text-red-900"
+          >
+            再試行
+          </button>
         </div>
       ) : (
         <>

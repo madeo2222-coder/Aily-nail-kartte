@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Customer = {
@@ -88,11 +88,13 @@ export default function AnalyticsPage() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const requestVersion = useRef(0);
 
-  useEffect(() => {
-    let isMounted = true;
+  const fetchData = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
 
-    async function fetchData() {
+    try {
       setLoading(true);
       setErrorMessage("");
 
@@ -107,35 +109,47 @@ export default function AnalyticsPage() {
           .order("created_at", { ascending: false }),
       ]);
 
-      if (!isMounted) return;
+      if (!isCurrent()) return;
 
       if (customersRes.error) {
         setErrorMessage(`顧客データの取得に失敗しました: ${customersRes.error.message}`);
         setCustomers([]);
         setVisits([]);
-        setLoading(false);
         return;
       }
 
       if (visitsRes.error) {
         setErrorMessage(`来店データの取得に失敗しました: ${visitsRes.error.message}`);
-        setCustomers(customersRes.data ?? []);
+        setCustomers([]);
         setVisits([]);
-        setLoading(false);
         return;
       }
 
       setCustomers(customersRes.data ?? []);
       setVisits(visitsRes.data ?? []);
-      setLoading(false);
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("顧客分析データ取得エラー:", error);
+      setErrorMessage(
+        "顧客分析データを取得できませんでした。通信状態を確認して再試行してください。"
+      );
+      setCustomers([]);
+      setVisits([]);
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
-
-    fetchData();
-
-    return () => {
-      isMounted = false;
-    };
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchData();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
+  }, [fetchData]);
 
   const customerAnalyticsRows = useMemo<CustomerAnalyticsRow[]>(() => {
     const visitsByCustomer = new Map<string, Visit[]>();
@@ -313,7 +327,23 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {errorMessage && !loading ? (
+          <div
+            className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            role="alert"
+          >
+            <p>{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => void fetchData()}
+              className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-bold text-red-900"
+            >
+              再試行
+            </button>
+          </div>
+        ) : null}
+
+        {!errorMessage ? <section className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-neutral-200">
             <p className="text-xs font-medium text-neutral-500">顧客数</p>
             <p className="mt-2 text-2xl font-bold text-neutral-900">
@@ -353,15 +383,9 @@ export default function AnalyticsPage() {
               {loading ? "-" : visits.length.toLocaleString("ja-JP")}
             </p>
           </div>
-        </section>
+        </section> : null}
 
-        {errorMessage ? (
-          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {errorMessage}
-          </div>
-        ) : null}
-
-        <div className="grid gap-6 xl:grid-cols-2">
+        {!errorMessage ? <div className="grid gap-6 xl:grid-cols-2">
           <section className="rounded-2xl bg-white shadow-sm ring-1 ring-neutral-200">
             <div className="border-b border-neutral-200 px-4 py-4 sm:px-6">
               <h2 className="text-base font-semibold text-neutral-900">LTVランキング</h2>
@@ -520,7 +544,7 @@ export default function AnalyticsPage() {
               )}
             </div>
           </section>
-        </div>
+        </div> : null}
       </div>
     </main>
   );
