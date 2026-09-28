@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type ReservationRow = {
@@ -507,6 +507,7 @@ function buildMonthDays(monthText: string) {
 }
 
 export default function ReservationsCalendarPage() {
+  const loadRequestIdRef = useRef(0);
   const [selectedDate, setSelectedDate] = useState(getTodayText());
   const [selectedMonth, setSelectedMonth] = useState(
     getMonthText(getTodayText()),
@@ -522,95 +523,88 @@ export default function ReservationsCalendarPage() {
   const [visits, setVisits] = useState<VisitRow[]>([]);
   const [customerIntakes, setCustomerIntakes] = useState<CustomerIntakeRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [syncingHpb, setSyncingHpb] = useState(false);
 
   async function fetchCalendarData() {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
+    setLoadError(null);
 
-    const [
-      reservationsRes,
-      externalBlocksRes,
-      customersRes,
-      staffsRes,
-      visitsRes,
-      customerIntakesRes,
-    ] = await Promise.all([
-      supabase
-        .from("reservations")
-        .select("*")
-        .order("start_at", { ascending: true }),
-      supabase
-        .from("external_calendar_blocks")
-        .select("*")
-        .order("start_at", { ascending: true }),
-      supabase.from("customers").select("id, name"),
-      supabase
-        .from("staffs")
-        .select("id, name")
-        .eq("role", "staff")
-        .eq("is_active", true),
-      supabase
-        .from("visits")
-        .select("customer_id, visit_date, menu_name, menu, memo, next_proposal")
-        .order("visit_date", { ascending: false }),
-      supabase
-        .from("customer_intakes")
-        .select(
-          "customer_id, allergy, skin_trouble, constitution, avoid_items, submitted_at, created_at",
-        )
-        .order("created_at", { ascending: false }),
-    ]);
+    try {
+      const [
+        reservationsRes,
+        externalBlocksRes,
+        customersRes,
+        staffsRes,
+        visitsRes,
+        customerIntakesRes,
+      ] = await Promise.all([
+        supabase
+          .from("reservations")
+          .select("*")
+          .order("start_at", { ascending: true }),
+        supabase
+          .from("external_calendar_blocks")
+          .select("*")
+          .order("start_at", { ascending: true }),
+        supabase.from("customers").select("id, name"),
+        supabase
+          .from("staffs")
+          .select("id, name")
+          .eq("role", "staff")
+          .eq("is_active", true),
+        supabase
+          .from("visits")
+          .select(
+            "customer_id, visit_date, menu_name, menu, memo, next_proposal",
+          )
+          .order("visit_date", { ascending: false }),
+        supabase
+          .from("customer_intakes")
+          .select(
+            "customer_id, allergy, skin_trouble, constitution, avoid_items, submitted_at, created_at",
+          )
+          .order("created_at", { ascending: false }),
+      ]);
 
-    if (reservationsRes.error) {
-      console.error("calendar reservations error:", reservationsRes.error);
-      setReservations([]);
-    } else {
+      const queryError =
+        reservationsRes.error ||
+        externalBlocksRes.error ||
+        customersRes.error ||
+        staffsRes.error ||
+        visitsRes.error ||
+        customerIntakesRes.error;
+      if (queryError) throw queryError;
+      if (requestId !== loadRequestIdRef.current) return;
+
       setReservations((reservationsRes.data || []) as ReservationRow[]);
-    }
-
-    if (externalBlocksRes.error) {
-      console.error("calendar external blocks error:", externalBlocksRes.error);
-      setExternalBlocks([]);
-    } else {
       setExternalBlocks(
         (externalBlocksRes.data || []) as ExternalCalendarBlockRow[],
       );
-    }
-
-    if (customersRes.error) {
-      console.error("calendar customers error:", customersRes.error);
-      setCustomers([]);
-    } else {
       setCustomers((customersRes.data || []) as CustomerRow[]);
-    }
-
-    if (staffsRes.error) {
-      console.error("calendar staffs error:", staffsRes.error);
-      setStaffs([]);
-    } else {
       setStaffs((staffsRes.data || []) as StaffRow[]);
-    }
-
-    if (visitsRes.error) {
-      console.error("calendar visits error:", visitsRes.error);
-      setVisits([]);
-    } else {
       setVisits((visitsRes.data || []) as VisitRow[]);
-    }
-
-    if (customerIntakesRes.error) {
-      console.error(
-        "calendar customer_intakes error:",
-        customerIntakesRes.error,
-      );
-      setCustomerIntakes([]);
-    } else {
       setCustomerIntakes(
         (customerIntakesRes.data || []) as CustomerIntakeRow[],
       );
+    } catch (error) {
+      if (requestId !== loadRequestIdRef.current) return;
+      console.error("calendar data fetch error:", error);
+      setReservations([]);
+      setExternalBlocks([]);
+      setCustomers([]);
+      setStaffs([]);
+      setVisits([]);
+      setCustomerIntakes([]);
+      setLoadError(
+        "予約カレンダーを取得できませんでした。通信状況を確認して再試行してください。",
+      );
+    } finally {
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
-
-    setLoading(false);
   }
 
   async function syncHpbNow() {
@@ -641,6 +635,10 @@ export default function ReservationsCalendarPage() {
 
   useEffect(() => {
     void fetchCalendarData();
+
+    return () => {
+      loadRequestIdRef.current += 1;
+    };
   }, []);
 
   const customerMap = useMemo(() => {
@@ -967,6 +965,49 @@ export default function ReservationsCalendarPage() {
     const staff = staffs.find((item) => item.id === selectedStaffFilter);
     return staff?.name || "名前未設定";
   }, [selectedStaffFilter, staffs]);
+
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div
+          className="mx-auto w-full max-w-[1200px] p-4"
+          style={{ paddingBottom: "100px" }}
+        >
+          <div className="rounded-3xl border border-rose-100 bg-white p-4 text-sm text-slate-500 shadow-sm">
+            読み込み中...
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div
+          className="mx-auto w-full max-w-[1200px] p-4"
+          style={{ paddingBottom: "100px" }}
+        >
+          <div
+            role="alert"
+            className="rounded-3xl border border-rose-200 bg-white p-5 shadow-sm"
+          >
+            <p className="text-sm font-bold text-rose-700">{loadError}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              取得に失敗した状態では、空き時間・重複判定・予約操作を表示していません。
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchCalendarData()}
+              className="mt-4 rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white shadow-sm"
+            >
+              再試行
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-rose-50/40">
