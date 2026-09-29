@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Image from "next/image";
 import Link from "next/link";
@@ -267,6 +267,9 @@ export default function CustomerDetailPage() {
   const [reservationsLoaded, setReservationsLoaded] = useState(false);
   const [intake, setIntake] = useState<CustomerIntake | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [notFound, setNotFound] = useState(false);
+  const requestVersion = useRef(0);
 
   const paymentMap = useMemo(() => {
     const nextMap: Record<string, VisitPayment[]> = {};
@@ -348,9 +351,19 @@ export default function CustomerDetailPage() {
   }, [visits, latestVisit]);
 
   const fetchCustomerDetail = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
     setLoading(true);
+    setLoadError("");
+    setNotFound(false);
+    setCustomer(null);
+    setVisits([]);
+    setVisitPayments([]);
+    setVisitPhotos([]);
+    setReservations([]);
     setReservationsLoaded(false);
     setReservationStaffNames({});
+    setIntake(null);
 
     try {
       const { data: customerData, error: customerError } = await supabase
@@ -359,14 +372,20 @@ export default function CustomerDetailPage() {
         .eq("id", customerId)
         .single();
 
+      if (!isCurrent()) return;
+
       if (customerError) {
-        console.error("customers取得エラー:", customerError);
-        alert("顧客情報の取得に失敗しました");
-        setLoading(false);
-        return;
+        if (customerError.code === "PGRST116") {
+          setNotFound(true);
+          return;
+        }
+        throw customerError;
       }
 
-      setCustomer(customerData);
+      if (!customerData) {
+        setNotFound(true);
+        return;
+      }
 
       const { data: visitsData, error: visitsError } = await supabase
         .from("visits")
@@ -376,47 +395,33 @@ export default function CustomerDetailPage() {
         .eq("customer_id", customerId)
         .order("visit_date", { ascending: false });
 
-      if (visitsError) {
-        console.error("visits取得エラー:", visitsError);
-        setVisits([]);
-        setVisitPayments([]);
-        setVisitPhotos([]);
-      } else {
-        const nextVisits = (visitsData || []) as Visit[];
-        setVisits(nextVisits);
+      if (!isCurrent()) return;
+      if (visitsError) throw visitsError;
 
-        const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
+      const nextVisits = (visitsData || []) as Visit[];
+      const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
+      let nextVisitPayments: VisitPayment[] = [];
+      let nextVisitPhotos: VisitPhoto[] = [];
 
-        if (visitIds.length > 0) {
-          const { data: paymentData, error: paymentError } = await supabase
+      if (visitIds.length > 0) {
+        const [paymentResult, photoResult] = await Promise.all([
+          supabase
             .from("visit_payments")
             .select("id, visit_id, payment_method, amount, sort_order")
             .in("visit_id", visitIds)
-            .order("sort_order", { ascending: true });
-
-          if (paymentError) {
-            console.error("visit_payments取得エラー:", paymentError);
-            setVisitPayments([]);
-          } else {
-            setVisitPayments((paymentData || []) as VisitPayment[]);
-          }
-
-          const { data: photoData, error: photoError } = await supabase
+            .order("sort_order", { ascending: true }),
+          supabase
             .from("visit_photos")
             .select("id, visit_id, salon_id, image_url, photo_type, created_at")
             .in("visit_id", visitIds)
-            .order("created_at", { ascending: true });
+            .order("created_at", { ascending: true }),
+        ]);
 
-          if (photoError) {
-            console.error("visit_photos取得エラー:", photoError);
-            setVisitPhotos([]);
-          } else {
-            setVisitPhotos((photoData || []) as VisitPhoto[]);
-          }
-        } else {
-          setVisitPayments([]);
-          setVisitPhotos([]);
-        }
+        if (!isCurrent()) return;
+        if (paymentResult.error) throw paymentResult.error;
+        if (photoResult.error) throw photoResult.error;
+        nextVisitPayments = (paymentResult.data || []) as VisitPayment[];
+        nextVisitPhotos = (photoResult.data || []) as VisitPhoto[];
       }
 
       const { data: reservationData, error: reservationError } = await supabase
@@ -424,54 +429,45 @@ export default function CustomerDetailPage() {
         .select("id, customer_id, staff_id, status, start_at, menu")
         .eq("customer_id", customerId);
 
-      if (reservationError) {
-        console.error("reservations取得エラー:", reservationError);
-        setReservations([]);
-      } else {
-        const nextReservations = (reservationData || []) as Reservation[];
-        setReservations(nextReservations);
-        setReservationsLoaded(true);
+      if (!isCurrent()) return;
+      if (reservationError) throw reservationError;
 
-        const staffIds = Array.from(
-          new Set(
-            nextReservations
-              .map((reservation) => reservation.staff_id)
-              .filter((staffId): staffId is string => Boolean(staffId))
-          )
-        );
+      const nextReservations = (reservationData || []) as Reservation[];
+      const staffIds = Array.from(
+        new Set(
+          nextReservations
+            .map((reservation) => reservation.staff_id)
+            .filter((staffId): staffId is string => Boolean(staffId))
+        )
+      );
+      let nextStaffNames: Record<string, string> = {};
 
-        if (staffIds.length > 0) {
-          const { data: staffData, error: staffError } = await supabase
+      if (staffIds.length > 0) {
+        const { data: staffData, error: staffError } = await supabase
             .from("staffs")
             .select("id, name")
             .in("id", staffIds);
 
-          if (staffError) {
-            console.error("予約担当スタッフ取得エラー:", staffError);
-          } else {
-            const nextStaffNames = Object.fromEntries(
-              ((staffData || []) as ReservationStaff[])
-                .filter((staff) => staff.name?.trim())
-                .map((staff) => [staff.id, staff.name!.trim()])
-            );
-            setReservationStaffNames(nextStaffNames);
-          }
-        }
+        if (!isCurrent()) return;
+        if (staffError) throw staffError;
+        nextStaffNames = Object.fromEntries(
+          ((staffData || []) as ReservationStaff[])
+            .filter((staff) => staff.name?.trim())
+            .map((staff) => [staff.id, staff.name!.trim()])
+        );
       }
 
-      try {
-        const intakeRes = await supabase
-          .from("customer_intakes")
-          .select("*")
-          .eq("customer_id", customerId);
+      const intakeResult = await supabase
+        .from("customer_intakes")
+        .select("*")
+        .eq("customer_id", customerId);
 
-        if (intakeRes.error) {
-          console.error("customer_intakes取得エラー:", intakeRes.error);
-          setIntake(null);
-        } else {
-          const intakeRows = (intakeRes.data as CustomerIntakeQueryRow[] | null ?? [])
-            .filter((item) => item && item.customer_id)
-            .map((item) => ({
+      if (!isCurrent()) return;
+      if (intakeResult.error) throw intakeResult.error;
+
+      const intakeRows = (intakeResult.data as CustomerIntakeQueryRow[] | null ?? [])
+        .filter((item) => item && item.customer_id)
+        .map((item) => ({
               id: item.id,
               customer_id: item.customer_id ?? null,
               name: typeof item.name === "string" ? item.name : null,
@@ -517,39 +513,53 @@ export default function CustomerDetailPage() {
                 typeof item.submitted_at === "string" ? item.submitted_at : null,
               created_at:
                 typeof item.created_at === "string" ? item.created_at : null,
-            })) as CustomerIntake[];
+        })) as CustomerIntake[];
 
-          const latestIntake =
-            intakeRows.sort((a, b) => {
-              const aTime = a.created_at
-                ? new Date(a.created_at).getTime()
-                : a.submitted_at
-                ? new Date(a.submitted_at).getTime()
-                : 0;
-              const bTime = b.created_at
-                ? new Date(b.created_at).getTime()
-                : b.submitted_at
-                ? new Date(b.submitted_at).getTime()
-                : 0;
-              return bTime - aTime;
-            })[0] || null;
+      const latestIntake =
+        intakeRows.sort((a, b) => {
+          const aTime = a.created_at
+            ? new Date(a.created_at).getTime()
+            : a.submitted_at
+            ? new Date(a.submitted_at).getTime()
+            : 0;
+          const bTime = b.created_at
+            ? new Date(b.created_at).getTime()
+            : b.submitted_at
+            ? new Date(b.submitted_at).getTime()
+            : 0;
+          return bTime - aTime;
+        })[0] || null;
 
-          setIntake(latestIntake);
-        }
-      } catch (error) {
-        console.error("customer_intakes想定外エラー:", error);
-        setIntake(null);
-      }
+      if (!isCurrent()) return;
+      setCustomer(customerData as Customer);
+      setVisits(nextVisits);
+      setVisitPayments(nextVisitPayments);
+      setVisitPhotos(nextVisitPhotos);
+      setReservations(nextReservations);
+      setReservationsLoaded(true);
+      setReservationStaffNames(nextStaffNames);
+      setIntake(latestIntake);
     } catch (error) {
+      if (!isCurrent()) return;
       console.error("詳細取得エラー:", error);
-      alert("データ取得中にエラーが発生しました");
+      setLoadError(
+        "顧客詳細を取得できませんでした。不完全な状態での表示と操作を防ぐため、通信状態を確認して再試行してください。"
+      );
     } finally {
-      setLoading(false);
-    }  }, [customerId]);
+      if (isCurrent()) setLoading(false);
+    }
+  }, [customerId]);
 
   useEffect(() => {
     if (!customerId) return;
-    void Promise.resolve().then(fetchCustomerDetail);
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchCustomerDetail();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
   }, [customerId, fetchCustomerDetail]);
 
   async function handleDeleteCustomer() {
@@ -619,7 +629,38 @@ export default function CustomerDetailPage() {
     );
   }
 
-  if (!customer) {
+  if (loadError) {
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-[920px] p-4 pb-24">
+          <div
+            role="alert"
+            className="rounded-[28px] border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm"
+          >
+            <p>{loadError}</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void fetchCustomerDetail()}
+                className="rounded-2xl border border-red-200 bg-white px-4 py-3 font-bold"
+              >
+                再試行
+              </button>
+              <button
+                type="button"
+                onClick={() => router.push("/customers")}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700"
+              >
+                顧客ページへ
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (notFound || !customer) {
     return (
       <main className="min-h-screen bg-rose-50/40">
         <div className="mx-auto max-w-[920px] p-4 pb-24">

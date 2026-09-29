@@ -40,6 +40,7 @@ async function loadPage({ reservations = [], reservationError = null, rejectRese
       if (!(index in states)) states[index] = initial;
       return [states[index], (value) => { states[index] = value; }];
     },
+    useRef: (initial) => ({ current: initial }),
     useMemo: (fn) => fn(),
     useCallback: (fn) => fn,
     useEffect: (fn) => { effects.push(fn); },
@@ -119,13 +120,13 @@ async function loadPage({ reservations = [], reservationError = null, rejectRese
 test("reservation query failure shows an alert, never a false empty state", async () => {
   const { html } = await loadPage({ reservationError: { code: "42703" } });
   assert.match(html, /role="alert"/);
-  assert.match(html, /次回予約を確認できませんでした/);
+  assert.match(html, /顧客詳細を取得できませんでした/);
   assert.doesNotMatch(html, /次回予約は未登録です/);
 });
 
 test("rejected reservation request also stays distinct from no booking", async () => {
   const { html } = await loadPage({ rejectReservations: true });
-  assert.match(html, /次回予約を確認できませんでした/);
+  assert.match(html, /顧客詳細を取得できませんでした/);
   assert.doesNotMatch(html, /次回予約は未登録です/);
 });
 
@@ -154,11 +155,11 @@ test("missing staff assignment preserves booking and skips staff lookup", async 
   assert.ok(!queries.some((q) => q.table === "staffs"));
 });
 
-test("staff lookup failure does not hide a successfully loaded booking", async () => {
+test("staff lookup failure blocks an incomplete customer detail", async () => {
   const { html } = await loadPage({ reservations: [booking()], staffError: { code: "42501" } });
-  assert.match(html, /テストメニュー/);
-  assert.match(html, /担当: -/);
-  assert.doesNotMatch(html, /次回予約は未登録です|次回予約を確認できませんでした/);
+  assert.match(html, /role="alert"/);
+  assert.match(html, /顧客詳細を取得できませんでした/);
+  assert.doesNotMatch(html, /テストメニュー|担当: -|次回予約は未登録です/);
 });
 
 test("next booking excludes cancelled/completed rows and selects earliest active row", async () => {

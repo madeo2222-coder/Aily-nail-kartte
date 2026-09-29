@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { setImmediate } from "node:timers/promises";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
@@ -10,7 +11,7 @@ const source = readFileSync(new URL("../app/visits/new/NewVisitPageClient.tsx", 
 
 // Execute the real page's event handlers and dependency-aware effect cleanup.
 // No database or browser connection is used.
-function mount() {
+async function mount() {
   const slots = [];
   let cursor = 0;
   let pending = [];
@@ -32,6 +33,17 @@ function mount() {
       const i = cursor++;
       if (!(i in slots)) slots[i] = { current: initial };
       return slots[i];
+    },
+    useCallback(fn, deps) {
+      const i = cursor++;
+      const previous = slots[i];
+      if (
+        !previous ||
+        deps.some((value, index) => !Object.is(value, previous.deps[index]))
+      ) {
+        slots[i] = { deps, value: fn };
+      }
+      return slots[i].value;
     },
     useMemo(fn) { return fn(); },
     useEffect(fn, deps) {
@@ -66,7 +78,10 @@ function mount() {
       if (name === "@/lib/supabase") return { supabase: {
         from(table) {
           assert.equal(table, "customers");
-          return { select: () => ({ order: async () => ({ data: [], error: null }) }) };
+          return { select: () => ({ order: async () => ({
+            data: [{ id: "customer-1", name: "顧客A", phone: null, salon_id: "salon-1" }],
+            error: null,
+          }) }) };
         },
       } };
       throw new Error(`Unexpected import ${name}`);
@@ -84,8 +99,12 @@ function mount() {
     return [node, ...nodes(node.props?.children ?? null)];
   }
   render();
+  await setImmediate();
+  render();
   // Initial Strict Mode effect replay must not invalidate future selections.
   for (const slot of slots) if (slot?.fn) { slot.cleanup?.(); slot.cleanup = slot.fn(); }
+  await setImmediate();
+  render();
   return {
     active, revoked,
     add(types = ["image/png"]) {
@@ -104,8 +123,8 @@ function mount() {
   };
 }
 
-test("adding photos preserves earlier previews; removal only releases the selected URL", () => {
-  const page = mount();
+test("adding photos preserves earlier previews; removal only releases the selected URL", async () => {
+  const page = await mount();
   page.add();
   page.add();
   assert.deepEqual([...page.active], ["blob:test-1", "blob:test-2"]);
@@ -122,8 +141,8 @@ test("adding photos preserves earlier previews; removal only releases the select
   assert.deepEqual(page.revoked, ["blob:test-1", "blob:test-2"]);
 });
 
-test("non-image and empty selections do not invalidate existing previews", () => {
-  const page = mount();
+test("non-image and empty selections do not invalidate existing previews", async () => {
+  const page = await mount();
   page.add();
   page.add(["text/plain"]);
   page.add([]);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -36,31 +36,64 @@ export default function SalesDashboardPageClient() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const requestVersionRef = useRef(0);
 
-  async function fetchVisits() {
+  const fetchVisits = useCallback(async () => {
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
     setLoading(true);
     setErrorMessage("");
+    setVisits([]);
 
-    const { data, error } = await supabase
-      .from("visits")
-      .select("id, customer_id, visit_date, menu_name, price, created_at")
-      .order("visit_date", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("visits")
+        .select("id, customer_id, visit_date, menu_name, price, created_at")
+        .order("visit_date", { ascending: false });
 
-    if (error) {
+      if (requestVersionRef.current !== requestVersion) {
+        return;
+      }
+
+      if (error) {
+        console.error("sales fetch error:", error);
+        setErrorMessage(
+          "売上データを取得できませんでした。集計値は表示していません。"
+        );
+        return;
+      }
+
+      setVisits((data as Visit[]) || []);
+    } catch (error) {
+      if (requestVersionRef.current !== requestVersion) {
+        return;
+      }
+
       console.error("sales fetch error:", error);
-      setErrorMessage("売上ダッシュボードの取得に失敗しました");
-      setVisits([]);
-      setLoading(false);
-      return;
+      setErrorMessage(
+        "売上データを取得できませんでした。集計値は表示していません。"
+      );
+    } finally {
+      if (requestVersionRef.current === requestVersion) {
+        setLoading(false);
+      }
     }
-
-    setVisits((data as Visit[]) || []);
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
-    void Promise.resolve().then(fetchVisits);
-  }, []);
+    let active = true;
+
+    void Promise.resolve().then(() => {
+      if (active) {
+        return fetchVisits();
+      }
+    });
+
+    return () => {
+      active = false;
+      requestVersionRef.current += 1;
+    };
+  }, [fetchVisits]);
 
   const stats = useMemo(() => {
     const todayString = getTodayString();
@@ -128,8 +161,18 @@ export default function SalesDashboardPageClient() {
           読み込み中...
         </div>
       ) : errorMessage ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-          {errorMessage}
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          <p className="font-medium">{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchVisits()}
+            className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-bold text-white"
+          >
+            再試行
+          </button>
         </div>
       ) : (
         <>

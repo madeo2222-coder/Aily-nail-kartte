@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -114,8 +114,10 @@ export default function NewVisitPageClient() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [customerLoadError, setCustomerLoadError] = useState("");
+  const customerRequestVersionRef = useRef(0);
 
-  const [customerId, setCustomerId] = useState(preselectedCustomerId);
+  const [customerId, setCustomerId] = useState("");
   const [visitDate, setVisitDate] = useState(
     prefilledVisitDate || new Date().toISOString().split("T")[0]
   );
@@ -137,14 +139,6 @@ export default function NewVisitPageClient() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    void fetchCustomers();
-  }, []);
-
-  useEffect(() => {
-    if (preselectedCustomerId) {
-      setCustomerId(preselectedCustomerId);
-    }
-
     if (prefilledVisitDate) {
       setVisitDate(prefilledVisitDate);
     }
@@ -161,7 +155,6 @@ export default function NewVisitPageClient() {
       setMemo(prefilledMemo);
     }
   }, [
-    preselectedCustomerId,
     prefilledVisitDate,
     prefilledMenuName,
     prefilledStaffName,
@@ -176,24 +169,65 @@ export default function NewVisitPageClient() {
     };
   }, []);
 
-  async function fetchCustomers() {
+  const fetchCustomers = useCallback(async () => {
+    const requestVersion = customerRequestVersionRef.current + 1;
+    customerRequestVersionRef.current = requestVersion;
     setLoadingCustomers(true);
+    setCustomerLoadError("");
+    setMessage("");
+    setCustomers([]);
+    setCustomerId("");
 
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, name, phone, salon_id")
-      .order("name", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("id, name, phone, salon_id")
+        .order("name", { ascending: true });
 
-    if (error) {
+      if (customerRequestVersionRef.current !== requestVersion) {
+        return;
+      }
+
+      if (error) {
+        console.error("customers取得エラー:", error);
+        setCustomerLoadError(
+          "顧客一覧を取得できませんでした。来店登録はまだ行われていません。"
+        );
+        return;
+      }
+
+      const loadedCustomers = data || [];
+      setCustomers(loadedCustomers);
+      setCustomerId(
+        loadedCustomers.some(
+          (customer) => customer.id === preselectedCustomerId
+        )
+          ? preselectedCustomerId
+          : ""
+      );
+    } catch (error) {
+      if (customerRequestVersionRef.current !== requestVersion) {
+        return;
+      }
+
       console.error("customers取得エラー:", error);
-      setMessage("顧客一覧の取得に失敗しました");
-      setLoadingCustomers(false);
-      return;
+      setCustomerLoadError(
+        "顧客一覧を取得できませんでした。来店登録はまだ行われていません。"
+      );
+    } finally {
+      if (customerRequestVersionRef.current === requestVersion) {
+        setLoadingCustomers(false);
+      }
     }
+  }, [preselectedCustomerId]);
 
-    setCustomers(data || []);
-    setLoadingCustomers(false);
-  }
+  useEffect(() => {
+    void fetchCustomers();
+
+    return () => {
+      customerRequestVersionRef.current += 1;
+    };
+  }, [fetchCustomers]);
 
   const selectedCustomer = useMemo(() => {
     return customers.find((customer) => customer.id === customerId) || null;
@@ -369,8 +403,18 @@ export default function NewVisitPageClient() {
     e.preventDefault();
     setMessage("");
 
+    if (loadingCustomers || customerLoadError) {
+      setMessage("顧客一覧を再取得してから登録してください");
+      return;
+    }
+
     if (!customerId) {
       setMessage("顧客を選択してください");
+      return;
+    }
+
+    if (!selectedCustomer) {
+      setMessage("有効な顧客を選択してください");
       return;
     }
 
@@ -621,6 +665,47 @@ export default function NewVisitPageClient() {
           </p>
         </section>
 
+        {loadingCustomers ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm">
+            <p className="text-sm font-bold text-slate-700">
+              顧客一覧を読み込み中...
+            </p>
+          </section>
+        ) : customerLoadError ? (
+          <section
+            role="alert"
+            className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 shadow-sm"
+          >
+            <h2 className="text-lg font-bold text-amber-900">
+              顧客一覧を確認できません
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-amber-800">
+              {customerLoadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchCustomers()}
+              className="mt-4 rounded-2xl bg-amber-900 px-4 py-3 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
+          </section>
+        ) : customers.length === 0 ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900">
+              登録可能な顧客がいません
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              来店履歴を登録する前に顧客を追加してください。
+            </p>
+            <Link
+              href="/customers/new"
+              className="mt-4 inline-block rounded-2xl bg-rose-600 px-4 py-3 text-sm font-bold text-white"
+            >
+              顧客を追加
+            </Link>
+          </section>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-900">
@@ -633,9 +718,7 @@ export default function NewVisitPageClient() {
               className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
             >
               <option value="">
-                {loadingCustomers
-                  ? "読み込み中..."
-                  : "顧客を選択してください"}
+                顧客を選択してください
               </option>
 
               {customers.map((customer) => (
@@ -898,6 +981,7 @@ export default function NewVisitPageClient() {
             {saving ? "登録中..." : "登録する"}
           </button>
         </form>
+        )}
 
         <Link
           href="/visits"
