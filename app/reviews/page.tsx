@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
@@ -20,30 +20,44 @@ export default function ReviewsPage() {
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState("")
   const [search, setSearch] = useState("")
+  const requestIdRef = useRef(0)
 
-  async function loadCustomers() {
+  const loadCustomers = useCallback(async () => {
+    const requestId = ++requestIdRef.current
     setLoading(true)
     setErrorMessage("")
 
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, name, phone, line, memo, created_at")
-      .order("created_at", { ascending: false })
+    try {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("id, name, phone, line, memo, created_at")
+        .order("created_at", { ascending: false })
 
-    if (error) {
-      setErrorMessage("顧客情報の取得に失敗しました。")
+      if (requestId !== requestIdRef.current) return
+
+      if (error) throw error
+
+      setCustomers(data ?? [])
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return
+
+      console.error("口コミ導線用の顧客取得エラー:", error)
       setCustomers([])
-      setLoading(false)
-      return
+      setErrorMessage(
+        "顧客情報を取得できませんでした。通信状態を確認して再試行してください。"
+      )
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false)
     }
-
-    setCustomers(data ?? [])
-    setLoading(false)
-  }
+  }, [])
 
   useEffect(() => {
     void Promise.resolve().then(loadCustomers)
-  }, [])
+
+    return () => {
+      requestIdRef.current += 1
+    }
+  }, [loadCustomers])
 
   function formatDate(date: string | null) {
     if (!date) return "未登録"
@@ -76,29 +90,48 @@ export default function ReviewsPage() {
     return <div className="p-6">読み込み中...</div>
   }
 
-  return (
-    <div className="p-4 md:p-6 space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl md:text-2xl font-bold">口コミ導線管理</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            顧客ごとの口コミ依頼ページへすぐ移動できます
-          </p>
-        </div>
-
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="rounded-xl border px-4 py-2 text-sm font-medium"
-        >
-          ダッシュボードへ
-        </button>
+  const pageHeader = (
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <h1 className="text-xl md:text-2xl font-bold">口コミ導線管理</h1>
+        <p className="mt-1 text-sm text-gray-600">
+          顧客ごとの口コミ依頼ページへすぐ移動できます
+        </p>
       </div>
 
-      {errorMessage ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {errorMessage}
+      <button
+        onClick={() => router.push("/dashboard")}
+        className="rounded-xl border px-4 py-2 text-sm font-medium"
+      >
+        ダッシュボードへ
+      </button>
+    </div>
+  )
+
+  if (errorMessage) {
+    return (
+      <div className="p-4 md:p-6 space-y-6">
+        {pageHeader}
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+          <p>{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void loadCustomers()}
+            className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium"
+          >
+            再試行
+          </button>
         </div>
-      ) : null}
+      </div>
+    )
+  }
+
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      {pageHeader}
 
       <div className="rounded-2xl border bg-white p-4 md:p-5 shadow-sm space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

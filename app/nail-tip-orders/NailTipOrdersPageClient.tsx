@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type NailTipOrderRow = {
@@ -160,9 +160,13 @@ export default function NailTipOrdersPageClient() {
   );
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErrorMessage, setLoadErrorMessage] = useState("");
+  const requestIdRef = useRef(0);
 
-  async function fetchOrders() {
+  const fetchOrders = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true);
+    setLoadErrorMessage("");
 
     try {
       const [domesticResponse, inboundResponse, customersRes] =
@@ -176,46 +180,56 @@ export default function NailTipOrdersPageClient() {
           supabase.from("customers").select("id, name"),
         ]);
 
-      const domesticJson = await domesticResponse.json();
-      const inboundJson = await inboundResponse.json();
+      const [domesticJson, inboundJson] = await Promise.all([
+        domesticResponse.json() as Promise<{
+          ok?: boolean;
+          orders?: NailTipOrderRow[];
+          error?: string;
+        }>,
+        inboundResponse.json() as Promise<{
+          ok?: boolean;
+          requests?: InboundNailTipRequestRow[];
+          error?: string;
+        }>,
+      ]);
 
-      if (!domesticJson.ok) {
-        console.error("nail_tip_orders api error:", domesticJson.error);
-        setDomesticOrders([]);
-      } else {
-        setDomesticOrders((domesticJson.orders || []) as NailTipOrderRow[]);
+      if (requestId !== requestIdRef.current) return;
+
+      if (!domesticResponse.ok || !domesticJson.ok) {
+        throw new Error(domesticJson.error || "国内注文の取得に失敗しました。");
       }
 
-      if (!inboundJson.ok) {
-        console.error(
-          "inbound_nail_tip_requests api error:",
-          inboundJson.error
-        );
-        setInboundOrders([]);
-      } else {
-        setInboundOrders(
-          (inboundJson.requests || []) as InboundNailTipRequestRow[]
-        );
+      if (!inboundResponse.ok || !inboundJson.ok) {
+        throw new Error(inboundJson.error || "海外注文の取得に失敗しました。");
       }
 
-      if (customersRes.error) {
-        console.error("customers fetch error:", customersRes.error.message);
-        setCustomers([]);
-      } else {
-        setCustomers((customersRes.data || []) as CustomerRow[]);
-      }
+      if (customersRes.error) throw customersRes.error;
+
+      setDomesticOrders(domesticJson.orders || []);
+      setInboundOrders(inboundJson.requests || []);
+      setCustomers((customersRes.data || []) as CustomerRow[]);
     } catch (error) {
-      console.error(error);
+      if (requestId !== requestIdRef.current) return;
+
+      console.error("ネイルチップ注文一覧の取得エラー:", error);
       setDomesticOrders([]);
       setInboundOrders([]);
+      setCustomers([]);
+      setLoadErrorMessage(
+        "ネイルチップ注文を取得できませんでした。通信状態を確認して再試行してください。"
+      );
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(fetchOrders);
-  }, []);
+
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, [fetchOrders]);
 
   const customerMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -316,7 +330,36 @@ export default function NailTipOrdersPageClient() {
       </main>
     );
   }
+
+  if (loadErrorMessage) {
     return (
+      <main className="min-h-screen bg-purple-50/40">
+        <div className="mx-auto w-full max-w-[920px] space-y-4 p-4 pb-24">
+          <Link
+            href="/dashboard"
+            className="inline-flex rounded-2xl border bg-white px-4 py-3 text-sm font-bold text-purple-600 shadow-sm"
+          >
+            ダッシュボードへ
+          </Link>
+          <div
+            role="alert"
+            className="rounded-3xl border border-red-200 bg-red-50 p-5 text-sm text-red-700 shadow-sm"
+          >
+            <p>{loadErrorMessage}</p>
+            <button
+              type="button"
+              onClick={() => void fetchOrders()}
+              className="mt-3 rounded-2xl border border-red-300 bg-white px-4 py-2 font-bold"
+            >
+              再試行
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  return (
     <main className="min-h-screen bg-purple-50/40">
       <div className="mx-auto w-full max-w-[920px] space-y-4 p-4 pb-24">
         <section className="overflow-hidden rounded-[28px] bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 p-5 text-white shadow-sm">

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type ImportRow = {
@@ -26,33 +26,58 @@ function formatAmount(value: number | null) {
 export default function ExpenseImportRowsPage() {
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const requestVersion = useRef(0);
 
-  async function fetchRows() {
+  const fetchRows = useCallback(async () => {
+    const version = ++requestVersion.current;
+    const isCurrent = () => version === requestVersion.current;
     setLoading(true);
+    setLoadError("");
+    setRows([]);
 
-    const { data, error } = await supabase
-      .from("expense_import_rows")
-      .select(
-        "id, import_id, expense_date, amount, vendor_raw, description_raw, payment_method, receipt_status, review_status, duplicate_flag, excluded_flag, created_at"
-      )
-      .eq("excluded_flag", false)
-      .order("expense_date", { ascending: false })
-      .limit(100);
+    try {
+      const { data, error } = await supabase
+        .from("expense_import_rows")
+        .select(
+          "id, import_id, expense_date, amount, vendor_raw, description_raw, payment_method, receipt_status, review_status, duplicate_flag, excluded_flag, created_at"
+        )
+        .eq("excluded_flag", false)
+        .order("expense_date", { ascending: false })
+        .limit(100);
 
-    if (error) {
-      console.error("CSV取込候補取得エラー:", error);
-      alert(`CSV取込候補の取得に失敗しました: ${error.message}`);
-      setRows([]);
-    } else {
+      if (!isCurrent()) return;
+
+      if (error) {
+        console.error("CSV取込候補取得エラー:", error);
+        setLoadError(
+          "CSV取込候補を取得できませんでした。通信状態を確認して再試行してください。"
+        );
+        return;
+      }
+
       setRows((data || []) as ImportRow[]);
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("CSV取込候補取得エラー:", error);
+      setLoadError(
+        "CSV取込候補を取得できませんでした。通信状態を確認して再試行してください。"
+      );
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
-
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
-    void fetchRows();
-  }, []);
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchRows();
+    });
+    return () => {
+      active = false;
+      requestVersion.current += 1;
+    };
+  }, [fetchRows]);
   async function handleApprove(rowId: string) {
     const ok = window.confirm("この候補を正式な経費として登録しますか？");
     if (!ok) return;
@@ -129,6 +154,20 @@ export default function ExpenseImportRowsPage() {
 
       {loading ? (
         <div className="rounded-2xl border bg-white p-6">読み込み中...</div>
+      ) : loadError ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700"
+        >
+          <p>{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void fetchRows()}
+            className="mt-3 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-bold"
+          >
+            再試行
+          </button>
+        </div>
       ) : rows.length === 0 ? (
         <div className="rounded-2xl border bg-white p-6 text-gray-600">
           CSV取込候補はありません。

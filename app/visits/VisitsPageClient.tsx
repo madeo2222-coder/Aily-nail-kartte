@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type CustomerRelation =
@@ -183,97 +183,107 @@ export default function VisitsPageClient() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [paymentMap, setPaymentMap] = useState<Record<string, VisitPayment[]>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(buildCurrentMonth());
   const [quickSelectMode, setQuickSelectMode] = useState<QuickSelectMode>("current");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const visitsRequestVersionRef = useRef(0);
 
-  async function fetchVisits() {
+  const fetchVisits = useCallback(async () => {
+    const requestVersion = visitsRequestVersionRef.current + 1;
+    visitsRequestVersionRef.current = requestVersion;
     setLoading(true);
+    setLoadError("");
+    setIsPreviewOpen(false);
 
-    const { data, error } = await supabase
-      .from("visits")
-      .select(
+    try {
+      const { data, error } = await supabase
+        .from("visits")
+        .select(
+          `
+          id,
+          customer_id,
+          visit_date,
+          price,
+          payment_method,
+          memo,
+          next_visit_date,
+          next_proposal,
+          next_suggestion,
+          customers (
+            name
+          )
         `
-        id,
-        customer_id,
-        visit_date,
-        price,
-        payment_method,
-        memo,
-        next_visit_date,
-        next_proposal,
-        next_suggestion,
-        customers (
-          name
         )
-      `
-      )
-      .order("visit_date", { ascending: false });
+        .order("visit_date", { ascending: false });
 
-    if (error) {
-      console.error("来店履歴の取得エラー:", error);
-      setVisits([]);
-      setPaymentMap({});
-      setLoading(false);
-      return;
-    }
+      if (error) throw error;
 
-    const nextVisits = (data as Visit[]) || [];
-    setVisits(nextVisits);
+      const nextVisits = (data as Visit[]) || [];
+      const nextPaymentMap: Record<string, VisitPayment[]> = {};
+      const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
 
-    const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
+      if (visitIds.length > 0) {
+        const { data: paymentData, error: paymentError } = await supabase
+          .from("visit_payments")
+          .select("id, visit_id, payment_method, amount, sort_order")
+          .in("visit_id", visitIds)
+          .order("sort_order", { ascending: true });
 
-    if (visitIds.length > 0) {
-      const { data: paymentData, error: paymentError } = await supabase
-        .from("visit_payments")
-        .select("id, visit_id, payment_method, amount, sort_order")
-        .in("visit_id", visitIds)
-        .order("sort_order", { ascending: true });
-
-      if (paymentError) {
-        console.error("visit_payments取得エラー:", paymentError);
-        setPaymentMap({});
-      } else {
-        const nextMap: Record<string, VisitPayment[]> = {};
+        if (paymentError) throw paymentError;
 
         ((paymentData || []) as VisitPayment[]).forEach((row) => {
-          if (!nextMap[row.visit_id]) {
-            nextMap[row.visit_id] = [];
+          if (!nextPaymentMap[row.visit_id]) {
+            nextPaymentMap[row.visit_id] = [];
           }
-          nextMap[row.visit_id].push(row);
+          nextPaymentMap[row.visit_id].push(row);
         });
-
-        setPaymentMap(nextMap);
       }
-    } else {
-      setPaymentMap({});
-    }
 
-    const currentMonth = buildCurrentMonth();
-    const previousMonth = buildPreviousMonth();
+      if (requestVersion !== visitsRequestVersionRef.current) return;
 
-    if (nextVisits.some((visit) => getMonthPrefix(visit.visit_date) === currentMonth)) {
-      setSelectedMonth(currentMonth);
-      setQuickSelectMode("current");
-    } else if (
-      nextVisits.some((visit) => getMonthPrefix(visit.visit_date) === previousMonth)
-    ) {
-      setSelectedMonth(previousMonth);
-      setQuickSelectMode("previous");
-    } else {
-      const options = buildMonthOptions(nextVisits);
-      if (options.length > 0) {
-        setSelectedMonth(options[0].value);
+      setVisits(nextVisits);
+      setPaymentMap(nextPaymentMap);
+
+      const currentMonth = buildCurrentMonth();
+      const previousMonth = buildPreviousMonth();
+
+      if (nextVisits.some((visit) => getMonthPrefix(visit.visit_date) === currentMonth)) {
+        setSelectedMonth(currentMonth);
+        setQuickSelectMode("current");
+      } else if (
+        nextVisits.some((visit) => getMonthPrefix(visit.visit_date) === previousMonth)
+      ) {
+        setSelectedMonth(previousMonth);
+        setQuickSelectMode("previous");
+      } else {
+        const options = buildMonthOptions(nextVisits);
+        if (options.length > 0) {
+          setSelectedMonth(options[0].value);
+        }
+        setQuickSelectMode("custom");
       }
-      setQuickSelectMode("custom");
+    } catch (error) {
+      console.error("施術実績の取得エラー:", error);
+      if (requestVersion === visitsRequestVersionRef.current) {
+        setVisits([]);
+        setPaymentMap({});
+        setLoadError("施術実績を取得できませんでした。");
+      }
+    } finally {
+      if (requestVersion === visitsRequestVersionRef.current) {
+        setLoading(false);
+      }
     }
-
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(fetchVisits);
-  }, []);
+
+    return () => {
+      visitsRequestVersionRef.current += 1;
+    };
+  }, [fetchVisits]);
 
   const monthOptions = useMemo(() => buildMonthOptions(visits), [visits]);
 
@@ -386,6 +396,31 @@ export default function VisitsPageClient() {
         <div className="mx-auto max-w-[920px] p-4 pb-24">
           <div className="rounded-[28px] border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
             読み込み中...
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div className="mx-auto max-w-[920px] p-4 pb-24">
+          <div
+            role="alert"
+            className="rounded-[28px] border border-rose-200 bg-white p-5 shadow-sm"
+          >
+            <p className="text-sm font-bold text-rose-800">{loadError}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              不完全な売上集計や支払い内訳を出力しないため、レポートを停止しています。
+            </p>
+            <button
+              type="button"
+              onClick={fetchVisits}
+              className="mt-4 rounded-2xl bg-rose-600 px-4 py-2 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
           </div>
         </div>
       </main>

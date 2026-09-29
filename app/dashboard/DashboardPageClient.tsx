@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type VisitRow = {
@@ -344,6 +344,7 @@ function staffSort(a: string, b: string) {
 
 export default function DashboardPageClient() {
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const [customersCount, setCustomersCount] = useState(0);
   const [visitsCount, setVisitsCount] = useState(0);
@@ -361,9 +362,14 @@ export default function DashboardPageClient() {
   >([]);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutErrorMessage, setLogoutErrorMessage] = useState("");
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     void fetchDashboardData();
+
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, []);
 
   async function handleStaffLogout() {
@@ -402,186 +408,219 @@ export default function DashboardPageClient() {
   }
 
   async function fetchDashboardData() {
-    setLoading(true);
+    const requestId = ++requestIdRef.current;
 
-    const today = new Date();
-    const todayText = toDateOnlyString(today);
-    const currentMonthKey = getMonthKey(today);
+    try {
+      setLoading(true);
+      setErrorMessage("");
 
-    const previousMonthDate = new Date(
-      today.getFullYear(),
-      today.getMonth() - 1,
-      1
-    );
+      const today = new Date();
+      const todayText = toDateOnlyString(today);
+      const currentMonthKey = getMonthKey(today);
 
-    const previousMonthKey = getMonthKey(previousMonthDate);
-
- const [
-  customersResult,
-  staffsResult,
-  visitsResult,
-  reservationsResult,
-] = await Promise.all([
-      supabase.from("customers").select("id, name"),
-      supabase.from("staffs").select("id, name"),
-      supabase
-        .from("visits")
-        .select(
-          "id, price, visit_date, customer_id, next_visit_date"
-        )
-        .order("visit_date", { ascending: false }),
-      supabase
-        .from("reservations")
-        .select("*")
-        .order("created_at", {
-          ascending: false,
-        }),
-    ]);
-
-    const customers = (customersResult.data || []) as CustomerRow[];
-    const staffs = (staffsResult.data || []) as StaffRow[];
-    const visits = (visitsResult.data || []) as VisitRow[];
-    const reservations = (reservationsResult.data ||
-      []) as ReservationRow[];
-
-
-    const customerMap: Record<string, string> = {};
-
-    customers.forEach((customer) => {
-      customerMap[customer.id] =
-        customer.name || "顧客名未設定";
-    });
-
-    const staffMap: Record<string, string> = {};
-
-    staffs.forEach((staff) => {
-      staffMap[staff.id] = staff.name || "未設定";
-    });
-
-    setCustomersCount(customers.length);
-    setVisitsCount(visits.length);
-
-    const todayVisitRows = visits.filter(
-      (row) => row.visit_date === todayText
-    );
-
-    const todaySalesTotal = todayVisitRows.reduce(
-      (sum, row) => sum + Number(row.price || 0),
-      0
-    );
-
-    const currentMonthVisits = visits.filter((row) =>
-      (row.visit_date || "").startsWith(currentMonthKey)
-    );
-
-    const previousMonthVisits = visits.filter((row) =>
-      (row.visit_date || "").startsWith(previousMonthKey)
-    );
-
-    const currentMonthSales = currentMonthVisits.reduce(
-      (sum, row) => sum + Number(row.price || 0),
-      0
-    );
-
-    const previousSales = previousMonthVisits.reduce(
-      (sum, row) => sum + Number(row.price || 0),
-      0
-    );
-
-    const visitCountByCustomer = new Map<string, number>();
-
-    visits.forEach((row) => {
-      if (!row.customer_id) return;
-
-      const currentCount =
-        visitCountByCustomer.get(row.customer_id) || 0;
-
-      visitCountByCustomer.set(
-        row.customer_id,
-        currentCount + 1
+      const previousMonthDate = new Date(
+        today.getFullYear(),
+        today.getMonth() - 1,
+        1
       );
-    });
 
-    const visitedCustomers = Array.from(
-      visitCountByCustomer.entries()
-    );
+      const previousMonthKey = getMonthKey(previousMonthDate);
 
-    const repeatCustomers = visitedCustomers.filter(
-      ([, count]) => count >= 2
-    );
+      const [
+        customersResult,
+        staffsResult,
+        visitsResult,
+        reservationsResult,
+      ] = await Promise.all([
+        supabase.from("customers").select("id, name"),
+        supabase.from("staffs").select("id, name"),
+        supabase
+          .from("visits")
+          .select(
+            "id, price, visit_date, customer_id, next_visit_date"
+          )
+          .order("visit_date", { ascending: false }),
+        supabase
+          .from("reservations")
+          .select("*")
+          .order("created_at", {
+            ascending: false,
+          }),
+      ]);
 
-    const repeatRateValue =
-      visitedCustomers.length > 0
-        ? (repeatCustomers.length / visitedCustomers.length) * 100
-        : 0;
+      if (requestId !== requestIdRef.current) return;
 
-    const nextVisits = currentMonthVisits.filter(
-      (row) =>
-        typeof row.next_visit_date === "string" &&
-        row.next_visit_date.trim() !== ""
-    );
+      const readError =
+        customersResult.error ||
+        staffsResult.error ||
+        visitsResult.error ||
+        reservationsResult.error;
 
-    const pendingCount = reservations.filter((row) => {
-      const status = normalizeStatus(row);
-      return (
-        status === "予約申請中" ||
-        status === "予約受付" ||
-        status === "予約"
-      );
-    }).length;
-
-    const normalizedTodayReservations = reservations
-      .map((row) => {
-        const customerId =
-          typeof row.customer_id === "string"
-            ? row.customer_id
-            : null;
-
-        const staffId =
-          typeof row.staff_id === "string"
-            ? row.staff_id
-            : null;
-
-        const directStaffName = pickString(
-          row,
-          ["staff_name", "staff"],
-          ""
+      if (readError) {
+        console.error("ダッシュボード取得エラー:", {
+          customers: customersResult.error,
+          staffs: staffsResult.error,
+          visits: visitsResult.error,
+          reservations: reservationsResult.error,
+        });
+        setErrorMessage(
+          "店舗データを取得できませんでした。時間をおいて再試行してください。"
         );
+        return;
+      }
 
-        const resolvedStaffName = directStaffName
-          ? directStaffName
-          : staffId
-          ? staffMap[staffId] || "未設定"
-          : "未設定";
+      const customers = (customersResult.data || []) as CustomerRow[];
+      const staffs = (staffsResult.data || []) as StaffRow[];
+      const visits = (visitsResult.data || []) as VisitRow[];
+      const reservations = (reservationsResult.data ||
+        []) as ReservationRow[];
 
-        return {
-          id: String(row.id || ""),
-          customerId,
-          customerName: customerId
-            ? customerMap[customerId] || "顧客名未設定"
-            : "顧客未設定",
-          reservationDate: buildReservationDate(row),
-          reservationTime: buildReservationTime(row),
-          menuName: normalizeMenuName(row),
-          staffName: resolvedStaffName,
-          status: normalizeStatus(row),
-          memo: normalizeMemo(row),
-        } as TodayReservation;
-      })
-      .filter((row) => row.reservationDate === todayText);
+      const customerMap: Record<string, string> = {};
 
-    setTodaySales(todaySalesTotal);
-    setTodayCount(todayVisitRows.length);
-    setMonthSales(currentMonthSales);
-    setPreviousMonthSales(previousSales);
-    setRepeatRate(repeatRateValue);
-    setRepeatCustomerCount(repeatCustomers.length);
-    setVisitedCustomerCount(visitedCustomers.length);
-    setNextVisitCount(nextVisits.length);
-    setPendingReservationCount(pendingCount);
-    setTodayReservations(normalizedTodayReservations);
+      customers.forEach((customer) => {
+        customerMap[customer.id] =
+          customer.name || "顧客名未設定";
+      });
 
-    setLoading(false);
+      const staffMap: Record<string, string> = {};
+
+      staffs.forEach((staff) => {
+        staffMap[staff.id] = staff.name || "未設定";
+      });
+
+      const todayVisitRows = visits.filter(
+        (row) => row.visit_date === todayText
+      );
+
+      const todaySalesTotal = todayVisitRows.reduce(
+        (sum, row) => sum + Number(row.price || 0),
+        0
+      );
+
+      const currentMonthVisits = visits.filter((row) =>
+        (row.visit_date || "").startsWith(currentMonthKey)
+      );
+
+      const previousMonthVisits = visits.filter((row) =>
+        (row.visit_date || "").startsWith(previousMonthKey)
+      );
+
+      const currentMonthSales = currentMonthVisits.reduce(
+        (sum, row) => sum + Number(row.price || 0),
+        0
+      );
+
+      const previousSales = previousMonthVisits.reduce(
+        (sum, row) => sum + Number(row.price || 0),
+        0
+      );
+
+      const visitCountByCustomer = new Map<string, number>();
+
+      visits.forEach((row) => {
+        if (!row.customer_id) return;
+
+        const currentCount =
+          visitCountByCustomer.get(row.customer_id) || 0;
+
+        visitCountByCustomer.set(
+          row.customer_id,
+          currentCount + 1
+        );
+      });
+
+      const visitedCustomers = Array.from(
+        visitCountByCustomer.entries()
+      );
+
+      const repeatCustomers = visitedCustomers.filter(
+        ([, count]) => count >= 2
+      );
+
+      const repeatRateValue =
+        visitedCustomers.length > 0
+          ? (repeatCustomers.length / visitedCustomers.length) * 100
+          : 0;
+
+      const nextVisits = currentMonthVisits.filter(
+        (row) =>
+          typeof row.next_visit_date === "string" &&
+          row.next_visit_date.trim() !== ""
+      );
+
+      const pendingCount = reservations.filter((row) => {
+        const status = normalizeStatus(row);
+        return (
+          status === "予約申請中" ||
+          status === "予約受付" ||
+          status === "予約"
+        );
+      }).length;
+
+      const normalizedTodayReservations = reservations
+        .map((row) => {
+          const customerId =
+            typeof row.customer_id === "string"
+              ? row.customer_id
+              : null;
+
+          const staffId =
+            typeof row.staff_id === "string"
+              ? row.staff_id
+              : null;
+
+          const directStaffName = pickString(
+            row,
+            ["staff_name", "staff"],
+            ""
+          );
+
+          const resolvedStaffName = directStaffName
+            ? directStaffName
+            : staffId
+            ? staffMap[staffId] || "未設定"
+            : "未設定";
+
+          return {
+            id: String(row.id || ""),
+            customerId,
+            customerName: customerId
+              ? customerMap[customerId] || "顧客名未設定"
+              : "顧客未設定",
+            reservationDate: buildReservationDate(row),
+            reservationTime: buildReservationTime(row),
+            menuName: normalizeMenuName(row),
+            staffName: resolvedStaffName,
+            status: normalizeStatus(row),
+            memo: normalizeMemo(row),
+          } as TodayReservation;
+        })
+        .filter((row) => row.reservationDate === todayText);
+
+      setCustomersCount(customers.length);
+      setVisitsCount(visits.length);
+      setTodaySales(todaySalesTotal);
+      setTodayCount(todayVisitRows.length);
+      setMonthSales(currentMonthSales);
+      setPreviousMonthSales(previousSales);
+      setRepeatRate(repeatRateValue);
+      setRepeatCustomerCount(repeatCustomers.length);
+      setVisitedCustomerCount(visitedCustomers.length);
+      setNextVisitCount(nextVisits.length);
+      setPendingReservationCount(pendingCount);
+      setTodayReservations(normalizedTodayReservations);
+    } catch (error) {
+      console.error("ダッシュボード取得エラー:", error);
+      if (requestId === requestIdRef.current) {
+        setErrorMessage(
+          "店舗データを取得できませんでした。時間をおいて再試行してください。"
+        );
+      }
+    } finally {
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
+    }
   }
 
   const monthDiff = useMemo(() => {
@@ -630,6 +669,27 @@ export default function DashboardPageClient() {
 
   if (loading) {
     return <div className="p-4 pb-24">読み込み中...</div>;
+  }
+
+  if (errorMessage) {
+    return (
+      <main className="min-h-screen bg-rose-50/40 p-4 pb-24">
+        <div
+          role="alert"
+          className="mx-auto max-w-xl rounded-[28px] border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm"
+        >
+          <h1 className="text-lg font-bold">店舗ページを表示できません</h1>
+          <p className="mt-2 leading-6">{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchDashboardData()}
+            className="mt-4 rounded-2xl bg-slate-900 px-4 py-3 font-bold text-white"
+          >
+            再試行
+          </button>
+        </div>
+      </main>
+    );
   }
 
   return (

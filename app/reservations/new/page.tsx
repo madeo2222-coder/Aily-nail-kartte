@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -243,12 +243,17 @@ export default function ReservationNewPage() {
 
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
+  const [masterDataError, setMasterDataError] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const masterRequestVersion = useRef(0);
 
-  useEffect(() => {
-    async function fetchMasterData() {
+  const fetchMasterData = useCallback(async () => {
+    const version = ++masterRequestVersion.current;
+    const isCurrent = () => version === masterRequestVersion.current;
+
+    try {
       setPageLoading(true);
-      setErrorMessage("");
+      setMasterDataError("");
 
       const [salonsRes, customersRes, staffsRes] = await Promise.all([
         supabase
@@ -267,37 +272,69 @@ export default function ReservationNewPage() {
           .order("created_at", { ascending: true }),
       ]);
 
-      if (salonsRes.error) {
-        setErrorMessage("サロン一覧の取得に失敗しました");
+      if (!isCurrent()) return;
+
+      const failedSources = [
+        salonsRes.error ? "サロン" : "",
+        customersRes.error ? "顧客" : "",
+        staffsRes.error ? "スタッフ" : "",
+      ].filter(Boolean);
+
+      if (failedSources.length > 0) {
+        console.error("reservation master data fetch error:", {
+          salons: salonsRes.error?.message,
+          customers: customersRes.error?.message,
+          staffs: staffsRes.error?.message,
+        });
+        setMasterDataError(
+          `${failedSources.join("・")}一覧の取得に失敗しました。通信状態を確認して再試行してください。`
+        );
         setSalons([]);
-      } else {
-        const salonRows = (salonsRes.data as Salon[]) || [];
-        setSalons(salonRows);
-
-        if (salonRows.length === 1) {
-          setSalonId(salonRows[0].id);
-        }
-      }
-
-      if (customersRes.error) {
-        setErrorMessage("顧客一覧の取得に失敗しました");
         setAllCustomers([]);
-      } else {
-        setAllCustomers((customersRes.data as Customer[]) || []);
-      }
-
-      if (staffsRes.error) {
-        setErrorMessage("スタッフ一覧の取得に失敗しました");
         setAllStaffs([]);
-      } else {
-        setAllStaffs((staffsRes.data as Staff[]) || []);
+        setSalonId("");
+        setCustomerId("");
+        setStaffId("");
+        return;
       }
 
-      setPageLoading(false);
-    }
+      const salonRows = (salonsRes.data as Salon[]) || [];
+      setSalons(salonRows);
+      setAllCustomers((customersRes.data as Customer[]) || []);
+      setAllStaffs((staffsRes.data as Staff[]) || []);
 
-    fetchMasterData();
+      if (salonRows.length === 1) {
+        setSalonId(salonRows[0].id);
+      } else if (salonRows.length === 0) {
+        setSalonId("");
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      console.error("reservation master data fetch error:", error);
+      setMasterDataError(
+        "予約登録に必要なデータを取得できませんでした。通信状態を確認して再試行してください。"
+      );
+      setSalons([]);
+      setAllCustomers([]);
+      setAllStaffs([]);
+      setSalonId("");
+      setCustomerId("");
+      setStaffId("");
+    } finally {
+      if (isCurrent()) setPageLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void fetchMasterData();
+    });
+    return () => {
+      active = false;
+      masterRequestVersion.current += 1;
+    };
+  }, [fetchMasterData]);
 
   const isSingleSalonMode = salons.length <= 1;
 
@@ -766,6 +803,20 @@ export default function ReservationNewPage() {
         {pageLoading ? (
           <section className="rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
             <p className="text-sm text-slate-500">読み込み中...</p>
+          </section>
+        ) : masterDataError ? (
+          <section
+            className="rounded-[28px] border border-red-200 bg-white p-6 text-sm text-red-700 shadow-sm"
+            role="alert"
+          >
+            <p>{masterDataError}</p>
+            <button
+              type="button"
+              onClick={() => void fetchMasterData()}
+              className="mt-3 rounded-2xl border border-red-300 bg-red-50 px-4 py-3 font-bold text-red-900"
+            >
+              再試行
+            </button>
           </section>
         ) : (
           <section className="space-y-4 rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6">

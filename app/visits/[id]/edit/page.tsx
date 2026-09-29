@@ -145,9 +145,12 @@ export default function EditVisitPage() {
   const newPreviewUrls = useRef(new Set<string>());
 
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const loadRequestVersion = useRef(0);
 
   const customerDetailHref = useMemo(() => {
     if (!visit?.customer_id) return "/visits";
@@ -174,100 +177,144 @@ export default function EditVisitPage() {
   useEffect(() => {
     if (!id) return;
 
+    const requestVersion = ++loadRequestVersion.current;
+
     async function fetchVisit() {
       setLoading(true);
+      setLoadError("");
       setErrorMessage("");
+      setVisit(null);
+      setCustomer(null);
+      setExistingPhotos([]);
+      setRemovedPhotoIds([]);
 
-      const { data, error } = await supabase
-        .from("visits")
-        .select(
-          "id,customer_id,visit_date,menu,menu_name,color,memo,price,payment_method,created_at"
-        )
-        .eq("id", id)
-        .single();
-
-      if (error || !data) {
-        setErrorMessage("来店履歴が見つかりません。");
-        setLoading(false);
-        return;
-      }
-
-      const currentVisit = data as Visit;
-      setVisit(currentVisit);
-      setVisitDate(currentVisit.visit_date || "");
-      setMenu(currentVisit.menu_name ?? currentVisit.menu ?? "");
-      setColor(currentVisit.color ?? "");
-      setMemo(currentVisit.memo ?? "");
-      setPrice(
-        currentVisit.price === null || currentVisit.price === undefined
-          ? ""
-          : String(currentVisit.price)
-      );
-
-      if (currentVisit.customer_id) {
-        const { data: customerData } = await supabase
-          .from("customers")
-          .select("id,name,salon_id")
-          .eq("id", currentVisit.customer_id)
+      try {
+        const { data, error } = await supabase
+          .from("visits")
+          .select(
+            "id,customer_id,visit_date,menu,menu_name,color,memo,price,payment_method,created_at"
+          )
+          .eq("id", id)
           .single();
 
-        if (customerData) {
-          setCustomer(customerData as Customer);
+        if (loadRequestVersion.current !== requestVersion) return;
+
+        if (error) {
+          console.error("visits取得エラー:", error);
+          setLoadError("来店履歴の取得に失敗しました。時間をおいて再試行してください。");
+          setLoading(false);
+          return;
         }
-      }
 
-      const { data: photoData, error: photoError } = await supabase
-        .from("visit_photos")
-        .select("id, visit_id, salon_id, image_url, photo_type, created_at")
-        .eq("visit_id", id)
-        .order("created_at", { ascending: true });
+        if (!data) {
+          setLoadError("来店履歴が見つかりません。削除済みの可能性があります。");
+          setLoading(false);
+          return;
+        }
 
-      if (photoError) {
-        console.error("visit_photos取得エラー:", photoError);
-        setExistingPhotos([]);
-      } else {
-        setExistingPhotos((photoData ?? []) as VisitPhotoRow[]);
-      }
+        const currentVisit = data as Visit;
+        const customerRequest = currentVisit.customer_id
+          ? supabase
+              .from("customers")
+              .select("id,name,salon_id")
+              .eq("id", currentVisit.customer_id)
+              .single()
+          : Promise.resolve({ data: null, error: null });
 
-      const { data: paymentData, error: paymentError } = await supabase
-        .from("visit_payments")
-        .select("id, visit_id, payment_method, amount, sort_order")
-        .eq("visit_id", id)
-        .order("sort_order", { ascending: true });
-
-      if (paymentError) {
-        console.error("visit_payments取得エラー:", paymentError);
-      }
-
-      const paymentRows = (paymentData ?? []) as VisitPaymentRow[];
-
-      if (paymentRows.length > 0) {
-        setPaymentLines(
-          paymentRows.map((row) => ({
-            id: row.id || createLineId(),
-            payment_method: row.payment_method || "現金",
-            amount:
-              row.amount === null || row.amount === undefined
-                ? ""
-                : String(row.amount),
-          }))
-        );
-      } else {
-        setPaymentLines([
-          createPaymentLine(
-            currentVisit.payment_method || "現金",
-            currentVisit.price === null || currentVisit.price === undefined
-              ? ""
-              : String(currentVisit.price)
-          ),
+        const [customerResult, photoResult, paymentResult] = await Promise.all([
+          customerRequest,
+          supabase
+            .from("visit_photos")
+            .select("id, visit_id, salon_id, image_url, photo_type, created_at")
+            .eq("visit_id", id)
+            .order("created_at", { ascending: true }),
+          supabase
+            .from("visit_payments")
+            .select("id, visit_id, payment_method, amount, sort_order")
+            .eq("visit_id", id)
+            .order("sort_order", { ascending: true }),
         ]);
-      }
 
-      setLoading(false);
+        if (loadRequestVersion.current !== requestVersion) return;
+
+        const missingCustomer = Boolean(
+          currentVisit.customer_id && !customerResult.data
+        );
+        const failedSources = [
+          customerResult.error || missingCustomer ? "顧客" : "",
+          photoResult.error ? "写真" : "",
+          paymentResult.error ? "支払い内訳" : "",
+        ].filter(Boolean);
+
+        if (failedSources.length > 0) {
+          if (customerResult.error || missingCustomer) {
+            console.error("customers取得エラー:", customerResult.error);
+          }
+          if (photoResult.error) {
+            console.error("visit_photos取得エラー:", photoResult.error);
+          }
+          if (paymentResult.error) {
+            console.error("visit_payments取得エラー:", paymentResult.error);
+          }
+          setLoadError(
+            `${failedSources.join("・")}の取得に失敗しました。不完全な状態での編集を防ぐため、再試行してください。`
+          );
+          setLoading(false);
+          return;
+        }
+
+        const paymentRows = (paymentResult.data ?? []) as VisitPaymentRow[];
+
+        setVisit(currentVisit);
+        setCustomer((customerResult.data as Customer | null) ?? null);
+        setVisitDate(currentVisit.visit_date || "");
+        setMenu(currentVisit.menu_name ?? currentVisit.menu ?? "");
+        setColor(currentVisit.color ?? "");
+        setMemo(currentVisit.memo ?? "");
+        setPrice(
+          currentVisit.price === null || currentVisit.price === undefined
+            ? ""
+            : String(currentVisit.price)
+        );
+        setExistingPhotos((photoResult.data ?? []) as VisitPhotoRow[]);
+        setPaymentLines(
+          paymentRows.length > 0
+            ? paymentRows.map((row) => ({
+                id: row.id || createLineId(),
+                payment_method: row.payment_method || "現金",
+                amount:
+                  row.amount === null || row.amount === undefined
+                    ? ""
+                    : String(row.amount),
+              }))
+            : [
+                createPaymentLine(
+                  currentVisit.payment_method || "現金",
+                  currentVisit.price === null || currentVisit.price === undefined
+                    ? ""
+                    : String(currentVisit.price)
+                ),
+              ]
+        );
+        setLoading(false);
+      } catch (error) {
+        if (loadRequestVersion.current !== requestVersion) return;
+        console.error("来店履歴編集データ取得エラー:", error);
+        setLoadError(
+          "来店履歴の編集データを取得できませんでした。通信状態を確認して再試行してください。"
+        );
+        setLoading(false);
+      }
     }
 
-    fetchVisit();
-  }, [id]);
+    void fetchVisit();
+
+    return () => {
+      if (loadRequestVersion.current === requestVersion) {
+        loadRequestVersion.current += 1;
+      }
+    };
+  }, [id, loadAttempt]);
 
   useEffect(() => {
     const urls = newPreviewUrls.current;
@@ -596,6 +643,32 @@ export default function EditVisitPage() {
 
   if (loading) {
     return <div className="p-6">読み込み中...</div>;
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700"
+        >
+          <h1 className="text-lg font-bold">来店履歴を読み込めませんでした</h1>
+          <p className="mt-2 text-sm">{loadError}</p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setLoadAttempt((attempt) => attempt + 1)}
+              className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
+            <Link href="/visits" className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm">
+              来店履歴一覧へ戻る
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!visit) {

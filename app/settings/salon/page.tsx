@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -17,12 +17,17 @@ type Salon = {
 export default function SalonSettingsPage() {
   const [salon, setSalon] = useState<Salon | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
+  const salonRequestVersionRef = useRef(0);
 
-  useEffect(() => {
-    async function loadSalon() {
-      setLoading(true);
+  const loadSalon = useCallback(async () => {
+    const requestVersion = salonRequestVersionRef.current + 1;
+    salonRequestVersionRef.current = requestVersion;
+    setLoading(true);
+    setLoadError("");
 
+    try {
       const { data, error } = await supabase
         .from("salons")
         .select(
@@ -31,18 +36,31 @@ export default function SalonSettingsPage() {
         .limit(1)
         .maybeSingle();
 
-      if (error) {
-        alert(error.message);
-        setLoading(false);
-        return;
+      if (error) throw error;
+
+      if (requestVersion === salonRequestVersionRef.current) {
+        setSalon(data as Salon | null);
       }
-
-      setSalon(data as Salon | null);
-      setLoading(false);
+    } catch (error) {
+      console.error("salon settings fetch error:", error);
+      if (requestVersion === salonRequestVersionRef.current) {
+        setSalon(null);
+        setLoadError("店舗設定を取得できませんでした。");
+      }
+    } finally {
+      if (requestVersion === salonRequestVersionRef.current) {
+        setLoading(false);
+      }
     }
-
-    loadSalon();
   }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(loadSalon);
+
+    return () => {
+      salonRequestVersionRef.current += 1;
+    };
+  }, [loadSalon]);
 
   function updateField(key: keyof Salon, value: string) {
     if (!salon) return;
@@ -50,30 +68,36 @@ export default function SalonSettingsPage() {
   }
 
   async function handleSave() {
-    if (!salon) return;
+    if (!salon || loadError) return;
 
     setSaving(true);
 
-    const { error } = await supabase
-      .from("salons")
-      .update({
-        name: salon.name || null,
-        google_review_url: salon.google_review_url || null,
-        instagram_url: salon.instagram_url || null,
-        hpb_url: salon.hpb_url || null,
-        minimo_url: salon.minimo_url || null,
-        line_url: salon.line_url || null,
-      })
-      .eq("id", salon.id);
+    try {
+      const { error } = await supabase
+        .from("salons")
+        .update({
+          name: salon.name || null,
+          google_review_url: salon.google_review_url || null,
+          instagram_url: salon.instagram_url || null,
+          hpb_url: salon.hpb_url || null,
+          minimo_url: salon.minimo_url || null,
+          line_url: salon.line_url || null,
+        })
+        .eq("id", salon.id);
 
-    setSaving(false);
+      if (error) throw error;
 
-    if (error) {
-      alert(error.message);
-      return;
+      alert("店舗設定を保存しました");
+    } catch (error) {
+      console.error("salon settings update error:", error);
+      alert(
+        error instanceof Error
+          ? `店舗設定の保存に失敗しました: ${error.message}`
+          : "店舗設定の保存に失敗しました"
+      );
+    } finally {
+      setSaving(false);
     }
-
-    alert("店舗設定を保存しました");
   }
 
   if (loading) {
@@ -87,9 +111,28 @@ export default function SalonSettingsPage() {
   if (!salon) {
     return (
       <main className="min-h-screen bg-rose-50/40 p-4">
-        <div className="mx-auto max-w-[760px] rounded-3xl bg-white p-5">
-          店舗情報が見つかりません。
-        </div>
+        {loadError ? (
+          <div
+            role="alert"
+            className="mx-auto max-w-[760px] rounded-3xl border border-rose-200 bg-white p-5"
+          >
+            <p className="text-sm font-bold text-rose-800">{loadError}</p>
+            <p className="mt-2 text-sm text-slate-600">
+              誤った内容で上書きしないため、設定フォームを停止しています。
+            </p>
+            <button
+              type="button"
+              onClick={loadSalon}
+              className="mt-4 rounded-2xl bg-rose-600 px-4 py-2 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
+          </div>
+        ) : (
+          <div className="mx-auto max-w-[760px] rounded-3xl bg-white p-5">
+            店舗情報が見つかりません。
+          </div>
+        )}
       </main>
     );
   }
