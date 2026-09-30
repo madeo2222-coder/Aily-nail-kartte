@@ -1,20 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-
-const LINE_PENDING_COOKIE = "customer_line_pending";
-const LINE_SESSION_COOKIE = "customer_line_session";
-
-type LineSessionPayload = {
-  customer_id: string;
-  line_user_id: string;
-};
-
-type PendingPayload = {
-  line_user_id: string;
-  display_name?: string;
-  picture_url?: string;
-  next?: string;
-};
+import {
+  LINE_PENDING_COOKIE,
+  LINE_SESSION_COOKIE,
+  type LinePendingPayload,
+  readCustomerLineSessionCookie,
+  readLinePendingCookie,
+} from "@/lib/server/lineLoginCookies";
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -27,17 +19,7 @@ function getSupabaseAdmin() {
   return createClient(url, key);
 }
 
-function safeDecodeJson<T>(value: string | undefined): T | null {
-  if (!value) return null;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
-function buildPendingResponse(pending: PendingPayload | null) {
+function buildPendingResponse(pending: LinePendingPayload | null) {
   if (!pending) return null;
 
   return {
@@ -49,11 +31,11 @@ function buildPendingResponse(pending: PendingPayload | null) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = safeDecodeJson<LineSessionPayload>(
+    const session = readCustomerLineSessionCookie(
       request.cookies.get(LINE_SESSION_COOKIE)?.value
     );
 
-    const pending = safeDecodeJson<PendingPayload>(
+    const pending = readLinePendingCookie(
       request.cookies.get(LINE_PENDING_COOKIE)?.value
     );
 

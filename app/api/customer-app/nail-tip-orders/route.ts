@@ -1,40 +1,18 @@
-import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getSupabaseAdmin,
+  requireCustomerLineSession,
+} from "@/lib/server/requireCustomerLineSession";
 
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !key) {
-    throw new Error("Supabase admin environment variables are missing.");
-  }
-
-  return createClient(url, key, {
-    auth: { persistSession: false },
-  });
-}
-
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const cookieHeader = request.headers.get("cookie") || "";
+    const customer = await requireCustomerLineSession(request);
 
-    const meRes = await fetch(
-      `${process.env.NEXT_PUBLIC_APP_URL || ""}/api/line-login/me`,
-      {
-        headers: {
-          cookie: cookieHeader,
-        },
-        cache: "no-store",
-      }
-    );
-
-    const meJson = await meRes.json();
-
-    if (!meJson.authenticated || !meJson.customer?.id) {
-      return NextResponse.json({
-        ok: true,
-        orders: [],
-      });
+    if (!customer) {
+      return NextResponse.json(
+        { ok: false, error: "LINEログインが必要です", orders: [] },
+        { status: 401 }
+      );
     }
 
     const supabase = getSupabaseAdmin();
@@ -52,7 +30,7 @@ export async function GET(request: Request) {
         created_at
       `
       )
-      .eq("customer_id", meJson.customer.id)
+      .eq("customer_id", customer.id)
       .order("created_at", { ascending: false });
 
     if (error) {

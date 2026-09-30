@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 const allowedStatuses = [
   "new",
@@ -33,6 +34,19 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const authentication = await authenticateStaffApi({
+    allowedRoles: ["owner", "staff"],
+    legacyAllowed: true,
+    salonContextRequired: false,
+  });
+
+  if (!authentication.ok) {
+    return NextResponse.json(
+      { ok: false, error: authentication.error },
+      { status: authentication.status }
+    );
+  }
+
   try {
     const { id } = await params;
     const body = await request.json();

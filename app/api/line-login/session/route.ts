@@ -1,10 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-
-const LINE_STATE_COOKIE = "line_login_state";
-const LINE_PENDING_COOKIE = "customer_line_pending";
-const LINE_SESSION_COOKIE = "customer_line_session";
+import {
+  createCustomerLineSessionCookie,
+  createLinePendingCookie,
+  createLineStateCookie,
+  LINE_PENDING_COOKIE,
+  LINE_SESSION_COOKIE,
+  LINE_STATE_COOKIE,
+  readLineStateCookie,
+} from "@/lib/server/lineLoginCookies";
 
 type LineTokenResponse = {
   access_token: string;
@@ -57,16 +62,6 @@ function getLineConfig() {
 function buildRedirectUri(request: NextRequest) {
   const url = new URL(request.url);
   return `${url.origin}/api/line-login/session`;
-}
-
-function safeDecodeJson<T>(value: string | undefined): T | null {
-  if (!value) return null;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 function encodeState(payload: StatePayload) {
@@ -148,10 +143,13 @@ export async function GET(request: NextRequest) {
       setCookie(
         response,
         LINE_STATE_COOKIE,
-        JSON.stringify({
-          state: stateValue,
-          next: nextPath,
-        }),
+        createLineStateCookie(
+          {
+            state: stateValue,
+            next: nextPath,
+          },
+          60 * 10
+        ),
         60 * 10
       );
 
@@ -190,18 +188,14 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    const savedState = safeDecodeJson<{ state: string; next: string }>(
+    const savedState = readLineStateCookie(
       request.cookies.get(LINE_STATE_COOKIE)?.value
     );
 
     const cookieStateMatched =
       Boolean(savedState?.state) && savedState?.state === decodedState.token;
 
-    const resolvedNextPath = getSafeNextPath(
-      savedState?.next || decodedState.next || "/customer-app"
-    );
-
-    if (savedState && !cookieStateMatched) {
+    if (!cookieStateMatched) {
       const response = NextResponse.redirect(
         new URL(
           "/customer-app/login?error=LINEログイン状態の確認に失敗しました",
@@ -212,6 +206,8 @@ export async function GET(request: NextRequest) {
       clearCookie(response, LINE_STATE_COOKIE);
       return response;
     }
+
+    const resolvedNextPath = getSafeNextPath(savedState.next);
 
     const { channelId, channelSecret } = getLineConfig();
     const redirectUri = buildRedirectUri(request);
@@ -282,10 +278,13 @@ export async function GET(request: NextRequest) {
       setCookie(
         response,
         LINE_SESSION_COOKIE,
-        JSON.stringify({
-          customer_id: customer.id,
-          line_user_id: verified.sub,
-        }),
+        createCustomerLineSessionCookie(
+          {
+            customer_id: customer.id,
+            line_user_id: verified.sub,
+          },
+          60 * 60 * 24 * 30
+        ),
         60 * 60 * 24 * 30
       );
 
@@ -306,12 +305,15 @@ export async function GET(request: NextRequest) {
     setCookie(
       response,
       LINE_PENDING_COOKIE,
-      JSON.stringify({
-        line_user_id: verified.sub,
-        display_name: verified.name || "",
-        picture_url: verified.picture || "",
-        next: resolvedNextPath,
-      }),
+      createLinePendingCookie(
+        {
+          line_user_id: verified.sub,
+          display_name: verified.name || "",
+          picture_url: verified.picture || "",
+          next: resolvedNextPath,
+        },
+        60 * 10
+      ),
       60 * 10
     );
 

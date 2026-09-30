@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 function getAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,6 +42,19 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authentication = await authenticateStaffApi({
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: true,
+      salonContextRequired: false,
+    });
+
+    if (!authentication.ok) {
+      return NextResponse.json(
+        { ok: false, error: authentication.error },
+        { status: authentication.status }
+      );
+    }
+
     const { id } = await params;
 
     if (!id) {

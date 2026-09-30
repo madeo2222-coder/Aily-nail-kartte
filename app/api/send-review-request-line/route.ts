@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,19 @@ async function pushLineMessage(lineUserId: string, text: string) {
 }
 
 export async function POST(request: Request) {
+  const authentication = await authenticateStaffApi({
+    allowedRoles: ["owner", "staff"],
+    legacyAllowed: true,
+    salonContextRequired: false,
+  });
+
+  if (!authentication.ok) {
+    return NextResponse.json(
+      { ok: false, message: authentication.error },
+      { status: authentication.status }
+    );
+  }
+
   try {
     const body = (await request.json().catch(() => ({}))) as {
       targetDate?: string;

@@ -8,15 +8,6 @@ import {
   type NailTipProduct as CatalogNailTipProduct,
 } from "@/lib/nail-tip-products/catalog";
 
-type MeResponse = {
-  authenticated: boolean;
-  customer?: {
-    id?: string;
-    salon_id?: string | null;
-    name?: string | null;
-  };
-};
-
 type NailTipProduct = CatalogNailTipProduct & {
   description: string;
   badge: string;
@@ -120,32 +111,9 @@ function NailTipOrderContent() {
   const [sizeStatus, setSizeStatus] = useState("サイズ未確認");
   const [deliveryRequest, setDeliveryRequest] = useState("");
 
-  const [customerId, setCustomerId] = useState("");
-  const [salonId, setSalonId] = useState("");
-
   useEffect(() => {
     setSelectedProductId(recommendedProductId);
   }, [recommendedProductId]);
-
-  useEffect(() => {
-    async function fetchMe() {
-      try {
-        const res = await fetch("/api/line-login/me", {
-          cache: "no-store",
-        });
-
-        const json = (await res.json()) as MeResponse;
-
-        setCustomerId(json.customer?.id || "");
-        setSalonId(json.customer?.salon_id || "");
-      } catch {
-        setCustomerId("");
-        setSalonId("");
-      }
-    }
-
-    fetchMe();
-  }, []);
 
   const selectedProduct = useMemo(() => {
     return (
@@ -171,8 +139,6 @@ function NailTipOrderContent() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          salonId,
-          customerId,
           luckyColor: color,
           luckyStone: stone,
           nailTheme: theme,

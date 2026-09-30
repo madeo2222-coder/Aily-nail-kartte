@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,28 @@ function getSupabaseAdmin() {
 }
 
 export async function POST(request: Request) {
+  const authentication = await authenticateStaffApi({
+    allowedRoles: ["owner"],
+    legacyAllowed: false,
+    salonContextRequired: true,
+  });
+
+  if (!authentication.ok) {
+    return NextResponse.json(
+      { ok: false, error: authentication.error },
+      { status: authentication.status }
+    );
+  }
+
+  if (authentication.principal.authenticationMode !== "supabase") {
+    return NextResponse.json(
+      { ok: false, error: "顧客を統合する権限がありません" },
+      { status: 403 }
+    );
+  }
+
+  const moved: Record<string, number> = {};
+
   try {
     const body = (await request.json()) as {
       keepCustomerId?: string;
@@ -41,11 +64,13 @@ export async function POST(request: Request) {
     }
 
     const supabaseAdmin = getSupabaseAdmin();
+    const salonId = authentication.principal.salonId;
 
     const { data: keepCustomer, error: keepError } = await supabaseAdmin
       .from("customers")
-      .select("id, name, phone, notes")
+      .select("id, salon_id, name, phone, notes")
       .eq("id", keepCustomerId)
+      .eq("salon_id", salonId)
       .maybeSingle();
 
     if (keepError) throw new Error(keepError.message);
@@ -59,8 +84,9 @@ export async function POST(request: Request) {
 
     const { data: mergeCustomer, error: mergeError } = await supabaseAdmin
       .from("customers")
-      .select("id, name, phone, notes")
+      .select("id, salon_id, name, phone, notes")
       .eq("id", mergeCustomerId)
+      .eq("salon_id", salonId)
       .maybeSingle();
 
     if (mergeError) throw new Error(mergeError.message);
@@ -72,8 +98,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const moved: Record<string, number> = {};
-
     async function moveCustomerId(tableName: string) {
       const { count, error } = await supabaseAdmin
         .from(tableName)
@@ -82,8 +106,7 @@ export async function POST(request: Request) {
 
       if (error) {
         console.error(`${tableName} 統合エラー:`, error.message);
-        moved[tableName] = -1;
-        return;
+        throw new Error(`関連データ（${tableName}）の移動に失敗しました`);
       }
 
       moved[tableName] = count || 0;
@@ -95,37 +118,73 @@ export async function POST(request: Request) {
     await moveCustomerId("coupon_histories");
     await moveCustomerId("line_notification_logs");
 
-    const nextNotes = [
-      typeof keepCustomer.notes === "string" ? keepCustomer.notes : "",
-      "",
-      "【顧客統合履歴】",
-      `統合日時：${new Date().toISOString()}`,
-      `統合元ID：${mergeCustomerId}`,
-      `統合元氏名：${mergeCustomer.name || ""}`,
-      `統合元電話：${mergeCustomer.phone || ""}`,
-      typeof mergeCustomer.notes === "string" && mergeCustomer.notes.trim()
-        ? `統合元メモ：${mergeCustomer.notes}`
-        : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    const currentNotes =
+      typeof keepCustomer.notes === "string" ? keepCustomer.notes : "";
+    const mergeHistoryMarker = `統合元ID：${mergeCustomerId}`;
+    const nextNotes = currentNotes.includes(mergeHistoryMarker)
+      ? currentNotes
+      : [
+          currentNotes,
+          "",
+          "【顧客統合履歴】",
+          `統合日時：${new Date().toISOString()}`,
+          mergeHistoryMarker,
+          `統合元氏名：${mergeCustomer.name || ""}`,
+          `統合元電話：${mergeCustomer.phone || ""}`,
+          typeof mergeCustomer.notes === "string" && mergeCustomer.notes.trim()
+            ? `統合元メモ：${mergeCustomer.notes}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
 
-    const { error: updateKeepError } = await supabaseAdmin
+    const { data: updatedKeepCustomer, error: updateKeepError } =
+      await supabaseAdmin
       .from("customers")
       .update({
         notes: nextNotes,
         phone: keepCustomer.phone || mergeCustomer.phone || null,
       })
-      .eq("id", keepCustomerId);
+      .eq("id", keepCustomerId)
+      .eq("salon_id", salonId)
+      .select("id")
+      .maybeSingle();
 
     if (updateKeepError) throw new Error(updateKeepError.message);
+    if (!updatedKeepCustomer) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "統合先の顧客情報が更新されたため処理を停止しました",
+          moved,
+          partialMove: Object.values(moved).some((count) => count > 0),
+          retrySafe: true,
+        },
+        { status: 409 }
+      );
+    }
 
-    const { error: deleteError } = await supabaseAdmin
+    const { data: deletedMergeCustomer, error: deleteError } =
+      await supabaseAdmin
       .from("customers")
       .delete()
-      .eq("id", mergeCustomerId);
+      .eq("id", mergeCustomerId)
+      .eq("salon_id", salonId)
+      .select("id")
+      .maybeSingle();
 
     if (deleteError) throw new Error(deleteError.message);
+    if (!deletedMergeCustomer) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "統合元の顧客情報が更新されたため削除を停止しました",
+          moved,
+          retrySafe: true,
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
@@ -141,6 +200,9 @@ export async function POST(request: Request) {
         ok: false,
         error:
           error instanceof Error ? error.message : "顧客統合に失敗しました",
+        moved,
+        partialMove: Object.values(moved).some((count) => count > 0),
+        retrySafe: true,
       },
       { status: 500 }
     );
