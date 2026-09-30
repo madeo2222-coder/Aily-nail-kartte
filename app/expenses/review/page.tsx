@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type ReviewStatus = "unreviewed" | "confirmed";
 type ReceiptStatus = "with_receipt" | "without_receipt" | "unchecked";
@@ -110,6 +110,7 @@ export default function ExpensesReviewPage() {
   const [categoryMap, setCategoryMap] = useState<Record<string, ExpenseCategory>>(
     {}
   );
+  const actionInFlightRef = useRef(false);
 
   async function fetchRows() {
     try {
@@ -196,6 +197,9 @@ export default function ExpensesReviewPage() {
       return;
     }
 
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+
     try {
       setSavingId(rowId);
 
@@ -229,6 +233,7 @@ export default function ExpensesReviewPage() {
     } catch (err) {
       alert(err instanceof Error ? err.message : "ステータス更新に失敗しました。");
     } finally {
+      actionInFlightRef.current = false;
       setSavingId(null);
     }
   }
@@ -238,6 +243,9 @@ export default function ExpensesReviewPage() {
       alert("rowId形式が不正です。");
       return;
     }
+
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
 
     try {
       setSavingId(rowId);
@@ -278,6 +286,7 @@ export default function ExpensesReviewPage() {
         err instanceof Error ? err.message : "正式経費への確定に失敗しました。"
       );
     } finally {
+      actionInFlightRef.current = false;
       setSavingId(null);
     }
   }
@@ -332,6 +341,7 @@ export default function ExpensesReviewPage() {
         <div className="space-y-4">
           {filteredRows.map((row) => {
             const isSaving = savingId === row.id;
+            const isBusy = savingId !== null;
             const currentCategory = categoryMap[row.id] ?? guessCategory(row);
             const isExcluded = row.excluded_flag === true;
 
@@ -398,7 +408,7 @@ export default function ExpensesReviewPage() {
                           [row.id]: e.target.value as ExpenseCategory,
                         }))
                       }
-                      disabled={isSaving || isExcluded}
+                      disabled={isBusy || isExcluded}
                       className="mt-1 w-full rounded-xl border px-3 py-2 text-sm disabled:bg-gray-100"
                     >
                       {CATEGORY_OPTIONS.map((category) => (
@@ -413,7 +423,7 @@ export default function ExpensesReviewPage() {
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled={isSaving || isExcluded}
+                    disabled={isBusy || isExcluded}
                     onClick={() =>
                       updateStatus(row.id, { receipt_status: "with_receipt" })
                     }
@@ -424,7 +434,7 @@ export default function ExpensesReviewPage() {
 
                   <button
                     type="button"
-                    disabled={isSaving || isExcluded}
+                    disabled={isBusy || isExcluded}
                     onClick={() =>
                       updateStatus(row.id, { receipt_status: "without_receipt" })
                     }
@@ -435,7 +445,7 @@ export default function ExpensesReviewPage() {
 
                   <button
                     type="button"
-                    disabled={isSaving || isExcluded}
+                    disabled={isBusy || isExcluded}
                     onClick={() =>
                       updateStatus(row.id, { receipt_status: "unchecked" })
                     }
@@ -446,7 +456,7 @@ export default function ExpensesReviewPage() {
 
                   <button
                     type="button"
-                    disabled={isSaving || isExcluded}
+                    disabled={isBusy || isExcluded}
                     onClick={() =>
                       updateStatus(row.id, {
                         duplicate_flag: !(row.duplicate_flag ?? false),
@@ -460,7 +470,7 @@ export default function ExpensesReviewPage() {
                   {isExcluded ? (
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={isBusy}
                       onClick={() =>
                         updateStatus(row.id, { excluded_flag: false })
                       }
@@ -471,7 +481,7 @@ export default function ExpensesReviewPage() {
                   ) : (
                     <button
                       type="button"
-                      disabled={isSaving}
+                      disabled={isBusy}
                       onClick={() => updateStatus(row.id, { excluded_flag: true })}
                       className="rounded-xl border px-3 py-2 text-sm text-red-600 disabled:opacity-50"
                     >
@@ -483,7 +493,7 @@ export default function ExpensesReviewPage() {
                 <div className="mt-4">
                   <button
                     type="button"
-                    disabled={isSaving || isExcluded}
+                    disabled={isBusy || isExcluded}
                     onClick={() => confirmRow(row.id)}
                     className="w-full rounded-xl bg-black px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
                   >

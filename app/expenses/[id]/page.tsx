@@ -1,8 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import {
+  EXPENSE_RECEIPT_BUCKET,
+  getExpenseReceiptStoragePath,
+} from "@/lib/expenseReceiptStorage";
 import ExpenseReceiptImage from "../ExpenseReceiptImage";
 
 type ExpenseRow = {
@@ -48,6 +52,7 @@ export default function ExpenseEditPage() {
   const [memo, setMemo] = useState("");
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const writeInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!expenseId || expenseId === "[id]") {
@@ -99,7 +104,12 @@ export default function ExpenseEditPage() {
   }, [fetchExpense]);
 
   const uploadReceiptImage = async () => {
-    if (!receiptFile) return receiptUrl;
+    if (!receiptFile) {
+      return {
+        path: "",
+        publicUrl: receiptUrl,
+      };
+    }
 
     const ext = receiptFile.name.split(".").pop() || "jpg";
     const fileName = `expense-${Date.now()}-${Math.random()
@@ -107,7 +117,7 @@ export default function ExpenseEditPage() {
       .slice(2)}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
-      .from("visit-photos")
+      .from(EXPENSE_RECEIPT_BUCKET)
       .upload(fileName, receiptFile, {
         cacheControl: "3600",
         upsert: false,
@@ -117,13 +127,20 @@ export default function ExpenseEditPage() {
       throw new Error(`画像アップロードに失敗しました: ${uploadError.message}`);
     }
 
-    const { data } = supabase.storage.from("visit-photos").getPublicUrl(fileName);
+    const { data } = supabase.storage
+      .from(EXPENSE_RECEIPT_BUCKET)
+      .getPublicUrl(fileName);
 
-    return data.publicUrl;
+    return {
+      path: fileName,
+      publicUrl: data.publicUrl,
+    };
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (writeInFlightRef.current) return;
 
     if (!expenseId || expenseId === "[id]") {
       alert("IDが不正です");
@@ -145,10 +162,21 @@ export default function ExpenseEditPage() {
       return;
     }
 
+    writeInFlightRef.current = true;
     setIsSaving(true);
 
+    let uploadedReceiptPath = "";
+    let expenseSaved = false;
+
     try {
-      const nextReceiptUrl = await uploadReceiptImage();
+      const previousReceiptPath = receiptFile
+        ? getExpenseReceiptStoragePath(
+            receiptUrl,
+            process.env.NEXT_PUBLIC_SUPABASE_URL
+          )
+        : null;
+      const nextReceipt = await uploadReceiptImage();
+      uploadedReceiptPath = nextReceipt.path;
 
       const { error } = await supabase
         .from("expenses")
@@ -157,7 +185,7 @@ export default function ExpenseEditPage() {
           category,
           amount: Number(amount),
           memo: memo.trim() || null,
-          receipt_url: nextReceiptUrl,
+          receipt_url: nextReceipt.publicUrl,
         })
         .eq("id", expenseId);
 
@@ -165,14 +193,50 @@ export default function ExpenseEditPage() {
         throw new Error(error.message);
       }
 
+      expenseSaved = true;
+
+      if (
+        uploadedReceiptPath &&
+        previousReceiptPath &&
+        previousReceiptPath !== uploadedReceiptPath
+      ) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from(EXPENSE_RECEIPT_BUCKET)
+            .remove([previousReceiptPath]);
+
+          if (cleanupError) {
+            console.error("旧レシート画像の回収エラー:", cleanupError);
+          }
+        } catch (cleanupError) {
+          console.error("旧レシート画像の回収エラー:", cleanupError);
+        }
+      }
+
       alert("更新しました");
       router.push("/expenses");
     } catch (error) {
       console.error("経費更新エラー:", error);
+
+      if (uploadedReceiptPath && !expenseSaved) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from(EXPENSE_RECEIPT_BUCKET)
+            .remove([uploadedReceiptPath]);
+
+          if (cleanupError) {
+            console.error("レシート画像の回収エラー:", cleanupError);
+          }
+        } catch (cleanupError) {
+          console.error("レシート画像の回収エラー:", cleanupError);
+        }
+      }
+
       alert(
         error instanceof Error ? `保存に失敗しました: ${error.message}` : "保存に失敗しました"
       );
     } finally {
+      writeInFlightRef.current = false;
       setIsSaving(false);
     }
   };
@@ -183,11 +247,14 @@ export default function ExpenseEditPage() {
       return;
     }
 
+    if (writeInFlightRef.current) return;
+
     const ok = window.confirm(
       "この経費を削除しますか？\nCSV由来の確定データなら review に戻します。"
     );
     if (!ok) return;
 
+    writeInFlightRef.current = true;
     setIsDeleting(true);
 
     try {
@@ -211,6 +278,7 @@ export default function ExpenseEditPage() {
       console.error("経費削除エラー:", error);
       alert(error instanceof Error ? error.message : "削除に失敗しました");
     } finally {
+      writeInFlightRef.current = false;
       setIsDeleting(false);
     }
   };
@@ -344,7 +412,7 @@ export default function ExpenseEditPage() {
         <div className="grid grid-cols-1 gap-3">
           <button
             type="submit"
-            disabled={isSaving}
+            disabled={isSaving || isDeleting}
             className="w-full rounded-xl border px-4 py-3 font-medium"
           >
             {isSaving ? "保存中..." : "保存する"}
@@ -353,7 +421,7 @@ export default function ExpenseEditPage() {
           <button
             type="button"
             onClick={handleDelete}
-            disabled={isDeleting}
+            disabled={isDeleting || isSaving}
             className="w-full rounded-xl border px-4 py-3"
           >
             {isDeleting ? "削除中..." : "削除する"}

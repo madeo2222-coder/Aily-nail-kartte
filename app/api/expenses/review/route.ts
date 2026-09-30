@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { requireStaffSession } from "@/lib/server/requireStaffSession";
 
 type ExpenseImportRow = {
   id: string;
@@ -16,7 +17,10 @@ type ExpenseImportRow = {
   excluded_flag?: boolean | null;
 };
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authError = await requireStaffSession(request);
+  if (authError) return authError;
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -53,6 +57,7 @@ export async function GET() {
         created_at
       `
       )
+      .or("review_status.eq.unreviewed,review_status.is.null")
       .order("created_at", { ascending: false });
 
     if (error) {

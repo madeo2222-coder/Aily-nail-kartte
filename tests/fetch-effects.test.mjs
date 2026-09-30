@@ -292,6 +292,12 @@ async function loadExpenseEdit({ row, error = null, rejectQuery = false } = {}) 
         useRouter: () => router,
       };
       if (name === "@/lib/supabase") return { supabase };
+      if (name === "@/lib/expenseReceiptStorage") {
+        return {
+          EXPENSE_RECEIPT_BUCKET: "visit-photos",
+          getExpenseReceiptStoragePath: () => null,
+        };
+      }
       if (name === "../ExpenseReceiptImage") {
         return { default: ({ src }) => require("react").createElement("img", { src, alt: "レシート" }) };
       }

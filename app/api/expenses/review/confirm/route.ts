@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
     }
 
     const amount = toNumber(row.amount);
-    if (amount === null) {
+    if (amount === null || amount <= 0) {
       return NextResponse.json(
         { error: "amount が不正です。" },
         { status: 400 }
@@ -186,7 +186,17 @@ export async function POST(request: NextRequest) {
       .filter((value) => typeof value === "string" && value.trim().length > 0)
       .join(" / ");
 
-    if (isValidUuid(row.matched_expense_id)) {
+    if (row.matched_expense_id) {
+      if (!isValidUuid(row.matched_expense_id)) {
+        return NextResponse.json(
+          {
+            error:
+              "review行の登録状態が不整合です。経費一覧を確認してください。",
+          },
+          { status: 409 }
+        );
+      }
+
       const { data: existingExpense, error: existingExpenseError } =
         await supabase
           .from("expenses")
@@ -201,29 +211,47 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (existingExpense) {
-        if (row.review_status !== "confirmed") {
-          const { error: repairError } = await supabase
-            .from("expense_import_rows")
-            .update({
-              review_status: "confirmed",
-            })
-            .eq("id", row.id);
-
-          if (repairError) {
-            return NextResponse.json(
-              { error: repairError.message || "review状態の補正に失敗しました。" },
-              { status: 500 }
-            );
-          }
-        }
-
-        return NextResponse.json({
-          ok: true,
-          expense: existingExpense,
-          alreadyConfirmed: true,
-        });
+      if (!existingExpense) {
+        return NextResponse.json(
+          {
+            error:
+              "review行の登録状態が不整合です。経費一覧を確認してください。",
+          },
+          { status: 409 }
+        );
       }
+
+      if (row.review_status !== "confirmed") {
+        const { error: repairError } = await supabase
+          .from("expense_import_rows")
+          .update({
+            review_status: "confirmed",
+          })
+          .eq("id", row.id);
+
+        if (repairError) {
+          return NextResponse.json(
+            { error: repairError.message || "review状態の補正に失敗しました。" },
+            { status: 500 }
+          );
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        expense: existingExpense,
+        alreadyConfirmed: true,
+      });
+    }
+
+    if (row.review_status === "confirmed") {
+      return NextResponse.json(
+        {
+          error:
+            "確定済みのreview行に経費の紐づきがありません。経費一覧を確認してください。",
+        },
+        { status: 409 }
+      );
     }
 
     const { data: expense, error: insertError } = await supabase
@@ -245,20 +273,110 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { error: updateError } = await supabase
-      .from("expense_import_rows")
-      .update({
-        review_status: "confirmed",
-        matched_expense_id: expense.id,
-      })
-      .eq("id", row.id);
+    let updateError: { message?: string } | null = null;
+    let updatedRow: { id: string } | null = null;
+    let updateOutcomeUnknown = false;
 
-    if (updateError) {
-      await supabase.from("expenses").delete().eq("id", expense.id);
+    try {
+      const result = await supabase
+        .from("expense_import_rows")
+        .update({
+          review_status: "confirmed",
+          matched_expense_id: expense.id,
+        })
+        .eq("id", row.id)
+        .eq("excluded_flag", false)
+        .is("matched_expense_id", null)
+        .or("review_status.eq.unreviewed,review_status.is.null")
+        .select("id")
+        .maybeSingle();
+
+      updateError = result.error;
+      updatedRow = result.data;
+    } catch (error) {
+      updateOutcomeUnknown = true;
+      updateError = {
+        message:
+          error instanceof Error ? error.message : "review更新に失敗しました。",
+      };
+    }
+
+    if (updateError || !updatedRow) {
+      if (updateOutcomeUnknown) {
+        try {
+          const { data: reconciledRow, error: reconciliationError } =
+            await supabase
+              .from("expense_import_rows")
+              .select("matched_expense_id, review_status")
+              .eq("id", row.id)
+              .maybeSingle();
+
+          if (reconciliationError) {
+            return NextResponse.json(
+              {
+                error:
+                  "経費登録後のreview更新結果を確認できません。経費一覧の確認が必要です。",
+                expenseId: expense.id,
+                repairRequired: true,
+              },
+              { status: 500 }
+            );
+          }
+
+          if (reconciledRow?.matched_expense_id === expense.id) {
+            return NextResponse.json({
+              ok: true,
+              expense,
+              reconciledAfterNetworkError: true,
+            });
+          }
+        } catch {
+          return NextResponse.json(
+            {
+              error:
+                "経費登録後のreview更新結果を確認できません。経費一覧の確認が必要です。",
+              expenseId: expense.id,
+              repairRequired: true,
+            },
+            { status: 500 }
+          );
+        }
+      }
+
+      let rollbackError: { message?: string } | null = null;
+
+      try {
+        const rollbackResult = await supabase
+          .from("expenses")
+          .delete()
+          .eq("id", expense.id);
+        rollbackError = rollbackResult.error;
+      } catch (error) {
+        rollbackError = {
+          message:
+            error instanceof Error ? error.message : "補償削除に失敗しました。",
+        };
+      }
+
+      if (rollbackError) {
+        return NextResponse.json(
+          {
+            error:
+              "経費登録後のreview更新と補償削除に失敗しました。経費一覧の確認が必要です。",
+            expenseId: expense.id,
+            repairRequired: true,
+          },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json(
-        { error: updateError.message || "review更新に失敗しました。" },
-        { status: 500 }
+        {
+          error: `review更新に失敗したため経費登録を取り消しました: ${
+            updateError?.message ?? "別の処理で状態が更新されました。"
+          }`,
+        },
+        { status: 409 }
       );
     }
 

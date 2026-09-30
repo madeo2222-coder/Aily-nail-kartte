@@ -101,6 +101,7 @@ async function mount({ failure = "", empty = false } = {}) {
               const chain = {
                 select() { return chain; },
                 eq() { return chain; },
+                or() { return chain; },
                 order() { return chain; },
                 limit() {
                   return Promise.resolve().then(() => {

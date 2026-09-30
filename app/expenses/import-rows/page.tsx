@@ -27,7 +27,9 @@ export default function ExpenseImportRowsPage() {
   const [rows, setRows] = useState<ImportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
+  const [processingRowId, setProcessingRowId] = useState<string | null>(null);
   const requestVersion = useRef(0);
+  const actionInFlight = useRef(false);
 
   const fetchRows = useCallback(async () => {
     const version = ++requestVersion.current;
@@ -43,6 +45,7 @@ export default function ExpenseImportRowsPage() {
           "id, import_id, expense_date, amount, vendor_raw, description_raw, payment_method, receipt_status, review_status, duplicate_flag, excluded_flag, created_at"
         )
         .eq("excluded_flag", false)
+        .or("review_status.eq.unreviewed,review_status.is.null")
         .order("expense_date", { ascending: false })
         .limit(100);
 
@@ -78,9 +81,15 @@ export default function ExpenseImportRowsPage() {
       requestVersion.current += 1;
     };
   }, [fetchRows]);
+
   async function handleApprove(rowId: string) {
+    if (actionInFlight.current) return;
+
     const ok = window.confirm("この候補を正式な経費として登録しますか？");
     if (!ok) return;
+
+    actionInFlight.current = true;
+    setProcessingRowId(rowId);
 
     try {
       const res = await fetch("/api/expenses/import-rows/approve", {
@@ -105,12 +114,20 @@ export default function ExpenseImportRowsPage() {
           ? error.message
           : "正式登録中にエラーが発生しました"
       );
+    } finally {
+      actionInFlight.current = false;
+      setProcessingRowId(null);
     }
   }
 
   async function handleExclude(rowId: string) {
+    if (actionInFlight.current) return;
+
     const ok = window.confirm("この候補を除外しますか？");
     if (!ok) return;
+
+    actionInFlight.current = true;
+    setProcessingRowId(rowId);
 
     try {
       const res = await fetch("/api/expenses/import-rows/exclude", {
@@ -135,6 +152,9 @@ export default function ExpenseImportRowsPage() {
           ? error.message
           : "除外中にエラーが発生しました"
       );
+    } finally {
+      actionInFlight.current = false;
+      setProcessingRowId(null);
     }
   }
   return (
@@ -215,28 +235,30 @@ export default function ExpenseImportRowsPage() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 md:w-[220px]">
-                 <button
-  type="button"
-  onClick={(e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    void handleApprove(row.id);
-  }}
-  className="rounded-xl border px-3 py-2 text-sm font-bold text-blue-700"
->
-  正式登録
-</button>
-             <button
-  type="button"
-  onClick={(e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    void handleExclude(row.id);
-  }}
-  className="rounded-xl border px-3 py-2 text-sm font-bold text-rose-700"
->
-  除外
-</button>
+                  <button
+                    type="button"
+                    disabled={processingRowId !== null}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleApprove(row.id);
+                    }}
+                    className="rounded-xl border px-3 py-2 text-sm font-bold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {processingRowId === row.id ? "登録中..." : "正式登録"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={processingRowId !== null}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void handleExclude(row.id);
+                    }}
+                    className="rounded-xl border px-3 py-2 text-sm font-bold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {processingRowId === row.id ? "処理中..." : "除外"}
+                  </button>
                 </div>
               </div>
             </div>
