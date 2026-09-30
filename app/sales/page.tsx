@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type CustomerRelation =
@@ -153,15 +153,19 @@ export default function SalesPage() {
   const [selectedMonth, setSelectedMonth] = useState(buildCurrentMonth());
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const salesRequestVersionRef = useRef(0);
 
-  async function fetchSales() {
+  const fetchSales = useCallback(async () => {
+    const requestVersion = salesRequestVersionRef.current + 1;
+    salesRequestVersionRef.current = requestVersion;
     setLoading(true);
     setErrorMessage("");
 
-    const { data, error } = await supabase
-      .from("visits")
-      .select(
-        `
+    try {
+      const { data, error } = await supabase
+        .from("visits")
+        .select(
+          `
           id,
           customer_id,
           visit_date,
@@ -173,65 +177,62 @@ export default function SalesPage() {
             name
           )
         `
-      )
-      .order("visit_date", { ascending: false });
+        )
+        .order("visit_date", { ascending: false });
 
-    if (error) {
-      console.error("売上一覧取得エラー:", error);
-      setVisits([]);
-      setPaymentMap({});
-      setErrorMessage("売上一覧の取得に失敗しました");
-      setLoading(false);
-      return;
-    }
+      if (error) throw error;
 
-    const nextVisits = (data as Visit[]) || [];
+      const nextVisits = (data as Visit[]) || [];
+      const nextPaymentMap: Record<string, VisitPayment[]> = {};
+      const visitIds = nextVisits
+        .map((visit) => visit.id)
+        .filter((id): id is string => Boolean(id));
 
-    setVisits(nextVisits);
+      if (visitIds.length > 0) {
+        const { data: paymentData, error: paymentError } = await supabase
+          .from("visit_payments")
+          .select("id, visit_id, payment_method, amount, sort_order")
+          .in("visit_id", visitIds)
+          .order("sort_order", { ascending: true });
 
-    const visitIds = nextVisits
-      .map((visit) => visit.id)
-      .filter((id): id is string => Boolean(id));
+        if (paymentError) throw paymentError;
 
-    if (visitIds.length === 0) {
-      setPaymentMap({});
-      setLoading(false);
-      return;
-    }
+        ((paymentData || []) as VisitPayment[]).forEach((payment) => {
+          if (!nextPaymentMap[payment.visit_id]) {
+            nextPaymentMap[payment.visit_id] = [];
+          }
 
-    const { data: paymentData, error: paymentError } = await supabase
-      .from("visit_payments")
-      .select("id, visit_id, payment_method, amount, sort_order")
-      .in("visit_id", visitIds)
-      .order("sort_order", { ascending: true });
-
-    if (paymentError) {
-      console.error("支払い内訳取得エラー:", paymentError);
-      setPaymentMap({});
-      setErrorMessage(
-        "売上は取得できましたが、支払い内訳の取得に失敗しました"
-      );
-      setLoading(false);
-      return;
-    }
-
-    const nextPaymentMap: Record<string, VisitPayment[]> = {};
-
-    ((paymentData || []) as VisitPayment[]).forEach((payment) => {
-      if (!nextPaymentMap[payment.visit_id]) {
-        nextPaymentMap[payment.visit_id] = [];
+          nextPaymentMap[payment.visit_id].push(payment);
+        });
       }
 
-      nextPaymentMap[payment.visit_id].push(payment);
-    });
+      if (requestVersion !== salesRequestVersionRef.current) return;
 
-    setPaymentMap(nextPaymentMap);
-    setLoading(false);
-  }
+      setVisits(nextVisits);
+      setPaymentMap(nextPaymentMap);
+    } catch (error) {
+      console.error("売上一覧取得エラー:", error);
+      if (requestVersion === salesRequestVersionRef.current) {
+        setVisits([]);
+        setPaymentMap({});
+        setErrorMessage(
+          "売上一覧を取得できませんでした。集計値は表示していません。"
+        );
+      }
+    } finally {
+      if (requestVersion === salesRequestVersionRef.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(fetchSales);
-  }, []);
+
+    return () => {
+      salesRequestVersionRef.current += 1;
+    };
+  }, [fetchSales]);
 
   const monthOptions = useMemo(() => {
     return buildMonthOptions(visits);
@@ -331,8 +332,18 @@ export default function SalesPage() {
             読み込み中...
           </section>
         ) : errorMessage ? (
-          <section className="rounded-[28px] border border-red-200 bg-red-50 p-5 text-sm font-medium text-red-700 shadow-sm">
-            {errorMessage}
+          <section
+            role="alert"
+            className="rounded-[28px] border border-red-200 bg-red-50 p-5 text-sm font-medium text-red-700 shadow-sm"
+          >
+            <p>{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => void fetchSales()}
+              className="mt-4 rounded-2xl bg-red-600 px-4 py-3 text-sm font-bold text-white transition hover:bg-red-700"
+            >
+              再試行
+            </button>
           </section>
         ) : (
           <>

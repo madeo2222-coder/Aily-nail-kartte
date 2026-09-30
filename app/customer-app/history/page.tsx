@@ -169,6 +169,7 @@ function getNailTipStatusLabel(status: string | null) {
 export default function CustomerAppHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [noticeMessage, setNoticeMessage] = useState("");
   const [customerName, setCustomerName] = useState("お客様");
@@ -184,6 +185,12 @@ export default function CustomerAppHistoryPage() {
       setLoading(true);
       setErrorMessage("");
       setNoticeMessage("");
+      setCustomerName("お客様");
+      setVisits([]);
+      setVisitPhotos([]);
+      setReservations([]);
+      setDiagnoses([]);
+      setNailTipOrders([]);
 
       try {
         const response = await fetch("/api/line-login/customer-history", {
@@ -193,7 +200,10 @@ export default function CustomerAppHistoryPage() {
         const json = (await response.json()) as CustomerHistoryResponse;
 
         if (!response.ok || !json.ok) {
-          if (response.status === 401 || !json.authenticated) {
+          if (
+            response.status === 401 ||
+            (response.ok && !json.authenticated)
+          ) {
             setIsLoggedIn(false);
             return;
           }
@@ -224,8 +234,7 @@ export default function CustomerAppHistoryPage() {
     }
 
     void fetchHistory();
-  }, []);
-
+  }, [loadAttempt]);
 
   const visitPhotoMap = useMemo(() => {
     const map = new Map<string, VisitPhotoRow[]>();
@@ -261,6 +270,33 @@ export default function CustomerAppHistoryPage() {
             <div className="text-base font-bold text-slate-900">来店履歴</div>
             <div className="mt-3 text-sm text-slate-600">読み込み中...</div>
           </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md px-4 pb-6 pt-4">
+          <section
+            className="rounded-3xl border border-rose-100 bg-rose-50 p-5 shadow-sm"
+            role="alert"
+          >
+            <h1 className="text-lg font-bold text-rose-800">
+              来店履歴を取得できませんでした
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-rose-700">
+              {errorMessage} 通信状態を確認して再試行してください。
+            </p>
+            <button
+              type="button"
+              onClick={() => setLoadAttempt((current) => current + 1)}
+              className="mt-4 w-full rounded-xl bg-rose-700 px-4 py-3 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
+          </section>
         </div>
       </main>
     );
@@ -309,12 +345,6 @@ export default function CustomerAppHistoryPage() {
             {customerName}様の予約状況・来店履歴・施術写真を確認できます。
           </p>
         </section>
-
-        {errorMessage ? (
-          <section className="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm font-bold text-rose-700 shadow-sm">
-            {errorMessage}
-          </section>
-        ) : null}
 
         {noticeMessage ? (
           <section className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-sm font-bold text-amber-700 shadow-sm">

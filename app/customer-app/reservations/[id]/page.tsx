@@ -34,6 +34,16 @@ type DetailResponse = {
   error?: string;
 };
 
+type SessionResponse = {
+  authenticated?: boolean;
+};
+
+type StaffResponse = {
+  ok?: boolean;
+  staffs?: StaffRow[];
+  error?: string;
+};
+
 const timeOptions = [
   "10:00",
   "10:30",
@@ -184,9 +194,11 @@ export default function CustomerReservationDetailPage() {
   const fetchReservation = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
+    setReservation(null);
+    setStaffs([]);
 
     try {
-      const [reservationResponse, staffResponse] = await Promise.all([
+      const [reservationResponse, sessionResponse] = await Promise.all([
         fetch(`/api/customer-reservations/${reservationId}`, {
           cache: "no-store",
         }),
@@ -197,56 +209,59 @@ export default function CustomerReservationDetailPage() {
 
       const reservationJson =
         (await reservationResponse.json()) as DetailResponse;
+      const sessionJson = (await sessionResponse.json()) as SessionResponse;
 
       if (!reservationResponse.ok || !reservationJson.ok) {
         setErrorMessage(
           reservationJson.error || "予約情報の取得に失敗しました"
         );
-        setReservation(null);
         return;
       }
 
       const nextReservation = reservationJson.reservation || null;
-      setReservation(nextReservation);
 
-      if (nextReservation) {
-        const parts = getJstInputParts(nextReservation.startAt);
-
-        setDate(parts.date);
-        setTime(parts.time);
-        setMenu(nextReservation.menu);
-        setStaffId(nextReservation.staffId || "");
-        setMemo(nextReservation.memo || "");
-
-        const start = new Date(nextReservation.startAt);
-        const end = new Date(nextReservation.endAt);
-        const minutes = Math.round(
-          (end.getTime() - start.getTime()) / 60000
-        );
-
-        setDurationMinutes(
-          Number.isFinite(minutes) && minutes > 0
-            ? String(minutes)
-            : "90"
-        );
+      if (!nextReservation) {
+        setErrorMessage("予約情報が見つかりません");
+        return;
       }
 
-      void staffResponse;
+      if (!sessionResponse.ok) {
+        setErrorMessage("ログイン状態の確認に失敗しました");
+        return;
+      }
+
+      if (!sessionJson.authenticated) {
+        setErrorMessage("予約内容を確認するにはLINEログインが必要です");
+        return;
+      }
 
       const staffResult = await fetch("/api/customer-reservations/staffs", {
         cache: "no-store",
       });
+      const staffJson = (await staffResult.json()) as StaffResponse;
 
-      if (staffResult.ok) {
-        const staffJson = (await staffResult.json()) as {
-          ok?: boolean;
-          staffs?: StaffRow[];
-        };
-
-        setStaffs(staffJson.staffs || []);
-      } else {
-        setStaffs([]);
+      if (!staffResult.ok || !staffJson.ok) {
+        setErrorMessage(
+          staffJson.error || "担当スタッフ情報の取得に失敗しました"
+        );
+        return;
       }
+
+      const parts = getJstInputParts(nextReservation.startAt);
+      const start = new Date(nextReservation.startAt);
+      const end = new Date(nextReservation.endAt);
+      const minutes = Math.round((end.getTime() - start.getTime()) / 60000);
+
+      setDate(parts.date);
+      setTime(parts.time);
+      setMenu(nextReservation.menu);
+      setStaffId(nextReservation.staffId || "");
+      setMemo(nextReservation.memo || "");
+      setDurationMinutes(
+        Number.isFinite(minutes) && minutes > 0 ? String(minutes) : "90"
+      );
+      setStaffs(staffJson.staffs || []);
+      setReservation(nextReservation);
     } catch (error) {
       console.error(error);
       setErrorMessage("予約情報の読み込みに失敗しました");
@@ -363,11 +378,22 @@ export default function CustomerReservationDetailPage() {
     return (
       <main className="min-h-screen bg-slate-50 pb-24">
         <div className="mx-auto max-w-md space-y-4 px-4 py-6">
-          <div className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm">
+          <div
+            role="alert"
+            className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm"
+          >
             <h1 className="text-xl font-bold text-slate-900">予約確認</h1>
             <p className="mt-3 text-sm leading-6 text-rose-600">
               {errorMessage || "予約情報が見つかりません"}
             </p>
+
+            <button
+              type="button"
+              onClick={() => void fetchReservation()}
+              className="mt-4 w-full rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
+            >
+              再試行
+            </button>
           </div>
 
           <Link

@@ -174,11 +174,15 @@ function ReservePageContent() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [authAttempt, setAuthAttempt] = useState(0);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [availabilitySlots, setAvailabilitySlots] = useState<
     AvailabilitySlot[]
   >([]);
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
 
   const [galleryPhotoUrl, setGalleryPhotoUrl] = useState("");
   const [galleryMenuName, setGalleryMenuName] = useState("");
@@ -205,13 +209,22 @@ function ReservePageContent() {
 
   useEffect(() => {
     async function checkAuthAndLoadStaffs() {
+      setLoading(true);
+      setAuthError("");
+      setIsLoggedIn(false);
+
       try {
         const res = await fetch("/api/line-login/me", { cache: "no-store" });
         const json = (await res.json()) as MeResponse;
 
+        if (!res.ok) {
+          setAuthError("ログイン状態の確認に失敗しました");
+          return;
+        }
+
         setIsLoggedIn(!!json.authenticated);
       } catch {
-        setIsLoggedIn(false);
+        setAuthError("ログイン状態の確認に失敗しました");
         setStaffs([]);
       } finally {
         setLoading(false);
@@ -219,7 +232,7 @@ function ReservePageContent() {
     }
 
     checkAuthAndLoadStaffs();
-  }, []);
+  }, [authAttempt]);
 
   useEffect(() => {
     async function fetchGalleryReference() {
@@ -384,10 +397,16 @@ function ReservePageContent() {
       if (!isLoggedIn || !selectedDate || !hasSelectedMenu) {
         setAvailabilitySlots([]);
         setStaffs([]);
+        setAvailabilityError("");
         return;
       }
 
       setAvailabilityLoading(true);
+      setAvailabilityError("");
+      setAvailabilitySlots([]);
+      setStaffs([]);
+      setSelectedTime("");
+      setSelectedStaffId("");
 
       try {
         const response = await fetch(
@@ -412,7 +431,9 @@ function ReservePageContent() {
         if (!response.ok || !json.ok) {
           setAvailabilitySlots([]);
           setStaffs([]);
-          showMessage(json.error || "空き時間の取得に失敗しました");
+          setAvailabilityError(
+            json.error || "空き時間の取得に失敗しました"
+          );
           return;
         }
 
@@ -422,7 +443,7 @@ function ReservePageContent() {
         if (error instanceof Error && error.name === "AbortError") return;
         setAvailabilitySlots([]);
         setStaffs([]);
-        showMessage("空き時間の取得に失敗しました");
+        setAvailabilityError("空き時間の取得に失敗しました");
       } finally {
         if (!controller.signal.aborted) setAvailabilityLoading(false);
       }
@@ -431,7 +452,13 @@ function ReservePageContent() {
     void fetchAvailability();
 
     return () => controller.abort();
-  }, [isLoggedIn, selectedDate, hasSelectedMenu, totalMinutes]);
+  }, [
+    isLoggedIn,
+    selectedDate,
+    hasSelectedMenu,
+    totalMinutes,
+    availabilityAttempt,
+  ]);
 
   const availableTimeOptions = useMemo(() => {
     return availabilitySlots.map((slot) => slot.time);
@@ -700,6 +727,31 @@ function ReservePageContent() {
     );
   }
 
+  if (authError) {
+    return (
+      <main className="min-h-screen bg-slate-50 pb-24">
+        <div className="mx-auto max-w-md space-y-4 px-4 pb-6 pt-4">
+          <section
+            role="alert"
+            className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm"
+          >
+            <h1 className="text-xl font-bold text-slate-900">予約する</h1>
+            <p className="mt-3 text-sm leading-6 text-rose-700">
+              {authError}。通信状態を確認して再試行してください。
+            </p>
+            <button
+              type="button"
+              onClick={() => setAuthAttempt((current) => current + 1)}
+              className="mt-4 w-full rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
+            >
+              再試行
+            </button>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
   if (!isLoggedIn) {
     return (
       <main className="min-h-screen bg-slate-50 pb-24">
@@ -961,7 +1013,12 @@ function ReservePageContent() {
                   setSelectedStaffId("");
                 }}
                 className="w-full rounded-2xl border bg-white px-3 py-3 text-sm"
-                disabled={availabilityLoading || !selectedDate || !hasSelectedMenu}
+                disabled={
+                  availabilityLoading ||
+                  Boolean(availabilityError) ||
+                  !selectedDate ||
+                  !hasSelectedMenu
+                }
               >
                 <option value="">
                   {!hasSelectedMenu
@@ -979,7 +1036,23 @@ function ReservePageContent() {
                 ))}
               </select>
 
-              {selectedDate && hasSelectedMenu && !availabilityLoading ? (
+              {availabilityError ? (
+                <div
+                  role="alert"
+                  className="mt-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold leading-5 text-rose-700"
+                >
+                  <p>{availabilityError}</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setAvailabilityAttempt((current) => current + 1)
+                    }
+                    className="mt-3 rounded-xl border border-rose-300 bg-white px-3 py-2 text-xs font-bold text-rose-700"
+                  >
+                    空き時間を再試行
+                  </button>
+                </div>
+              ) : selectedDate && hasSelectedMenu && !availabilityLoading ? (
                 availableTimeOptions.length > 0 ? (
                   <p className="mt-2 text-xs leading-5 text-slate-500">
                     選択中のメニューに対応できるスタッフが空いている時間だけ表示しています。
@@ -1169,7 +1242,11 @@ function ReservePageContent() {
             type="button"
             onClick={handleReserveSubmit}
             disabled={
-              sending || availabilityLoading || !selectedTime || !hasSelectedMenu
+              sending ||
+              availabilityLoading ||
+              Boolean(availabilityError) ||
+              !selectedTime ||
+              !hasSelectedMenu
             }
             className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >

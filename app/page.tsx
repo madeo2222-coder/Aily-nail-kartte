@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -190,47 +190,59 @@ export default function HomePage() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [reservations, setReservations] = useState<Reservation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const dashboardRequestVersionRef = useRef(0);
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
+    const requestVersion = dashboardRequestVersionRef.current + 1;
+    dashboardRequestVersionRef.current = requestVersion;
     setLoading(true);
+    setErrorMessage("");
 
-    const [customersRes, visitsRes, reservationsRes] = await Promise.all([
-      supabase.from("customers").select("id"),
-      supabase.from("visits").select("id, customer_id, visit_date, price"),
-      supabase
-        .from("reservations")
-        .select(
-          "id, customer_id, status, start_at, reservation_date, date, visit_date, reserved_at"
-        ),
-    ]);
+    try {
+      const [customersRes, visitsRes, reservationsRes] = await Promise.all([
+        supabase.from("customers").select("id"),
+        supabase.from("visits").select("id, customer_id, visit_date, price"),
+        supabase
+          .from("reservations")
+          .select(
+            "id, customer_id, status, start_at, reservation_date, date, visit_date, reserved_at"
+          ),
+      ]);
 
-    if (customersRes.error) {
-      console.error("customers fetch error:", customersRes.error.message);
-      setCustomers([]);
-    } else {
+      const readError =
+        customersRes.error || visitsRes.error || reservationsRes.error;
+
+      if (readError) throw readError;
+      if (requestVersion !== dashboardRequestVersionRef.current) return;
+
       setCustomers(customersRes.data || []);
-    }
-
-    if (visitsRes.error) {
-      console.error("visits fetch error:", visitsRes.error.message);
-      setVisits([]);
-    } else {
       setVisits((visitsRes.data as Visit[]) || []);
-    }
-
-    if (reservationsRes.error) {
-      console.error("reservations fetch error:", reservationsRes.error.message);
-      setReservations([]);
-    } else {
       setReservations((reservationsRes.data as Reservation[]) || []);
+    } catch (error) {
+      console.error("dashboard fetch error:", error);
+      if (requestVersion === dashboardRequestVersionRef.current) {
+        setCustomers([]);
+        setVisits([]);
+        setReservations([]);
+        setErrorMessage(
+          "ダッシュボードを取得できませんでした。集計値は表示していません。"
+        );
+      }
+    } finally {
+      if (requestVersion === dashboardRequestVersionRef.current) {
+        setLoading(false);
+      }
     }
-
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(fetchData);
-  }, []);
+
+    return () => {
+      dashboardRequestVersionRef.current += 1;
+    };
+  }, [fetchData]);
 
   const today = toDateOnlyString(new Date());
 
@@ -393,6 +405,26 @@ export default function HomePage() {
         <div className="rounded-xl bg-white p-4 text-sm text-slate-500 shadow">
           読み込み中...
         </div>
+      </div>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <div className="p-4">
+        <section
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700 shadow"
+        >
+          <p>{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchData()}
+            className="mt-4 rounded-lg bg-red-600 px-4 py-2 font-bold text-white transition hover:bg-red-700"
+          >
+            再試行
+          </button>
+        </section>
       </div>
     );
   }
