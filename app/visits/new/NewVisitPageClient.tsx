@@ -5,6 +5,12 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import {
+  VISIT_PHOTO_ACCEPT,
+  createVisitPhotoPath,
+  validateVisitPhotoFile,
+  validateVisitPhotoMetadata,
+} from "@/lib/visitPhotoStorage";
 
 type Customer = {
   id: string;
@@ -92,13 +98,6 @@ function formatYen(value: number) {
   const absoluteAmount = Math.abs(amount).toLocaleString("ja-JP");
 
   return amount < 0 ? `-¥${absoluteAmount}` : `¥${absoluteAmount}`;
-}
-
-function getFileExtension(fileName: string) {
-  const parts = fileName.split(".");
-  const extension = parts.length > 1 ? parts.pop() : "";
-
-  return extension ? extension.toLowerCase() : "jpg";
 }
 
 export default function NewVisitPageClient() {
@@ -313,17 +312,19 @@ export default function NewVisitPageClient() {
       return;
     }
 
-    const imageFiles = files.filter((file) =>
-      file.type.startsWith("image/")
-    );
-
-    if (imageFiles.length !== files.length) {
-      setMessage("写真ファイルのみ選択できます");
-    } else {
-      setMessage("");
+    const acceptedFiles: File[] = [];
+    let rejectionMessage = "";
+    for (const file of files) {
+      try {
+        validateVisitPhotoMetadata(file);
+        acceptedFiles.push(file);
+      } catch (error) {
+        rejectionMessage = error instanceof Error ? error.message : "写真を選択できませんでした。";
+      }
     }
+    setMessage(rejectionMessage);
 
-    const newPhotos = imageFiles.map((file) => {
+    const newPhotos = acceptedFiles.map((file) => {
       const previewUrl = URL.createObjectURL(file);
       photoPreviewUrls.current.add(previewUrl);
       return { id: createPhotoId(), file, previewUrl };
@@ -356,15 +357,14 @@ export default function NewVisitPageClient() {
     const uploadedPhotoRows = [];
 
     for (const photo of visitPhotos) {
-      const extension = getFileExtension(photo.file.name);
-      const filePath = `${visitId}/${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 10)}.${extension}`;
+      const validatedPhoto = await validateVisitPhotoFile(photo.file);
+      const filePath = createVisitPhotoPath(visitId, validatedPhoto.extension);
 
       const { error: uploadError } = await supabase.storage
         .from(VISIT_PHOTO_BUCKET)
-        .upload(filePath, photo.file, {
+        .upload(filePath, validatedPhoto.file, {
           cacheControl: "3600",
+          contentType: validatedPhoto.contentType,
           upsert: false,
         });
 
@@ -475,6 +475,13 @@ export default function NewVisitPageClient() {
 
     if (paymentTotal !== totalPrice) {
       setMessage("売上金額と支払い内訳合計を一致させてください");
+      return;
+    }
+
+    try {
+      await Promise.all(visitPhotos.map((photo) => validateVisitPhotoFile(photo.file)));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "写真を確認できませんでした。");
       return;
     }
 
@@ -902,7 +909,7 @@ export default function NewVisitPageClient() {
             <label className="block cursor-pointer rounded-[28px] border border-dashed border-rose-300 bg-rose-50/50 px-4 py-6 text-center">
               <input
                 type="file"
-                accept="image/*"
+                accept={VISIT_PHOTO_ACCEPT}
                 multiple
                 onChange={handlePhotoChange}
                 className="hidden"

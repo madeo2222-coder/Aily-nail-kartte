@@ -84,6 +84,15 @@ async function mount() {
           }) }) };
         },
       } };
+      if (name === "@/lib/visitPhotoStorage") return {
+        VISIT_PHOTO_ACCEPT: "image/jpeg,image/png,image/webp",
+        validateVisitPhotoMetadata(file) {
+          if (!file.type?.startsWith("image/")) throw new Error("写真はJPEG・PNG・WebP形式のみ選択できます。");
+          return file;
+        },
+        validateVisitPhotoFile: async file => ({ file, contentType: file.type, extension: "png" }),
+        createVisitPhotoPath: () => "visit/photo-test.png",
+      };
       throw new Error(`Unexpected import ${name}`);
     },
   });

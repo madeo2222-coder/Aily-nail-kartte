@@ -11,6 +11,12 @@ import {
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import {
+  VISIT_PHOTO_ACCEPT,
+  createVisitPhotoPath,
+  validateVisitPhotoFile,
+  validateVisitPhotoMetadata,
+} from "@/lib/visitPhotoStorage";
 import VisitEditPhoto from "./VisitEditPhoto";
 
 type Visit = {
@@ -112,12 +118,6 @@ function formatAmountPreview(value: string) {
   const amount = toSafeNumber(value);
   if (!Number.isFinite(amount)) return "未入力";
   return `${amount.toLocaleString("ja-JP")}`;
-}
-
-function getFileExtension(fileName: string) {
-  const parts = fileName.split(".");
-  const extension = parts.length > 1 ? parts.pop() : "";
-  return extension ? extension.toLowerCase() : "jpg";
 }
 
 export default function EditVisitPage() {
@@ -331,11 +331,17 @@ export default function EditVisitPage() {
     newPreviewUrls.current.forEach((url) => URL.revokeObjectURL(url));
     newPreviewUrls.current.clear();
 
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-
-    if (imageFiles.length !== files.length) {
-      setErrorMessage("写真ファイルのみ選択できます。");
+    const imageFiles: File[] = [];
+    let rejectionMessage = "";
+    for (const file of files) {
+      try {
+        validateVisitPhotoMetadata(file);
+        imageFiles.push(file);
+      } catch (error) {
+        rejectionMessage = error instanceof Error ? error.message : "写真を選択できませんでした。";
+      }
     }
+    setErrorMessage(rejectionMessage);
 
     const previewUrls = imageFiles.map((file) => URL.createObjectURL(file));
     previewUrls.forEach((url) => newPreviewUrls.current.add(url));
@@ -398,15 +404,14 @@ export default function EditVisitPage() {
     }[] = [];
 
     for (const file of newFiles) {
-      const ext = getFileExtension(file.name);
-      const filePath = `${id}/${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 10)}.${ext}`;
+      const validatedPhoto = await validateVisitPhotoFile(file);
+      const filePath = createVisitPhotoPath(id, validatedPhoto.extension);
 
       const { error: uploadError } = await supabase.storage
         .from(BUCKET_NAME)
-        .upload(filePath, file, {
+        .upload(filePath, validatedPhoto.file, {
           cacheControl: "3600",
+          contentType: validatedPhoto.contentType,
           upsert: false,
         });
 
@@ -515,6 +520,8 @@ export default function EditVisitPage() {
         setSaving(false);
         return;
       }
+
+      await Promise.all(newFiles.map((file) => validateVisitPhotoFile(file)));
 
       const mainPaymentMethod =
         cleanedPaymentLines.length === 1
@@ -910,7 +917,7 @@ export default function EditVisitPage() {
             <label className="mb-2 block text-sm font-medium">写真を追加</label>
             <input
               type="file"
-              accept="image/*"
+              accept={VISIT_PHOTO_ACCEPT}
               multiple
               onChange={handleFilesChange}
               className="block w-full text-sm"

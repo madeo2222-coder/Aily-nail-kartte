@@ -131,6 +131,12 @@ async function mount({ failureTable = "", rejection = false, customerId = "custo
           },
         };
       }
+      if (name === "@/lib/visitPhotoStorage") return {
+        VISIT_PHOTO_ACCEPT: "image/jpeg,image/png,image/webp",
+        validateVisitPhotoMetadata: file => file,
+        validateVisitPhotoFile: async file => ({ file, contentType: file.type, extension: "png" }),
+        createVisitPhotoPath: () => "visit/photo-test.png",
+      };
       if (name === "./VisitEditPhoto") return { default: "img" };
       throw new Error(`Unexpected import: ${name}`);
     },
