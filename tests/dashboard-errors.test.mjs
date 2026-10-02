@@ -22,9 +22,12 @@ const compiled = ts.transpileModule(
   }
 ).outputText;
 
+const FIXED_NOW = "2026-09-29T00:00:00Z";
+const FIXED_TODAY = "2026-09-29";
+
 class FixedDate extends Date {
   constructor(...args) {
-    super(...(args.length ? args : ["2026-09-29T00:00:00Z"]));
+    super(...(args.length ? args : [FIXED_NOW]));
   }
 }
 
@@ -86,14 +89,14 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
           {
             id: "visit-1",
             price: 6000,
-            visit_date: "2026-09-28",
+            visit_date: FIXED_TODAY,
             customer_id: "customer-1",
             next_visit_date: "2026-10-20",
           },
           {
             id: "visit-2",
             price: 4000,
-            visit_date: "2026-09-28",
+            visit_date: FIXED_TODAY,
             customer_id: "customer-1",
             next_visit_date: null,
           },
@@ -107,7 +110,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
         customer_id: "customer-1",
         staff_id: "staff-1",
         status: "requested",
-        reservation_date: "2026-09-28",
+        reservation_date: FIXED_TODAY,
         reservation_time: "10:00",
         menu_name: "ワンカラー",
         memo: null,
