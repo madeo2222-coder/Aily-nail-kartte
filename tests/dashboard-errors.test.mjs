@@ -22,7 +22,8 @@ const compiled = ts.transpileModule(
   }
 ).outputText;
 
-const FIXED_NOW = "2026-09-29T00:00:00Z";
+// Noon UTC keeps this fixture on the same calendar date across CI time zones.
+const FIXED_NOW = "2026-09-29T12:00:00Z";
 const FIXED_TODAY = "2026-09-29";
 
 class FixedDate extends Date {
