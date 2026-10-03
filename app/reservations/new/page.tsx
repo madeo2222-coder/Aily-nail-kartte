@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { buildExternalReservationMemo } from "@/lib/external-reservation-metadata";
 import { supabase } from "@/lib/supabase";
 
 type Salon = {
@@ -543,7 +544,7 @@ export default function ReservationNewPage() {
 
   const combinedMemo = useMemo(() => {
     if (reservationMode === "external") {
-      return memo.trim() || null;
+      return buildExternalReservationMemo(externalSource, memo);
     }
 
     const timeLines = timeBreakdown.map(
@@ -570,6 +571,7 @@ export default function ReservationNewPage() {
     return lines.join("\n");
   }, [
     reservationMode,
+    externalSource,
     memo,
     calculatedPrice,
     calculatedMinutes,

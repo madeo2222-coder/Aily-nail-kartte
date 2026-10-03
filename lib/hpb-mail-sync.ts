@@ -1,9 +1,11 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
+  appendExternalCancellationMemo,
   buildExternalCustomerId,
   buildExternalReservationId,
   findManualReservationCandidate,
+  isCancelledReservationStatus,
   type MailSyncSource,
 } from "@/lib/hpb-mail-sync-reconciliation";
 
@@ -51,6 +53,7 @@ type ExistingReservation = {
   salon_id: string | null;
   staff_id: string | null;
   memo: string | null;
+  status: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -530,7 +533,7 @@ async function findExistingExternalReservation(
   const reservationKey = getReservationNumberMemoKey(parsed.source);
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, salon_id, staff_id, memo")
+    .select("id, salon_id, staff_id, memo, status")
     .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`)
     .maybeSingle();
 
@@ -688,7 +691,7 @@ async function cancelReservation(
     );
     const { data, error } = await context.supabase
       .from("reservations")
-      .select("id, salon_id, staff_id, memo")
+      .select("id, salon_id, staff_id, memo, status")
       .eq("id", deterministicId)
       .maybeSingle();
 
@@ -703,12 +706,22 @@ async function cancelReservation(
     };
   }
 
-  const nextMemo = [
-    existing.memo || "",
-    "",
-    `【${sourceLabel}キャンセルメール本文】`,
+  const nextMemo = appendExternalCancellationMemo({
+    existingMemo: existing.memo,
+    sourceLabel,
     rawText,
-  ].join("\n");
+  });
+
+  if (
+    isCancelledReservationStatus(existing.status) &&
+    nextMemo === existing.memo
+  ) {
+    return {
+      mode: "cancelled",
+      reservationId: existing.id,
+      alreadyCancelled: true,
+    };
+  }
 
   const { error } = await context.supabase
     .from("reservations")

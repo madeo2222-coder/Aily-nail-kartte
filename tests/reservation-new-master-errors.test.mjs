@@ -8,6 +8,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const externalReservationMetadata = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/external-reservation-metadata.ts", import.meta.url),
+      "utf8"
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } }
+  ).outputText;
+  vm.runInNewContext(source, { exports });
+  return exports;
+})();
 const compiled = ts.transpileModule(
   readFileSync(new URL("../app/reservations/new/page.tsx", import.meta.url), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }
@@ -77,6 +89,9 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
       if (name === "next/navigation") return { useRouter: () => ({ push() {} }) };
+      if (name === "@/lib/external-reservation-metadata") {
+        return externalReservationMetadata;
+      }
       if (name === "@/lib/supabase") return { supabase: {
         from(table) {
           assert.ok(["salons", "customers", "staffs"].includes(table));

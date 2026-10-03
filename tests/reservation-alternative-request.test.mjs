@@ -22,10 +22,11 @@ const compiledRoute = ts.transpileModule(routeSource, {
 }).outputText;
 
 class MockResponse {
-  constructor(body, status = 200) {
+  constructor(body, status = 200, headers = {}) {
     this.body = body;
     this.status = status;
     this.ok = status >= 200 && status < 300;
+    this.headers = new Headers(headers);
   }
 
   async json() {
@@ -287,7 +288,9 @@ test("records a failed send and retries with the same LINE retry key", async () 
     ],
     lineResponses: [
       new MockResponse("temporary LINE error", 500),
-      new MockResponse({}, 409),
+      new MockResponse({}, 409, {
+        "X-Line-Accepted-Request-Id": "accepted-request-1",
+      }),
     ],
   });
 
@@ -310,6 +313,41 @@ test("records a failed send and retries with the same LINE retry key", async () 
       [1, "failed"],
       [2, "sent"],
     ]
+  );
+});
+
+test("does not mark an unverified LINE conflict as sent", async () => {
+  for (const headers of [{}, { "x-line-accepted-request-id": "   " }]) {
+    const runtime = loadRoute({
+      lineResponses: [new MockResponse("unverified conflict", 409, headers)],
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 502);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.sent, false);
+    assert.equal(response.body.retryable, false);
+    assert.equal(runtime.lineCalls.length, 1);
+    assert.equal(runtime.completionCalls[0].p_status, "failed");
+    assert.equal(runtime.completionCalls[0].p_error, "unverified conflict");
+  }
+});
+
+test("records a retryable failure even when the LINE error body cannot be read", async () => {
+  const lineResponse = new MockResponse({}, 500);
+  lineResponse.text = async () => {
+    throw new Error("response stream interrupted");
+  };
+  const runtime = loadRoute({ lineResponses: [lineResponse] });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 502);
+  assert.equal(response.body.sent, false);
+  assert.equal(response.body.retryable, true);
+  assert.equal(runtime.completionCalls[0].p_status, "failed");
+  assert.equal(
+    runtime.completionCalls[0].p_error,
+    "LINE API HTTP 500: response body unavailable"
   );
 });
 
@@ -373,5 +411,16 @@ test("migration protects the delivery ledger and customer updates close its stat
       /\.in\("status", \["pending", "sending", "sent", "failed"\]\)/g
     )?.length,
     2
+  );
+  assert.equal(
+    customerRoute.match(
+      /\.in\("status", REQUESTED_RESERVATION_STATUSES\)[\s\S]*?\.select\("id"\)[\s\S]*?\.maybeSingle\(\)/g
+    )?.length,
+    2,
+    "customer update and cancel must only write while the reservation is still requested"
+  );
+  assert.match(
+    customerRoute,
+    /予約状態が更新されています。最新の内容を読み込み直してください/
   );
 });

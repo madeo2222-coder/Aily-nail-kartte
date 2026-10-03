@@ -20,6 +20,13 @@ type UpdateRequestBody = {
   requestMessage?: string;
 };
 
+const REQUESTED_RESERVATION_STATUSES = [
+  "requested",
+  "予約申請中",
+  "予約受付",
+  "予約",
+];
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -397,16 +404,30 @@ export async function PATCH(
         );
       }
 
-      const { error } = await supabaseAdmin
+      const { data: cancelledReservation, error } = await supabaseAdmin
         .from("reservations")
         .update({
           status: "cancelled",
         })
         .eq("id", id)
-        .eq("customer_id", customerId);
+        .eq("customer_id", customerId)
+        .in("status", REQUESTED_RESERVATION_STATUSES)
+        .select("id")
+        .maybeSingle();
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      if (!cancelledReservation) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "予約状態が更新されています。最新の内容を読み込み直してください",
+          },
+          { status: 409 }
+        );
       }
 
       const { error: alternativeRequestError } = await supabaseAdmin
@@ -693,14 +714,28 @@ export async function PATCH(
       staff_id: staffId || null,
     };
 
-    const { error: updateError } = await supabaseAdmin
+    const { data: updatedReservation, error: updateError } = await supabaseAdmin
       .from("reservations")
       .update(updatePayload)
       .eq("id", id)
-      .eq("customer_id", customerId);
+      .eq("customer_id", customerId)
+      .in("status", REQUESTED_RESERVATION_STATUSES)
+      .select("id")
+      .maybeSingle();
 
     if (updateError) {
       throw new Error(updateError.message);
+    }
+
+    if (!updatedReservation) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "予約状態が更新されています。最新の内容を読み込み直してください",
+        },
+        { status: 409 }
+      );
     }
 
     const { error: alternativeRequestError } = await supabaseAdmin

@@ -42,6 +42,32 @@ function hasExternalReservationKey(value: string) {
   return value.includes("hpb予約番号") || value.includes("ミニモ予約id");
 }
 
+export function isCancelledReservationStatus(
+  status: string | null | undefined
+) {
+  return CANCELLED_STATUSES.has(normalize(status));
+}
+
+export function appendExternalCancellationMemo({
+  existingMemo,
+  sourceLabel,
+  rawText,
+}: {
+  existingMemo: string | null | undefined;
+  sourceLabel: string;
+  rawText: string;
+}) {
+  const cancellationBlock = `【${sourceLabel}キャンセルメール本文】\n${rawText}`;
+
+  if (existingMemo?.includes(cancellationBlock)) {
+    return existingMemo;
+  }
+
+  return [existingMemo?.trimEnd() || "", cancellationBlock]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 function buildDeterministicId(
   kind: "reservation" | "customer",
   source: MailSyncSource,
@@ -84,7 +110,7 @@ export function findManualReservationCandidate({
   staffId: string | null;
 }) {
   const matches = candidates.filter((candidate) => {
-    if (CANCELLED_STATUSES.has(normalize(candidate.status))) return false;
+    if (isCancelledReservationStatus(candidate.status)) return false;
     if (staffId && candidate.staff_id !== staffId) return false;
 
     const text = normalize(`${candidate.menu || ""}\n${candidate.memo || ""}`);

@@ -401,8 +401,17 @@ export async function POST(
       );
     }
 
-    const accepted = lineResponse.ok || lineResponse.status === 409;
-    const lineErrorText = accepted ? "" : (await lineResponse.text()).slice(0, 1000);
+    const acceptedRetry =
+      lineResponse.status === 409 &&
+      Boolean(lineResponse.headers.get("x-line-accepted-request-id")?.trim());
+    const accepted = lineResponse.ok || acceptedRetry;
+    const lineErrorText = accepted
+      ? ""
+      : (
+          await lineResponse
+            .text()
+            .catch(() => `LINE API HTTP ${lineResponse.status}: response body unavailable`)
+        ).slice(0, 1000);
     const { data: completed, error: completionError } = await supabaseAdmin.rpc(
       "complete_reservation_alternative_request",
       {
@@ -440,7 +449,7 @@ export async function POST(
       sent: true,
       retried: claim.attempt_count > 1,
       message:
-        lineResponse.status === 409
+        acceptedRetry
           ? "LINEの重複送信を防ぎ、送信済みとして記録しました。"
           : "別日時入力のLINEを送信しました。",
     });

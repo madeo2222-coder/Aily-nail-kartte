@@ -15,6 +15,17 @@ type GmailMessagePart = {
   parts?: GmailMessagePart[] | null;
 };
 
+type GmailMessageReference = {
+  id?: string | null;
+  threadId?: string | null;
+};
+
+const GMAIL_PAGE_SIZE = 100;
+const GMAIL_MESSAGE_LIMIT = 500;
+const GMAIL_PAGE_LIMIT = 10;
+const RESERVATION_MAIL_QUERY =
+  'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ミニモサロンツール" OR "予約ID")';
+
 function extractPlainText(payload: GmailMessagePart | null | undefined): string {
   if (!payload) return "";
 
@@ -54,6 +65,57 @@ function isTargetReservationMail(subject: string, bodyText: string) {
   );
 }
 
+async function listReservationMessages(
+  listPage: (parameters: {
+    userId: string;
+    maxResults: number;
+    q: string;
+    pageToken?: string;
+  }) => Promise<{
+    data: {
+      messages?: GmailMessageReference[] | null;
+      nextPageToken?: string | null;
+    };
+  }>
+) {
+  const messages: GmailMessageReference[] = [];
+  const seenIds = new Set<string>();
+  let pageToken: string | undefined;
+
+  for (let page = 0; page < GMAIL_PAGE_LIMIT; page += 1) {
+    const remaining = GMAIL_MESSAGE_LIMIT - messages.length;
+    if (remaining <= 0) {
+      throw new Error(
+        `予約メールが${GMAIL_MESSAGE_LIMIT}通を超えています。未取得メールを残したまま正常終了しないため同期を停止しました。`
+      );
+    }
+
+    const response = await listPage({
+      userId: "me",
+      maxResults: Math.min(GMAIL_PAGE_SIZE, remaining),
+      q: RESERVATION_MAIL_QUERY,
+      ...(pageToken ? { pageToken } : {}),
+    });
+
+    for (const message of response.data.messages || []) {
+      if (!message.id || seenIds.has(message.id)) continue;
+      seenIds.add(message.id);
+      messages.push(message);
+    }
+
+    const nextPageToken = response.data.nextPageToken || undefined;
+    if (!nextPageToken) {
+      return messages.reverse();
+    }
+
+    pageToken = nextPageToken;
+  }
+
+  throw new Error(
+    "予約メールの一覧が10ページを超えています。未取得メールを残したまま正常終了しないため同期を停止しました。"
+  );
+}
+
 async function runHpbGmailSync() {
   const clientId = process.env.GOOGLE_GMAIL_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_GMAIL_CLIENT_SECRET;
@@ -86,13 +148,9 @@ async function runHpbGmailSync() {
     auth: oauth2Client,
   });
 
-  const listResponse = await gmail.users.messages.list({
-    userId: "me",
-    maxResults: 20,
-    q: 'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ミニモサロンツール" OR "予約ID")',
-  });
-
-  const messages = [...(listResponse.data.messages || [])].reverse();
+  const messages = await listReservationMessages((parameters) =>
+    gmail.users.messages.list(parameters)
+  );
   const results = [];
 
   for (const message of messages) {

@@ -32,10 +32,12 @@ function loadRoute({
   authenticated = true,
   authenticationMode = "supabase",
   nodeEnv = "production",
+  listPages = [{ messages: [] }],
 } = {}) {
   const authOptions = [];
   let oauthClientCount = 0;
-  let gmailListCount = 0;
+  const gmailListCalls = [];
+  const syncedTexts = [];
   const exports = {};
 
   class MockOAuth2 {
@@ -80,9 +82,30 @@ function loadRoute({
               return {
                 users: {
                   messages: {
-                    async list() {
-                      gmailListCount += 1;
-                      return { data: { messages: [] } };
+                    async list(parameters) {
+                      const page = listPages[gmailListCalls.length] || {
+                        messages: [],
+                      };
+                      gmailListCalls.push(parameters);
+                      return { data: page };
+                    },
+                    async get({ id }) {
+                      return {
+                        data: {
+                          payload: {
+                            mimeType: "text/plain",
+                            headers: [
+                              {
+                                name: "Subject",
+                                value: "HOT PEPPER Beauty 予約番号",
+                              },
+                            ],
+                            body: {
+                              data: Buffer.from(id).toString("base64url"),
+                            },
+                          },
+                        },
+                      };
                     },
                   },
                 },
@@ -109,7 +132,12 @@ function loadRoute({
         };
       }
       if (name === "@/lib/hpb-mail-sync") {
-        return { syncHpbMailText: async () => ({}) };
+        return {
+          syncHpbMailText: async (text) => {
+            syncedTexts.push(text);
+            return {};
+          },
+        };
       }
       if (name === "@/lib/hpb-gmail-sync-summary") {
         return {
@@ -131,7 +159,13 @@ function loadRoute({
     authOptions,
     exports,
     get gmailListCount() {
-      return gmailListCount;
+      return gmailListCalls.length;
+    },
+    get gmailListCalls() {
+      return gmailListCalls;
+    },
+    get syncedTexts() {
+      return syncedTexts;
     },
     get oauthClientCount() {
       return oauthClientCount;
@@ -190,4 +224,27 @@ test("cron Gmail sync accepts the configured bearer token", async () => {
   assert.equal((await response.json()).ok, true);
   assert.equal(runtime.authOptions.length, 0);
   assert.equal(runtime.gmailListCount, 1);
+});
+
+test("Gmail sync follows every result page and processes oldest mail first", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [{ id: "newer-message" }],
+        nextPageToken: "page-2",
+      },
+      {
+        messages: [{ id: "older-message" }],
+      },
+    ],
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.equal(runtime.gmailListCount, 2);
+  assert.equal(runtime.gmailListCalls[0].maxResults, 100);
+  assert.equal(runtime.gmailListCalls[0].pageToken, undefined);
+  assert.equal(runtime.gmailListCalls[1].pageToken, "page-2");
+  assert.deepEqual(runtime.syncedTexts, ["older-message", "newer-message"]);
 });

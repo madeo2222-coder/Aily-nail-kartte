@@ -24,6 +24,9 @@ function loadTypeScriptModule(path) {
 const reconciliation = loadTypeScriptModule(
   "../lib/hpb-mail-sync-reconciliation.ts"
 );
+const externalReservationMetadata = loadTypeScriptModule(
+  "../lib/external-reservation-metadata.ts"
+);
 const summary = loadTypeScriptModule("../lib/hpb-gmail-sync-summary.ts");
 
 test("external reservation and customer IDs are stable and namespaced", () => {
@@ -76,6 +79,32 @@ test("delayed mail sync adopts one matching manual external reservation", () => 
   assert.equal(result?.id, "manual-1");
 });
 
+test("manual external source remains identifiable after its display title is customized", () => {
+  const memo = externalReservationMetadata.buildExternalReservationMemo(
+    "ホットペッパー",
+    "電話を受けて先に登録"
+  );
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: "staff-1",
+    candidates: [
+      {
+        id: "manual-custom-title",
+        staff_id: "staff-1",
+        menu: "ジェル付替 90分",
+        memo,
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(
+    memo,
+    "外部予約種別：ホットペッパー\n電話を受けて先に登録"
+  );
+  assert.equal(result?.id, "manual-custom-title");
+});
+
 test("cancelled manual rows are not adopted", () => {
   const result = reconciliation.findManualReservationCandidate({
     source: "minimo",
@@ -92,6 +121,27 @@ test("cancelled manual rows are not adopted", () => {
   });
 
   assert.equal(result, null);
+});
+
+test("replayed cancellation mail does not grow the reservation memo", () => {
+  const first = reconciliation.appendExternalCancellationMemo({
+    existingMemo: "HPB予約番号：A123456",
+    sourceLabel: "HPB",
+    rawText: "予約A123456はキャンセルされました",
+  });
+  const replayed = reconciliation.appendExternalCancellationMemo({
+    existingMemo: first,
+    sourceLabel: "HPB",
+    rawText: "予約A123456はキャンセルされました",
+  });
+
+  assert.equal(
+    first,
+    "HPB予約番号：A123456\n\n【HPBキャンセルメール本文】\n予約A123456はキャンセルされました"
+  );
+  assert.equal(replayed, first);
+  assert.equal(reconciliation.isCancelledReservationStatus("キャンセル"), true);
+  assert.equal(reconciliation.isCancelledReservationStatus("confirmed"), false);
 });
 
 test("ambiguous delayed manual entries stop instead of creating another row", () => {
