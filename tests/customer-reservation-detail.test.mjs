@@ -164,9 +164,18 @@ test("hides reservation details and write controls when the session cannot be co
 test("shows the signed-out state without loading staff choices", async () => {
   const { html, requests } = await loadPage({
     sessionResponse: response({ body: { authenticated: false } }),
+    reservationResponse: response({
+      ok: false,
+      body: { ok: false, error: "LINEログインが必要です" },
+    }),
   });
 
   assert.match(html, /LINEログインが必要です/);
+  assert.match(html, /LINEでログインして予約を確認/);
+  assert.match(
+    html,
+    /\/customer-app\/login\?next=%2Fcustomer-app%2Freservations%2Freservation-1/
+  );
   assert.doesNotMatch(html, /ワンカラー/);
   assert.deepEqual(
     requests.map(({ url }) => url),

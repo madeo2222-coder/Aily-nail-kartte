@@ -623,7 +623,18 @@ export default function ReservationsCalendarPage() {
 
       await fetchCalendarData();
 
-      alert(`${json.count ?? 0}件同期しました`);
+      const syncedCount = json.syncedCount ?? json.count ?? 0;
+      const failedCount = json.failedCount ?? 0;
+      const skippedCount = json.skippedCount ?? 0;
+      const details = [
+        `${syncedCount}件同期`,
+        failedCount > 0 ? `${failedCount}件失敗` : "",
+        skippedCount > 0 ? `${skippedCount}件対象外` : "",
+      ]
+        .filter(Boolean)
+        .join("・");
+
+      alert(details);
     } catch (error) {
       console.error(error);
 

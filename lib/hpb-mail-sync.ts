@@ -1,6 +1,13 @@
-import { supabase } from "@/lib/supabase";
+import "server-only";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  buildExternalCustomerId,
+  buildExternalReservationId,
+  findManualReservationCandidate,
+  type MailSyncSource,
+} from "@/lib/hpb-mail-sync-reconciliation";
 
-type MailSource = "hpb" | "minimo";
+type MailSource = MailSyncSource;
 
 export type ParsedHpbMail = {
   source: MailSource;
@@ -32,6 +39,32 @@ type CustomerMatchResult = {
   matchedName: string | null;
   autoCreated?: boolean;
 };
+
+type SyncContext = {
+  supabase: SupabaseClient;
+  salonId: string;
+  staffId: string | null;
+};
+
+type ExistingReservation = {
+  id: string;
+  salon_id: string | null;
+  staff_id: string | null;
+  memo: string | null;
+};
+
+function getSupabaseAdmin() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Supabase管理接続の環境変数が不足しています");
+  }
+
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+}
 
 function normalizeText(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -302,23 +335,61 @@ function parseReservationMail(rawText: string): ParsedHpbMail {
   return parseHpbMail(text);
 }
 
-async function getDefaultSalonId() {
-  const { data, error } = await supabase
+async function resolveSyncContext(parsed: ParsedHpbMail): Promise<SyncContext> {
+  const supabase = getSupabaseAdmin();
+  const { data: salons, error: salonError } = await supabase
     .from("salons")
     .select("id")
-    .limit(1)
-    .maybeSingle();
+    .limit(2);
 
-  if (error) return null;
+  if (salonError) throw new Error(salonError.message);
+  if (!salons || salons.length !== 1) {
+    throw new Error(
+      "同期先サロンを一意に決められません。重複登録を避けるため同期を停止しました。"
+    );
+  }
 
-  return data?.id || null;
+  const salonId = salons[0].id;
+  let staffId: string | null = null;
+
+  if (normalizeForCompare(parsed.staffName) !== normalizeForCompare("指名なし")) {
+    const { data: staffs, error: staffError } = await supabase
+      .from("staffs")
+      .select("id, name")
+      .eq("salon_id", salonId)
+      .eq("is_active", true);
+
+    if (staffError) throw new Error(staffError.message);
+
+    const matches = (staffs || []).filter(
+      (staff) =>
+        normalizeForCompare(staff.name || "") ===
+        normalizeForCompare(parsed.staffName)
+    );
+
+    if (matches.length > 1) {
+      throw new Error(
+        `担当「${parsed.staffName}」が複数見つかりました。重複登録を避けるため同期を停止しました。`
+      );
+    }
+
+    if (matches.length === 0) {
+      throw new Error(
+        `担当「${parsed.staffName}」を特定できません。担当なしで重複登録することを避けるため同期を停止しました。`
+      );
+    }
+
+    staffId = matches[0]?.id || null;
+  }
+
+  return { supabase, salonId, staffId };
 }
 
 async function createCustomerFromReservation(
-  parsed: ParsedHpbMail
+  parsed: ParsedHpbMail,
+  context: SyncContext
 ): Promise<CustomerMatchResult> {
   const sourceLabel = getSourceLabel(parsed.source);
-  const salonId = await getDefaultSalonId();
 
   const notes = [
     `${sourceLabel}予約メールから自動作成`,
@@ -330,25 +401,24 @@ async function createCustomerFromReservation(
     .join("\n");
 
   const payload: {
+    id: string;
     name: string;
     phone?: string | null;
     name_kana?: string | null;
     notes?: string | null;
-    salon_id?: string | null;
+    salon_id: string;
   } = {
+    id: buildExternalCustomerId(parsed.source, parsed.reservationNumber),
     name: parsed.normalizedCustomerName || parsed.customerName,
     phone: parsed.phone || null,
     name_kana: parsed.customerKana || null,
     notes,
+    salon_id: context.salonId,
   };
 
-  if (salonId) {
-    payload.salon_id = salonId;
-  }
-
-  const { data, error } = await supabase
+  const { data, error } = await context.supabase
     .from("customers")
-    .insert(payload)
+    .upsert(payload, { onConflict: "id" })
     .select("id, name")
     .single();
 
@@ -363,10 +433,14 @@ async function createCustomerFromReservation(
   };
 }
 
-async function findOrCreateCustomer(parsed: ParsedHpbMail) {
-  const { data, error } = await supabase
+async function findOrCreateCustomer(
+  parsed: ParsedHpbMail,
+  context: SyncContext
+) {
+  const { data, error } = await context.supabase
     .from("customers")
     .select("id, name, phone")
+    .eq("salon_id", context.salonId)
     .not("name", "is", null);
 
   if (error) throw new Error(error.message);
@@ -430,7 +504,7 @@ async function findOrCreateCustomer(parsed: ParsedHpbMail) {
   }
 
   if (parsed.action === "reservation") {
-    return await createCustomerFromReservation(parsed);
+    return await createCustomerFromReservation(parsed, context);
   }
 
   return {
@@ -449,18 +523,59 @@ function getReservationNumberMemoKey(source: MailSource) {
   return source === "minimo" ? "ミニモ予約ID" : "HPB予約番号";
 }
 
-async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
-  const sourceLabel = getSourceLabel(parsed.source);
+async function findExistingExternalReservation(
+  parsed: ParsedHpbMail,
+  context: SyncContext
+) {
   const reservationKey = getReservationNumberMemoKey(parsed.source);
-  const customerMatch = await findOrCreateCustomer(parsed);
-
-  const { data: existing, error: findError } = await supabase
+  const { data, error } = await context.supabase
     .from("reservations")
-    .select("id")
+    .select("id, salon_id, staff_id, memo")
     .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`)
     .maybeSingle();
 
-  if (findError) throw new Error(findError.message);
+  if (error) throw new Error(error.message);
+  if (data?.salon_id && data.salon_id !== context.salonId) {
+    throw new Error(
+      "同じ外部予約番号が別サロンにあります。誤更新を避けるため同期を停止しました。"
+    );
+  }
+
+  return (data || null) as ExistingReservation | null;
+}
+
+async function findDelayedManualEntry(
+  parsed: ParsedHpbMail,
+  context: SyncContext
+) {
+  const { data, error } = await context.supabase
+    .from("reservations")
+    .select("id, staff_id, menu, memo, status")
+    .eq("salon_id", context.salonId)
+    .eq("start_at", parsed.startAt);
+
+  if (error) throw new Error(error.message);
+
+  return findManualReservationCandidate({
+    candidates: data || [],
+    source: parsed.source,
+    staffId: context.staffId,
+  });
+}
+
+async function upsertReservation(
+  parsed: ParsedHpbMail,
+  rawText: string,
+  context: SyncContext
+) {
+  const sourceLabel = getSourceLabel(parsed.source);
+  const reservationKey = getReservationNumberMemoKey(parsed.source);
+  const existing = await findExistingExternalReservation(parsed, context);
+  const delayedManualEntry = existing
+    ? null
+    : await findDelayedManualEntry(parsed, context);
+  const customerMatch = await findOrCreateCustomer(parsed, context);
+  const preservedManualMemo = delayedManualEntry?.memo?.trim() || "";
 
   const memo = [
     `${reservationKey}：${parsed.reservationNumber}`,
@@ -479,6 +594,9 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
     customerMatch.autoCreated ? `${sourceLabel}顧客自動作成：true` : "",
     `${sourceLabel}担当：${parsed.staffName}`,
     parsed.price ? `${sourceLabel}金額：${parsed.price}円` : "",
+    delayedManualEntry ? `${sourceLabel}手入力予約を同期済み：true` : "",
+    preservedManualMemo ? "【同期前の手入力メモ】" : "",
+    preservedManualMemo,
     "",
     `【${sourceLabel}メール本文】`,
     rawText,
@@ -487,13 +605,16 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
     .join("\n");
 
   const reservationPayload: {
+    salon_id: string;
     menu: string;
     start_at: string;
     end_at: string;
     status: string;
     memo: string;
     customer_id?: string | null;
+    staff_id?: string | null;
   } = {
+    salon_id: context.salonId,
     menu: parsed.menu,
     start_at: parsed.startAt,
     end_at: parsed.endAt,
@@ -505,24 +626,41 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
     reservationPayload.customer_id = customerMatch.customerId;
   }
 
-  if (existing?.id) {
-    const { error } = await supabase
+  if (context.staffId) {
+    reservationPayload.staff_id = context.staffId;
+  }
+
+  const reservationToUpdate = existing || delayedManualEntry;
+
+  if (reservationToUpdate?.id) {
+    const { error } = await context.supabase
       .from("reservations")
       .update(reservationPayload)
-      .eq("id", existing.id);
+      .eq("id", reservationToUpdate.id);
 
     if (error) throw new Error(error.message);
 
     return {
       mode: "updated",
-      reservationId: existing.id,
+      reservationId: reservationToUpdate.id,
       customerMatch,
+      reconciledManualEntry: Boolean(delayedManualEntry),
     };
   }
 
-  const { data, error } = await supabase
+  const deterministicId = buildExternalReservationId(
+    parsed.source,
+    parsed.reservationNumber
+  );
+  const { data, error } = await context.supabase
     .from("reservations")
-    .insert(reservationPayload)
+    .upsert(
+      {
+        id: deterministicId,
+        ...reservationPayload,
+      },
+      { onConflict: "id" }
+    )
     .select("id")
     .single();
 
@@ -535,17 +673,28 @@ async function upsertReservation(parsed: ParsedHpbMail, rawText: string) {
   };
 }
 
-async function cancelReservation(parsed: ParsedHpbMail, rawText: string) {
+async function cancelReservation(
+  parsed: ParsedHpbMail,
+  rawText: string,
+  context: SyncContext
+) {
   const sourceLabel = getSourceLabel(parsed.source);
-  const reservationKey = getReservationNumberMemoKey(parsed.source);
+  let existing = await findExistingExternalReservation(parsed, context);
 
-  const { data: existing, error: findError } = await supabase
-    .from("reservations")
-    .select("id, memo")
-    .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`)
-    .maybeSingle();
+  if (!existing) {
+    const deterministicId = buildExternalReservationId(
+      parsed.source,
+      parsed.reservationNumber
+    );
+    const { data, error } = await context.supabase
+      .from("reservations")
+      .select("id, salon_id, staff_id, memo")
+      .eq("id", deterministicId)
+      .maybeSingle();
 
-  if (findError) throw new Error(findError.message);
+    if (error) throw new Error(error.message);
+    existing = (data || null) as ExistingReservation | null;
+  }
 
   if (!existing?.id) {
     return {
@@ -561,7 +710,7 @@ async function cancelReservation(parsed: ParsedHpbMail, rawText: string) {
     rawText,
   ].join("\n");
 
-  const { error } = await supabase
+  const { error } = await context.supabase
     .from("reservations")
     .update({
       status: "キャンセル",
@@ -579,11 +728,12 @@ async function cancelReservation(parsed: ParsedHpbMail, rawText: string) {
 
 export async function syncHpbMailText(rawText: string) {
   const parsed = parseReservationMail(rawText);
+  const context = await resolveSyncContext(parsed);
 
   const result =
     parsed.action === "cancel"
-      ? await cancelReservation(parsed, rawText)
-      : await upsertReservation(parsed, rawText);
+      ? await cancelReservation(parsed, rawText, context)
+      : await upsertReservation(parsed, rawText, context);
 
   return {
     parsed,

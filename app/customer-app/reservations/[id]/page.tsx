@@ -179,6 +179,7 @@ export default function CustomerReservationDetailPage() {
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [signedOut, setSignedOut] = useState(false);
 
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -194,6 +195,7 @@ export default function CustomerReservationDetailPage() {
   const fetchReservation = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
+    setSignedOut(false);
     setReservation(null);
     setStaffs([]);
 
@@ -211,6 +213,17 @@ export default function CustomerReservationDetailPage() {
         (await reservationResponse.json()) as DetailResponse;
       const sessionJson = (await sessionResponse.json()) as SessionResponse;
 
+      if (!sessionResponse.ok) {
+        setErrorMessage("ログイン状態の確認に失敗しました");
+        return;
+      }
+
+      if (!sessionJson.authenticated) {
+        setErrorMessage("予約内容を確認するにはLINEログインが必要です");
+        setSignedOut(true);
+        return;
+      }
+
       if (!reservationResponse.ok || !reservationJson.ok) {
         setErrorMessage(
           reservationJson.error || "予約情報の取得に失敗しました"
@@ -222,16 +235,6 @@ export default function CustomerReservationDetailPage() {
 
       if (!nextReservation) {
         setErrorMessage("予約情報が見つかりません");
-        return;
-      }
-
-      if (!sessionResponse.ok) {
-        setErrorMessage("ログイン状態の確認に失敗しました");
-        return;
-      }
-
-      if (!sessionJson.authenticated) {
-        setErrorMessage("予約内容を確認するにはLINEログインが必要です");
         return;
       }
 
@@ -387,13 +390,24 @@ export default function CustomerReservationDetailPage() {
               {errorMessage || "予約情報が見つかりません"}
             </p>
 
-            <button
-              type="button"
-              onClick={() => void fetchReservation()}
-              className="mt-4 w-full rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
-            >
-              再試行
-            </button>
+            {signedOut ? (
+              <Link
+                href={`/customer-app/login?next=${encodeURIComponent(
+                  `/customer-app/reservations/${reservationId}`
+                )}`}
+                className="mt-4 block w-full rounded-2xl bg-green-500 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                LINEでログインして予約を確認
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void fetchReservation()}
+                className="mt-4 w-full rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
+              >
+                再試行
+              </button>
+            )}
           </div>
 
           <Link

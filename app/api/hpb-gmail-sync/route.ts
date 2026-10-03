@@ -1,11 +1,8 @@
 import { google } from "googleapis";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import {
-  STAFF_SESSION_COOKIE,
-  verifyLegacyStaffSession,
-} from "@/lib/auth/staffLegacySession";
 import { syncHpbMailText } from "@/lib/hpb-mail-sync";
+import { summarizeGmailSyncResults } from "@/lib/hpb-gmail-sync-summary";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 function decodeBase64Url(value: string) {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
@@ -149,9 +146,12 @@ async function runHpbGmailSync() {
     }
   }
 
+  const summary = summarizeGmailSyncResults(results);
+
   return NextResponse.json({
     ok: true,
-    count: results.length,
+    count: summary.syncedCount,
+    ...summary,
     results,
   });
 }
@@ -187,19 +187,20 @@ export async function GET(request: Request) {
 }
 
 export async function POST() {
-  try {
-    const cookieStore = await cookies();
-    const staffSession = await verifyLegacyStaffSession(
-      cookieStore.get(STAFF_SESSION_COOKIE)?.value
+  const authentication = await authenticateStaffApi({
+    allowedRoles: ["owner", "staff"],
+    legacyAllowed: true,
+    salonContextRequired: false,
+  });
+
+  if (!authentication.ok) {
+    return NextResponse.json(
+      { ok: false, error: authentication.error },
+      { status: authentication.status }
     );
+  }
 
-    if (!staffSession) {
-      return NextResponse.json(
-        { ok: false, error: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
+  try {
     return await runHpbGmailSync();
   } catch (error) {
     return NextResponse.json(

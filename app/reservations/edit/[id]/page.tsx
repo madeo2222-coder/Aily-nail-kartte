@@ -75,6 +75,14 @@ type CancellationResult = {
   };
 };
 
+type AlternativeRequestResult = {
+  ok?: boolean;
+  sent?: boolean;
+  alreadySent?: boolean;
+  error?: string;
+  message?: string;
+};
+
 const STATUS_OPTIONS: { value: ReservationStatus; label: string }[] = [
   { value: "予約", label: "予約申請中" },
   { value: "confirmed", label: "予約確定" },
@@ -327,6 +335,7 @@ export default function EditReservationPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [requestingAlternative, setRequestingAlternative] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -599,6 +608,46 @@ export default function EditReservationPage() {
   }
 }
 
+  async function requestAlternativeTime() {
+    if (!reservationId) return;
+
+    const confirmed = window.confirm(
+      "この日時では予約確定できないことをLINEで知らせ、別の希望日時の入力を依頼しますか？"
+    );
+
+    if (!confirmed) return;
+
+    setRequestingAlternative(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/reservations/${reservationId}/request-alternative`,
+        { method: "POST" }
+      );
+      const result = (await response.json()) as AlternativeRequestResult;
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(
+          result.error || "別日時入力のLINE送信に失敗しました"
+        );
+        return;
+      }
+
+      setSuccessMessage(
+        result.message ||
+          (result.alreadySent
+            ? "別日時入力のLINEは送信済みです。"
+            : "別日時入力のLINEを送信しました。")
+      );
+    } catch {
+      setErrorMessage("別日時入力のLINE送信に失敗しました");
+    } finally {
+      setRequestingAlternative(false);
+    }
+  }
+
   async function cancelReservation() {
     if (cancellationReason === "other" && !cancellationReasonText.trim()) {
       setErrorMessage("キャンセル理由を入力してください");
@@ -834,6 +883,33 @@ export default function EditReservationPage() {
                 )}
               </div>
             </section>
+
+            {status === "予約" && !isExternalBlock && customerId ? (
+              <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-amber-900">
+                      この日時では確定できない場合
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-amber-800">
+                      LINE連携済みのお客様へお知らせし、この予約の別希望日時入力ページへ案内します。送信済みの場合は重複送信しません。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={requestAlternativeTime}
+                    disabled={
+                      requestingAlternative || confirming || saving || deleting
+                    }
+                    className="shrink-0 rounded-2xl bg-amber-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
+                  >
+                    {requestingAlternative
+                      ? "LINE送信中..."
+                      : "別日時をLINEで依頼"}
+                  </button>
+                </div>
+              </section>
+            ) : null}
 
             {galleryReference.hasGallery ? (
               <section className="rounded-[28px] border border-pink-100 bg-pink-50 p-4">

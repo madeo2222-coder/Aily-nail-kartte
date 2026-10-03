@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { getSafeCustomerAppReturnPath } from "@/lib/customerAppReturnPath";
 
 type MeResponse = {
   authenticated: boolean;
@@ -31,6 +32,10 @@ function CustomerAppLoginPageContent() {
     return searchParams.get("error") || "";
   }, [searchParams]);
 
+  const nextPath = useMemo(() => {
+    return getSafeCustomerAppReturnPath(searchParams.get("next"));
+  }, [searchParams]);
+
   useEffect(() => {
     async function fetchMe() {
       try {
@@ -41,7 +46,7 @@ function CustomerAppLoginPageContent() {
         const json = (await res.json()) as MeResponse;
 
         if (json.authenticated) {
-          router.replace("/customer-app");
+          router.replace(nextPath);
           return;
         }
 
@@ -56,7 +61,7 @@ function CustomerAppLoginPageContent() {
     }
 
     fetchMe();
-  }, [router]);
+  }, [nextPath, router]);
 
   useEffect(() => {
     if (queryError) {
@@ -66,8 +71,9 @@ function CustomerAppLoginPageContent() {
 
   function handleLineLogin() {
     setChecking(true);
-    window.location.href =
-      "/api/line-login/session?mode=start&next=/customer-app";
+    window.location.href = `/api/line-login/session?mode=start&next=${encodeURIComponent(
+      nextPath
+    )}`;
   }
 
   if (loading) {

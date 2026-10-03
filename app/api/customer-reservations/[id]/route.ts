@@ -409,6 +409,23 @@ export async function PATCH(
         throw new Error(error.message);
       }
 
+      const { error: alternativeRequestError } = await supabaseAdmin
+        .from("reservation_alternative_requests")
+        .update({
+          status: "superseded",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("reservation_id", id)
+        .eq("customer_id", customerId)
+        .in("status", ["pending", "sending", "sent", "failed"]);
+
+      if (alternativeRequestError) {
+        console.error(
+          "別日時入力依頼の取消状態を更新できませんでした:",
+          alternativeRequestError
+        );
+      }
+
       await sendAdminLineMessage(
         [
           "💅 予約希望が取り消されました",
@@ -684,6 +701,24 @@ export async function PATCH(
 
     if (updateError) {
       throw new Error(updateError.message);
+    }
+
+    const { error: alternativeRequestError } = await supabaseAdmin
+      .from("reservation_alternative_requests")
+      .update({
+        status: "responded",
+        responded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("reservation_id", id)
+      .eq("customer_id", customerId)
+      .in("status", ["pending", "sending", "sent", "failed"]);
+
+    if (alternativeRequestError) {
+      console.error(
+        "別日時入力依頼の回答状態を更新できませんでした:",
+        alternativeRequestError
+      );
     }
 
     await sendAdminLineMessage(
