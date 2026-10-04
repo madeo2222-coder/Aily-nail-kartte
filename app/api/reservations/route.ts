@@ -10,6 +10,28 @@ import {
   requireCustomerLineSession,
 } from "@/lib/server/requireCustomerLineSession";
 
+type ReservationWriteRow = {
+  outcome: string;
+  reservation_id: string | null;
+};
+
+function getReservationWriteRow(value: unknown): ReservationWriteRow | null {
+  const row = Array.isArray(value) ? value[0] : value;
+
+  if (!row || typeof row !== "object") return null;
+
+  const candidate = row as Record<string, unknown>;
+  if (
+    typeof candidate.outcome !== "string" ||
+    (candidate.reservation_id !== null &&
+      typeof candidate.reservation_id !== "string")
+  ) {
+    return null;
+  }
+
+  return candidate as ReservationWriteRow;
+}
+
 function formatDateTimeForMail(value: string) {
   const date = new Date(value);
 
@@ -316,28 +338,65 @@ export async function POST(request: NextRequest) {
     const customerName = customer.name || "お客様";
     const staffName = assignedStaff.name || "担当者名未設定";
 
-    const { data, error } = await supabase
-      .from("reservations")
-      .insert({
-      menu,
-      start_at: startIso,
-      end_at: endIso,
-      status: "requested",
-      memo,
-        staff_id: assignedStaffId,
-        customer_id: customer.id,
-        salon_id: salonId,
-      })
-      .select("id")
-      .single();
+    const { data: writeData, error } = await supabase.rpc(
+      "create_customer_requested_reservation",
+      {
+        p_salon_id: salonId,
+        p_customer_id: customer.id,
+        p_staff_id: assignedStaffId,
+        p_menu: menu,
+        p_start_at: startIso,
+        p_end_at: endIso,
+        p_memo: memo,
+      }
+    );
 
     if (error) {
-      console.error("customer reservation insert failed", error.code);
+      console.error("customer reservation RPC failed", error.code);
       return NextResponse.json(
         { ok: false, error: "予約保存に失敗しました" },
         { status: 500 }
       );
     }
+
+    const writeResult = getReservationWriteRow(writeData);
+
+    if (!writeResult) {
+      return NextResponse.json(
+        { ok: false, error: "予約保存結果を確認できませんでした" },
+        { status: 500 }
+      );
+    }
+
+    if (writeResult.outcome === "slot_unavailable") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "選択した時間の空き状況が変わりました。別の時間を選択してください",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (writeResult.outcome === "invalid_staff") {
+      return NextResponse.json(
+        { ok: false, error: "選択した担当者は現在予約できません" },
+        { status: 409 }
+      );
+    }
+
+    if (
+      writeResult.outcome !== "created" ||
+      !writeResult.reservation_id
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "予約内容を確認できませんでした" },
+        { status: 409 }
+      );
+    }
+
+    const reservationId = writeResult.reservation_id;
 
     try {
       await sendReservationNoticeMail({
@@ -355,7 +414,7 @@ export async function POST(request: NextRequest) {
 
     try {
       await sendReservationNoticeLine({
-        reservationId: String(data.id),
+        reservationId,
         customerName,
         menu,
         startIso,
@@ -370,7 +429,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      reservationId: data.id,
+      reservationId,
       assignedStaffId,
     });
   } catch (error) {

@@ -23,10 +23,15 @@ type SyncItem = {
 
 type SyncResult = {
   ok?: boolean;
+  partial?: boolean;
   error?: string;
   parsed?: unknown;
   result?: unknown;
   count?: number;
+  processedCount?: number;
+  syncedCount?: number;
+  skippedCount?: number;
+  failedCount?: number;
   results?: SyncItem[];
 };
 
@@ -54,7 +59,7 @@ export default function HpbMailSyncTestPage() {
     const items = result?.results || [];
 
     return {
-      total: result?.count || 0,
+      total: result?.processedCount ?? items.length,
       success: items.filter((item) => item.ok && !item.skipped).length,
       skipped: items.filter((item) => item.skipped).length,
       failed: items.filter((item) => item.ok === false).length,
@@ -116,6 +121,13 @@ export default function HpbMailSyncTestPage() {
 
       const json = (await response.json()) as SyncResult;
       setResult(json);
+
+      if (json.partial) {
+        alert(
+          `予約同期は一部失敗しました（成功 ${json.syncedCount || 0} 件・失敗 ${json.failedCount || 0} 件）。失敗内容を確認して再試行してください。`
+        );
+        return;
+      }
 
       if (!response.ok || !json.ok) {
         alert(json.error || "Gmail同期に失敗しました");
@@ -185,15 +197,25 @@ export default function HpbMailSyncTestPage() {
             className={`rounded-[28px] border p-5 shadow-sm ${
               result.ok
                 ? "border-emerald-100 bg-emerald-50"
+                : result.partial
+                  ? "border-amber-200 bg-amber-50"
                 : "border-red-100 bg-red-50"
             }`}
           >
             <div
               className={`text-sm font-bold ${
-                result.ok ? "text-emerald-700" : "text-red-700"
+                result.ok
+                  ? "text-emerald-700"
+                  : result.partial
+                    ? "text-amber-800"
+                    : "text-red-700"
               }`}
             >
-              {result.ok ? "同期成功" : "同期失敗"}
+              {result.ok
+                ? "同期成功"
+                : result.partial
+                  ? "一部のメールで同期失敗"
+                  : "同期失敗"}
             </div>
 
             {result.error ? (

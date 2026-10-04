@@ -4,6 +4,7 @@ import {
   appendExternalCancellationMemo,
   buildExternalCustomerId,
   buildExternalReservationId,
+  findExternalReservationCandidate,
   findManualReservationCandidate,
   isCancelledReservationStatus,
   type MailSyncSource,
@@ -534,17 +535,22 @@ async function findExistingExternalReservation(
   const { data, error } = await context.supabase
     .from("reservations")
     .select("id, salon_id, staff_id, memo, status")
-    .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`)
-    .maybeSingle();
+    .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`);
 
   if (error) throw new Error(error.message);
-  if (data?.salon_id && data.salon_id !== context.salonId) {
+  const existing = findExternalReservationCandidate({
+    candidates: (data || []) as ExistingReservation[],
+    source: parsed.source,
+    reservationNumber: parsed.reservationNumber,
+  });
+
+  if (existing?.salon_id && existing.salon_id !== context.salonId) {
     throw new Error(
       "同じ外部予約番号が別サロンにあります。誤更新を避けるため同期を停止しました。"
     );
   }
 
-  return (data || null) as ExistingReservation | null;
+  return existing;
 }
 
 async function findDelayedManualEntry(

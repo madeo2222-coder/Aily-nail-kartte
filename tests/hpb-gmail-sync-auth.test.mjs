@@ -33,9 +33,14 @@ function loadRoute({
   authenticationMode = "supabase",
   nodeEnv = "production",
   listPages = [{ messages: [] }],
+  syncFailures = [],
+  messageGetFailures = [],
+  messageGetDelayMs = 0,
 } = {}) {
   const authOptions = [];
   let oauthClientCount = 0;
+  let activeGmailGetCount = 0;
+  let maxGmailGetConcurrency = 0;
   const gmailListCalls = [];
   const syncedTexts = [];
   const exports = {};
@@ -90,22 +95,39 @@ function loadRoute({
                       return { data: page };
                     },
                     async get({ id }) {
-                      return {
-                        data: {
-                          payload: {
-                            mimeType: "text/plain",
-                            headers: [
-                              {
-                                name: "Subject",
-                                value: "HOT PEPPER Beauty 予約番号",
+                      activeGmailGetCount += 1;
+                      maxGmailGetConcurrency = Math.max(
+                        maxGmailGetConcurrency,
+                        activeGmailGetCount
+                      );
+                      try {
+                        if (messageGetDelayMs > 0) {
+                          await new Promise((resolve) =>
+                            setTimeout(resolve, messageGetDelayMs)
+                          );
+                        }
+                        if (messageGetFailures.includes(id)) {
+                          throw new Error(`get failed: ${id}`);
+                        }
+                        return {
+                          data: {
+                            payload: {
+                              mimeType: "text/plain",
+                              headers: [
+                                {
+                                  name: "Subject",
+                                  value: "HOT PEPPER Beauty 予約番号",
+                                },
+                              ],
+                              body: {
+                                data: Buffer.from(id).toString("base64url"),
                               },
-                            ],
-                            body: {
-                              data: Buffer.from(id).toString("base64url"),
                             },
                           },
-                        },
-                      };
+                        };
+                      } finally {
+                        activeGmailGetCount -= 1;
+                      }
                     },
                   },
                 },
@@ -135,18 +157,28 @@ function loadRoute({
         return {
           syncHpbMailText: async (text) => {
             syncedTexts.push(text);
-            return {};
+            if (syncFailures.includes(text)) {
+              throw new Error(`sync failed: ${text}`);
+            }
+            return {
+              parsed: { source: "hpb" },
+              result: { mode: "updated" },
+            };
           },
         };
       }
       if (name === "@/lib/hpb-gmail-sync-summary") {
         return {
           summarizeGmailSyncResults(results) {
+            const skippedCount = results.filter((result) => result.skipped).length;
+            const syncedCount = results.filter(
+              (result) => !result.skipped && result.ok
+            ).length;
             return {
               processedCount: results.length,
-              syncedCount: 0,
-              skippedCount: 0,
-              failedCount: 0,
+              syncedCount,
+              skippedCount,
+              failedCount: results.length - skippedCount - syncedCount,
             };
           },
         };
@@ -169,6 +201,9 @@ function loadRoute({
     },
     get oauthClientCount() {
       return oauthClientCount;
+    },
+    get maxGmailGetConcurrency() {
+      return maxGmailGetConcurrency;
     },
   };
 }
@@ -247,4 +282,87 @@ test("Gmail sync follows every result page and processes oldest mail first", asy
   assert.equal(runtime.gmailListCalls[0].pageToken, undefined);
   assert.equal(runtime.gmailListCalls[1].pageToken, "page-2");
   assert.deepEqual(runtime.syncedTexts, ["older-message", "newer-message"]);
+});
+
+test("Gmail sync bounds concurrent message fetches while preserving sync order", async () => {
+  const listedIds = Array.from({ length: 12 }, (_, index) => `message-${index}`);
+  const runtime = loadRoute({
+    listPages: [{ messages: listedIds.map((id) => ({ id })) }],
+    messageGetDelayMs: 5,
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.equal(runtime.maxGmailGetConcurrency, 5);
+  assert.deepEqual(runtime.syncedTexts, listedIds.toReversed());
+});
+
+test("Gmail sync reports partial failure instead of a false all-success", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [{ id: "newer-failed" }, { id: "older-succeeded" }],
+      },
+    ],
+    syncFailures: ["newer-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 207);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, true);
+  assert.equal(body.processedCount, 2);
+  assert.equal(body.syncedCount, 1);
+  assert.equal(body.failedCount, 1);
+  assert.match(body.error, /1件の予約メールを同期できませんでした/);
+  assert.deepEqual(runtime.syncedTexts, ["older-succeeded", "newer-failed"]);
+});
+
+test("Gmail sync keeps successful reservations when one message body cannot be fetched", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [{ id: "newer-fetch-failed" }, { id: "older-succeeded" }],
+      },
+    ],
+    messageGetFailures: ["newer-fetch-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 207);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, true);
+  assert.equal(body.processedCount, 2);
+  assert.equal(body.syncedCount, 1);
+  assert.equal(body.failedCount, 1);
+  assert.equal(body.results[1].messageId, "newer-fetch-failed");
+  assert.match(body.results[1].error, /Gmail本文の取得に失敗しました/);
+  assert.deepEqual(runtime.syncedTexts, ["older-succeeded"]);
+});
+
+test("Gmail sync reports a gateway failure when no message body can be fetched", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [{ id: "fetch-failed" }],
+      },
+    ],
+    messageGetFailures: ["fetch-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, false);
+  assert.equal(body.processedCount, 1);
+  assert.equal(body.syncedCount, 0);
+  assert.equal(body.failedCount, 1);
+  assert.deepEqual(runtime.syncedTexts, []);
 });

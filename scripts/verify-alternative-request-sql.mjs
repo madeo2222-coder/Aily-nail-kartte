@@ -6,6 +6,7 @@ const { PGlite } = await import(process.env.AILY_PGLITE_MODULE || '@electric-sql
 const root = fileURLToPath(new URL('../', import.meta.url));
 const inspection = await readFile(`${root}/scripts/sql/aily-alternative-request-preflight.sql`, 'utf8');
 const migration = await readFile(`${root}/supabase/migrations/20261003120111_reservation_alternative_requests.sql`, 'utf8');
+const reservationWriteMigration = await readFile(`${root}/supabase/migrations/20261004030707_prevent_customer_reservation_races.sql`, 'utf8');
 const db = new PGlite();
 const inspect = async () => (await db.exec(inspection)).find(r => r.fields?.some(f => f.name === 'check_name')).rows;
 let checks = await inspect();
@@ -17,31 +18,77 @@ CREATE ROLE anon;
 CREATE ROLE authenticated;
 CREATE ROLE service_role BYPASSRLS;
 CREATE TABLE public.salons(id uuid PRIMARY KEY);
-CREATE TABLE public.customers(id uuid PRIMARY KEY);
-CREATE TABLE public.staffs(id uuid PRIMARY KEY, salon_id uuid, is_active boolean, role text);
-CREATE TABLE public.reservations(id uuid PRIMARY KEY, customer_id uuid, salon_id uuid, status text);
+CREATE TABLE public.customers(id uuid PRIMARY KEY, salon_id uuid);
+CREATE TABLE public.staffs(
+  id uuid PRIMARY KEY,
+  salon_id uuid,
+  is_active boolean,
+  role text,
+  customer_booking_enabled boolean
+);
+CREATE TABLE public.reservations(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id uuid,
+  salon_id uuid,
+  staff_id uuid,
+  status text,
+  menu text,
+  memo text,
+  source text,
+  start_at timestamptz,
+  end_at timestamptz
+);
+CREATE TABLE public.external_calendar_blocks(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  salon_id uuid,
+  staff_id uuid,
+  start_at timestamptz,
+  end_at timestamptz
+);
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO service_role;
 `);
 checks = await inspect();
 assert.equal(checks.find(r => r.check_name === 'service_role_lock:staffs').result, 'FAIL');
 assert.equal(checks.find(r => r.check_name === 'service_role_lock:reservations').result, 'FAIL');
-await db.exec('GRANT UPDATE ON public.staffs, public.reservations TO service_role;');
+await db.exec(`
+GRANT INSERT, UPDATE ON public.reservations TO service_role;
+GRANT UPDATE ON public.staffs, public.customers, public.external_calendar_blocks TO service_role;
+`);
 checks = await inspect();
 assert.ok(checks.filter(r => r.section === 'prerequisite').every(r => r.result === 'PASS'));
 assert.ok(checks.filter(r => r.section !== 'prerequisite').every(r => r.result === 'MISSING'));
 console.log('PASS: prerequisite-only schema identified as an initial migration candidate');
 
 await db.exec(migration);
+await db.exec(reservationWriteMigration);
 checks = await inspect();
 assert.deepEqual(checks.filter(r => !['PASS', 'PRESENT'].includes(r.result)), []);
 console.log(`PASS: migrated schema passes all ${checks.length} catalog checks`);
 
 await db.exec(`
 INSERT INTO public.salons VALUES ('00000000-0000-0000-0000-000000000001');
-INSERT INTO public.customers VALUES ('00000000-0000-0000-0000-000000000002');
-INSERT INTO public.staffs VALUES ('00000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000001', true, 'staff');
-INSERT INTO public.reservations VALUES ('00000000-0000-0000-0000-000000000004', '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'requested');
+INSERT INTO public.customers(id, salon_id) VALUES (
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000001'
+);
+INSERT INTO public.staffs(id, salon_id, is_active, role, customer_booking_enabled) VALUES (
+  '00000000-0000-0000-0000-000000000003',
+  '00000000-0000-0000-0000-000000000001',
+  true,
+  'staff',
+  true
+);
+INSERT INTO public.reservations(id, customer_id, salon_id, staff_id, status, menu, start_at, end_at) VALUES (
+  '00000000-0000-0000-0000-000000000004',
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000003',
+  'requested',
+  'test',
+  '2026-10-10T01:00:00Z',
+  '2026-10-10T02:00:00Z'
+);
 SET ROLE service_role;
 `);
 const claim = async (message = 'original request') => (await db.query(`

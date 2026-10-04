@@ -23,6 +23,7 @@ type GmailMessageReference = {
 const GMAIL_PAGE_SIZE = 100;
 const GMAIL_MESSAGE_LIMIT = 500;
 const GMAIL_PAGE_LIMIT = 10;
+const GMAIL_MESSAGE_FETCH_CONCURRENCY = 5;
 const RESERVATION_MAIL_QUERY =
   'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ミニモサロンツール" OR "予約ID")';
 
@@ -116,6 +117,97 @@ async function listReservationMessages(
   );
 }
 
+type FetchedGmailMessage =
+  | {
+      ok: true;
+      messageId: string;
+      subject: string;
+      bodyText: string;
+    }
+  | {
+      ok: false;
+      messageId: string;
+      error: string;
+    };
+
+async function fetchReservationMessages(
+  messages: GmailMessageReference[],
+  getMessage: (parameters: {
+    userId: string;
+    id: string;
+    format: "full";
+  }) => Promise<{
+    data: {
+      payload?: (GmailMessagePart & {
+        headers?: Array<{
+          name?: string | null;
+          value?: string | null;
+        }> | null;
+      }) | null;
+    };
+  }>
+) {
+  const fetchedMessages: FetchedGmailMessage[] = [];
+
+  for (
+    let offset = 0;
+    offset < messages.length;
+    offset += GMAIL_MESSAGE_FETCH_CONCURRENCY
+  ) {
+    const batch = messages.slice(
+      offset,
+      offset + GMAIL_MESSAGE_FETCH_CONCURRENCY
+    );
+    const batchResults = await Promise.all(
+      batch.map(async (message): Promise<FetchedGmailMessage> => {
+        const messageId = message.id;
+        if (!messageId) {
+          return {
+            ok: false,
+            messageId: "unknown",
+            error: "GmailメッセージIDを取得できませんでした",
+          };
+        }
+
+        try {
+          const messageResponse = await getMessage({
+            userId: "me",
+            id: messageId,
+            format: "full",
+          });
+          const subject =
+            messageResponse.data.payload?.headers?.find(
+              (header) => header.name?.toLowerCase() === "subject"
+            )?.value || "";
+          const bodyText = extractPlainText(
+            messageResponse.data.payload
+          ).trim();
+
+          return {
+            ok: true,
+            messageId,
+            subject,
+            bodyText,
+          };
+        } catch (error) {
+          return {
+            ok: false,
+            messageId,
+            error:
+              error instanceof Error
+                ? `Gmail本文の取得に失敗しました: ${error.message}`
+                : "Gmail本文の取得に失敗しました",
+          };
+        }
+      })
+    );
+
+    fetchedMessages.push(...batchResults);
+  }
+
+  return fetchedMessages;
+}
+
 async function runHpbGmailSync() {
   const clientId = process.env.GOOGLE_GMAIL_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_GMAIL_CLIENT_SECRET;
@@ -151,27 +243,29 @@ async function runHpbGmailSync() {
   const messages = await listReservationMessages((parameters) =>
     gmail.users.messages.list(parameters)
   );
+  const fetchedMessages = await fetchReservationMessages(
+    messages,
+    (parameters) => gmail.users.messages.get(parameters)
+  );
   const results = [];
 
-  for (const message of messages) {
-    if (!message.id) continue;
+  for (const message of fetchedMessages) {
+    if (!message.ok) {
+      results.push({
+        messageId: message.messageId,
+        subject: "",
+        skipped: false,
+        ok: false,
+        error: message.error,
+      });
+      continue;
+    }
 
-    const messageResponse = await gmail.users.messages.get({
-      userId: "me",
-      id: message.id,
-      format: "full",
-    });
-
-    const subject =
-      messageResponse.data.payload?.headers?.find(
-        (header) => header.name?.toLowerCase() === "subject"
-      )?.value || "";
-
-    const bodyText = extractPlainText(messageResponse.data.payload).trim();
+    const { messageId, subject, bodyText } = message;
 
     if (!isTargetReservationMail(subject, bodyText)) {
       results.push({
-        messageId: message.id,
+        messageId,
         subject,
         skipped: true,
         reason: "HPB/ミニモ予約メールではありません",
@@ -183,7 +277,7 @@ async function runHpbGmailSync() {
       const synced = await syncHpbMailText(bodyText);
 
       results.push({
-        messageId: message.id,
+        messageId,
         subject,
         skipped: false,
         ok: true,
@@ -192,7 +286,7 @@ async function runHpbGmailSync() {
       });
     } catch (error) {
       results.push({
-        messageId: message.id,
+        messageId,
         subject,
         skipped: false,
         ok: false,
@@ -206,12 +300,24 @@ async function runHpbGmailSync() {
 
   const summary = summarizeGmailSyncResults(results);
 
-  return NextResponse.json({
-    ok: true,
-    count: summary.syncedCount,
-    ...summary,
-    results,
-  });
+  const hasFailures = summary.failedCount > 0;
+  const partial = hasFailures && summary.syncedCount > 0;
+
+  return NextResponse.json(
+    {
+      ok: !hasFailures,
+      partial,
+      count: summary.syncedCount,
+      ...summary,
+      ...(hasFailures
+        ? {
+            error: `${summary.failedCount}件の予約メールを同期できませんでした。成功分は反映済みです。失敗内容を確認して再試行してください。`,
+          }
+        : {}),
+      results,
+    },
+    { status: hasFailures ? (partial ? 207 : 502) : 200 }
+  );
 }
 
 export async function GET(request: Request) {

@@ -47,6 +47,59 @@ test("external reservation and customer IDs are stable and namespaced", () => {
   );
 });
 
+test("external reservation lookup requires an exact memo line", () => {
+  const result = reconciliation.findExternalReservationCandidate({
+    source: "hpb",
+    reservationNumber: "A123456",
+    candidates: [
+      {
+        id: "longer-prefix",
+        memo: "HPB予約番号：A1234567\n別の予約",
+      },
+      {
+        id: "exact",
+        memo: "既存メモ\r\n HPB予約番号：A123456 \r\nメール本文",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "exact");
+});
+
+test("external reservation lookup treats minimo pattern characters literally", () => {
+  const result = reconciliation.findExternalReservationCandidate({
+    source: "minimo",
+    reservationNumber: "AB_12%34",
+    candidates: [
+      {
+        id: "similar",
+        memo: "ミニモ予約ID：ABX12Y34",
+      },
+      {
+        id: "exact",
+        memo: "ミニモ予約ID：AB_12%34",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "exact");
+});
+
+test("duplicate exact external reservation keys stop before an update", () => {
+  assert.throws(
+    () =>
+      reconciliation.findExternalReservationCandidate({
+        source: "hpb",
+        reservationNumber: "A123456",
+        candidates: [
+          { id: "first", memo: "HPB予約番号：A123456" },
+          { id: "second", memo: "HPB予約番号：A123456" },
+        ],
+      }),
+    /同期を停止/
+  );
+});
+
 test("delayed mail sync adopts one matching manual external reservation", () => {
   const result = reconciliation.findManualReservationCandidate({
     source: "hpb",

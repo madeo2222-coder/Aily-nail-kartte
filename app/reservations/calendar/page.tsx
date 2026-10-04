@@ -617,6 +617,14 @@ export default function ReservationsCalendarPage() {
 
       const json = await response.json();
 
+      if (json.partial) {
+        await fetchCalendarData();
+        alert(
+          `予約同期は一部失敗しました。成功 ${json.syncedCount ?? json.count ?? 0}件・失敗 ${json.failedCount ?? 0}件です。失敗内容を予約同期センターで確認し、再試行してください。`
+        );
+        return;
+      }
+
       if (!response.ok || !json.ok) {
         throw new Error(json.error || "同期に失敗しました");
       }

@@ -7,19 +7,37 @@ with expected_columns(table_name, column_name, type_name) as (
     ('reservations', 'id', 'uuid'),
     ('reservations', 'customer_id', 'uuid'),
     ('reservations', 'salon_id', 'uuid'),
+    ('reservations', 'staff_id', 'uuid'),
     ('reservations', 'status', 'text'),
+    ('reservations', 'menu', 'text'),
+    ('reservations', 'memo', 'text'),
+    ('reservations', 'source', 'text'),
+    ('reservations', 'start_at', 'timestamp with time zone'),
+    ('reservations', 'end_at', 'timestamp with time zone'),
     ('customers', 'id', 'uuid'),
+    ('customers', 'salon_id', 'uuid'),
     ('salons', 'id', 'uuid'),
     ('staffs', 'id', 'uuid'),
     ('staffs', 'salon_id', 'uuid'),
     ('staffs', 'is_active', 'boolean'),
-    ('staffs', 'role', 'text')
+    ('staffs', 'role', 'text'),
+    ('staffs', 'customer_booking_enabled', 'boolean'),
+    ('external_calendar_blocks', 'salon_id', 'uuid'),
+    ('external_calendar_blocks', 'staff_id', 'uuid'),
+    ('external_calendar_blocks', 'start_at', 'timestamp with time zone'),
+    ('external_calendar_blocks', 'end_at', 'timestamp with time zone')
 ), expected_functions(signature, body_md5) as (
   values
     ('public.claim_reservation_alternative_request(uuid,uuid,uuid,uuid,text)',
      '0301e15efaeca6d0b92e6d6a539272c8'),
     ('public.complete_reservation_alternative_request(uuid,integer,text,text)',
-     'd0e138f41c78ae3d1ebd624f6f75054a')
+     'd0e138f41c78ae3d1ebd624f6f75054a'),
+    ('public.create_customer_requested_reservation(uuid,uuid,uuid,text,timestamptz,timestamptz,text)',
+     '5e032814d92a8af9774d760635ef65d6'),
+    ('public.update_customer_requested_reservation(uuid,uuid,timestamptz,timestamptz,uuid,text,timestamptz,timestamptz,text)',
+     '41ab2820e8a72f07f1753c19a6dec240'),
+    ('public.cancel_customer_requested_reservation(uuid,uuid)',
+     '409661997250888f05fe96d48923690c')
 ), functions as (
   select e.*, p.oid, p.prosrc, p.prosecdef, p.proconfig, p.proacl, p.proowner
   from expected_functions e
@@ -57,11 +75,23 @@ with expected_columns(table_name, column_name, type_name) as (
   union all
   select 'prerequisite', 'service_role_lock:' || t.table_name,
     case when r.oid is null or to_regclass('public.' || t.table_name) is null then 'MISSING'
-      when has_table_privilege(r.oid, to_regclass('public.' || t.table_name), 'SELECT')
-        and has_table_privilege(r.oid, to_regclass('public.' || t.table_name), 'UPDATE')
+      when has_table_privilege(
+        r.oid, to_regclass('public.' || t.table_name), 'SELECT'
+      )
+        and (not t.needs_insert or has_table_privilege(
+          r.oid, to_regclass('public.' || t.table_name), 'INSERT'
+        ))
+        and (not t.needs_update or has_table_privilege(
+          r.oid, to_regclass('public.' || t.table_name), 'UPDATE'
+        ))
         then 'PASS' else 'FAIL' end,
-    'SELECT plus UPDATE required by FOR SHARE / FOR UPDATE'
-  from (values ('reservations'), ('staffs')) t(table_name)
+    t.detail
+  from (values
+    ('reservations', true, true, 'SELECT/INSERT/UPDATE required'),
+    ('staffs', false, true, 'SELECT plus UPDATE required by FOR SHARE'),
+    ('customers', false, true, 'SELECT plus UPDATE required by FOR SHARE'),
+    ('external_calendar_blocks', false, true, 'SELECT plus UPDATE required by table lock')
+  ) t(table_name, needs_insert, needs_update, detail)
   cross join roles r where r.name = 'service_role'
   union all
   select 'ledger', 'table',

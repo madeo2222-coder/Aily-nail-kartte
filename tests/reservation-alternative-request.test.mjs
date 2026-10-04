@@ -382,6 +382,13 @@ test("migration protects the delivery ledger and customer updates close its stat
     new URL("../app/api/customer-reservations/[id]/route.ts", import.meta.url),
     "utf8"
   );
+  const reservationWriteMigration = readFileSync(
+    new URL(
+      "../supabase/migrations/20261004030707_prevent_customer_reservation_races.sql",
+      import.meta.url
+    ),
+    "utf8"
+  );
 
   assert.match(
     migration,
@@ -404,23 +411,50 @@ test("migration protects the delivery ledger and customer updates close its stat
     migration,
     /v_current_status in \('responded', 'superseded'\)/
   );
-  assert.match(customerRoute, /status: "responded"/);
-  assert.match(customerRoute, /status: "superseded"/);
-  assert.equal(
-    customerRoute.match(
-      /\.in\("status", \["pending", "sending", "sent", "failed"\]\)/g
-    )?.length,
-    2
-  );
-  assert.equal(
-    customerRoute.match(
-      /\.in\("status", REQUESTED_RESERVATION_STATUSES\)[\s\S]*?\.select\("id"\)[\s\S]*?\.maybeSingle\(\)/g
-    )?.length,
-    2,
-    "customer update and cancel must only write while the reservation is still requested"
+  assert.match(
+    customerRoute,
+    /rpc\(\s*"update_customer_requested_reservation"/
   );
   assert.match(
     customerRoute,
+    /rpc\(\s*"cancel_customer_requested_reservation"/
+  );
+  assert.match(customerRoute, /p_expected_start_at: previousStartAt \|\| null/);
+  assert.doesNotMatch(customerRoute, /status: "superseded"/);
+  assert.match(
+    customerRoute,
     /予約状態が更新されています。最新の内容を読み込み直してください/
+  );
+  assert.match(
+    reservationWriteMigration,
+    /lock table public\.reservations in share row exclusive mode/i
+  );
+  assert.match(
+    reservationWriteMigration,
+    /create function public\.update_customer_requested_reservation/i
+  );
+  assert.match(
+    reservationWriteMigration,
+    /create function public\.cancel_customer_requested_reservation/i
+  );
+  assert.match(
+    reservationWriteMigration,
+    /reservation\.start_at is not distinct from p_expected_start_at/i
+  );
+  assert.match(
+    reservationWriteMigration,
+    /request\.status in \('pending', 'sending', 'sent', 'failed'\)/i
+  );
+  assert.match(
+    reservationWriteMigration,
+    /grant execute on function public\.update_customer_requested_reservation[\s\S]*to service_role/i
+  );
+  assert.match(
+    reservationWriteMigration,
+    /cancel_customer_requested_reservation[\s\S]*request\.status in \('pending', 'sending', 'sent', 'failed'\)[\s\S]*return query select 'cancelled'/i
+  );
+  assert.match(
+    reservationWriteMigration,
+    /grant execute on function public\.cancel_customer_requested_reservation[\s\S]*to service_role/i
   );
 });

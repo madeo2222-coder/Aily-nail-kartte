@@ -20,12 +20,27 @@ type UpdateRequestBody = {
   requestMessage?: string;
 };
 
-const REQUESTED_RESERVATION_STATUSES = [
-  "requested",
-  "予約申請中",
-  "予約受付",
-  "予約",
-];
+type ReservationWriteRow = {
+  outcome: string;
+  reservation_id: string | null;
+};
+
+function getReservationWriteRow(value: unknown): ReservationWriteRow | null {
+  const row = Array.isArray(value) ? value[0] : value;
+
+  if (!row || typeof row !== "object") return null;
+
+  const candidate = row as Record<string, unknown>;
+  if (
+    typeof candidate.outcome !== "string" ||
+    (candidate.reservation_id !== null &&
+      typeof candidate.reservation_id !== "string")
+  ) {
+    return null;
+  }
+
+  return candidate as ReservationWriteRow;
+}
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -404,22 +419,28 @@ export async function PATCH(
         );
       }
 
-      const { data: cancelledReservation, error } = await supabaseAdmin
-        .from("reservations")
-        .update({
-          status: "cancelled",
-        })
-        .eq("id", id)
-        .eq("customer_id", customerId)
-        .in("status", REQUESTED_RESERVATION_STATUSES)
-        .select("id")
-        .maybeSingle();
+      const { data: cancelData, error } = await supabaseAdmin.rpc(
+        "cancel_customer_requested_reservation",
+        {
+          p_reservation_id: id,
+          p_customer_id: customerId,
+        }
+      );
 
       if (error) {
         throw new Error(error.message);
       }
 
-      if (!cancelledReservation) {
+      const cancelResult = getReservationWriteRow(cancelData);
+
+      if (!cancelResult) {
+        throw new Error("予約取消結果を確認できませんでした");
+      }
+
+      if (
+        cancelResult.outcome === "stale" ||
+        cancelResult.outcome === "not_found"
+      ) {
         return NextResponse.json(
           {
             ok: false,
@@ -430,20 +451,13 @@ export async function PATCH(
         );
       }
 
-      const { error: alternativeRequestError } = await supabaseAdmin
-        .from("reservation_alternative_requests")
-        .update({
-          status: "superseded",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("reservation_id", id)
-        .eq("customer_id", customerId)
-        .in("status", ["pending", "sending", "sent", "failed"]);
-
-      if (alternativeRequestError) {
-        console.error(
-          "別日時入力依頼の取消状態を更新できませんでした:",
-          alternativeRequestError
+      if (
+        cancelResult.outcome !== "cancelled" ||
+        cancelResult.reservation_id !== id
+      ) {
+        return NextResponse.json(
+          { ok: false, error: "予約取消結果を確認できませんでした" },
+          { status: 409 }
         );
       }
 
@@ -698,36 +712,35 @@ export async function PATCH(
     const previousMenu =
       getString(reservation, ["menu", "menu_name"]) || "未設定";
 
-    const updatePayload: {
-      start_at: string;
-      end_at: string;
-      menu: string;
-      memo: string;
-      source: string;
-      staff_id?: string | null;
-    } = {
-      start_at: startIso,
-      end_at: endIso,
-      menu,
-      memo,
-      source: "customer-app",
-      staff_id: staffId || null,
-    };
-
-    const { data: updatedReservation, error: updateError } = await supabaseAdmin
-      .from("reservations")
-      .update(updatePayload)
-      .eq("id", id)
-      .eq("customer_id", customerId)
-      .in("status", REQUESTED_RESERVATION_STATUSES)
-      .select("id")
-      .maybeSingle();
+    const { data: writeData, error: updateError } = await supabaseAdmin.rpc(
+      "update_customer_requested_reservation",
+      {
+        p_reservation_id: id,
+        p_customer_id: customerId,
+        p_expected_start_at: previousStartAt || null,
+        p_expected_end_at: getString(reservation, ["end_at"]) || null,
+        p_staff_id: staffId || null,
+        p_menu: menu,
+        p_start_at: startIso,
+        p_end_at: endIso,
+        p_memo: memo,
+      }
+    );
 
     if (updateError) {
       throw new Error(updateError.message);
     }
 
-    if (!updatedReservation) {
+    const writeResult = getReservationWriteRow(writeData);
+
+    if (!writeResult) {
+      throw new Error("予約更新結果を確認できませんでした");
+    }
+
+    if (
+      writeResult.outcome === "stale" ||
+      writeResult.outcome === "not_found"
+    ) {
       return NextResponse.json(
         {
           ok: false,
@@ -738,21 +751,29 @@ export async function PATCH(
       );
     }
 
-    const { error: alternativeRequestError } = await supabaseAdmin
-      .from("reservation_alternative_requests")
-      .update({
-        status: "responded",
-        responded_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("reservation_id", id)
-      .eq("customer_id", customerId)
-      .in("status", ["pending", "sending", "sent", "failed"]);
+    if (writeResult.outcome === "slot_unavailable") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: staffId
+            ? "選択した担当者はその時間帯に既に予約があります"
+            : "その時間帯には既に予約があります",
+        },
+        { status: 409 }
+      );
+    }
 
-    if (alternativeRequestError) {
-      console.error(
-        "別日時入力依頼の回答状態を更新できませんでした:",
-        alternativeRequestError
+    if (writeResult.outcome === "invalid_staff") {
+      return NextResponse.json(
+        { ok: false, error: "選択した担当者は現在予約できません" },
+        { status: 409 }
+      );
+    }
+
+    if (writeResult.outcome !== "updated" || !writeResult.reservation_id) {
+      return NextResponse.json(
+        { ok: false, error: "予約内容を確認できませんでした" },
+        { status: 409 }
       );
     }
 

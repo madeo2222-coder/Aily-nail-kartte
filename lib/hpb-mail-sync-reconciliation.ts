@@ -10,6 +10,10 @@ export type ManualReservationCandidate = {
   status: string | null;
 };
 
+type ExternalReservationCandidate = {
+  memo: string | null;
+};
+
 const CANCELLED_STATUSES = new Set([
   "cancelled",
   "canceled",
@@ -98,6 +102,34 @@ export function buildExternalCustomerId(
   reservationNumber: string
 ) {
   return buildDeterministicId("customer", source, reservationNumber);
+}
+
+export function findExternalReservationCandidate<
+  Candidate extends ExternalReservationCandidate,
+>({
+  candidates,
+  source,
+  reservationNumber,
+}: {
+  candidates: Candidate[];
+  source: MailSyncSource;
+  reservationNumber: string;
+}): Candidate | null {
+  const reservationKey = source === "minimo" ? "ミニモ予約ID" : "HPB予約番号";
+  const expectedLine = `${reservationKey}：${reservationNumber.trim()}`;
+  const matches = candidates.filter((candidate) =>
+    String(candidate.memo || "")
+      .split(/\r?\n/)
+      .some((line) => line.trim() === expectedLine)
+  );
+
+  if (matches.length > 1) {
+    throw new Error(
+      "同じ外部予約番号が複数の予約にあります。誤更新を避けるため同期を停止しました。"
+    );
+  }
+
+  return matches[0] || null;
 }
 
 export function findManualReservationCandidate({
