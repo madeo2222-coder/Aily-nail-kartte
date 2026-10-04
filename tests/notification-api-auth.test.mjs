@@ -21,6 +21,11 @@ const routes = [
     name: "reservation confirmation LINE",
     path: "send-reservation-confirmed-line",
     methods: ["POST"],
+    authOptions: {
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: false,
+      salonContextRequired: true,
+    },
   },
   {
     name: "reservation reminder LINE",
@@ -162,11 +167,14 @@ for (const route of routes) {
       assert.equal(result.externalFetchCalled, false);
       assert.equal(result.requestRead, false);
       assert.equal(result.resendCreated, false);
-      assert.deepEqual(JSON.parse(JSON.stringify(result.authOptions)), {
-        allowedRoles: ["owner", "staff"],
-        legacyAllowed: true,
-        salonContextRequired: false,
-      });
+      assert.deepEqual(
+        JSON.parse(JSON.stringify(result.authOptions)),
+        route.authOptions || {
+          allowedRoles: ["owner", "staff"],
+          legacyAllowed: true,
+          salonContextRequired: false,
+        }
+      );
     });
   }
 }

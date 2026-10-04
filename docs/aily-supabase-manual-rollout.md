@@ -1,11 +1,13 @@
-# Aily：別日時入力LINE機能のDB確認・手動適用
+# Aily：予約フローDBの確認・手動適用
 
 この手順は `madeo2222-coder/Aily-nail-kartte` 専用です。Supabaseはオーナーが手動管理します。コネクタ接続は必要条件にしません。
 
 ## 今、実行できる確認
 
 1. Supabase Dashboardで **Ailyのプロジェクト**を選びます。VercelのAilyに設定済みのSupabase URLに含まれるプロジェクトIDと照合してください。値や鍵をチャットに貼る必要はありません。他事業のプロジェクトでは実行しません。
-2. SQL EditorでNew Queryを開き、`scripts/sql/aily-alternative-request-preflight.sql` 全体を貼ってRunします。このSQLは読取専用で、テーブル定義・権限・関数の状態だけを確認します。顧客情報を読み出したりLINEを送ったりしません。
+2. SQL EditorでNew Queryを開き、次の2ファイルを別々のQueryとして順にRunします。どちらも読取専用で、テーブル定義・権限・関数の状態だけを確認します。顧客情報を読み出したりLINEを送ったりしません。
+   - `scripts/sql/aily-alternative-request-preflight.sql`
+   - `scripts/sql/aily-confirmation-delivery-preflight.sql`
 3. 結果の `section / check_name / result / detail` を保存してください。
 
 | 結果 | 次の工程 |
@@ -14,11 +16,18 @@
 | prerequisiteがすべてPASS、ledgerのtableがPRESENT、ほかがすべてPASS | 今回確認した定義・権限は一致。migrationを再実行せず、画面・API検証に進みます。 |
 | 一部だけMISSING、REVIEW、FAIL | 結果を照合して個別修正を用意します。既存オブジェクトを削除・上書きしません。 |
 
-この検査は適用履歴の証明や全スキーマの一致を保証するものではありません。確認対象は必須の元テーブル列・参照キー、台帳の存在・RLS・権限、通知RPC本文・実行設定・権限です。Aily実DBの適用状況は、結果が届くまで「未確認」と扱います。
+この検査は適用履歴の証明や全スキーマの一致を保証するものではありません。確認対象は必須の元テーブル列・参照キー、台帳の存在・RLS・テーブル/列権限、通知RPC本文・`SECURITY INVOKER`・固定`search_path`・実行権限です。Aily実DBの適用状況は、結果が届くまで「未確認」と扱います。
 
 ## 承認後の新規適用
 
-対象は `supabase/migrations/20261003120111_reservation_alternative_requests.sql` です。予約ごとに通知の状態・再試行キーを保持する台帳と2つのRPCを追加します。既存予約・顧客の一括更新はありません。
+適用候補は次の順序です。読取確認で既に存在すると判明した対象は再実行しません。既存予約・顧客の一括更新はありません。
+
+1. `supabase/migrations/20261003120111_reservation_alternative_requests.sql`
+2. `supabase/migrations/20261004030707_prevent_customer_reservation_races.sql`
+3. `supabase/migrations/20261004055916_prevent_staff_confirmation_races.sql`
+4. `supabase/migrations/20261004070432_reservation_confirmation_deliveries.sql`
+
+最後のmigrationは、予約確定LINEの送信状態と同じ再試行キーを保持する台帳・2つのRPCを追加します。送信失敗後の安全な再試行と、送信済み通知の重複防止に使います。
 
 本番DB migrationの承認は、通常の開発承認とは別です。初回確認が新規適用候補になった場合に、実行対象・影響・検証結果を提示して承認を得てください。
 
@@ -33,6 +42,8 @@
 
 - 申請中の予約から別日時入力の通知を実行し、テストLINEに届くこと。
 - 通知を再操作しても同一依頼が二重に届かないこと。
+- 予約確定LINEを送信済みの状態で「確定LINEを再試行」を押しても二重に届かないこと。
+- 予約確定LINEの一時的な送信失敗後、同じ再試行キーで再試行できること。
 - URLからLINE本人認証を経て対象予約へ戻れ、別顧客の予約を変更できないこと。
 - 希望日時を更新すると申請中として保存され、重複枠は拒否されること。
 - 送信失敗の表示・再試行はローカルのLINE応答モックで検証します。実環境のtoken・secretを故意に変更して失敗を起こしません。
@@ -47,6 +58,6 @@
 
 ## 開発側のローカルSQL検証
 
-`scripts/verify-alternative-request-sql.mjs` はPGlite 0.5.8のメモリ内PostgreSQLを使い、実際のmigration・確認SQL・RPCを実行します。Ailyの実DBには接続しません。未作成／元テーブルのみ／適用後、権限不足、古い関数本文、送信失敗後の再試行、回答との前後関係を検証します。SupabaseのData API・RLS設定全体や実LINE送信の検証とは区別します。
+`scripts/verify-alternative-request-sql.mjs` と `scripts/verify-staff-reservation-confirmation-sql.mjs` はPGlite 0.5.8のメモリ内PostgreSQLを使い、実際のmigration・確認SQL・RPCを実行します。Ailyの実DBには接続しません。権限不足、予約競合、古い更新、送信失敗後の同一キー再試行、送信済み通知の重複防止を検証します。SupabaseのData API・RLS設定全体や実LINE送信の検証とは区別します。
 
 PGliteはアプリの依存関係に追加せず、任意の一時フォルダへ `@electric-sql/pglite@0.5.8` をインストールしてください。`AILY_PGLITE_MODULE` にその `dist/index.js` の絶対パスを指定して `node scripts/verify-alternative-request-sql.mjs` を実行できます。

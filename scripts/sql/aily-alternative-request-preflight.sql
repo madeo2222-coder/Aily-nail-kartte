@@ -37,7 +37,9 @@ with expected_columns(table_name, column_name, type_name) as (
     ('public.update_customer_requested_reservation(uuid,uuid,timestamptz,timestamptz,uuid,text,timestamptz,timestamptz,text)',
      '41ab2820e8a72f07f1753c19a6dec240'),
     ('public.cancel_customer_requested_reservation(uuid,uuid)',
-     '409661997250888f05fe96d48923690c')
+     '409661997250888f05fe96d48923690c'),
+    ('public.confirm_staff_reservation(uuid,uuid,timestamptz,timestamptz,uuid,uuid,text,timestamptz,timestamptz,text)',
+     '79221876da45853ce960dd6fa5409292')
 ), functions as (
   select e.*, p.oid, p.prosrc, p.prosecdef, p.proconfig, p.proacl, p.proowner
   from expected_functions e

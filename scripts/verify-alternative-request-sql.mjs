@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const inspection = await readFile(`${root}/scripts/sql/aily-alternative-request-preflight.sql`, 'utf8');
 const migration = await readFile(`${root}/supabase/migrations/20261003120111_reservation_alternative_requests.sql`, 'utf8');
 const reservationWriteMigration = await readFile(`${root}/supabase/migrations/20261004030707_prevent_customer_reservation_races.sql`, 'utf8');
+const staffConfirmationMigration = await readFile(`${root}/supabase/migrations/20261004055916_prevent_staff_confirmation_races.sql`, 'utf8');
 const db = new PGlite();
 const inspect = async () => (await db.exec(inspection)).find(r => r.fields?.some(f => f.name === 'check_name')).rows;
 let checks = await inspect();
@@ -62,6 +63,7 @@ console.log('PASS: prerequisite-only schema identified as an initial migration c
 
 await db.exec(migration);
 await db.exec(reservationWriteMigration);
+await db.exec(staffConfirmationMigration);
 checks = await inspect();
 assert.deepEqual(checks.filter(r => !['PASS', 'PRESENT'].includes(r.result)), []);
 console.log(`PASS: migrated schema passes all ${checks.length} catalog checks`);
