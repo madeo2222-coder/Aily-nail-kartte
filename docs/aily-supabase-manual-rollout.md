@@ -10,6 +10,16 @@
    - `scripts/sql/aily-confirmation-delivery-preflight.sql`
 3. 結果の `section / check_name / result / detail` を保存してください。
 
+SQL Editorから2つの結果をそれぞれCSVまたはJSONで保存した場合は、次の読取専用コマンドで4件のmigrationを個別判定できます。結果が一部欠けている、`FAIL` / `REVIEW`がある、または依存順序と矛盾する場合は適用候補を出さず停止します。このコマンドはSupabaseへ接続せず、DB変更も行いません。
+
+```bash
+node scripts/analyze-aily-preflight.mjs \
+  --alternative alternative-preflight.csv \
+  --confirmation confirmation-preflight.csv
+```
+
+出力が`MISSING`の連続したmigrationだけを依存順の適用候補として扱います。`PRESENT`は再実行しません。`要確認`になった場合は既存オブジェクトを変更せず、表示された検査名を個別に照合します。
+
 | 結果 | 次の工程 |
 | --- | --- |
 | prerequisiteがすべてPASS、ledgerとfunctionがすべてMISSING | 新規migration適用候補。承認後に適用します。 |
