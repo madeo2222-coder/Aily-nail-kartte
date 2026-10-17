@@ -54,41 +54,41 @@ export default function ExpenseEditPage() {
     }
   }, [expenseId, router]);
 
-  const fetchExpense = async () => {
-    if (!expenseId || expenseId === "[id]") return;
-
-    setIsLoading(true);
-
-    const { data, error } = await supabase
-      .from("expenses")
-      .select("id, expense_date, category, amount, memo, receipt_url")
-      .eq("id", expenseId)
-      .single();
-
-    if (error || !data) {
-      console.error("経費詳細取得エラー:", error);
-      alert(`経費データの取得に失敗しました: ${error?.message ?? "not found"}`);
-      router.push("/expenses");
-      return;
-    }
-
-    const row = data as ExpenseRow;
-
-    setExpenseDate(row.expense_date ?? "");
-    setCategory(
-      row.category && EXPENSE_CATEGORIES.includes(row.category as never)
-        ? row.category
-        : "雑費"
-    );
-    setAmount(String(row.amount ?? ""));
-    setMemo(row.memo ?? "");
-    setReceiptUrl(row.receipt_url ?? null);
-    setIsLoading(false);
-  };
-
   useEffect(() => {
+    const fetchExpense = async () => {
+      if (!expenseId || expenseId === "[id]") return;
+
+      setIsLoading(true);
+
+      const { data, error } = await supabase
+        .from("expenses")
+        .select("id, expense_date, category, amount, memo, receipt_url")
+        .eq("id", expenseId)
+        .single();
+
+      if (error || !data) {
+        console.error("経費詳細取得エラー:", error);
+        alert(`経費データの取得に失敗しました: ${error?.message ?? "not found"}`);
+        router.push("/expenses");
+        return;
+      }
+
+      const row = data as ExpenseRow;
+
+      setExpenseDate(row.expense_date ?? "");
+      setCategory(
+        row.category && EXPENSE_CATEGORIES.includes(row.category as never)
+          ? row.category
+          : "雑費"
+      );
+      setAmount(String(row.amount ?? ""));
+      setMemo(row.memo ?? "");
+      setReceiptUrl(row.receipt_url ?? null);
+      setIsLoading(false);
+    };
+
     void fetchExpense();
-  }, [expenseId]);
+  }, [expenseId, router]);
 
   const uploadReceiptImage = async () => {
     if (!receiptFile) return receiptUrl;

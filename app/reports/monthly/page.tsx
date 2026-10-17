@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -230,7 +230,7 @@ export default function MonthlyReportPage() {
     VisitPaymentReportRow[]
   >([]);
 
-  async function fetchMonthlyData() {
+  const fetchMonthlyData = useCallback(async () => {
     setLoading(true);
     setPageError("");
     setVisits([]);
@@ -293,11 +293,11 @@ export default function MonthlyReportPage() {
 
     setVisitPayments(normalizePaymentRows(paymentsData || []));
     setLoading(false);
-  }
+  }, [targetMonth]);
 
   useEffect(() => {
     void Promise.resolve().then(fetchMonthlyData);
-  }, [targetMonth]);
+  }, [fetchMonthlyData]);
 
   const visitMap = useMemo(() => {
     const map = new Map<string, VisitReportRow>();
