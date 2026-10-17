@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
 type ReservationDetail = {
@@ -181,7 +181,7 @@ export default function CustomerReservationDetailPage() {
   const todayText = useMemo(() => getTodayText(), []);
   const maxDateText = useMemo(() => addDaysText(todayText, 30), [todayText]);
 
-  async function fetchReservation() {
+  const fetchReservation = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
 
@@ -253,12 +253,12 @@ export default function CustomerReservationDetailPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [reservationId]);
 
   useEffect(() => {
     if (!reservationId) return;
-    void fetchReservation();
-  }, [reservationId]);
+    void Promise.resolve().then(fetchReservation);
+  }, [reservationId, fetchReservation]);
 
   async function runAction(body: Record<string, unknown>) {
     setSaving(true);
