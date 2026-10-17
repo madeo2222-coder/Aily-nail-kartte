@@ -233,6 +233,8 @@ test("sales dashboard preserves authoritative zero KPI", async () => {
 
   assert.doesNotMatch(page.html(), /role="alert"|読み込み中/);
   assert.match(page.html(), /今日の売上/);
+  assert.match(page.html(), /昨日（.*）の売上/);
+  assert.match(page.html(), /昨日の施術件数/);
   assert.match(page.html(), /今月の売上/);
   assert.match(page.html(), /¥0/);
   assert.match(page.html(), /0件/);
