@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type ExpenseRow = {
@@ -169,7 +169,7 @@ export default function ExpensesPage() {
     setIsMounted(true);
   }, []);
 
-  async function fetchExpenses() {
+  const fetchExpenses = useCallback(async () => {
     setIsLoading(true);
 
     const { data, error } = await supabase
@@ -190,18 +190,21 @@ export default function ExpensesPage() {
     setRows(nextRows);
 
     const options = buildMonthOptionsFromRows(nextRows);
-    const hasSelectedMonth = options.some((option) => option.value === selectedMonth);
-
-    if (!hasSelectedMonth && options.length > 0) {
-      setSelectedMonth(options[0].value);
-    }
+    setSelectedMonth((currentMonth) => {
+      const hasCurrentMonth = options.some(
+        (option) => option.value === currentMonth
+      );
+      return hasCurrentMonth || options.length === 0
+        ? currentMonth
+        : options[0].value;
+    });
 
     setIsLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
-    void fetchExpenses();
-  }, []);
+    void Promise.resolve().then(fetchExpenses);
+  }, [fetchExpenses]);
 
   const monthOptions = useMemo(() => buildMonthOptionsFromRows(rows), [rows]);
 
