@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import DailySalesSummary from "./DailySalesSummary";
 
 type VisitRow = {
   id: string;
@@ -347,8 +348,6 @@ export default function DashboardPageClient() {
 
   const [customersCount, setCustomersCount] = useState(0);
   const [visitsCount, setVisitsCount] = useState(0);
-  const [todaySales, setTodaySales] = useState(0);
-  const [todayCount, setTodayCount] = useState(0);
   const [monthSales, setMonthSales] = useState(0);
   const [previousMonthSales, setPreviousMonthSales] = useState(0);
   const [repeatRate, setRepeatRate] = useState(0);
@@ -461,15 +460,6 @@ export default function DashboardPageClient() {
     setCustomersCount(customers.length);
     setVisitsCount(visits.length);
 
-    const todayVisitRows = visits.filter(
-      (row) => row.visit_date === todayText
-    );
-
-    const todaySalesTotal = todayVisitRows.reduce(
-      (sum, row) => sum + Number(row.price || 0),
-      0
-    );
-
     const currentMonthVisits = visits.filter((row) =>
       (row.visit_date || "").startsWith(currentMonthKey)
     );
@@ -570,8 +560,6 @@ export default function DashboardPageClient() {
       })
       .filter((row) => row.reservationDate === todayText);
 
-    setTodaySales(todaySalesTotal);
-    setTodayCount(todayVisitRows.length);
     setMonthSales(currentMonthSales);
     setPreviousMonthSales(previousSales);
     setRepeatRate(repeatRateValue);
@@ -719,19 +707,7 @@ export default function DashboardPageClient() {
         ) : null}
 
         <section className="grid grid-cols-2 gap-3">
-          <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
-            <div className="text-sm text-gray-500">
-              今日の売上
-            </div>
-
-            <div className="mt-2 text-2xl font-bold text-gray-900">
-              {formatYen(todaySales)}
-            </div>
-
-            <div className="mt-2 text-sm text-gray-500">
-              来店数 {todayCount}件
-            </div>
-          </div>
+          <DailySalesSummary />
 
           <div className="rounded-3xl border border-rose-100 bg-white p-4 shadow-sm">
             <div className="text-sm text-gray-500">
