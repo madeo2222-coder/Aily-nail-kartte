@@ -135,6 +135,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     require(name) {
       if (name === "react") return hooks;
       if (name === "next/link") return { default: "a" };
+      if (name === "./DailySalesSummary") return { default: "daily-sales-summary" };
       if (name === "react/jsx-runtime") return require(name);
       if (name === "@/lib/supabase") {
         return {
