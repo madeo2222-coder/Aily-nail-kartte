@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
+import { PAYMENT_REVIEW_MESSAGE } from "@/lib/veritrans/payment-result";
 
 type Props = {
   requestId: string;
@@ -106,6 +107,8 @@ export default function PaymentPageClient({
   const [securityCode, setSecurityCode] = useState("");
   const [cardholderName, setCardholderName] = useState("");
   const [processing, setProcessing] = useState(false);
+  const [paymentPending, setPaymentPending] = useState(false);
+  const submissionLocked = useRef(false);
   const [completed, setCompleted] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -117,7 +120,7 @@ export default function PaymentPageClient({
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (processing) {
+    if (submissionLocked.current || processing || paymentPending || completed) {
       return;
     }
 
@@ -167,7 +170,9 @@ export default function PaymentPageClient({
       return;
     }
 
+    submissionLocked.current = true;
     setProcessing(true);
+    let paymentSubmitted = false;
 
     try {
       const token = await createCardToken({
@@ -178,6 +183,7 @@ export default function PaymentPageClient({
         cardholderName: normalizedCardholderName,
       });
 
+      paymentSubmitted = true;
       const response = await fetch(
         `/api/inbound-nail-tip-requests/${encodeURIComponent(
           requestId
@@ -198,29 +204,38 @@ export default function PaymentPageClient({
       let data: {
         ok?: boolean;
         error?: string;
+        paymentStatus?: string;
       };
 
       try {
         data = JSON.parse(responseText) as {
           ok?: boolean;
           error?: string;
+          paymentStatus?: string;
         };
       } catch {
         throw new Error("決済処理で正常な応答を受信できませんでした");
       }
 
-      if (!response.ok || !data.ok) {
+      if (data.paymentStatus === "failed" || (data.ok === false && [400, 401, 403, 404, 503].includes(response.status))) {
+        paymentSubmitted = false;
+      }
+      if (!response.ok || data.ok !== true) {
         throw new Error(data.error || "カード決済に失敗しました");
       }
 
       setCompleted(true);
     } catch (error) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "カード決済に失敗しました"
-      );
+      if (paymentSubmitted) {
+        setPaymentPending(true);
+        setErrorMessage(PAYMENT_REVIEW_MESSAGE);
+      } else {
+        setErrorMessage(
+          error instanceof Error ? error.message : "カード決済に失敗しました"
+        );
+      }
     } finally {
+      submissionLocked.current = paymentSubmitted;
       setProcessing(false);
     }
   }
@@ -312,7 +327,7 @@ export default function PaymentPageClient({
                   setCardNumber(formatCardNumber(event.target.value))
                 }
                 placeholder="1234 5678 9012 3456"
-                disabled={processing}
+                disabled={processing || paymentPending}
                 className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base outline-none transition focus:border-stone-700 disabled:bg-stone-100"
               />
             </div>
@@ -338,7 +353,7 @@ export default function PaymentPageClient({
                     )
                   }
                   placeholder="MM/YY"
-                  disabled={processing}
+                  disabled={processing || paymentPending}
                   className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base outline-none transition focus:border-stone-700 disabled:bg-stone-100"
                 />
               </div>
@@ -363,7 +378,7 @@ export default function PaymentPageClient({
                     )
                   }
                   placeholder="123"
-                  disabled={processing}
+                  disabled={processing || paymentPending}
                   className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base outline-none transition focus:border-stone-700 disabled:bg-stone-100"
                 />
               </div>
@@ -386,7 +401,7 @@ export default function PaymentPageClient({
                   setCardholderName(event.target.value.toUpperCase())
                 }
                 placeholder="TARO YAMADA"
-                disabled={processing}
+                disabled={processing || paymentPending}
                 className="w-full rounded-xl border border-stone-300 bg-white px-4 py-3 text-base uppercase outline-none transition focus:border-stone-700 disabled:bg-stone-100"
               />
             </div>
@@ -399,10 +414,10 @@ export default function PaymentPageClient({
 
             <button
               type="submit"
-              disabled={processing}
+              disabled={processing || paymentPending}
               className="w-full rounded-xl bg-stone-900 px-4 py-4 text-base font-bold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-400"
             >
-              {processing
+              {paymentPending ? "決済結果を確認中" : processing
                 ? "決済処理中..."
                 : `¥${formattedAmount}を支払う`}
             </button>

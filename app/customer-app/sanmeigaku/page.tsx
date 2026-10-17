@@ -220,8 +220,7 @@ export default function SanmeigakuNailDiagnosisPage() {
   const [saving, setSaving] = useState(false);
 
   const [customerId, setCustomerId] = useState("");
-const [salonId, setSalonId] = useState("");
-const resultCardRef = useRef<HTMLDivElement | null>(null);
+  const resultCardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     async function fetchMe() {
@@ -233,14 +232,12 @@ const resultCardRef = useRef<HTMLDivElement | null>(null);
         const json = (await res.json()) as MeResponse;
 
         setCustomerId(json.customer?.id || "");
-        setSalonId(json.customer?.salon_id || "");
 
         if (!name && json.customer?.name) {
           setName(json.customer.name);
         }
       } catch {
         setCustomerId("");
-        setSalonId("");
       }
     }
 
@@ -365,6 +362,12 @@ async function handleSaveImage() {
       return;
     }
 
+    if (!customerId) {
+      setSubmitted(true);
+      showMessage("診断結果を表示しました。履歴の保存にはLINEログインが必要です");
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -374,8 +377,6 @@ async function handleSaveImage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          salonId,
-          customerId,
           name,
           birthday,
           fortune,

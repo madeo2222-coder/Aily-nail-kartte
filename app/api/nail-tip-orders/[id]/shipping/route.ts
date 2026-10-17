@@ -184,7 +184,14 @@ export async function POST(
 
     const order = orderData as AnyRow;
 
-    const { error: updateError } = await supabase
+    if (authentication.principal.salonId && order.salon_id !== authentication.principal.salonId) {
+      return NextResponse.json({ ok: false, error: "注文が見つかりません" }, { status: 404 });
+    }
+    if (order.payment_status !== "paid" || order.status === "cancelled" || order.status === "completed") {
+      return NextResponse.json({ ok: false, error: "決済完了・注文状況を確認できないため発送できません" }, { status: 409 });
+    }
+
+    let updateQuery = supabase
       .from("nail_tip_orders")
       .update({
         shipping_company: shippingCompany,
@@ -192,7 +199,10 @@ export async function POST(
         shipped_at: shippedAt,
         status: "shipped",
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("payment_status", "paid");
+    updateQuery = order.status === null ? updateQuery.is("status", null) : updateQuery.eq("status", order.status);
+    const { data: updated, error: updateError } = await updateQuery.select("id").maybeSingle();
 
     if (updateError) {
       return NextResponse.json(
@@ -202,6 +212,10 @@ export async function POST(
         },
         { status: 500 }
       );
+    }
+
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "注文が更新されました。再読込して確認してください" }, { status: 409 });
     }
 
     const customerId = getString(order, ["customer_id"]);

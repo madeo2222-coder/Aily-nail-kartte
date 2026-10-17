@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { executeCardAuthorize } from "@/lib/veritrans/card-authorize";
 import { getVeriTransConfig } from "@/lib/veritrans/config";
+import { getUnsuccessfulCardPaymentStatus, PAYMENT_REVIEW_MESSAGE } from "@/lib/veritrans/payment-result";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -209,18 +210,17 @@ export async function POST(
         supabase,
         paymentId,
         orderId,
-        status: "failed",
-        mstatus: "failure",
+        status: "pending",
+        mstatus: null,
         vResultCode: null,
-        merrMsg: "MDK execution failed",
+        merrMsg: "MDK response unavailable; reconciliation required",
       });
 
       return NextResponse.json(
         {
           ok: false,
-          error: recorded
-            ? "カード決済サービスと通信できませんでした。"
-            : "決済結果の記録に失敗しました。",
+          error: PAYMENT_REVIEW_MESSAGE,
+          paymentStatus: "pending",
         },
         { status: recorded ? 502 : 500 }
       );
@@ -240,7 +240,7 @@ export async function POST(
 
       if (completeError) {
         return NextResponse.json(
-          { ok: false, error: "決済結果の反映に失敗しました。" },
+          { ok: false, error: PAYMENT_REVIEW_MESSAGE, paymentStatus: "pending" },
           { status: 500 }
         );
       }
@@ -248,10 +248,7 @@ export async function POST(
       return NextResponse.json({ ok: true });
     }
 
-    const resultStatus: "pending" | "failed" =
-      result.pending !== null && result.pending !== "0"
-        ? "pending"
-        : "failed";
+    const resultStatus = getUnsuccessfulCardPaymentStatus(result, orderId);
     const recorded = await recordPaymentResult({
       supabase,
       paymentId,
@@ -264,7 +261,7 @@ export async function POST(
 
     if (!recorded) {
       return NextResponse.json(
-        { ok: false, error: "決済結果の記録に失敗しました。" },
+        { ok: false, error: PAYMENT_REVIEW_MESSAGE, paymentStatus: "pending" },
         { status: 500 }
       );
     }
@@ -273,33 +270,18 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error: "カード決済の結果を確認中です。店舗へお問い合わせください。",
+          error: PAYMENT_REVIEW_MESSAGE,
+          paymentStatus: "pending",
         },
         { status: 409 }
       );
     }
 
-    const debugResult = {
-      succeeded: result.succeeded,
-      responseOrderId: result.responseOrderId,
-      merrMsg: result.merrMsg,
-    };
-
-    console.error("VeriTrans Card Authorize returned payment failure", {
-      mstatus: result.mstatus,
-      pending: result.pending,
-      vResultCode: result.vResultCode,
-      result: debugResult,
-    });
-
     return NextResponse.json(
       {
         ok: false,
         error: "カード決済を完了できませんでした。",
-        mstatus: result.mstatus,
-        pending: result.pending,
-        vResultCode: result.vResultCode,
-        result: debugResult,
+        paymentStatus: "failed",
       },
       { status: 402 }
     );
@@ -309,15 +291,16 @@ export async function POST(
         supabase,
         paymentId,
         orderId,
-        status: "failed",
-        mstatus: "failure",
+        status: "pending",
+        mstatus: null,
         vResultCode: null,
-        merrMsg: "Unexpected payment processing error",
+        merrMsg: "Unexpected payment processing error; reconciliation required",
       }).catch(() => false);
     }
 
     return NextResponse.json(
-      { ok: false, error: "カード決済処理でエラーが発生しました。" },
+      { ok: false, error: paymentId ? PAYMENT_REVIEW_MESSAGE : "カード決済処理でエラーが発生しました。",
+        ...(paymentId ? { paymentStatus: "pending" } : {}) },
       { status: 500 }
     );
   }

@@ -31,8 +31,12 @@ function buildUtcIsoFromJst(date: string, time: string) {
 }
 
 function overlaps(startIso: string, endIso: string, row: BusyRow) {
-  if (!row.start_at || !row.end_at) return false;
-  return startIso < row.end_at && row.start_at < endIso;
+  const start = row.start_at ? Date.parse(row.start_at) : NaN;
+  const end = row.end_at ? Date.parse(row.end_at) : NaN;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    throw new Error("Invalid busy interval.");
+  }
+  return Date.parse(startIso) < end && start < Date.parse(endIso);
 }
 
 function buildTimeOptions(durationMinutes: number) {
@@ -75,18 +79,15 @@ export function getTodayJstText() {
 }
 
 export function addDaysText(dateText: string, days: number) {
-  const date = new Date(`${dateText}T00:00:00+09:00`);
-  date.setDate(date.getDate() + days);
-  return new Intl.DateTimeFormat("sv-SE", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
+  const date = new Date(`${dateText}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 export function isValidCustomerBookingDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return false;
   const today = getTodayJstText();
   return value >= today && value <= addDaysText(today, 30);
 }
@@ -119,6 +120,9 @@ export async function getCustomerReservationAvailability({
   date: string;
   durationMinutes: number;
 }) {
+  if (!isValidCustomerBookingDate(date) || normalizeCustomerBookingDuration(durationMinutes) === null) {
+    throw new Error("Invalid availability request.");
+  }
   const dayStart = buildUtcIsoFromJst(date, "00:00");
   const nextDay = addDaysText(date, 1);
   const dayEnd = buildUtcIsoFromJst(nextDay, "00:00");
@@ -160,11 +164,14 @@ export async function getCustomerReservationAvailability({
     (row) => !isCancelledStatus(row.status)
   );
   const blocks = (blockResult.data || []) as BusyRow[];
+  // Validate before filtering, including rows for an unassigned/other staff.
+  for (const row of [...reservations, ...blocks]) overlaps(dayStart, dayEnd, row);
+  const now = Date.now();
 
   const slots = buildTimeOptions(durationMinutes)
     .map((time) => {
       const startIso = buildUtcIsoFromJst(date, time);
-      if (!startIso) return null;
+      if (!startIso || Date.parse(startIso) <= now) return null;
       const endIso = new Date(
         new Date(startIso).getTime() + durationMinutes * 60 * 1000
       ).toISOString();
