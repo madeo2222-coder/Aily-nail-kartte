@@ -63,7 +63,10 @@ export async function POST(request: NextRequest) {
     const supabase = getSupabaseAdmin();
     // Older customer rows may have no salon_id. The existing reservation resolver
     // permits a fallback only when the database has exactly one salon.
-    const salonId = await resolveCustomerBookingSalonId(supabase, customer.salonId);
+    const salonId = await resolveCustomerBookingSalonId(
+      supabase,
+      customer.salonId
+    );
     if (!salonId) {
       return NextResponse.json(
         { ok: false, error: "注文先の店舗を特定できません" },

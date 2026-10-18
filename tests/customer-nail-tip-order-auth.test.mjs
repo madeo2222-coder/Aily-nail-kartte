@@ -56,6 +56,12 @@ function loadRoute(routePath, { customer, getSupabaseAdmin }) {
           getSupabaseAdmin,
         };
       }
+      if (name === "@/lib/server/customerReservationAvailability") {
+        return {
+          resolveCustomerBookingSalonId: async (_client, requestedSalonId) =>
+            requestedSalonId,
+        };
+      }
       if (name === "@/lib/nail-tip-products/catalog") {
         return {
           getNailTipProduct(code) {

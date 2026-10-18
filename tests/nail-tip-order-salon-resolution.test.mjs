@@ -47,40 +47,48 @@ function fixture({
   vm.runInNewContext(compiled, {
     exports,
     require(name) {
-      if (name === "next/server") return {
-        NextResponse: {
-          json(body, options = {}) {
-            return { body, status: options.status ?? 200 };
+      if (name === "next/server")
+        return {
+          NextResponse: {
+            json(body, options = {}) {
+              return { body, status: options.status ?? 200 };
+            },
           },
-        },
-      };
-      if (name === "@/lib/nail-tip-products/catalog") return {
-        getNailTipProduct: () => ({
-          code: "demo", name: "Demo Nail", startingPrice: 1000,
-          stone: "Quartz", fortune: "Good",
-        }),
-      };
-      if (name === "@/lib/server/requireCustomerLineSession") return {
-        requireCustomerLineSession: async () => customer,
-        getSupabaseAdmin: () => supabase,
-      };
-      if (name === "@/lib/server/customerReservationAvailability") return {
-        resolveCustomerBookingSalonId: async (client, salonId) => {
-          assert.equal(client, supabase);
-          lookupArguments.push(salonId);
-          if (resolutionError) throw new Error("Salon lookup failed.");
-          return resolvedSalonId;
-        },
-      };
+        };
+      if (name === "@/lib/nail-tip-products/catalog")
+        return {
+          getNailTipProduct: () => ({
+            code: "demo",
+            name: "Demo Nail",
+            startingPrice: 1000,
+            stone: "Quartz",
+            fortune: "Good",
+          }),
+        };
+      if (name === "@/lib/server/requireCustomerLineSession")
+        return {
+          requireCustomerLineSession: async () => customer,
+          getSupabaseAdmin: () => supabase,
+        };
+      if (name === "@/lib/server/customerReservationAvailability")
+        return {
+          resolveCustomerBookingSalonId: async (client, salonId) => {
+            assert.equal(client, supabase);
+            lookupArguments.push(salonId);
+            if (resolutionError) throw new Error("Salon lookup failed.");
+            return resolvedSalonId;
+          },
+        };
       throw new Error("Unexpected import: " + name);
     },
   });
   return {
     inserts,
     lookupArguments,
-    request: () => exports.POST({
-      json: async () => ({ productCode: "demo" }),
-    }),
+    request: () =>
+      exports.POST({
+        json: async () => ({ productCode: "demo" }),
+      }),
   };
 }
 

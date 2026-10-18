@@ -115,7 +115,8 @@ function NailTipOrderContent() {
   const [sizeStatus, setSizeStatus] = useState("サイズ未確認");
   const [deliveryRequest, setDeliveryRequest] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [submissionState, setSubmissionState] = useState<OrderSubmissionState>("idle");
+  const [submissionState, setSubmissionState] =
+    useState<OrderSubmissionState>("idle");
   const submitLockRef = useRef(false);
 
   useEffect(() => {
@@ -221,7 +222,9 @@ function NailTipOrderContent() {
       setSizeStatus("サイズ未確認");
       setSelectedProductId(recommendedProductId);
     } catch {
-      showMessage("安全に新しい注文を開始できません。ブラウザの保存設定を確認してください");
+      showMessage(
+        "安全に新しい注文を開始できません。ブラウザの保存設定を確認してください"
+      );
     }
   }
 
@@ -414,9 +417,15 @@ function NailTipOrderContent() {
               {submitting ? "注文送信中..." : "この内容で注文相談する"}
             </button>
             {submissionState === "uncertain" ? (
-              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+              <div
+                role="alert"
+                className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950"
+              >
                 送信結果がまだ確認できません。二重注文を防ぐため再送を停止しています。
-                <Link href="/customer-app/mypage" className="ml-1 font-bold underline">
+                <Link
+                  href="/customer-app/mypage"
+                  className="ml-1 font-bold underline"
+                >
                   マイページの注文履歴を確認
                 </Link>
                 してください。履歴を確認できない場合は店舗へご連絡ください。
@@ -425,11 +434,17 @@ function NailTipOrderContent() {
             {submissionState === "confirmed" ? (
               <div className="space-y-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm leading-6 text-green-900">
                 <p>注文相談を受け付けました。同じ注文の再送はできません。</p>
-                <Link href="/customer-app/mypage" className="font-bold underline">
+                <Link
+                  href="/customer-app/mypage"
+                  className="font-bold underline"
+                >
                   マイページで注文を確認する
                 </Link>
-                <button type="button" onClick={startAnotherConsultation}
-                  className="block w-full rounded-xl border border-green-300 bg-white px-3 py-2 font-bold">
+                <button
+                  type="button"
+                  onClick={startAnotherConsultation}
+                  className="block w-full rounded-xl border border-green-300 bg-white px-3 py-2 font-bold"
+                >
                   別の注文相談を始める
                 </button>
               </div>

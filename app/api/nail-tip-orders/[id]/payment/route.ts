@@ -244,6 +244,7 @@ export async function POST(
       .from("customers")
       .select("*")
       .eq("id", customerId)
+      .eq("salon_id", authentication.principal.salonId)
       .maybeSingle();
 
     const customer = (customerData || null) as AnyRow | null;

@@ -48,6 +48,10 @@ const routes = [
     ownerOnly: true,
   },
   { name: "domestic status", path: "nail-tip-orders/[id]/status" },
+  {
+    name: "domestic payment-url",
+    path: "nail-tip-orders/[id]/payment-url",
+  },
   { name: "domestic payment", path: "nail-tip-orders/[id]/payment" },
   { name: "domestic shipping", path: "nail-tip-orders/[id]/shipping" },
 ];
