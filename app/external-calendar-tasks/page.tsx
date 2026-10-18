@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
 
 type ReservationRow = {
   id: string;
@@ -188,22 +187,29 @@ export default function ExternalCalendarTasksPage() {
     setTasks([]);
 
     try {
-      const [reservationsResult, customersResult, staffsResult] = await Promise.all([
-        supabase
-          .from("reservations")
-          .select("id, customer_id, staff_id, menu, start_at, end_at, status, memo")
-          .order("start_at", { ascending: true }),
-        supabase.from("customers").select("id, name"),
-        supabase.from("staffs").select("id, name"),
-      ]);
+      const response = await fetch("/api/external-calendar-tasks", {
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        reservations?: ReservationRow[];
+        customers?: CustomerRow[];
+        staffs?: StaffRow[];
+      };
 
-      const sourceError =
-        reservationsResult.error || customersResult.error || staffsResult.error;
-      if (sourceError) throw sourceError;
+      if (
+        !response.ok ||
+        !result.ok ||
+        !Array.isArray(result.reservations) ||
+        !Array.isArray(result.customers) ||
+        !Array.isArray(result.staffs)
+      ) {
+        throw new Error("External calendar tasks response is invalid");
+      }
 
-      const reservations = (reservationsResult.data || []) as ReservationRow[];
-      const customers = (customersResult.data || []) as CustomerRow[];
-      const staffs = (staffsResult.data || []) as StaffRow[];
+      const reservations = result.reservations;
+      const customers = result.customers;
+      const staffs = result.staffs;
 
       const customerMap = new Map(
         customers.map((customer) => [customer.id, customer.name || "顧客名未設定"])

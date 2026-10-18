@@ -38,12 +38,12 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failureTable = "", rejection = false, empty = false } = {}) {
+async function mount({ failure = false, rejection = false, empty = false } = {}) {
   const states = [];
-  const queries = [];
+  const requests = [];
   let cursor = 0;
   let effect;
-  let shouldFail = Boolean(failureTable);
+  let shouldFail = failure;
 
   const hooks = {
     useState(initial) {
@@ -65,16 +65,30 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     useEffect: fn => { effect = fn; },
   };
 
-  function response(table) {
-    if (shouldFail && table === failureTable) {
-      if (rejection) throw new Error("offline");
-      return { data: null, error: { message: "read failed" } };
+  async function fetchMock(url, options) {
+    requests.push({ url, options });
+
+    if (shouldFail && rejection) throw new Error("offline");
+
+    if (shouldFail) {
+      return {
+        ok: false,
+        async json() {
+          return { ok: false, error: "read failed" };
+        },
+      };
     }
 
-    if (empty) return { data: [], error: null };
-    if (table === "reservations") {
-      return {
-        data: [{
+    return {
+      ok: true,
+      async json() {
+        if (empty) {
+          return { ok: true, reservations: [], customers: [], staffs: [] };
+        }
+
+        return {
+          ok: true,
+          reservations: [{
           id: "reservation-1",
           customer_id: "customer-1",
           staff_id: "staff-1",
@@ -83,14 +97,12 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
           end_at: "2026-09-30T02:00:00Z",
           status: "confirmed",
           memo: null,
-        }],
-        error: null,
-      };
-    }
-    if (table === "customers") {
-      return { data: [{ id: "customer-1", name: "顧客A" }], error: null };
-    }
-    return { data: [{ id: "staff-1", name: "黒木" }], error: null };
+          }],
+          customers: [{ id: "customer-1", name: "顧客A" }],
+          staffs: [{ id: "staff-1", name: "黒木" }],
+        };
+      },
+    };
   }
 
   const exports = {};
@@ -103,6 +115,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     Promise,
     console: { error() {} },
     navigator: { clipboard: { writeText: async () => {} } },
+    fetch: fetchMock,
     window: {
       localStorage: {
         getItem() { return null; },
@@ -114,23 +127,6 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
       if (name === "react") return hooks;
       if (name === "next/link") return { default: "a" };
       if (name === "react/jsx-runtime") return require(name);
-      if (name === "@/lib/supabase") {
-        return {
-          supabase: {
-            from(table) {
-              queries.push(table);
-              const chain = {
-                select() { return chain; },
-                order() { return chain; },
-                then(resolve, reject) {
-                  return Promise.resolve().then(() => response(table)).then(resolve, reject);
-                },
-              };
-              return chain;
-            },
-          },
-        };
-      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -150,7 +146,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
   await setImmediate();
 
   return {
-    queries,
+    requests,
     html,
     async retry() {
       const button = findNode(
@@ -166,26 +162,27 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
   };
 }
 
-for (const failureTable of ["reservations", "customers", "staffs"]) {
-  test(`external calendar tasks hides incomplete work after ${failureTable} query error`, async () => {
-    const page = await mount({ failureTable });
-    assert.match(page.html(), /role="alert"/);
-    assert.doesNotMatch(
-      page.html(),
-      /0件|外部カレンダーへ反映が必要な予約はありません|反映待ちのみ|顧客A|黒木/
-    );
-    assert.deepEqual(page.queries.sort(), ["customers", "reservations", "staffs"]);
-  });
-}
+test("external calendar tasks hides incomplete work after API error", async () => {
+  const page = await mount({ failure: true });
+  assert.match(page.html(), /role="alert"/);
+  assert.doesNotMatch(
+    page.html(),
+    /0件|外部カレンダーへ反映が必要な予約はありません|反映待ちのみ|顧客A|黒木/
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(page.requests)), [{
+    url: "/api/external-calendar-tasks",
+    options: { cache: "no-store" },
+  }]);
+});
 
-test("external calendar tasks handles a rejected query", async () => {
-  const page = await mount({ failureTable: "customers", rejection: true });
+test("external calendar tasks handles a rejected API request", async () => {
+  const page = await mount({ failure: true, rejection: true });
   assert.match(page.html(), /role="alert"/);
   assert.doesNotMatch(page.html(), /0件|外部カレンダーへ反映が必要な予約はありません/);
 });
 
 test("external calendar tasks recovers after retry", async () => {
-  const page = await mount({ failureTable: "reservations" });
+  const page = await mount({ failure: true });
   await page.retry();
   assert.doesNotMatch(page.html(), /role="alert"/);
   assert.match(page.html(), /反映待ち[\s\S]*1件/);
