@@ -76,6 +76,12 @@ type NailTipOrderRow = {
   shipped_at: string | null;
 };
 
+type NailTipOrdersResponse = {
+  ok: boolean;
+  error?: string;
+  orders?: NailTipOrderRow[];
+};
+
 const signedInNavItems = [
   { key: "home", label: "ホーム", icon: "🏠", href: "/customer-app" },
   { key: "reserve", label: "予約", icon: "📅", href: "/customer-app/reserve" },
@@ -290,6 +296,10 @@ export default function CustomerAppMyPage() {
       }
 
       const currentCustomer = meJson.customer;
+      const nailTipOrdersPromise = fetch(
+        "/api/customer-app/nail-tip-orders",
+        { cache: "no-store" }
+      );
       let nextSalonName = "Aily Nail Studio";
 
       if (currentCustomer.salon_id) {
@@ -350,24 +360,15 @@ export default function CustomerAppMyPage() {
 
       if (staffError) throw staffError;
 
-      const { data: nailTipOrderData, error: nailTipOrderError } = await supabase
-        .from("nail_tip_orders")
-        .select(`
-          id,
-          customer_id,
-          design_request,
-          payment_url,
-          payment_due_at,
-          status,
-          created_at,
-          shipping_company,
-          tracking_number,
-          shipped_at
-        `)
-        .eq("customer_id", currentCustomer.id)
-        .order("created_at", { ascending: false });
+      const nailTipOrdersRes = await nailTipOrdersPromise;
+      const nailTipOrdersJson =
+        (await nailTipOrdersRes.json()) as NailTipOrdersResponse;
 
-      if (nailTipOrderError) throw nailTipOrderError;
+      if (!nailTipOrdersRes.ok || !nailTipOrdersJson.ok) {
+        throw new Error(
+          nailTipOrdersJson.error || "ネイルチップ注文取得に失敗しました"
+        );
+      }
 
       if (requestVersion === requestVersionRef.current) {
         setIsLoggedIn(true);
@@ -380,7 +381,7 @@ export default function CustomerAppMyPage() {
         );
         setReservations((reservationData || []) as ReservationRow[]);
         setStaffs((staffData || []) as StaffRow[]);
-        setNailTipOrders((nailTipOrderData || []) as NailTipOrderRow[]);
+        setNailTipOrders(nailTipOrdersJson.orders || []);
       }
     } catch (error) {
       console.error("mypage取得エラー:", error);

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import Image from "next/image";
+import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { authenticateStaff } from "@/lib/server/staffAuthentication";
 import StatusForm from "./StatusForm";
 import QuoteForm from "./QuoteForm";
 import SendQuoteButton from "./SendQuoteButton";
@@ -145,6 +147,12 @@ export default async function InboundNailTipRequestsPage({
 }: {
   searchParams?: Promise<{ view?: string }>;
 }) {
+  const authentication = await authenticateStaff();
+
+  if (!authentication.ok || authentication.staff.role !== "owner") {
+    redirect("/login");
+  }
+
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const view = resolvedSearchParams.view || "active";
   const retryHref =

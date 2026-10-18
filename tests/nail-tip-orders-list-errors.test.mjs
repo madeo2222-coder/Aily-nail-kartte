@@ -8,11 +8,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const clientSource = readFileSync(
+  new URL("../app/nail-tip-orders/NailTipOrdersPageClient.tsx", import.meta.url),
+  "utf8"
+);
 const compiled = ts.transpileModule(
-  readFileSync(
-    new URL("../app/nail-tip-orders/NailTipOrdersPageClient.tsx", import.meta.url),
-    "utf8"
-  ),
+  clientSource,
   {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -21,6 +22,11 @@ const compiled = ts.transpileModule(
     },
   }
 ).outputText;
+
+test("nail-tip order actions use the guarded API instead of browser database writes", () => {
+  assert.match(clientSource, /\/api\/nail-tip-orders\/\$\{encodeURIComponent\(orderId\)\}\/status/);
+  assert.doesNotMatch(clientSource, /\.from\("nail_tip_orders"\)\s*\.update/);
+});
 
 function findNode(node, predicate) {
   if (!node || typeof node !== "object") return null;
@@ -36,7 +42,6 @@ async function mount({ failureSource = "", rejection = false, empty = false } = 
   const states = [];
   const effects = [];
   const fetchCalls = [];
-  const customerQueries = [];
   let cursor = 0;
   let collectEffects = true;
   let currentFailureSource = failureSource;
@@ -68,12 +73,17 @@ async function mount({ failureSource = "", rejection = false, empty = false } = 
       return Promise.reject(new Error("offline"));
     }
 
-    const failed = currentFailureSource === source;
+    const failed =
+      currentFailureSource === source ||
+      (source === "domestic" && currentFailureSource === "customers");
     const payload = failed
       ? { ok: false, error: "read failed" }
       : source === "domestic"
         ? {
             ok: true,
+            customers: empty
+              ? []
+              : [{ id: "customer-1", name: "国内顧客A" }],
             orders: empty
               ? []
               : [{
@@ -111,17 +121,6 @@ async function mount({ failureSource = "", rejection = false, empty = false } = 
     });
   }
 
-  function customerResponse() {
-    if (currentFailureSource === "customers") {
-      if (rejection) throw new Error("offline");
-      return { data: null, error: { message: "read failed" } };
-    }
-    return {
-      data: empty ? [] : [{ id: "customer-1", name: "国内顧客A" }],
-      error: null,
-    };
-  }
-
   const exports = {};
   vm.runInNewContext(compiled, {
     exports,
@@ -139,25 +138,6 @@ async function mount({ failureSource = "", rejection = false, empty = false } = 
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { __esModule: true, default: "a" };
-      if (name === "@/lib/supabase") {
-        return {
-          supabase: {
-            from(table) {
-              assert.equal(table, "customers");
-              customerQueries.push(table);
-              const chain = {
-                select() { return chain; },
-                then(resolve, reject) {
-                  return Promise.resolve()
-                    .then(customerResponse)
-                    .then(resolve, reject);
-                },
-              };
-              return chain;
-            },
-          },
-        };
-      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -179,7 +159,6 @@ async function mount({ failureSource = "", rejection = false, empty = false } = 
 
   return {
     fetchCalls,
-    customerQueries,
     html,
     tree,
     async retry() {
@@ -223,7 +202,6 @@ test("nail-tip order list recovers all sources after retry", async () => {
   assert.match(page.html(), /海外顧客B/);
   assert.match(page.html(), /制作中へ/);
   assert.equal(page.fetchCalls.length, 4);
-  assert.equal(page.customerQueries.length, 2);
 });
 
 test("nail-tip order list preserves a successful empty result", async () => {
@@ -244,5 +222,4 @@ test("nail-tip order list renders complete successful data", async () => {
     "/api/nail-tip-orders/admin",
     "/api/inbound-nail-tip-requests/admin",
   ]);
-  assert.deepEqual(page.customerQueries, ["customers"]);
 });

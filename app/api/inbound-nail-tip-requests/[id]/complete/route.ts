@@ -23,9 +23,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authentication = await authenticateStaffApi({
-    allowedRoles: ["owner", "staff"],
-    legacyAllowed: true,
-    salonContextRequired: false,
+    allowedRoles: ["owner"],
+    legacyAllowed: false,
   });
 
   if (!authentication.ok) {

@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { requireStaffSession } from "@/lib/server/requireStaffSession";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 function getAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -14,9 +14,18 @@ function getAdmin() {
   });
 }
 
-export async function GET(request: NextRequest) {
-  const authenticationError = await requireStaffSession(request);
-  if (authenticationError) return authenticationError;
+export async function GET() {
+  const authentication = await authenticateStaffApi({
+    allowedRoles: ["owner"],
+    legacyAllowed: false,
+  });
+
+  if (!authentication.ok) {
+    return NextResponse.json(
+      { ok: false, error: authentication.error },
+      { status: authentication.status }
+    );
+  }
 
   try {
     const supabase = getAdmin();

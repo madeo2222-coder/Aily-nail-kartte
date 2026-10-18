@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
+import { authenticateStaff } from "@/lib/server/staffAuthentication";
 import OrderPaymentForm from "./OrderPaymentForm";
 import OrderStatusForm from "./OrderStatusForm";
 import OrderShippingForm from "./OrderShippingForm";
@@ -146,6 +148,9 @@ export default async function NailTipOrderDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const authentication = await authenticateStaff();
+  if (!authentication.ok) redirect("/login");
+
   const { id } = await params;
   const supabase = getSupabaseAdmin();
 
@@ -157,6 +162,7 @@ export default async function NailTipOrderDetailPage({
       .from("nail_tip_orders")
       .select("*")
       .eq("id", id)
+      .eq("salon_id", authentication.staff.salonId)
       .single();
     orderData = result.data;
     orderError = result.error;
@@ -184,6 +190,7 @@ export default async function NailTipOrderDetailPage({
         .from("customers")
         .select("id, name, phone")
         .eq("id", order.customer_id)
+        .eq("salon_id", authentication.staff.salonId)
         .maybeSingle();
 
       customerLoadFailed = Boolean(customerError);

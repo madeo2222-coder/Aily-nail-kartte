@@ -22,7 +22,12 @@ const compiled = ts.transpileModule(
   }
 ).outputText;
 
-async function renderPage({ mode = "success", view } = {}) {
+async function renderPage({
+  authenticated = true,
+  mode = "success",
+  role = "owner",
+  view,
+} = {}) {
   const queries = [];
   const exports = {};
 
@@ -44,6 +49,25 @@ async function renderPage({ mode = "success", view } = {}) {
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { __esModule: true, default: "a" };
       if (name === "next/image") return { __esModule: true, default: "img" };
+      if (name === "next/navigation") {
+        return {
+          redirect(path) {
+            throw new Error(`redirect:${path}`);
+          },
+        };
+      }
+      if (name === "@/lib/server/staffAuthentication") {
+        return {
+          authenticateStaff: async () =>
+            authenticated
+              ? { ok: true, staff: { role, salonId: "salon-1" } }
+              : {
+                  ok: false,
+                  category: "unauthenticated",
+                  reason: "auth_user_missing",
+                },
+        };
+      }
       if (name.startsWith("./")) {
         return { __esModule: true, default: () => null };
       }
@@ -61,6 +85,10 @@ async function renderPage({ mode = "success", view } = {}) {
                   },
                   order(column, options) {
                     query.order = [column, options];
+                    return chain;
+                  },
+                  eq(column, value) {
+                    query.eq = [column, value];
                     return chain;
                   },
                   then(resolve, reject) {
@@ -123,6 +151,17 @@ async function renderPage({ mode = "success", view } = {}) {
     queries: JSON.parse(JSON.stringify(queries)),
   };
 }
+
+test("inbound nail-tip requests redirect unauthenticated visitors before privileged reads", async () => {
+  await assert.rejects(
+    renderPage({ authenticated: false }),
+    /redirect:\/login/
+  );
+});
+
+test("inbound nail-tip requests redirect non-owner staff until requests have a salon scope", async () => {
+  await assert.rejects(renderPage({ role: "staff" }), /redirect:\/login/);
+});
 
 for (const mode of ["query-error", "rejection"]) {
   test(`inbound nail-tip requests hide incomplete work after ${mode}`, async () => {

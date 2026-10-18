@@ -56,6 +56,12 @@ function loadRoute(routePath, { customer, getSupabaseAdmin }) {
           getSupabaseAdmin,
         };
       }
+      if (name === "@/lib/server/customerReservationAvailability") {
+        return {
+          resolveCustomerBookingSalonId: async (_client, requestedSalonId) =>
+            requestedSalonId,
+        };
+      }
       if (name === "@/lib/nail-tip-products/catalog") {
         return {
           getNailTipProduct(code) {
@@ -169,6 +175,44 @@ test("customer nail-tip history uses the shared signed session instead of an int
   assert.match(runtime.source, /requireCustomerLineSession/);
   assert.doesNotMatch(runtime.source, /NEXT_PUBLIC_APP_URL/);
   assert.doesNotMatch(runtime.source, /\/api\/line-login\/me/);
+});
+
+test("customer nail-tip history is scoped to the signed customer and returns shipping fields", async () => {
+  const calls = [];
+  const runtime = loadRoute("customer-app/nail-tip-orders", {
+    customer: { id: "trusted-customer", name: "Customer", salonId: "salon-1" },
+    getSupabaseAdmin() {
+      return {
+        from(table) {
+          assert.equal(table, "nail_tip_orders");
+          const chain = {
+            select(columns) {
+              calls.push(["select", columns]);
+              return chain;
+            },
+            eq(column, value) {
+              calls.push(["eq", column, value]);
+              return chain;
+            },
+            async order(column, options) {
+              calls.push(["order", column, options]);
+              return { data: [{ id: "order-1", shipping_company: "Yamato" }], error: null };
+            },
+          };
+          return chain;
+        },
+      };
+    },
+  });
+
+  const response = await runtime.exports.GET({});
+  const json = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(json.orders[0].id, "order-1");
+  assert.deepEqual(calls[1], ["eq", "customer_id", "trusted-customer"]);
+  assert.match(calls[0][1], /shipping_company/);
+  assert.match(calls[0][1], /tracking_number/);
+  assert.match(calls[0][1], /shipped_at/);
 });
 
 test("the customer order page no longer submits client-controlled identity fields", () => {
