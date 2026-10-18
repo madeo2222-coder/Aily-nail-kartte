@@ -45,7 +45,7 @@ async function mount({ failureTable = "", rejection = false, empty = false, miss
   let pendingEffects = [];
   let tree;
   let shouldFail = Boolean(failureTable);
-  const queries = [];
+  const requests = [];
 
   const hooks = {
     useState(initial) {
@@ -142,12 +142,47 @@ async function mount({ failureTable = "", rejection = false, empty = false, miss
     };
   }
 
-  function response(table) {
-    if (shouldFail && table === failureTable) {
-      if (rejection) throw new Error("offline");
-      return { data: null, error: { code: "500", message: "read failed" } };
+  async function fetchMock(url, options) {
+    requests.push({ url, options });
+
+    if (shouldFail && rejection) throw new Error("offline");
+
+    if (shouldFail) {
+      return {
+        ok: false,
+        status: 500,
+        async json() {
+          return { ok: false, error: `${failureTable} read failed` };
+        },
+      };
     }
-    return successfulResponse(table);
+
+    if (missing) {
+      return {
+        ok: false,
+        status: 404,
+        async json() {
+          return { ok: false, error: "顧客情報が見つかりません。" };
+        },
+      };
+    }
+
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          customer: successfulResponse("customers").data,
+          visits: successfulResponse("visits").data,
+          visitPayments: successfulResponse("visit_payments").data,
+          visitPhotos: successfulResponse("visit_photos").data,
+          reservations: successfulResponse("reservations").data,
+          staffs: successfulResponse("staffs").data,
+          customerIntakes: successfulResponse("customer_intakes").data,
+        };
+      },
+    };
   }
 
   const exports = {};
@@ -161,6 +196,7 @@ async function mount({ failureTable = "", rejection = false, empty = false, miss
     Promise,
     Set,
     console: { error() {} },
+    fetch: fetchMock,
     window: { confirm: () => true },
     require(name) {
       if (name === "react") return hooks;
@@ -176,19 +212,8 @@ async function mount({ failureTable = "", rejection = false, empty = false, miss
       if (name === "@/lib/supabase") {
         return {
           supabase: {
-            from(table) {
-              queries.push(table);
-              const chain = {
-                select() { return chain; },
-                eq() { return chain; },
-                in() { return chain; },
-                order() { return chain; },
-                single() { return Promise.resolve().then(() => response(table)); },
-                then(resolve, reject) {
-                  return Promise.resolve().then(() => response(table)).then(resolve, reject);
-                },
-              };
-              return chain;
+            from() {
+              throw new Error("Unexpected browser database read");
             },
           },
         };
@@ -214,7 +239,7 @@ async function mount({ failureTable = "", rejection = false, empty = false, miss
   await settle();
 
   return {
-    queries,
+    requests,
     html() { return renderToStaticMarkup(tree); },
     async retry() {
       const button = findNode(tree, node => node.type === "button" && node.props?.children === "再試行");
@@ -262,8 +287,7 @@ test("customer detail handles a rejected dependent read and recovers on retry", 
   assert.match(page.html(), /黒木/);
   assert.match(page.html(), /グラデーション/);
   assert.match(page.html(), /来店履歴を追加/);
-  assert.equal(page.queries.filter(table => table === "customers").length, 2);
-  assert.equal(page.queries.filter(table => table === "visit_photos").length, 2);
+  assert.equal(page.requests.length, 2);
   page.unmount();
 });
 
@@ -296,9 +320,9 @@ test("customer detail renders only complete successful data", async () => {
   assert.match(page.html(), /グラデーション/);
   assert.match(page.html(), /アレルギー情報/);
   assert.match(page.html(), /来店履歴を追加/);
-  assert.deepEqual(
-    [...new Set(page.queries)].sort(),
-    ["customer_intakes", "customers", "reservations", "staffs", "visit_payments", "visit_photos", "visits"]
-  );
+  assert.deepEqual(JSON.parse(JSON.stringify(page.requests)), [{
+    url: "/api/customers/customer-1/detail",
+    options: { cache: "no-store" },
+  }]);
   page.unmount();
 });

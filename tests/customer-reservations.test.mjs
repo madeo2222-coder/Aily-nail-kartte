@@ -16,11 +16,6 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
 
-// Columns confirmed by the owner from information_schema on 2026-09-27.
-const columns = {
-  reservations: new Set("id salon_id customer_id staff_id menu start_at end_at status memo created_at".split(" ")),
-  staffs: new Set("id salon_id name role email phone created_at user_id customer_booking_enabled is_active".split(" ")),
-};
 const booking = (overrides = {}) => ({
   id: "booking-1", customer_id: "customer-1", staff_id: "staff-1",
   start_at: "2099-10-02T01:30:00", status: "confirmed", menu: "テストメニュー",
@@ -29,7 +24,7 @@ const booking = (overrides = {}) => ({
 
 async function loadPage({ reservations = [], reservationError = null, rejectReservations = false,
   staffs = [{ id: "staff-1", name: "テスト担当" }], staffError = null } = {}) {
-  const queries = [];
+  const requests = [];
   const states = [];
   const effects = [];
   const errors = [];
@@ -47,35 +42,7 @@ async function loadPage({ reservations = [], reservationError = null, rejectRese
   };
   const supabase = {
     from(table) {
-      const query = { table, filters: [] };
-      queries.push(query);
-      const chain = {
-        select(value) { query.columns = value; return chain; },
-        eq(key, value) { query.filters.push([key, value]); return chain; },
-        in(key, value) { query.filters.push([key, Array.from(value)]); return chain; },
-        order() { return chain; },
-        single() { return chain; },
-        then(resolve, reject) {
-          if (table === "reservations" && rejectReservations) {
-            return Promise.reject(new Error("network unavailable")).then(resolve, reject);
-          }
-          if (columns[table]) {
-            const unknown = query.columns.split(",").map((value) => value.trim())
-              .find((value) => !columns[table].has(value));
-            if (unknown) return Promise.resolve({ data: null, error: { code: "42703", message: `missing column ${unknown}` } }).then(resolve, reject);
-          }
-          const responses = {
-            customers: { data: { id: "customer-1", name: "テスト顧客", name_kana: null, phone: null }, error: null },
-            visits: { data: [], error: null },
-            customer_intakes: { data: [], error: null },
-            reservations: { data: reservationError ? null : reservations, error: reservationError },
-            staffs: { data: staffError ? null : staffs, error: staffError },
-          };
-          assert.ok(table in responses, `Unexpected query: ${table}`);
-          return Promise.resolve(responses[table]).then(resolve, reject);
-        },
-      };
-      return chain;
+      throw new Error(`Unexpected browser database read: ${table}`);
     },
   };
   const exports = {};
@@ -103,6 +70,31 @@ async function loadPage({ reservations = [], reservationError = null, rejectRese
     },
     console: { error: (...args) => errors.push(args) },
     alert: () => {},
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      if (rejectReservations) throw new Error("network unavailable");
+      if (reservationError || staffError) {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ error: "customer_detail_failed" }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          customer: { id: "customer-1", name: "テスト顧客", name_kana: null, phone: null },
+          visits: [],
+          visitPayments: [],
+          visitPhotos: [],
+          reservations,
+          staffs: reservations.some((reservation) => reservation.staff_id) ? staffs : [],
+          customerIntakes: [],
+        }),
+      };
+    },
   }, { filename: "customer-detail-page.js" });
   const render = () => {
     cursor = 0;
@@ -110,11 +102,11 @@ async function loadPage({ reservations = [], reservationError = null, rejectRese
   };
   assert.match(render(), /読み込み中/);
   for (const effect of effects.splice(0)) effect();
-  // All mocked queries resolve as microtasks; let the page's async chain settle.
+  // The mocked API resolves as microtasks; let the page's async chain settle.
   await setImmediate();
   const html = render();
   assert.doesNotMatch(html, /読み込み中/);
-  return { html, queries, errors };
+  return { html, requests, errors };
 }
 
 test("reservation query failure shows an alert, never a false empty state", async () => {
@@ -131,28 +123,28 @@ test("rejected reservation request also stays distinct from no booking", async (
 });
 
 test("successful empty result shows no booking and skips staff lookup", async () => {
-  const { html, queries } = await loadPage();
+  const { html, requests } = await loadPage();
   assert.match(html, /次回予約は未登録です/);
   assert.doesNotMatch(html, /次回予約を確認できませんでした/);
-  assert.ok(!queries.some((query) => query.table === "staffs"));
+  assert.equal(requests.length, 1);
 });
 
 test("confirmed schema returns the menu, staff and JST date/time", async () => {
-  const { html, queries, errors } = await loadPage({ reservations: [booking()] });
+  const { html, requests, errors } = await loadPage({ reservations: [booking()] });
   assert.equal(errors.length, 0);
   assert.match(html, /テストメニュー/);
   assert.match(html, /テスト担当/);
   assert.match(html, /10\/2/);
   assert.match(html, /10:30/);
-  assert.deepEqual(queries.find((q) => q.table === "reservations").filters, [["customer_id", "customer-1"]]);
-  assert.deepEqual(queries.find((q) => q.table === "staffs").filters, [["id", ["staff-1"]]]);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, "/api/customers/customer-1/detail");
 });
 
 test("missing staff assignment preserves booking and skips staff lookup", async () => {
-  const { html, queries } = await loadPage({ reservations: [booking({ staff_id: null })] });
+  const { html, requests } = await loadPage({ reservations: [booking({ staff_id: null })] });
   assert.match(html, /テストメニュー/);
   assert.match(html, /担当: -/);
-  assert.ok(!queries.some((q) => q.table === "staffs"));
+  assert.equal(requests.length, 1);
 });
 
 test("staff lookup failure blocks an incomplete customer detail", async () => {

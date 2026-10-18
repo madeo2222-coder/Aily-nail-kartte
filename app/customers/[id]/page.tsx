@@ -366,106 +366,51 @@ export default function CustomerDetailPage() {
     setIntake(null);
 
     try {
-      const { data: customerData, error: customerError } = await supabase
-        .from("customers")
-        .select("id, name, name_kana, phone")
-        .eq("id", customerId)
-        .single();
+      const response = await fetch(`/api/customers/${customerId}/detail`, {
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        customer?: Customer;
+        visits?: Visit[];
+        visitPayments?: VisitPayment[];
+        visitPhotos?: VisitPhoto[];
+        reservations?: Reservation[];
+        staffs?: ReservationStaff[];
+        customerIntakes?: CustomerIntakeQueryRow[];
+      };
 
       if (!isCurrent()) return;
 
-      if (customerError) {
-        if (customerError.code === "PGRST116") {
-          setNotFound(true);
-          return;
-        }
-        throw customerError;
-      }
-
-      if (!customerData) {
+      if (response.status === 404) {
         setNotFound(true);
         return;
       }
 
-      const { data: visitsData, error: visitsError } = await supabase
-        .from("visits")
-        .select(
-          "id, customer_id, visit_date, menu_name, menu, color, price, payment_method, memo, next_visit_date, next_proposal"
-        )
-        .eq("customer_id", customerId)
-        .order("visit_date", { ascending: false });
-
-      if (!isCurrent()) return;
-      if (visitsError) throw visitsError;
-
-      const nextVisits = (visitsData || []) as Visit[];
-      const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
-      let nextVisitPayments: VisitPayment[] = [];
-      let nextVisitPhotos: VisitPhoto[] = [];
-
-      if (visitIds.length > 0) {
-        const [paymentResult, photoResult] = await Promise.all([
-          supabase
-            .from("visit_payments")
-            .select("id, visit_id, payment_method, amount, sort_order")
-            .in("visit_id", visitIds)
-            .order("sort_order", { ascending: true }),
-          supabase
-            .from("visit_photos")
-            .select("id, visit_id, salon_id, image_url, photo_type, created_at")
-            .in("visit_id", visitIds)
-            .order("created_at", { ascending: true }),
-        ]);
-
-        if (!isCurrent()) return;
-        if (paymentResult.error) throw paymentResult.error;
-        if (photoResult.error) throw photoResult.error;
-        nextVisitPayments = (paymentResult.data || []) as VisitPayment[];
-        nextVisitPhotos = (photoResult.data || []) as VisitPhoto[];
+      if (
+        !response.ok ||
+        !result.ok ||
+        !result.customer ||
+        !Array.isArray(result.visits) ||
+        !Array.isArray(result.visitPayments) ||
+        !Array.isArray(result.visitPhotos) ||
+        !Array.isArray(result.reservations) ||
+        !Array.isArray(result.staffs) ||
+        !Array.isArray(result.customerIntakes)
+      ) {
+        throw new Error("Customer detail response is invalid");
       }
 
-      const { data: reservationData, error: reservationError } = await supabase
-        .from("reservations")
-        .select("id, customer_id, staff_id, status, start_at, menu")
-        .eq("customer_id", customerId);
-
-      if (!isCurrent()) return;
-      if (reservationError) throw reservationError;
-
-      const nextReservations = (reservationData || []) as Reservation[];
-      const staffIds = Array.from(
-        new Set(
-          nextReservations
-            .map((reservation) => reservation.staff_id)
-            .filter((staffId): staffId is string => Boolean(staffId))
-        )
+      const nextVisits = result.visits;
+      const nextVisitPayments = result.visitPayments;
+      const nextVisitPhotos = result.visitPhotos;
+      const nextReservations = result.reservations;
+      const nextStaffNames = Object.fromEntries(
+        result.staffs
+          .filter((staff) => staff.name?.trim())
+          .map((staff) => [staff.id, staff.name!.trim()])
       );
-      let nextStaffNames: Record<string, string> = {};
-
-      if (staffIds.length > 0) {
-        const { data: staffData, error: staffError } = await supabase
-            .from("staffs")
-            .select("id, name")
-            .in("id", staffIds);
-
-        if (!isCurrent()) return;
-        if (staffError) throw staffError;
-        nextStaffNames = Object.fromEntries(
-          ((staffData || []) as ReservationStaff[])
-            .filter((staff) => staff.name?.trim())
-            .map((staff) => [staff.id, staff.name!.trim()])
-        );
-      }
-
-      const intakeResult = await supabase
-        .from("customer_intakes")
-        .select("*")
-        .eq("customer_id", customerId);
-
-      if (!isCurrent()) return;
-      if (intakeResult.error) throw intakeResult.error;
-
-      const intakeRows = (intakeResult.data as CustomerIntakeQueryRow[] | null ?? [])
+      const intakeRows = result.customerIntakes
         .filter((item) => item && item.customer_id)
         .map((item) => ({
               id: item.id,
@@ -531,7 +476,7 @@ export default function CustomerDetailPage() {
         })[0] || null;
 
       if (!isCurrent()) return;
-      setCustomer(customerData as Customer);
+      setCustomer(result.customer);
       setVisits(nextVisits);
       setVisitPayments(nextVisitPayments);
       setVisitPhotos(nextVisitPhotos);
