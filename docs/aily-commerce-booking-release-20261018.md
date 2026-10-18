@@ -4,11 +4,11 @@
 
 - 対象: `madeo2222-coder/Aily-nail-kartte`。
 - 本番 `main`: `459b1dde236c38fe06d642993960640f6304fa79`。
-- 開発統合ブランチ `dev/preview-batch-20260927`: `8cef27d122222b43aa6a15f4330cca2cee4aeddc`。
+- 開発統合ブランチ `dev/preview-batch-20260927`: `116b34dfd670a5487a4315003c3f2df02b6b1542`。
 - 本作業は開発統合ブランチを基に本番 main を取り込んだ独立ブランチで実施。他の作業ディレクトリは変更していない。
 - 日別売上コンポーネントは本番版と開発統合版で同一。統合時は既存の開発版ダッシュボードの読取エラー対策を維持した。
-- 確認済み最新全環境 deployment: `dpl_GNsxsaPMuYTMBvKfNhMhcV56VjhD`、SHA `8cef27d...`、Preview READY。本番は `dpl_DuEEbbseojHuqEv533d73abWcNPt`、SHA `459b1dd...`、READYのまま。
-- 最新試行の作成時刻: 2026-10-18 13:09:19.080 JST。既存の Aily 全体の6時間間隔を維持する場合、次のビルドを誘発する操作は最短19:09:19.080 JST以降。実行直前に全環境で再計算する。
+- 確認済み最新全環境 deployment: `dpl_cpTVuYCX1AMapDy2YvxhDViJ4Pmp`、SHA `116b34d...`、Preview READY。本番は `dpl_DuEEbbseojHuqEv533d73abWcNPt`、SHA `459b1dd...`、READYのまま。
+- 最新試行の作成時刻: 2026-10-18 19:09:38.618 JST。既存の Aily 全体の6時間間隔を維持する場合、次のビルドを誘発する操作は最短2026-10-19 01:09:38.618 JST以降。実行直前に全環境で再計算する。
 
 ## 今回実装したこと
 
@@ -37,7 +37,7 @@
 - 顧客マイページで、相談時の商品・デザイン希望・サイズ・配送／納期希望・注文状態・支払状態を再表示する。入力内容を店舗へ送った後、顧客自身が同じ内容を確認できる。
 - 注文相談ごとにブラウザで一意キーを生成し、サーバーは顧客・店舗・キーから決定的な注文UUIDを生成する。同じ送信の再試行は既存の主キー制約で1件へ収束し、生の識別キーはDBへ保存しない。
 - 既存の `nail_tip_orders.id` 主キーを利用するため追加migrationは不要。通信切断後も同じ送信処理を1回だけ安全に再試行できる。
-- 別端末で新しく作られた別キーの同内容注文まで自動統合するものではない。このコードはPreviewへ未反映。
+- 別端末で新しく作られた別キーの同内容注文まで自動統合するものではない。このコードは統合Previewで確認済み。
 
 ### 予約の空き枠
 
@@ -46,6 +46,16 @@
 - 日付加算をホストOSのタイムゾーンや夏時間に依存させない。
 - 顧客が別日時へ変更するときも同じ空き枠判定を使い、営業時間外・30分刻み以外・経過済み時刻・予約／外部予定との重複を保存前に拒否する。変更中の予約自身だけは重複判定から除外する。
 - 既存の予約作成・確定・別日時提案・通知台帳とDBの排他処理を再利用する。
+
+### スタッフの新規予約登録
+
+- `/reservations/new` のサロン・顧客・担当者読取と予約保存を、ブラウザからの直接DB操作ではなくスタッフ認証付きAPIへ移した。
+- 個別のSupabaseスタッフ認証では所属サロンだけを返し、保存時も所属サロンへ固定する。署名済み共有ログインの既存複数サロン運用は維持する。
+- 保存直前に担当者の所属・在籍状態と顧客の所属をサーバーで確認し、予約表と外部カレンダーブロックの両方に対して担当時間の重複を拒否する。
+- ブラウザ側は送信開始時に同期ロックし、連打による同一画面からの二重登録を防ぐ。
+- 通常予約とHPB・ミニモ等の手入力ブロックを同じ経路で保存し、既存のメニュー、メモ、予約状態、登録後のカレンダー遷移を維持する。
+- 今回は既存DBを変更しないため、別端末から全く同時に行う2件の保存をDBトランザクションで直列化するところまでは含まない。実DBで必要migrationを確認後、既存の予約排他関数と同じ方式で解消する。
+- 追加migrationはない。コードはローカルcommit objectへ保存する段階で、統合Previewと実DBへの反映は未実施。
 
 ### HPB・ミニモ予約メールの遅延同期
 
@@ -65,7 +75,7 @@
 
 | 検証 | 実施結果 | 範囲・限界 |
 | --- | --- | --- |
-| `node --test tests/*.test.mjs` | 529件中528件成功、失敗0、任意PGlite 1件スキップ | 署名済み注文履歴API、相談内容のマイページ再表示、DB変更不要の送信冪等性、別日時更新の共通空き枠判定、HPB／ミニモ遅延同期の同一顧客照合、発送通知再試行、ルート・画面ハンドラー・既存業務機能のローカル検証 |
+| `node --test tests/*.test.mjs` | 539件中538件成功、失敗0、任意PGlite 1件スキップ | 署名済み注文履歴API、相談内容のマイページ再表示、DB変更不要の送信冪等性、別日時更新の共通空き枠判定、HPB／ミニモ遅延同期の同一顧客照合、スタッフ新規予約の認証・所属・重複検査、発送通知再試行、ルート・画面ハンドラー・既存業務機能のローカル検証 |
 | TypeScript・変更TS/TSXのESLint・差分検査 | 成功 | 本番DB接続の成功を意味しない |
 | `next build --webpack` | 完了 | ダミー設定のみ。初回は既定のNodeヒープ上限で中断、6GiB指定で再実行して静的生成・最適化・ルート一覧まで完了 |
 | `verify-payment-pending-sql.mjs` | 成功 | PGlite上で既存決済migrationを実行。保留中の再課金防止、成功の冪等性、匿名実行拒否を検証 |
@@ -110,6 +120,8 @@ StarRevenue `madeo2222-coder/v0-star-revenue` の確認時点の最新SHAは `b5
 - `app/customer-app/nail-tip-order/page.tsx`
 - `app/customer-app/mypage/page.tsx`
 - `lib/server/customerReservationAvailability.ts`
+- `app/api/reservations/staff-create/route.ts`
+- `app/reservations/new/page.tsx`
 - `app/api/sanmeigaku-diagnoses/route.ts`
 - `app/customer-app/sanmeigaku/page.tsx`
 - `scripts/sql/aily-commerce-access-preflight.sql`（読取専用、実DBでは未実行）
@@ -118,6 +130,8 @@ StarRevenue `madeo2222-coder/v0-star-revenue` の確認時点の最新SHAは `b5
 - `tests/payment-client-retry.test.mjs`
 - `tests/order-fulfilment-payment.test.mjs`
 - `tests/customer-availability-time.test.mjs`
+- `tests/reservation-new-master-errors.test.mjs`
+- `tests/reservation-staff-create-api-auth.test.mjs`
 - `tests/diagnosis-ownership.test.mjs`
 - 本記録。加えて main の `docs/aily-daily-sales-production-20261018.md` を統合。
 

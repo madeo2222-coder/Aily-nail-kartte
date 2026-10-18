@@ -20,10 +20,24 @@ const externalReservationMetadata = (() => {
   vm.runInNewContext(source, { exports });
   return exports;
 })();
+const pageSource = readFileSync(
+  new URL("../app/reservations/new/page.tsx", import.meta.url),
+  "utf8",
+);
 const compiled = ts.transpileModule(
-  readFileSync(new URL("../app/reservations/new/page.tsx", import.meta.url), "utf8"),
+  pageSource,
   { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }
 ).outputText;
+
+test("staff reservation creation uses its authenticated API instead of browser database access", () => {
+  assert.doesNotMatch(pageSource, /@\/lib\/supabase|supabase\.from/);
+  assert.match(pageSource, /fetch\("\/api\/reservations\/staff-create"/);
+  assert.match(pageSource, /if \(submissionInFlight\.current\) return/);
+  assert.ok(
+    pageSource.indexOf("submissionInFlight.current = true") <
+      pageSource.indexOf('method: "POST"'),
+  );
+});
 
 function findNode(node, predicate) {
   if (!node || typeof node !== "object") return null;
@@ -35,13 +49,13 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failureTable = "", rejection = false, empty = false } = {}) {
+async function mount({ failure = false, rejection = false, empty = false } = {}) {
   const states = [];
   let cursor = 0;
   let effects = [];
   const cleanups = [];
-  let shouldFail = Boolean(failureTable);
-  const queries = [];
+  let shouldFail = failure;
+  const requests = [];
 
   const hooks = {
     useState(initial) {
@@ -61,25 +75,37 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     useEffect: fn => { effects.push(fn); },
   };
 
-  function response(table) {
-    if (shouldFail && failureTable === table) {
-      if (rejection) throw new Error("offline");
-      return { data: null, error: { message: "read failed" } };
+  async function fetch(url, options) {
+    requests.push({ url, options });
+    if (shouldFail && rejection) throw new Error("offline");
+    if (shouldFail) {
+      return {
+        ok: false,
+        async json() {
+          return { ok: false, error: "予約登録に必要なデータを取得できませんでした。" };
+        },
+      };
     }
-    if (empty) return { data: [], error: null };
-    if (table === "salons") {
-      return { data: [{ id: "s1", name: "Aily" }], error: null };
-    }
-    if (table === "customers") {
-      return { data: [{ id: "c1", name: "顧客A", salon_id: "s1" }], error: null };
-    }
-    return { data: [{ id: "st1", name: "スタッフA", salon_id: "s1" }], error: null };
+    return {
+      ok: true,
+      async json() {
+        return empty
+          ? { ok: true, salons: [], customers: [], staffs: [] }
+          : {
+              ok: true,
+              salons: [{ id: "s1", name: "Aily" }],
+              customers: [{ id: "c1", name: "顧客A", salon_id: "s1" }],
+              staffs: [{ id: "st1", name: "スタッフA", salon_id: "s1" }],
+            };
+      },
+    };
   }
 
   const exports = {};
   vm.runInNewContext(compiled, {
     exports,
     Date,
+    fetch,
     Intl,
     Number,
     Promise,
@@ -92,22 +118,6 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
       if (name === "@/lib/external-reservation-metadata") {
         return externalReservationMetadata;
       }
-      if (name === "@/lib/supabase") return { supabase: {
-        from(table) {
-          assert.ok(["salons", "customers", "staffs"].includes(table));
-          const query = { table, select: "", filters: [], orders: [] };
-          queries.push(query);
-          const chain = {
-            select(value) { query.select = value; return chain; },
-            eq(column, value) { query.filters.push([column, value]); return chain; },
-            order(column, options) {
-              query.orders.push([column, options]);
-              return Promise.resolve().then(() => response(table));
-            },
-          };
-          return chain;
-        },
-      } };
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -127,7 +137,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
   await setImmediate();
 
   return {
-    queries,
+    requests,
     html,
     unmount() { for (const cleanup of cleanups) cleanup(); },
     async retry() {
@@ -140,18 +150,22 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
   };
 }
 
-for (const failureTable of ["salons", "customers", "staffs"]) {
-  test(`reservation creation hides the form when ${failureTable} master data fails`, async () => {
-    const page = await mount({ failureTable });
-    assert.match(page.html(), /role="alert"/);
-    assert.match(page.html(), /一覧の取得に失敗しました/);
-    assert.doesNotMatch(page.html(), /登録種別|登録内容確認|>登録する</);
-    page.unmount();
+test("reservation creation hides the form when authenticated master data fails", async () => {
+  const page = await mount({ failure: true });
+  assert.match(page.html(), /role="alert"/);
+  assert.match(page.html(), /予約登録に必要なデータを取得できませんでした/);
+  assert.doesNotMatch(page.html(), /登録種別|登録内容確認|>登録する</);
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, "/api/reservations/staff-create");
+  assert.deepEqual(JSON.parse(JSON.stringify(page.requests[0].options)), {
+    method: "GET",
+    cache: "no-store",
   });
-}
+  page.unmount();
+});
 
 test("reservation creation handles a rejected master query and retries all sources", async () => {
-  const page = await mount({ failureTable: "customers", rejection: true });
+  const page = await mount({ failure: true, rejection: true });
   assert.match(page.html(), /予約登録に必要なデータを取得できませんでした/);
   assert.doesNotMatch(page.html(), /登録内容確認/);
   await page.retry();
@@ -159,7 +173,7 @@ test("reservation creation handles a rejected master query and retries all sourc
   assert.match(page.html(), /登録種別/);
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /スタッフA/);
-  assert.equal(page.queries.length, 6);
+  assert.equal(page.requests.length, 2);
   page.unmount();
 });
 
@@ -168,7 +182,7 @@ test("reservation creation preserves authoritative empty master results", async 
   assert.doesNotMatch(page.html(), /role="alert"/);
   assert.match(page.html(), /登録種別/);
   assert.match(page.html(), /選択してください/);
-  assert.equal(page.queries.length, 3);
+  assert.equal(page.requests.length, 1);
   page.unmount();
 });
 
@@ -179,10 +193,6 @@ test("reservation creation renders complete master data only after every query s
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /スタッフA/);
   assert.match(page.html(), /登録内容確認/);
-  assert.equal(page.queries.length, 3);
-  assert.deepEqual(page.queries.find(query => query.table === "staffs")?.filters, [
-    ["role", "staff"],
-    ["is_active", true],
-  ]);
+  assert.equal(page.requests.length, 1);
   page.unmount();
 });

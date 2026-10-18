@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { buildExternalReservationMemo } from "@/lib/external-reservation-metadata";
-import { supabase } from "@/lib/supabase";
 
 type Salon = {
   id: string;
@@ -193,10 +192,6 @@ function addMinutesToUtcIso(
   return end.toISOString();
 }
 
-function isCancelledStatus(status: string | null | undefined) {
-  return status === "キャンセル" || status === "cancelled";
-}
-
 function formatYen(value: number) {
   return `¥${value.toLocaleString("ja-JP")}`;
 }
@@ -247,6 +242,7 @@ export default function ReservationNewPage() {
   const [masterDataError, setMasterDataError] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const masterRequestVersion = useRef(0);
+  const submissionInFlight = useRef(false);
 
   const fetchMasterData = useCallback(async () => {
     const version = ++masterRequestVersion.current;
@@ -256,39 +252,24 @@ export default function ReservationNewPage() {
       setPageLoading(true);
       setMasterDataError("");
 
-      const [salonsRes, customersRes, staffsRes] = await Promise.all([
-        supabase
-          .from("salons")
-          .select("id, name")
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("customers")
-          .select("id, name, salon_id")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("staffs")
-          .select("id, name, salon_id")
-          .eq("role", "staff")
-          .eq("is_active", true)
-          .order("created_at", { ascending: true }),
-      ]);
+      const response = await fetch("/api/reservations/staff-create", {
+        method: "GET",
+        cache: "no-store",
+      });
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        salons?: Salon[];
+        customers?: Customer[];
+        staffs?: Staff[];
+      } | null;
 
       if (!isCurrent()) return;
 
-      const failedSources = [
-        salonsRes.error ? "サロン" : "",
-        customersRes.error ? "顧客" : "",
-        staffsRes.error ? "スタッフ" : "",
-      ].filter(Boolean);
-
-      if (failedSources.length > 0) {
-        console.error("reservation master data fetch error:", {
-          salons: salonsRes.error?.message,
-          customers: customersRes.error?.message,
-          staffs: staffsRes.error?.message,
-        });
+      if (!response.ok || !result?.ok) {
         setMasterDataError(
-          `${failedSources.join("・")}一覧の取得に失敗しました。通信状態を確認して再試行してください。`
+          result?.error ||
+            "予約登録に必要なデータを取得できませんでした。通信状態を確認して再試行してください。"
         );
         setSalons([]);
         setAllCustomers([]);
@@ -299,10 +280,10 @@ export default function ReservationNewPage() {
         return;
       }
 
-      const salonRows = (salonsRes.data as Salon[]) || [];
+      const salonRows = result.salons || [];
       setSalons(salonRows);
-      setAllCustomers((customersRes.data as Customer[]) || []);
-      setAllStaffs((staffsRes.data as Staff[]) || []);
+      setAllCustomers(result.customers || []);
+      setAllStaffs(result.staffs || []);
 
       if (salonRows.length === 1) {
         setSalonId(salonRows[0].id);
@@ -642,41 +623,9 @@ export default function ReservationNewPage() {
   }
 }
 
-  async function checkOverlap({
-    startAt,
-    endAt,
-  }: {
-    startAt: string;
-    endAt: string;
-  }) {
-    let query = supabase
-      .from("reservations")
-      .select("id, status, menu, start_at, end_at")
-      .lt("start_at", endAt)
-      .gt("end_at", startAt);
-
-    if (salonId) {
-      query = query.eq("salon_id", salonId);
-    }
-
-    if (staffId) {
-      query = query.eq("staff_id", staffId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const activeOverlaps = (data || []).filter(
-      (item) => !isCancelledStatus(item.status)
-    );
-
-    return activeOverlaps;
-  }
-
   async function handleSubmit() {
+    if (submissionInFlight.current) return;
+
     setErrorMessage("");
 
     if (!salonId) {
@@ -712,60 +661,46 @@ export default function ReservationNewPage() {
       return;
     }
 
+    submissionInFlight.current = true;
     setLoading(true);
 
     try {
-      const overlaps = await checkOverlap({
-        startAt,
-        endAt,
+      const response = await fetch("/api/reservations/staff-create", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mode: reservationMode,
+          salonId,
+          customerId: reservationMode === "normal" ? customerId : null,
+          staffId,
+          menu: displayMenu,
+          startAt,
+          endAt,
+          status,
+          memo: combinedMemo,
+        }),
       });
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
 
-      if (overlaps.length > 0) {
-        setLoading(false);
+      if (!response.ok || !result?.ok) {
         setErrorMessage(
-          "この時間帯はすでに予約またはブロックがあります。カレンダーで確認してください。"
+          result?.error ||
+            "予約を登録できませんでした。通信状況を確認して再試行してください。"
         );
-        return;
-      }
-
-      const insertPayload: {
-        salon_id: string;
-        customer_id?: string;
-        staff_id: string;
-        menu: string;
-        start_at: string;
-        end_at: string;
-        status: string;
-        memo: string | null;
-      } = {
-        salon_id: salonId,
-        staff_id: staffId,
-        menu: displayMenu,
-        start_at: startAt,
-        end_at: endAt,
-        status: reservationMode === "external" ? "予約確定" : status,
-        memo: combinedMemo,
-      };
-
-      if (reservationMode === "normal" && customerId) {
-        insertPayload.customer_id = customerId;
-      }
-
-      const { error } = await supabase.from("reservations").insert([insertPayload]);
-
-      setLoading(false);
-
-      if (error) {
-        setErrorMessage(`登録失敗: ${error.message}`);
         return;
       }
 
       router.push("/reservations/calendar");
     } catch (error) {
-      setLoading(false);
       const message =
         error instanceof Error ? error.message : "登録中にエラーが発生しました";
       setErrorMessage(message);
+    } finally {
+      submissionInFlight.current = false;
+      setLoading(false);
     }
   }
 
