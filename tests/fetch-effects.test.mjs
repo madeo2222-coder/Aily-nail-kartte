@@ -392,25 +392,23 @@ async function loadCustomerEdit({ row, error = null, rejectQuery = false } = {})
     name_kana: "ヤマダ ハナコ",
     phone: "+819012345678",
   };
-  const supabase = {
-    from(table) {
-      assert.equal(table, "customers");
-      const query = { table };
-      queries.push(query);
-      const chain = {
-        select(value) { query.select = value; return chain; },
-        eq(key, value) { query.eq = [key, value]; return chain; },
-        async single() {
-          if (rejectQuery) throw new Error("offline");
-          return { data: error ? null : customer, error };
-        },
-      };
-      return chain;
-    },
-  };
   const exports = {};
   vm.runInNewContext(compiled, {
     exports,
+    encodeURIComponent,
+    fetch: async (url, options = {}) => {
+      queries.push({ url, options });
+      if (rejectQuery) throw new Error("offline");
+      const status = error?.code === "PGRST116" ? 404 : error ? 500 : 200;
+      return {
+        ok: status === 200,
+        status,
+        json: async () =>
+          status === 200
+            ? { ok: true, customer }
+            : { ok: false, error: error?.message || "read failed" },
+      };
+    },
     require(name) {
       if (name === "react") return hookState.hooks;
       if (name === "react/jsx-runtime") return require(name);
@@ -418,7 +416,6 @@ async function loadCustomerEdit({ row, error = null, rejectQuery = false } = {})
         useParams: () => ({ id: "customer-1" }),
         useRouter: () => router,
       };
-      if (name === "@/lib/supabase") return { supabase };
       throw new Error(`Unexpected import: ${name}`);
     },
     console,
@@ -461,8 +458,8 @@ async function loadCustomerEdit({ row, error = null, rejectQuery = false } = {})
 test("customer edit loads the selected customer before enabling edits", async () => {
   const page = await loadCustomerEdit();
   assert.equal(page.queries.length, 1);
-  assert.equal(page.queries[0].select, "id, name, name_kana, phone");
-  assert.deepEqual(page.queries[0].eq, ["id", "customer-1"]);
+  assert.equal(page.queries[0].url, "/api/customers/customer-1/staff-edit");
+  assert.equal(page.queries[0].options.cache, "no-store");
   assert.match(page.html, /value="山田 花子"/);
   assert.match(page.html, /value="\+819012345678"/);
   assert.deepEqual(page.redirects, []);

@@ -1,8 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+
+type CustomerEditResponse = {
+  ok?: boolean;
+  customer?: {
+    id: string;
+    name: string | null;
+    name_kana: string | null;
+    phone: string | null;
+  };
+  id?: string;
+  error?: string;
+};
 
 export default function CustomerEditPage() {
   const params = useParams();
@@ -15,8 +26,11 @@ export default function CustomerEditPage() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [loadError, setLoadError] = useState<"not-found" | "failed" | null>(null);
+  const saveInFlight = useRef(false);
+  const loadRequestVersion = useRef(0);
 
   const fetchCustomer = useCallback(async () => {
+    const requestVersion = ++loadRequestVersion.current;
     setFetching(true);
     setLoadError(null);
 
@@ -27,26 +41,31 @@ export default function CustomerEditPage() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from("customers")
-        .select("id, name, name_kana, phone")
-        .eq("id", customerId)
-        .single();
+      const response = await fetch(
+        `/api/customers/${encodeURIComponent(customerId)}/staff-edit`,
+        { cache: "no-store" },
+      );
+      const result = (await response.json()) as CustomerEditResponse;
 
-      if (error || !data) {
-        console.error("顧客取得エラー:", error);
-        setLoadError(error ? (error.code === "PGRST116" ? "not-found" : "failed") : "not-found");
+      if (requestVersion !== loadRequestVersion.current) return;
+
+      if (!response.ok || !result.ok || !result.customer) {
+        setLoadError(response.status === 404 ? "not-found" : "failed");
         return;
       }
 
-      setName(data.name || "");
-      setNameKana(data.name_kana || "");
-      setPhone(data.phone || "");
+      setName(result.customer.name || "");
+      setNameKana(result.customer.name_kana || "");
+      setPhone(result.customer.phone || "");
     } catch (error) {
       console.error("顧客取得エラー:", error);
-      setLoadError("failed");
+      if (requestVersion === loadRequestVersion.current) {
+        setLoadError("failed");
+      }
     } finally {
-      setFetching(false);
+      if (requestVersion === loadRequestVersion.current) {
+        setFetching(false);
+      }
     }
   }, [customerId]);
 
@@ -54,51 +73,51 @@ export default function CustomerEditPage() {
     void Promise.resolve().then(fetchCustomer);
   }, [fetchCustomer]);
 
-  function normalizePhone(value: string) {
-    const raw = value.replace(/[^\d+]/g, "");
-
-    if (raw.startsWith("+81")) {
-      return raw;
-    }
-
-    if (raw.startsWith("0")) {
-      return "+81" + raw.slice(1);
-    }
-
-    return raw;
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    if (saveInFlight.current || loading) return;
 
     if (!name.trim()) {
       alert("名前を入力してください");
       return;
     }
 
+    saveInFlight.current = true;
     setLoading(true);
 
-    const normalizedPhone = phone ? normalizePhone(phone) : null;
+    try {
+      const response = await fetch(
+        `/api/customers/${encodeURIComponent(customerId)}/staff-edit`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: name.trim(),
+            nameKana: nameKana.trim(),
+            phone: phone.trim(),
+          }),
+        },
+      );
+      const result = (await response.json()) as CustomerEditResponse;
 
-    const { error } = await supabase
-      .from("customers")
-      .update({
-        name: name.trim(),
-        name_kana: nameKana.trim() || null,
-        phone: normalizedPhone,
-      })
-      .eq("id", customerId);
+      if (!response.ok || !result.ok || !result.id) {
+        throw new Error(result.error || "顧客情報の更新に失敗しました");
+      }
 
-    setLoading(false);
-
-    if (error) {
+      alert("顧客情報を更新しました");
+      router.push(`/customers/${result.id}`);
+    } catch (error) {
       console.error("顧客更新エラー:", error);
-      alert("顧客情報の更新に失敗しました");
-      return;
+      alert(
+        error instanceof Error
+          ? error.message
+          : "顧客情報の更新に失敗しました",
+      );
+    } finally {
+      saveInFlight.current = false;
+      setLoading(false);
     }
-
-    alert("顧客情報を更新しました");
-    router.push(`/customers/${customerId}`);
   }
 
   if (fetching) {
@@ -191,10 +210,14 @@ export default function CustomerEditPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
+                <label
+                  htmlFor="customer-name"
+                  className="mb-2 block text-sm font-medium text-slate-700"
+                >
                   名前
                 </label>
                 <input
+                  id="customer-name"
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -204,10 +227,14 @@ export default function CustomerEditPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
+                <label
+                  htmlFor="customer-name-kana"
+                  className="mb-2 block text-sm font-medium text-slate-700"
+                >
                   フリガナ
                 </label>
                 <input
+                  id="customer-name-kana"
                   type="text"
                   value={nameKana}
                   onChange={(e) => setNameKana(e.target.value)}
@@ -217,10 +244,14 @@ export default function CustomerEditPage() {
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
+                <label
+                  htmlFor="customer-phone"
+                  className="mb-2 block text-sm font-medium text-slate-700"
+                >
                   電話番号
                 </label>
                 <input
+                  id="customer-phone"
                   type="tel"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
