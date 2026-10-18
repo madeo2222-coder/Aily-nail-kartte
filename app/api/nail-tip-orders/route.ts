@@ -4,6 +4,7 @@ import {
   getSupabaseAdmin,
   requireCustomerLineSession,
 } from "@/lib/server/requireCustomerLineSession";
+import { resolveCustomerBookingSalonId } from "@/lib/server/customerReservationAvailability";
 
 export async function POST(request: NextRequest) {
   let customer: Awaited<ReturnType<typeof requireCustomerLineSession>>;
@@ -21,13 +22,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { ok: false, error: "LINEログインが必要です" },
       { status: 401 }
-    );
-  }
-
-  if (!customer.salonId) {
-    return NextResponse.json(
-      { ok: false, error: "所属店舗を確認できません" },
-      { status: 409 }
     );
   }
 
@@ -67,11 +61,20 @@ export async function POST(request: NextRequest) {
       .join("\n");
 
     const supabase = getSupabaseAdmin();
+    // Older customer rows may have no salon_id. The existing reservation resolver
+    // permits a fallback only when the database has exactly one salon.
+    const salonId = await resolveCustomerBookingSalonId(supabase, customer.salonId);
+    if (!salonId) {
+      return NextResponse.json(
+        { ok: false, error: "注文先の店舗を特定できません" },
+        { status: 409 }
+      );
+    }
 
     const { data, error } = await supabase
       .from("nail_tip_orders")
       .insert({
-        salon_id: customer.salonId,
+        salon_id: salonId,
         customer_id: customer.id,
         lucky_color: luckyColor,
         lucky_stone: luckyStone,
