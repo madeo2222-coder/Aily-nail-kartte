@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
 
 type ReservationRow = {
   id: string;
@@ -65,6 +64,17 @@ type CustomerRow = {
 type StaffRow = {
   id: string;
   name: string | null;
+};
+
+type CalendarDataResponse = {
+  ok?: boolean;
+  error?: string;
+  reservations?: ReservationRow[];
+  externalBlocks?: ExternalCalendarBlockRow[];
+  customers?: CustomerRow[];
+  staffs?: StaffRow[];
+  visits?: VisitRow[];
+  customerIntakes?: CustomerIntakeRow[];
 };
 
 type CalendarReservation = {
@@ -532,62 +542,23 @@ export default function ReservationsCalendarPage() {
     setLoadError(null);
 
     try {
-      const [
-        reservationsRes,
-        externalBlocksRes,
-        customersRes,
-        staffsRes,
-        visitsRes,
-        customerIntakesRes,
-      ] = await Promise.all([
-        supabase
-          .from("reservations")
-          .select("*")
-          .order("start_at", { ascending: true }),
-        supabase
-          .from("external_calendar_blocks")
-          .select("*")
-          .order("start_at", { ascending: true }),
-        supabase.from("customers").select("id, name"),
-        supabase
-          .from("staffs")
-          .select("id, name")
-          .eq("role", "staff")
-          .eq("is_active", true),
-        supabase
-          .from("visits")
-          .select(
-            "customer_id, visit_date, menu_name, menu, memo, next_proposal",
-          )
-          .order("visit_date", { ascending: false }),
-        supabase
-          .from("customer_intakes")
-          .select(
-            "customer_id, allergy, skin_trouble, constitution, avoid_items, submitted_at, created_at",
-          )
-          .order("created_at", { ascending: false }),
-      ]);
+      const response = await fetch("/api/reservations/calendar-data", {
+        cache: "no-store",
+      });
+      const payload = (await response.json()) as CalendarDataResponse;
 
-      const queryError =
-        reservationsRes.error ||
-        externalBlocksRes.error ||
-        customersRes.error ||
-        staffsRes.error ||
-        visitsRes.error ||
-        customerIntakesRes.error;
-      if (queryError) throw queryError;
+      if (!response.ok || payload.ok !== true) {
+        throw new Error(payload.error || "calendar data request failed");
+      }
+
       if (requestId !== loadRequestIdRef.current) return;
 
-      setReservations((reservationsRes.data || []) as ReservationRow[]);
-      setExternalBlocks(
-        (externalBlocksRes.data || []) as ExternalCalendarBlockRow[],
-      );
-      setCustomers((customersRes.data || []) as CustomerRow[]);
-      setStaffs((staffsRes.data || []) as StaffRow[]);
-      setVisits((visitsRes.data || []) as VisitRow[]);
-      setCustomerIntakes(
-        (customerIntakesRes.data || []) as CustomerIntakeRow[],
-      );
+      setReservations(payload.reservations || []);
+      setExternalBlocks(payload.externalBlocks || []);
+      setCustomers(payload.customers || []);
+      setStaffs(payload.staffs || []);
+      setVisits(payload.visits || []);
+      setCustomerIntakes(payload.customerIntakes || []);
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return;
       console.error("calendar data fetch error:", error);
