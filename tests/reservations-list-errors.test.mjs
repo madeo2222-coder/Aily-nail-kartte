@@ -38,13 +38,13 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failureTable = "", rejection = false, empty = false } = {}) {
+async function mount({ failureMode = "", empty = false } = {}) {
   const states = [];
   const effects = [];
-  const queries = [];
+  const requests = [];
   let cursor = 0;
   let collectEffects = true;
-  let shouldFail = Boolean(failureTable);
+  let shouldFail = Boolean(failureMode);
 
   const hooks = {
     useState(initial) {
@@ -67,16 +67,14 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     },
   };
 
-  function response(table) {
-    if (shouldFail && table === failureTable) {
-      if (rejection) throw new Error("offline");
-      return { data: null, error: { message: "read failed" } };
+  function listBody() {
+    if (empty) {
+      return { ok: true, reservations: [], customers: [], staffs: [] };
     }
 
-    if (empty) return { data: [], error: null };
-    if (table === "reservations") {
-      return {
-        data: [{
+    return {
+      ok: true,
+      reservations: [{
           id: "reservation-1",
           customer_id: "customer-1",
           staff_id: "staff-1",
@@ -85,14 +83,10 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
           reservation_time: "10:00",
           status: "confirmed",
           memo: null,
-        }],
-        error: null,
-      };
-    }
-    if (table === "customers") {
-      return { data: [{ id: "customer-1", name: "顧客A" }], error: null };
-    }
-    return { data: [{ id: "staff-1", name: "黒木" }], error: null };
+      }],
+      customers: [{ id: "customer-1", name: "顧客A" }],
+      staffs: [{ id: "staff-1", name: "黒木" }],
+    };
   }
 
   const exports = {};
@@ -107,6 +101,37 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     URLSearchParams,
     console: { error() {} },
     alert() {},
+    async fetch(url, options = {}) {
+      requests.push({ url, options });
+
+      if (url === "/api/reservations/list-data") {
+        if (shouldFail && failureMode === "reject") throw new Error("offline");
+        if (shouldFail && failureMode === "http") {
+          return {
+            ok: false,
+            async json() { return { ok: false, error: "read failed" }; },
+          };
+        }
+        if (shouldFail && failureMode === "incomplete") {
+          return {
+            ok: true,
+            async json() { return { ok: true, reservations: [] }; },
+          };
+        }
+        return { ok: true, async json() { return listBody(); } };
+      }
+
+      if (url === "/api/reservations/reservation-1/status") {
+        return {
+          ok: true,
+          async json() {
+            return { ok: true, reservation: { id: "reservation-1", status: "来店" } };
+          },
+        };
+      }
+
+      throw new Error(`Unexpected fetch: ${url}`);
+    },
     window: {
       confirm: () => true,
       history: { replaceState() {} },
@@ -121,25 +146,6 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
       if (name === "react/jsx-runtime") return require(name);
       if (name === "./ReservationReferencePhoto") {
         return { default: () => null };
-      }
-      if (name === "@/lib/supabase") {
-        return {
-          supabase: {
-            from(table) {
-              queries.push(table);
-              const chain = {
-                select() { return chain; },
-                order() { return chain; },
-                update() { return chain; },
-                eq() { return chain; },
-                then(resolve, reject) {
-                  return Promise.resolve().then(() => response(table)).then(resolve, reject);
-                },
-              };
-              return chain;
-            },
-          },
-        };
       }
       throw new Error(`Unexpected import: ${name}`);
     },
@@ -160,7 +166,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
   await setImmediate();
 
   return {
-    queries,
+    requests,
     html,
     async retry() {
       const button = findNode(
@@ -173,34 +179,49 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
       assert.match(html(), /読み込み中/);
       await setImmediate();
     },
+    async markVisited() {
+      const button = findNode(
+        tree(),
+        node => node.type === "button" && node.props.children === "来店にする"
+      );
+      assert.ok(button, "mark visited button exists");
+      await button.props.onClick();
+      await setImmediate();
+    },
   };
 }
 
-for (const failureTable of ["reservations", "customers", "staffs"]) {
-  test(`reservation list hides incomplete data after ${failureTable} query error`, async () => {
-    const page = await mount({ failureTable });
+for (const failureMode of ["http", "incomplete", "reject"]) {
+  test(`reservation list hides incomplete data after ${failureMode} API failure`, async () => {
+    const page = await mount({ failureMode });
     assert.match(page.html(), /role="alert"/);
     assert.doesNotMatch(
       page.html(),
       /0件|条件に合う予約はありません|重複は見つかっていません|顧客A|黒木/
     );
-    assert.deepEqual(page.queries.sort(), ["customers", "reservations", "staffs"]);
+    assert.equal(page.requests[0].url, "/api/reservations/list-data");
   });
 }
 
-test("reservation list handles a rejected query", async () => {
-  const page = await mount({ failureTable: "customers", rejection: true });
-  assert.match(page.html(), /role="alert"/);
-  assert.doesNotMatch(page.html(), /0件|条件に合う予約はありません/);
-});
-
 test("reservation list recovers after retry", async () => {
-  const page = await mount({ failureTable: "reservations" });
+  const page = await mount({ failureMode: "http" });
   await page.retry();
   assert.doesNotMatch(page.html(), /role="alert"/);
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /黒木/);
   assert.match(page.html(), /ワンカラー/);
+});
+
+test("reservation list updates visit status through the authenticated API", async () => {
+  const page = await mount();
+  await page.markVisited();
+
+  const statusRequest = page.requests.find(
+    request => request.url === "/api/reservations/reservation-1/status"
+  );
+  assert.ok(statusRequest);
+  assert.equal(statusRequest.options.method, "POST");
+  assert.deepEqual(JSON.parse(statusRequest.options.body), { status: "来店" });
 });
 
 test("reservation list preserves a successful empty result", async () => {

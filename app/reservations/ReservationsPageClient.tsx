@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import ReservationReferencePhoto from "./ReservationReferencePhoto";
 
 type ReservationRow = {
@@ -466,23 +465,30 @@ export default function ReservationsPageClient() {
     setLoadError(null);
 
     try {
-      const [reservationsRes, customersRes, staffsRes] = await Promise.all([
-        supabase
-          .from("reservations")
-          .select("*")
-          .order("created_at", { ascending: false }),
-        supabase.from("customers").select("id, name"),
-        supabase.from("staffs").select("id, name"),
-      ]);
+      const response = await fetch("/api/reservations/list-data", {
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        reservations?: ReservationRow[];
+        customers?: CustomerRow[];
+        staffs?: StaffRow[];
+      };
 
-      const queryError =
-        reservationsRes.error || customersRes.error || staffsRes.error;
-      if (queryError) throw queryError;
+      if (
+        !response.ok ||
+        !result.ok ||
+        !Array.isArray(result.reservations) ||
+        !Array.isArray(result.customers) ||
+        !Array.isArray(result.staffs)
+      ) {
+        throw new Error("reservation list response is incomplete");
+      }
       if (requestId !== loadRequestIdRef.current) return;
 
-      setReservations((reservationsRes.data as ReservationRow[]) || []);
-      setCustomers((customersRes.data as CustomerRow[]) || []);
-      setStaffs((staffsRes.data as StaffRow[]) || []);
+      setReservations(result.reservations);
+      setCustomers(result.customers);
+      setStaffs(result.staffs);
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return;
       console.error("reservation page fetch error:", error);
@@ -736,19 +742,29 @@ export default function ReservationsPageClient() {
   async function updateStatus(id: string, status: string) {
     setUpdatingId(id);
 
-    const { error } = await supabase
-      .from("reservations")
-      .update({ status })
-      .eq("id", id);
+    try {
+      const response = await fetch(`/api/reservations/${id}/status`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+      };
 
-    setUpdatingId(null);
+      if (!response.ok || !result.ok) {
+        alert(result.error || "予約ステータスの更新に失敗しました。");
+        return;
+      }
 
-    if (error) {
-      alert("更新に失敗しました: " + error.message);
-      return;
+      await fetchReservations();
+    } catch (error) {
+      console.error("reservation status update error:", error);
+      alert("予約ステータスの更新に失敗しました。");
+    } finally {
+      setUpdatingId(null);
     }
-
-    await fetchReservations();
   }
 
   async function handleConfirmReservation(id: string) {
