@@ -555,11 +555,12 @@ async function findExistingExternalReservation(
 
 async function findDelayedManualEntry(
   parsed: ParsedHpbMail,
-  context: SyncContext
+  context: SyncContext,
+  customerId: string | null = null
 ) {
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, staff_id, menu, memo, status")
+    .select("id, customer_id, staff_id, menu, memo, status")
     .eq("salon_id", context.salonId)
     .eq("start_at", parsed.startAt);
 
@@ -569,6 +570,7 @@ async function findDelayedManualEntry(
     candidates: data || [],
     source: parsed.source,
     staffId: context.staffId,
+    customerId,
   });
 }
 
@@ -580,10 +582,18 @@ async function upsertReservation(
   const sourceLabel = getSourceLabel(parsed.source);
   const reservationKey = getReservationNumberMemoKey(parsed.source);
   const existing = await findExistingExternalReservation(parsed, context);
-  const delayedManualEntry = existing
+  const sourceMarkedManualEntry = existing
     ? null
     : await findDelayedManualEntry(parsed, context);
   const customerMatch = await findOrCreateCustomer(parsed, context);
+  const delayedManualEntry =
+    existing || sourceMarkedManualEntry || !customerMatch.customerId
+      ? sourceMarkedManualEntry
+      : await findDelayedManualEntry(
+          parsed,
+          context,
+          customerMatch.customerId
+        );
   const preservedManualMemo = delayedManualEntry?.memo?.trim() || "";
 
   const memo = [

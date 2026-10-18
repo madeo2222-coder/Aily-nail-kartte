@@ -114,11 +114,13 @@ export async function getCustomerReservationAvailability({
   salonId,
   date,
   durationMinutes,
+  excludeReservationId,
 }: {
   supabase: SupabaseClient;
   salonId: string;
   date: string;
   durationMinutes: number;
+  excludeReservationId?: string;
 }) {
   if (!isValidCustomerBookingDate(date) || normalizeCustomerBookingDuration(durationMinutes) === null) {
     throw new Error("Invalid availability request.");
@@ -129,6 +131,17 @@ export async function getCustomerReservationAvailability({
 
   if (!dayStart || !dayEnd) throw new Error("Invalid availability date.");
 
+  let reservationQuery = supabase
+    .from("reservations")
+    .select("staff_id, status, start_at, end_at")
+    .eq("salon_id", salonId)
+    .lt("start_at", dayEnd)
+    .gt("end_at", dayStart);
+
+  if (excludeReservationId) {
+    reservationQuery = reservationQuery.neq("id", excludeReservationId);
+  }
+
   const [staffResult, reservationResult, blockResult] = await Promise.all([
     supabase
       .from("staffs")
@@ -138,12 +151,7 @@ export async function getCustomerReservationAvailability({
       .eq("is_active", true)
       .eq("customer_booking_enabled", true)
       .order("created_at", { ascending: true }),
-    supabase
-      .from("reservations")
-      .select("staff_id, status, start_at, end_at")
-      .eq("salon_id", salonId)
-      .lt("start_at", dayEnd)
-      .gt("end_at", dayStart),
+    reservationQuery,
     supabase
       .from("external_calendar_blocks")
       .select("staff_id, start_at, end_at")

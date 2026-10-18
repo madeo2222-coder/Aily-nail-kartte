@@ -37,6 +37,7 @@ async function mount({
   rejection = false,
   meOk = true,
   ordersOk = true,
+  orders = [],
 } = {}) {
   const states = [];
   const tableCalls = new Map();
@@ -107,7 +108,7 @@ async function mount({
         }
         return {
           ok: true,
-          json: async () => ({ ok: true, orders: [] }),
+          json: async () => ({ ok: true, orders }),
         };
       }
       throw new Error(`Unexpected fetch: ${url}`);
@@ -217,6 +218,39 @@ test("customer mypage preserves legitimate empty states", async () => {
   assert.match(page.html(), /顧客A様のマイページ/);
   assert.match(page.html(), /まだ診断結果がありません/);
   assert.match(page.html(), /0回/);
+});
+
+test("customer mypage re-displays the submitted product, design, size and delivery request", async () => {
+  const page = await mount({
+    orders: [
+      {
+        id: "order-1",
+        design_request:
+          "選択商品：旧商品名\n正式見積り前\nデザイン希望：仕事向けの上品なデザイン",
+        product_name_snapshot: "Ruby Love",
+        product_price: 12800,
+        size_status: "サイズ確認キット希望",
+        delivery_request: "11月末までを希望",
+        payment_url: "https://example.invalid/payment",
+        payment_due_at: null,
+        payment_status: "payment_waiting",
+        status: "requested",
+        created_at: "2026-10-18T01:00:00Z",
+        shipping_company: null,
+        tracking_number: null,
+        shipped_at: null,
+      },
+    ],
+  });
+
+  const html = page.html();
+  assert.match(html, /Ruby Love/);
+  assert.match(html, /仕事向けの上品なデザイン/);
+  assert.match(html, /サイズ確認キット希望/);
+  assert.match(html, /11月末までを希望/);
+  assert.match(html, /注文相談中/);
+  assert.match(html, /支払待ち/);
+  assert.match(html, /見積金額 12,800円/);
 });
 
 test("customer mypage shows the load error before the logged-out prompt", async () => {

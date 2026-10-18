@@ -67,8 +67,13 @@ type MeResponse = {
 type NailTipOrderRow = {
   id: string;
   design_request: string | null;
+  product_name_snapshot: string | null;
+  product_price: number | null;
+  size_status: string | null;
+  delivery_request: string | null;
   payment_url: string | null;
   payment_due_at: string | null;
+  payment_status: string | null;
   status: string | null;
   created_at: string | null;
   shipping_company: string | null;
@@ -145,6 +150,54 @@ function formatDateTime(value: string | null) {
   if (!parts) return "未登録";
 
   return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function extractOrderLine(value: string | null, label: string) {
+  if (!value) return "";
+
+  const line = value
+    .split("\n")
+    .find((item) => item.trim().startsWith(label));
+  return line?.replace(label, "").trim() || "";
+}
+
+function getNailTipOrderStatusLabel(status: string | null) {
+  switch (status) {
+    case "requested":
+      return "注文相談中";
+    case "quoted":
+      return "見積済み";
+    case "payment_waiting":
+      return "支払待ち";
+    case "paid":
+      return "支払済み";
+    case "making":
+      return "制作中";
+    case "shipped":
+      return "発送済み";
+    case "completed":
+      return "完了";
+    case "cancelled":
+      return "キャンセル";
+    default:
+      return status || "未設定";
+  }
+}
+
+function getNailTipPaymentStatusLabel(status: string | null) {
+  switch (status) {
+    case "payment_waiting":
+      return "支払待ち";
+    case "processing":
+    case "pending":
+      return "決済確認中";
+    case "paid":
+      return "支払済み";
+    case "failed":
+      return "決済未完了";
+    default:
+      return "見積り前";
+  }
 }
 
 function formatEndTime(startAt: string | null, endAt: string | null) {
@@ -795,7 +848,48 @@ export default function CustomerAppMyPage() {
           </div>
 
           <div className="font-bold text-violet-700">
-            {order.status || "未設定"}
+            {getNailTipOrderStatusLabel(order.status)}
+          </div>
+
+          <div className="mt-3 grid gap-2 rounded-xl bg-white p-3 text-sm">
+            <div>
+              <div className="text-xs text-slate-500">商品</div>
+              <div className="font-bold text-slate-900">
+                {order.product_name_snapshot ||
+                  extractOrderLine(order.design_request, "選択商品：") ||
+                  "未登録"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">デザイン希望</div>
+              <div className="whitespace-pre-wrap text-slate-900">
+                {extractOrderLine(order.design_request, "デザイン希望：") ||
+                  "未入力"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">サイズ</div>
+              <div className="font-bold text-slate-900">
+                {order.size_status || "未設定"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">配送・納期希望</div>
+              <div className="whitespace-pre-wrap text-slate-900">
+                {order.delivery_request || "未入力"}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-slate-500">お支払い</div>
+              <div className="font-bold text-slate-900">
+                {getNailTipPaymentStatusLabel(order.payment_status)}
+              </div>
+              <div className="text-xs text-slate-500">
+                {order.product_price === null
+                  ? "金額は見積り後に表示されます"
+                  : `見積金額 ${order.product_price.toLocaleString()}円`}
+              </div>
+            </div>
           </div>
 {order.status === "shipped" ? (
   <div className="mt-3 rounded-xl bg-white p-3">

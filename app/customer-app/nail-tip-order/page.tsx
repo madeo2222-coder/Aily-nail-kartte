@@ -95,6 +95,7 @@ function findRecommendedProduct(stone: string) {
 }
 
 const ORDER_SUBMISSION_STATE_KEY = "aily.nailTipOrder.submissionState";
+const ORDER_REQUEST_KEY = "aily.nailTipOrder.requestKey";
 
 type OrderSubmissionState = "idle" | "uncertain" | "confirmed";
 
@@ -150,6 +151,20 @@ function NailTipOrderContent() {
     window.setTimeout(() => setMessage(""), 2500);
   }
 
+  function getOrCreateRequestKey() {
+    const requestKey = window.crypto.randomUUID();
+
+    try {
+      const existing = window.sessionStorage.getItem(ORDER_REQUEST_KEY);
+      if (existing) return existing;
+      window.sessionStorage.setItem(ORDER_REQUEST_KEY, requestKey);
+    } catch {
+      // The in-memory key still makes the immediate retry idempotent.
+    }
+
+    return requestKey;
+  }
+
   async function handleSubmit() {
     // Ref lock takes effect before React can render the disabled button.
     if (submitLockRef.current || submissionState !== "idle") return;
@@ -157,8 +172,8 @@ function NailTipOrderContent() {
     setSubmitting(true);
 
     try {
-      // A response can be lost after the server saves an order. Persist a
-      // conservative guard *before* the request; do not auto-retry the POST.
+      // A response can be lost after the server saves an order. Persist the
+      // guard and request key before POST so one retry resolves to the same row.
       const previous = window.sessionStorage.getItem(ORDER_SUBMISSION_STATE_KEY);
       if (previous === "uncertain" || previous === "confirmed") {
         setSubmissionState(previous);
@@ -167,29 +182,48 @@ function NailTipOrderContent() {
       window.sessionStorage.setItem(ORDER_SUBMISSION_STATE_KEY, "uncertain");
       setSubmissionState("uncertain");
 
-      const response = await fetch("/api/nail-tip-orders", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          luckyColor: color,
-          luckyStone: stone,
-          nailTheme: theme,
-          productCode: selectedProduct.code,
-          designRequest,
-          sizeStatus,
-          deliveryRequest,
-        }),
+      const requestKey = getOrCreateRequestKey();
+      const requestBody = JSON.stringify({
+        luckyColor: color,
+        luckyStone: stone,
+        nailTheme: theme,
+        productCode: selectedProduct.code,
+        designRequest,
+        sizeStatus,
+        deliveryRequest,
+        requestKey,
       });
 
-      const json = await response.json();
+      let response: Response | null = null;
+      let json: { ok?: boolean; error?: string } = {};
+
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          response = await fetch("/api/nail-tip-orders", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: requestBody,
+          });
+          json = await response.json();
+
+          if (response.status < 500 || attempt === 1) break;
+        } catch (error) {
+          if (attempt === 1) throw error;
+        }
+      }
+
+      if (!response) {
+        throw new Error("注文の受付結果を確認できませんでした");
+      }
 
       if (!response.ok || !json.ok) {
         // Only unequivocal client errors are safe to re-submit after fixing.
         // A 500 or a lost response can occur after the order was saved.
         if ([400, 401, 403, 404, 422].includes(response.status)) {
           window.sessionStorage.removeItem(ORDER_SUBMISSION_STATE_KEY);
+          window.sessionStorage.removeItem(ORDER_REQUEST_KEY);
           setSubmissionState("idle");
         }
         showMessage(json.error || "注文の受付結果を確認できませんでした");
@@ -216,6 +250,7 @@ function NailTipOrderContent() {
     }
     try {
       window.sessionStorage.removeItem(ORDER_SUBMISSION_STATE_KEY);
+      window.sessionStorage.removeItem(ORDER_REQUEST_KEY);
       setSubmissionState("idle");
       setDesignRequest("");
       setDeliveryRequest("");

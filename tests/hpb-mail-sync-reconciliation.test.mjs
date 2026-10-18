@@ -107,6 +107,7 @@ test("delayed mail sync adopts one matching manual external reservation", () => 
     candidates: [
       {
         id: "manual-1",
+        customer_id: "customer-1",
         staff_id: "staff-1",
         menu: "ホットペッパー予約",
         memo: "電話を受けて先に登録",
@@ -114,6 +115,7 @@ test("delayed mail sync adopts one matching manual external reservation", () => 
       },
       {
         id: "other-staff",
+        customer_id: "customer-1",
         staff_id: "staff-2",
         menu: "ホットペッパー予約",
         memo: null,
@@ -121,6 +123,7 @@ test("delayed mail sync adopts one matching manual external reservation", () => 
       },
       {
         id: "already-synced",
+        customer_id: "customer-1",
         staff_id: "staff-1",
         menu: "ホットペッパー予約",
         memo: "HPB予約番号：A999999",
@@ -143,6 +146,7 @@ test("manual external source remains identifiable after its display title is cus
     candidates: [
       {
         id: "manual-custom-title",
+        customer_id: "customer-1",
         staff_id: "staff-1",
         menu: "ジェル付替 90分",
         memo,
@@ -165,10 +169,59 @@ test("cancelled manual rows are not adopted", () => {
     candidates: [
       {
         id: "cancelled-1",
+        customer_id: "customer-1",
         staff_id: null,
         menu: "ミニモ予約",
         memo: null,
         status: "キャンセル",
+      },
+    ],
+  });
+
+  assert.equal(result, null);
+});
+
+test("delayed mail sync adopts an unmarked manual reservation for the same customer", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: "staff-1",
+    customerId: "customer-1",
+    candidates: [
+      {
+        id: "same-customer",
+        customer_id: "customer-1",
+        staff_id: "staff-1",
+        menu: "ジェル付替 90分",
+        memo: "電話を受けて先に登録",
+        status: "予約確定",
+      },
+      {
+        id: "different-customer",
+        customer_id: "customer-2",
+        staff_id: "staff-1",
+        menu: "ジェル付替 90分",
+        memo: null,
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "same-customer");
+});
+
+test("customer fallback does not adopt a reservation marked as the other external source", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: "staff-1",
+    customerId: "customer-1",
+    candidates: [
+      {
+        id: "minimo-customer",
+        customer_id: "customer-1",
+        staff_id: "staff-1",
+        menu: "ジェル付替 90分",
+        memo: "外部予約種別：ミニモ",
+        status: "予約確定",
       },
     ],
   });
@@ -206,6 +259,7 @@ test("ambiguous delayed manual entries stop instead of creating another row", ()
         candidates: [
           {
             id: "manual-1",
+            customer_id: "customer-1",
             staff_id: "staff-1",
             menu: "ミニモ予約",
             memo: null,
@@ -213,6 +267,7 @@ test("ambiguous delayed manual entries stop instead of creating another row", ()
           },
           {
             id: "manual-2",
+            customer_id: "customer-2",
             staff_id: "staff-2",
             menu: "minimo booking",
             memo: null,

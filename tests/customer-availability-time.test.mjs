@@ -15,10 +15,13 @@ function load(now = "2026-10-18T03:15:00Z") {
   }).outputText, { exports, Date: FixedDate, Intl });
   return exports;
 }
-function db({ reservations = [], blocks = [], error = false } = {}) {
+function db({ reservations = [], blocks = [], error = false, filters = [] } = {}) {
   return { from(table) {
     const query = { then(resolve) { return Promise.resolve({ data: table === "staffs" ? [{ id: "staff-1", name: "Fixture" }] : table === "reservations" ? reservations : blocks, error: error ? {} : null }).then(resolve); } };
-    for (const name of ["select", "eq", "lt", "gt", "order"]) query[name] = () => query;
+    for (const name of ["select", "eq", "lt", "gt", "neq", "order"]) query[name] = (...args) => {
+      filters.push([table, name, ...args]);
+      return query;
+    };
     return query;
   } };
 }
@@ -61,4 +64,19 @@ test("invalid busy intervals and failed reads never report available slots", asy
     { start_at: "2026-10-18T10:00:00+09:00", end_at: "2026-10-18T09:00:00+09:00" },
   ]) await assert.rejects(times(load(), db({ blocks: [interval] })), /Invalid busy/);
   await assert.rejects(times(load(), db({ error: true })), /lookup failed/);
+});
+test("editing availability excludes only the reservation being changed", async () => {
+  const api = load("2026-10-17T20:00:00Z");
+  const filters = [];
+  await api.getCustomerReservationAvailability({
+    supabase: db({ filters }),
+    salonId: "salon-1",
+    date: "2026-10-18",
+    durationMinutes: 60,
+    excludeReservationId: "reservation-current",
+  });
+  assert.deepEqual(
+    filters.filter(([table, operation]) => table === "reservations" && operation === "neq"),
+    [["reservations", "neq", "id", "reservation-current"]]
+  );
 });

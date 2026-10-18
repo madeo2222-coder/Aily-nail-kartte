@@ -4,6 +4,7 @@ export type MailSyncSource = "hpb" | "minimo";
 
 export type ManualReservationCandidate = {
   id: string;
+  customer_id: string | null;
   staff_id: string | null;
   menu: string | null;
   memo: string | null;
@@ -136,17 +137,30 @@ export function findManualReservationCandidate({
   candidates,
   source,
   staffId,
+  customerId = null,
 }: {
   candidates: ManualReservationCandidate[];
   source: MailSyncSource;
   staffId: string | null;
+  customerId?: string | null;
 }) {
   const matches = candidates.filter((candidate) => {
     if (isCancelledReservationStatus(candidate.status)) return false;
     if (staffId && candidate.staff_id !== staffId) return false;
 
     const text = normalize(`${candidate.menu || ""}\n${candidate.memo || ""}`);
-    return hasSourceMarker(source, text) && !hasExternalReservationKey(text);
+    if (hasExternalReservationKey(text)) return false;
+
+    if (hasSourceMarker(source, text)) return true;
+
+    const hasAnySourceMarker =
+      hasSourceMarker("hpb", text) || hasSourceMarker("minimo", text);
+
+    return (
+      Boolean(customerId) &&
+      candidate.customer_id === customerId &&
+      !hasAnySourceMarker
+    );
   });
 
   if (matches.length > 1) {

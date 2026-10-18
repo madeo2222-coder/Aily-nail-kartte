@@ -23,6 +23,10 @@ export async function GET(request: NextRequest) {
         `
         id,
         design_request,
+        product_name_snapshot,
+        product_price,
+        size_status,
+        delivery_request,
         payment_url,
         payment_due_at,
         payment_status,

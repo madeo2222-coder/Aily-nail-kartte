@@ -4,6 +4,11 @@ import {
   LINE_SESSION_COOKIE,
   readCustomerLineSessionCookie,
 } from "@/lib/server/lineLoginCookies";
+import {
+  getCustomerReservationAvailability,
+  isValidCustomerBookingDate,
+  normalizeCustomerBookingDuration,
+} from "@/lib/server/customerReservationAvailability";
 
 export const dynamic = "force-dynamic";
 
@@ -71,16 +76,6 @@ function getString(row: AnyRow | null, keys: string[]) {
   return "";
 }
 
-function normalizeDurationMinutes(value: unknown) {
-  const minutes = Number(value);
-
-  if (!Number.isFinite(minutes)) return 90;
-  if (minutes < 30) return 30;
-  if (minutes > 360) return 360;
-
-  return Math.round(minutes);
-}
-
 function isRequestedStatus(status: string) {
   return (
     status === "requested" ||
@@ -92,10 +87,6 @@ function isRequestedStatus(status: string) {
 
 function isConfirmedStatus(status: string) {
   return status === "confirmed" || status === "予約確定";
-}
-
-function isCancelledStatus(status: string | null | undefined) {
-  return status === "cancelled" || status === "キャンセル";
 }
 
 function isExternalReservation(row: AnyRow) {
@@ -113,41 +104,6 @@ function isExternalReservation(row: AnyRow) {
     memo.includes("ミニモ予約id") ||
     memo.includes("ミニモ")
   );
-}
-
-function getTodayJstText() {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-
-  return formatter.format(new Date());
-}
-
-function addDaysText(dateText: string, days: number) {
-  const date = new Date(`${dateText}T00:00:00+09:00`);
-  date.setDate(date.getDate() + days);
-
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Tokyo",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-
-  return formatter.format(date);
-}
-
-function buildUtcIsoFromJst(dateText: string, timeText: string) {
-  const date = new Date(`${dateText}T${timeText}:00+09:00`);
-
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-
-  return date.toISOString();
 }
 
 function formatDateTime(value: string) {
@@ -552,7 +508,9 @@ export async function PATCH(
     const menu = String(body.menu || "").trim();
     const staffId = String(body.staffId || "").trim();
     const memo = String(body.memo || "").trim();
-    const durationMinutes = normalizeDurationMinutes(body.durationMinutes);
+    const durationMinutes = normalizeCustomerBookingDuration(
+      body.durationMinutes
+    );
 
     if (!date || !time || !menu) {
       return NextResponse.json(
@@ -564,46 +522,25 @@ export async function PATCH(
       );
     }
 
-    const todayText = getTodayJstText();
-    const maxDateText = addDaysText(todayText, 30);
-
-    if (date < todayText) {
+    if (!isValidCustomerBookingDate(date)) {
       return NextResponse.json(
         {
           ok: false,
-          error: "過去の日付には変更できません",
+          error: "希望日を確認してください",
         },
         { status: 400 }
       );
     }
 
-    if (date > maxDateText) {
+    if (durationMinutes === null) {
       return NextResponse.json(
         {
           ok: false,
-          error: "予約は本日から30日先まで変更できます",
+          error: "所要時間を確認してください",
         },
         { status: 400 }
       );
     }
-
-    const startIso = buildUtcIsoFromJst(date, time);
-
-    if (!startIso) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "予約日時が正しくありません",
-        },
-        { status: 400 }
-      );
-    }
-
-    const startDate = new Date(startIso);
-    const endDate = new Date(
-      startDate.getTime() + durationMinutes * 60 * 1000
-    );
-    const endIso = endDate.toISOString();
 
     const salonId = getString(reservation, ["salon_id"]);
 
@@ -617,96 +554,39 @@ export async function PATCH(
       );
     }
 
-    if (staffId) {
-      const { data: selectedStaff, error: selectedStaffError } =
-        await supabaseAdmin
-          .from("staffs")
-          .select("id")
-          .eq("id", staffId)
-          .eq("salon_id", salonId)
-          .eq("role", "staff")
-          .eq("is_active", true)
-          .eq("customer_booking_enabled", true)
-          .maybeSingle();
-
-      if (selectedStaffError) {
-        throw new Error(selectedStaffError.message);
-      }
-
-      if (!selectedStaff) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error: "選択した担当者は現在予約できません",
-          },
-          { status: 409 }
-        );
-      }
-    }
-
-    let overlapQuery = supabaseAdmin
-      .from("reservations")
-      .select("id, status, staff_id, start_at, end_at")
-      .neq("id", id)
-      .lt("start_at", endIso)
-      .gt("end_at", startIso);
-
-    overlapQuery = overlapQuery.eq("salon_id", salonId);
-
-    if (staffId) {
-      overlapQuery = overlapQuery.eq("staff_id", staffId);
-    }
-
-    const { data: overlaps, error: overlapError } = await overlapQuery;
-
-    if (overlapError) {
-      throw new Error(overlapError.message);
-    }
-
-    const activeOverlaps = (overlaps || []).filter(
-      (item) => !isCancelledStatus(item.status)
+    const availability = await getCustomerReservationAvailability({
+      supabase: supabaseAdmin,
+      salonId,
+      date,
+      durationMinutes,
+      excludeReservationId: id,
+    });
+    const selectedSlot = availability.slots.find(
+      (slot) => slot.time === time
     );
+    const availableStaffIds = selectedSlot?.staffIds || [];
+    const assignedStaffId = staffId
+      ? availableStaffIds.includes(staffId)
+        ? staffId
+        : null
+      : availableStaffIds[0] || null;
 
-    if (activeOverlaps.length > 0) {
+    if (!assignedStaffId) {
       return NextResponse.json(
         {
           ok: false,
-          error: staffId
-            ? "選択した担当者はその時間帯に既に予約があります"
-            : "その時間帯には既に予約があります",
-        },
-        { status: 400 }
-      );
-    }
-
-    const { data: externalBlocks, error: externalBlocksError } =
-      await supabaseAdmin
-        .from("external_calendar_blocks")
-        .select("staff_id")
-        .eq("salon_id", salonId)
-        .lt("start_at", endIso)
-        .gt("end_at", startIso);
-
-    if (externalBlocksError) {
-      throw new Error(externalBlocksError.message);
-    }
-
-    const hasExternalBlock = (externalBlocks || []).some(
-      (block) =>
-        !staffId || !block.staff_id || block.staff_id === staffId
-    );
-
-    if (hasExternalBlock) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: staffId
-            ? "選択した担当者はその時間帯に外部予定があります"
-            : "その時間帯には外部予定があります",
+          error:
+            "選択した時間の空き状況が変わりました。別の時間を選択してください",
         },
         { status: 409 }
       );
     }
+
+    const startDate = new Date(`${date}T${time}:00+09:00`);
+    const startIso = startDate.toISOString();
+    const endIso = new Date(
+      startDate.getTime() + durationMinutes * 60 * 1000
+    ).toISOString();
 
     const previousStartAt = getString(reservation, ["start_at"]);
     const previousMenu =
@@ -719,7 +599,7 @@ export async function PATCH(
         p_customer_id: customerId,
         p_expected_start_at: previousStartAt || null,
         p_expected_end_at: getString(reservation, ["end_at"]) || null,
-        p_staff_id: staffId || null,
+        p_staff_id: assignedStaffId,
         p_menu: menu,
         p_start_at: startIso,
         p_end_at: endIso,
@@ -786,7 +666,7 @@ export async function PATCH(
         `変更後日時：${formatDateTime(startIso)}`,
         `変更前メニュー：${previousMenu}`,
         `変更後メニュー：${menu}`,
-        `担当：${staffId ? "指名あり" : "指名なし"}`,
+        `担当：${staffId ? "指名あり" : "指名なし（空き担当者へ割当）"}`,
         "",
         "備考：",
         memo || "-",

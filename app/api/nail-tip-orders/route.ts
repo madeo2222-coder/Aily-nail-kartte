@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getNailTipProduct } from "@/lib/nail-tip-products/catalog";
 import {
@@ -5,6 +6,33 @@ import {
   requireCustomerLineSession,
 } from "@/lib/server/requireCustomerLineSession";
 import { resolveCustomerBookingSalonId } from "@/lib/server/customerReservationAvailability";
+
+export const runtime = "nodejs";
+
+const REQUEST_KEY_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function buildNailTipOrderId({
+  customerId,
+  salonId,
+  requestKey,
+}: {
+  customerId: string;
+  salonId: string;
+  requestKey: string;
+}) {
+  const bytes = createHash("sha256")
+    .update(`aily:nail-tip-order:${customerId}:${salonId}:${requestKey}`)
+    .digest()
+    .subarray(0, 16);
+
+  // UUID version 8 is reserved for application-defined deterministic IDs.
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 export async function POST(request: NextRequest) {
   let customer: Awaited<ReturnType<typeof requireCustomerLineSession>>;
@@ -35,6 +63,14 @@ export async function POST(request: NextRequest) {
     const customerDesignRequest = String(body.designRequest || "").trim();
     const sizeStatus = String(body.sizeStatus || "").trim();
     const deliveryRequest = String(body.deliveryRequest || "").trim();
+    const requestKey = String(body.requestKey || "").trim();
+
+    if (!REQUEST_KEY_PATTERN.test(requestKey)) {
+      return NextResponse.json(
+        { ok: false, error: "注文識別情報が正しくありません" },
+        { status: 400 }
+      );
+    }
 
     const product = getNailTipProduct(productCode);
 
@@ -74,9 +110,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const orderId = buildNailTipOrderId({
+      customerId: customer.id,
+      salonId,
+      requestKey,
+    });
+
     const { data, error } = await supabase
       .from("nail_tip_orders")
       .insert({
+        id: orderId,
         salon_id: salonId,
         customer_id: customer.id,
         lucky_color: luckyColor,
@@ -92,6 +135,24 @@ export async function POST(request: NextRequest) {
       })
       .select("id")
       .single();
+
+    if (error?.code === "23505") {
+      const { data: existingOrder, error: existingOrderError } = await supabase
+        .from("nail_tip_orders")
+        .select("id")
+        .eq("id", orderId)
+        .eq("customer_id", customer.id)
+        .eq("salon_id", salonId)
+        .maybeSingle();
+
+      if (!existingOrderError && existingOrder?.id) {
+        return NextResponse.json({
+          ok: true,
+          orderId: existingOrder.id,
+          duplicate: true,
+        });
+      }
+    }
 
     if (error) {
       return NextResponse.json(

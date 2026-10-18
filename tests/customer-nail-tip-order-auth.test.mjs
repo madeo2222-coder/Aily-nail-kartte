@@ -142,6 +142,7 @@ test("customer nail-tip creation derives customer and salon identity from the si
         luckyStone: "ruby",
         nailTheme: "love",
         productCode: "ruby_love",
+        requestKey: "11111111-1111-4111-8111-111111111111",
         designRequest: "request",
         sizeStatus: "measured",
         deliveryRequest: "delivery",
@@ -153,8 +154,102 @@ test("customer nail-tip creation derives customer and salon identity from the si
   assert.equal((await response.json()).orderId, "order-1");
   assert.equal(inserted.customer_id, "trusted-customer");
   assert.equal(inserted.salon_id, "trusted-salon");
+  assert.match(inserted.id, /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  assert.notEqual(
+    inserted.id,
+    "11111111-1111-4111-8111-111111111111"
+  );
   assert.notEqual(inserted.customer_id, "spoofed-customer");
   assert.notEqual(inserted.salon_id, "spoofed-salon");
+});
+
+test("customer nail-tip creation resolves a repeated request key to the existing order", async () => {
+  const calls = [];
+  const runtime = loadRoute("nail-tip-orders", {
+    customer: {
+      id: "trusted-customer",
+      name: "Customer",
+      salonId: "trusted-salon",
+    },
+    getSupabaseAdmin() {
+      return {
+        from(table) {
+          assert.equal(table, "nail_tip_orders");
+          const chain = {
+            insert(payload) {
+              calls.push(["insert", payload]);
+              return chain;
+            },
+            select(columns) {
+              calls.push(["select", columns]);
+              return chain;
+            },
+            eq(column, value) {
+              calls.push(["eq", column, value]);
+              return chain;
+            },
+            async single() {
+              return { data: null, error: { code: "23505", message: "duplicate" } };
+            },
+            async maybeSingle() {
+              return { data: { id: "existing-order" }, error: null };
+            },
+          };
+          return chain;
+        },
+      };
+    },
+  });
+
+  const response = await runtime.exports.POST({
+    async json() {
+      return {
+        luckyColor: "red",
+        luckyStone: "ruby",
+        nailTheme: "love",
+        productCode: "ruby_love",
+        requestKey: "22222222-2222-4222-8222-222222222222",
+      };
+    },
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.orderId, "existing-order");
+  assert.equal(body.duplicate, true);
+  const insertedId = calls.find(([kind]) => kind === "insert")?.[1]?.id;
+  assert.match(insertedId, /^[0-9a-f-]{36}$/);
+  assert.ok(
+    calls.some(
+      ([kind, column, value]) =>
+        kind === "eq" && column === "id" && value === insertedId
+    )
+  );
+  assert.ok(calls.some(([kind, column]) => kind === "eq" && column === "customer_id"));
+});
+
+test("customer nail-tip creation rejects a missing request key before database access", async () => {
+  let adminClientUsed = false;
+  const runtime = loadRoute("nail-tip-orders", {
+    customer: {
+      id: "trusted-customer",
+      name: "Customer",
+      salonId: "trusted-salon",
+    },
+    getSupabaseAdmin() {
+      adminClientUsed = true;
+      throw new Error("database must not be used");
+    },
+  });
+
+  const response = await runtime.exports.POST({
+    async json() {
+      return { productCode: "ruby_love" };
+    },
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(adminClientUsed, false);
 });
 
 test("customer nail-tip history uses the shared signed session instead of an internal HTTP identity call", async () => {
@@ -213,6 +308,11 @@ test("customer nail-tip history is scoped to the signed customer and returns shi
   assert.match(calls[0][1], /shipping_company/);
   assert.match(calls[0][1], /tracking_number/);
   assert.match(calls[0][1], /shipped_at/);
+  assert.match(calls[0][1], /product_name_snapshot/);
+  assert.match(calls[0][1], /product_price/);
+  assert.match(calls[0][1], /size_status/);
+  assert.match(calls[0][1], /delivery_request/);
+  assert.match(calls[0][1], /payment_status/);
 });
 
 test("the customer order page no longer submits client-controlled identity fields", () => {

@@ -426,6 +426,16 @@ test("migration protects the delivery ledger and customer updates close its stat
     /予約状態が更新されています。最新の内容を読み込み直してください/
   );
   assert.match(
+    customerRoute,
+    /getCustomerReservationAvailability\(\{[\s\S]*excludeReservationId: id,[\s\S]*\}\)/
+  );
+  assert.match(customerRoute, /isValidCustomerBookingDate\(date\)/);
+  assert.match(
+    customerRoute,
+    /normalizeCustomerBookingDuration\([\s\S]*body\.durationMinutes/
+  );
+  assert.doesNotMatch(customerRoute, /\.from\("external_calendar_blocks"\)/);
+  assert.match(
     reservationWriteMigration,
     /lock table public\.reservations in share row exclusive mode/i
   );

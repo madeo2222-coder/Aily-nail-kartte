@@ -16,6 +16,9 @@ test("guard is established before the order POST and prior to awaiting network",
     handler.indexOf("submitLockRef.current = true") <
       handler.indexOf('fetch("/api/nail-tip-orders"')
   );
+  assert.match(handler, /requestKey,/);
+  assert.match(handler, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
+  assert.match(handler, /body: requestBody/);
   assert.ok(
     handler.indexOf(
       'sessionStorage.setItem(ORDER_SUBMISSION_STATE_KEY, "uncertain")'
@@ -59,6 +62,7 @@ test("confirmed orders stay locked until explicit new consultation", () => {
   );
   assert.match(source, /function startAnotherConsultation\(\)/);
   assert.match(source, /sessionStorage\.removeItem\(ORDER_SUBMISSION_STATE_KEY\)/);
+  assert.match(source, /sessionStorage\.removeItem\(ORDER_REQUEST_KEY\)/);
   assert.match(source, /href="\/customer-app\/mypage"/);
 });
 

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -47,6 +48,7 @@ function fixture({
   vm.runInNewContext(compiled, {
     exports,
     require(name) {
+      if (name === "node:crypto") return { createHash };
       if (name === "next/server")
         return {
           NextResponse: {
@@ -87,7 +89,10 @@ function fixture({
     lookupArguments,
     request: () =>
       exports.POST({
-        json: async () => ({ productCode: "demo" }),
+        json: async () => ({
+          productCode: "demo",
+          requestKey: "28ebfc32-11ce-4ad0-8473-43cfcd0d07e1",
+        }),
       }),
   };
 }
