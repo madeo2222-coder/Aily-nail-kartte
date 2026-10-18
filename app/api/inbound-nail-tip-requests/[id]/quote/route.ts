@@ -24,8 +24,7 @@ export async function POST(
 ) {
   const authentication = await authenticateStaffApi({
     allowedRoles: ["owner", "staff"],
-    legacyAllowed: true,
-    salonContextRequired: false,
+    legacyAllowed: false,
   });
 
   if (!authentication.ok) {
@@ -59,7 +58,8 @@ export async function POST(
         quote_amount: quoteAmount,
         status: "quoted",
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId);
 
     if (error) {
       return NextResponse.json(

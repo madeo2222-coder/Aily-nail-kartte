@@ -35,8 +35,7 @@ export async function POST(
   try {
     const authentication = await authenticateStaffApi({
       allowedRoles: ["owner", "staff"],
-      legacyAllowed: true,
-      salonContextRequired: false,
+      legacyAllowed: false,
     });
 
     if (!authentication.ok) {
@@ -62,11 +61,9 @@ export async function POST(
     }
 
     const supabase = getSupabaseAdmin();
-    let readQuery = supabase.from("nail_tip_orders")
-      .select("id, status, payment_status").eq("id", id);
-    if (authentication.principal.salonId) {
-      readQuery = readQuery.eq("salon_id", authentication.principal.salonId);
-    }
+    const readQuery = supabase.from("nail_tip_orders")
+      .select("id, status, payment_status").eq("id", id)
+      .eq("salon_id", authentication.principal.salonId);
     const { data: order, error: readError } = await readQuery.maybeSingle();
     if (readError) {
       return NextResponse.json({ ok: false, error: "注文を確認できませんでした" }, { status: 500 });
@@ -87,10 +84,8 @@ export async function POST(
     let updateQuery = supabase
       .from("nail_tip_orders")
       .update({ status })
-      .eq("id", id);
-    if (authentication.principal.salonId) {
-      updateQuery = updateQuery.eq("salon_id", authentication.principal.salonId);
-    }
+      .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId);
     updateQuery = order.status === null ? updateQuery.is("status", null) : updateQuery.eq("status", order.status);
     updateQuery = order.payment_status === null ? updateQuery.is("payment_status", null) : updateQuery.eq("payment_status", order.payment_status);
     const { data: updated, error } = await updateQuery.select("id").maybeSingle();

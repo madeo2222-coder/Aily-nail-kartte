@@ -143,6 +143,7 @@ async function runUnauthenticated(routePath) {
     body: await response.json(),
     clientCreated,
     externalFetchCalled,
+    source,
     status: response.status,
   };
 }
@@ -157,8 +158,12 @@ for (const route of routes) {
     assert.equal(result.externalFetchCalled, false);
     assert.deepEqual(JSON.parse(JSON.stringify(result.authOptions)), {
       allowedRoles: ["owner", "staff"],
-      legacyAllowed: true,
-      salonContextRequired: false,
+      legacyAllowed: false,
     });
+    assert.match(
+      result.source,
+      /\.eq\("salon_id", authentication\.principal\.salonId\)/,
+      "privileged commerce reads or writes must be scoped to the authenticated staff salon"
+    );
   });
 }

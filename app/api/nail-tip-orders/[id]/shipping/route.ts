@@ -126,8 +126,7 @@ export async function POST(
   try {
     const authentication = await authenticateStaffApi({
       allowedRoles: ["owner", "staff"],
-      legacyAllowed: true,
-      salonContextRequired: false,
+      legacyAllowed: false,
     });
 
     if (!authentication.ok) {
@@ -170,6 +169,7 @@ export async function POST(
       .from("nail_tip_orders")
       .select("*")
       .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId)
       .single();
 
     if (orderFetchError || !orderData) {
@@ -184,9 +184,6 @@ export async function POST(
 
     const order = orderData as AnyRow;
 
-    if (authentication.principal.salonId && order.salon_id !== authentication.principal.salonId) {
-      return NextResponse.json({ ok: false, error: "注文が見つかりません" }, { status: 404 });
-    }
     if (order.payment_status !== "paid" || order.status === "cancelled" || order.status === "completed") {
       return NextResponse.json({ ok: false, error: "決済完了・注文状況を確認できないため発送できません" }, { status: 409 });
     }
@@ -200,6 +197,7 @@ export async function POST(
         status: "shipped",
       })
       .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId)
       .eq("payment_status", "paid");
     updateQuery = order.status === null ? updateQuery.is("status", null) : updateQuery.eq("status", order.status);
     const { data: updated, error: updateError } = await updateQuery.select("id").maybeSingle();

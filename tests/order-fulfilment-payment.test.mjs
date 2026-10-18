@@ -6,7 +6,7 @@ import ts from "typescript";
 import { NextResponse } from "next/server.js";
 
 function setup(action, { payment = "payment_waiting", status = "requested", stale = false, salon = "salon-1" } = {}) {
-  const updates = []; const filters = []; const calls = [];
+  const updates = []; const filters = []; const calls = []; const authCalls = [];
   const row = { id: "fixture-order", salon_id: salon, customer_id: null, status, payment_status: payment };
   const supabase = { from(table) {
     calls.push(table); let updating = false; const localFilters = [];
@@ -30,11 +30,14 @@ function setup(action, { payment = "payment_waiting", status = "requested", stal
     require(name) {
       if (name === "next/server") return { NextResponse };
       if (name === "@supabase/supabase-js") return { createClient: () => supabase };
-      if (name === "@/lib/server/staffApiAuthentication") return { authenticateStaffApi: async () => ({ ok: true, principal: { salonId: "salon-1" } }) };
+      if (name === "@/lib/server/staffApiAuthentication") return { authenticateStaffApi: async options => {
+        authCalls.push(options);
+        return { ok: true, principal: { salonId: "salon-1" } };
+      } };
       throw new Error(`unexpected module ${name}`);
     },
   });
-  return { updates, filters, async run(body = {}) { return exports.POST(new Request("https://example.test/action", { method: "POST", body: JSON.stringify(body) }), { params: Promise.resolve({ id: row.id }) }); } };
+  return { authCalls, updates, filters, async run(body = {}) { return exports.POST(new Request("https://example.test/action", { method: "POST", body: JSON.stringify(body) }), { params: Promise.resolve({ id: row.id }) }); } };
 }
 test("staff cannot mark an unpaid order paid, making, shipped, or completed", async () => {
   for (const status of ["paid", "making", "shipped", "completed"]) {
@@ -44,8 +47,10 @@ test("staff cannot mark an unpaid order paid, making, shipped, or completed", as
 test("verified payment can begin making, without writing the payment result", async () => {
   const app = setup("status", { payment: "paid" });
   assert.equal((await app.run({ status: "making" })).status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(app.authCalls)), [{ allowedRoles: ["owner", "staff"], legacyAllowed: false }]);
   assert.deepEqual(JSON.parse(JSON.stringify(app.updates)), [{ status: "making" }]);
   assert.ok(app.filters.some(([key, value]) => key === "payment_status" && value === "paid"));
+  assert.ok(app.filters.some(([key, value]) => key === "salon_id" && value === "salon-1"));
 });
 test("shipping requires the dedicated shipping form and completion requires shipment", async () => {
   for (const status of ["shipped", "completed"]) {

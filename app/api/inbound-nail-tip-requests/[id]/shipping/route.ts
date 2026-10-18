@@ -79,8 +79,7 @@ export async function POST(
 ) {
   const authentication = await authenticateStaffApi({
     allowedRoles: ["owner", "staff"],
-    legacyAllowed: true,
-    salonContextRequired: false,
+    legacyAllowed: false,
   });
 
   if (!authentication.ok) {
@@ -117,6 +116,7 @@ export async function POST(
       .from("inbound_nail_tip_requests")
       .select("customer_name, customer_email")
       .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId)
       .single();
 
     if (fetchError || !requestData) {
@@ -144,7 +144,8 @@ export async function POST(
         shipped_at: new Date().toISOString(),
         status: "shipped",
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId);
 
     if (error) {
       return NextResponse.json(
