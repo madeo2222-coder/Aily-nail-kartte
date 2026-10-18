@@ -57,6 +57,15 @@
 - 今回は既存DBを変更しないため、別端末から全く同時に行う2件の保存をDBトランザクションで直列化するところまでは含まない。実DBで必要migrationを確認後、既存の予約排他関数と同じ方式で解消する。
 - 追加migrationはない。コードはローカルcommit objectへ保存する段階で、統合Previewと実DBへの反映は未実施。
 
+### スタッフの予約編集・削除
+
+- `/reservations/edit/[id]` の予約本体・サロン・顧客・担当者読取、通常更新、削除を、ブラウザからの直接DB操作ではなくスタッフ認証付きAPIへ移した。
+- 個別のSupabaseスタッフ認証では、予約の読取・更新・削除と選択肢を所属サロンへ限定する。署名済み共有ログインの既存複数サロン運用は維持する。
+- 更新前に担当者の所属・在籍状態と顧客の所属をサーバーで再確認し、変更中の予約自身を除外して予約表と外部カレンダーブロックの両方を重複確認する。
+- 予約確定や顧客予約のキャンセルを汎用更新で迂回できないようにし、既存の原子的な確定処理・通知再送防止・キャンセル通知確認へ必ず通す。外部予約ブロックの通常編集・削除は維持する。
+- 読取失敗時は空の編集フォームを表示せず、同じ画面から再試行できる。更新・削除・確定はブラウザ側でも同期ロックし、同一画面の連打を止める。
+- 新規登録と同じく、通常編集の重複確認と更新を単一DBトランザクションへ直列化する追加migrationは今回含まない。実DBの既存migration状態を確認後、必要な場合だけ原子的な更新RPCを具体化する。
+
 ### HPB・ミニモ予約メールの遅延同期
 
 - メール到着前にスタッフが手入力した予約は、同時刻・同担当に加えて同じ顧客へ紐付いている場合、メニュー名にHPB／ミニモの印がなくても既存行へ同期する。
@@ -75,7 +84,7 @@
 
 | 検証 | 実施結果 | 範囲・限界 |
 | --- | --- | --- |
-| `node --test tests/*.test.mjs` | 539件中538件成功、失敗0、任意PGlite 1件スキップ | 署名済み注文履歴API、相談内容のマイページ再表示、DB変更不要の送信冪等性、別日時更新の共通空き枠判定、HPB／ミニモ遅延同期の同一顧客照合、スタッフ新規予約の認証・所属・重複検査、発送通知再試行、ルート・画面ハンドラー・既存業務機能のローカル検証 |
+| `node --test tests/*.test.mjs` | 548件中547件成功、失敗0、任意PGlite 1件スキップ | 署名済み注文履歴API、相談内容のマイページ再表示、DB変更不要の送信冪等性、別日時更新の共通空き枠判定、HPB／ミニモ遅延同期の同一顧客照合、スタッフ新規登録・編集・削除の認証・所属・重複検査、確定／キャンセル経路の迂回防止、発送通知再試行、ルート・画面ハンドラー・既存業務機能のローカル検証 |
 | TypeScript・変更TS/TSXのESLint・差分検査 | 成功 | 本番DB接続の成功を意味しない |
 | `next build --webpack` | 完了 | ダミー設定のみ。初回は既定のNodeヒープ上限で中断、6GiB指定で再実行して静的生成・最適化・ルート一覧まで完了 |
 | `verify-payment-pending-sql.mjs` | 成功 | PGlite上で既存決済migrationを実行。保留中の再課金防止、成功の冪等性、匿名実行拒否を検証 |
@@ -122,6 +131,8 @@ StarRevenue `madeo2222-coder/v0-star-revenue` の確認時点の最新SHAは `b5
 - `lib/server/customerReservationAvailability.ts`
 - `app/api/reservations/staff-create/route.ts`
 - `app/reservations/new/page.tsx`
+- `app/api/reservations/[id]/staff-edit/route.ts`
+- `app/reservations/edit/[id]/page.tsx`
 - `app/api/sanmeigaku-diagnoses/route.ts`
 - `app/customer-app/sanmeigaku/page.tsx`
 - `scripts/sql/aily-commerce-access-preflight.sql`（読取専用、実DBでは未実行）
@@ -132,6 +143,7 @@ StarRevenue `madeo2222-coder/v0-star-revenue` の確認時点の最新SHAは `b5
 - `tests/customer-availability-time.test.mjs`
 - `tests/reservation-new-master-errors.test.mjs`
 - `tests/reservation-staff-create-api-auth.test.mjs`
+- `tests/reservation-staff-edit-api-auth.test.mjs`
 - `tests/diagnosis-ownership.test.mjs`
 - 本記録。加えて main の `docs/aily-daily-sales-production-20261018.md` を統合。
 

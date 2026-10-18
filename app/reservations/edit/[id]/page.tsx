@@ -1,9 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import ReservationReferencePhoto from "../../ReservationReferencePhoto";
 
 type Salon = {
@@ -33,14 +32,6 @@ type ReservationDetail = {
   end_at: string | null;
   status: string | null;
   memo: string | null;
-};
-
-type OverlapReservation = {
-  id: string;
-  status: string | null;
-  menu: string | null;
-  start_at: string | null;
-  end_at: string | null;
 };
 
 type GalleryReference = {
@@ -333,6 +324,7 @@ export default function EditReservationPage() {
   const reservationId = typeof params.id === "string" ? params.id : "";
 
   const [loading, setLoading] = useState(true);
+  const [pageDataLoaded, setPageDataLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [requestingAlternative, setRequestingAlternative] = useState(false);
@@ -352,6 +344,7 @@ export default function EditReservationPage() {
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [status, setStatus] = useState<ReservationStatus>("予約");
+  const [wasInitiallyConfirmed, setWasInitiallyConfirmed] = useState(false);
   const [wasInitiallyCancelled, setWasInitiallyCancelled] = useState(false);
   const [sendCancellationLine, setSendCancellationLine] = useState(false);
   const [cancellationReason, setCancellationReason] =
@@ -365,6 +358,9 @@ export default function EditReservationPage() {
     menuName: "",
     color: "",
   });
+  const saveRequestPendingRef = useRef(false);
+  const deleteRequestPendingRef = useRef(false);
+  const confirmRequestPendingRef = useRef(false);
 
   async function loadPageData() {
     if (!reservationId) {
@@ -374,53 +370,44 @@ export default function EditReservationPage() {
     }
 
     setLoading(true);
+    setPageDataLoaded(false);
     setErrorMessage("");
     setSuccessMessage("");
 
-    const [reservationRes, salonsRes, customersRes, staffsRes] =
-      await Promise.all([
-        supabase
-          .from("reservations")
-          .select(
-            "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo"
-          )
-          .eq("id", reservationId)
-          .single(),
-        supabase
-          .from("salons")
-          .select("id, name")
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("customers")
-          .select("id, name, salon_id")
-          .order("name", { ascending: true }),
-        supabase
-          .from("staffs")
-          .select("id, name, salon_id")
-          .eq("role", "staff")
-          .eq("is_active", true)
-          .order("created_at", { ascending: true }),
-      ]);
+    let response: Response;
 
-    if (
-      reservationRes.error ||
-      !reservationRes.data ||
-      salonsRes.error ||
-      customersRes.error ||
-      staffsRes.error
-    ) {
+    try {
+      response = await fetch(`/api/reservations/${reservationId}/staff-edit`, {
+        cache: "no-store",
+      });
+    } catch {
       setErrorMessage("予約情報の取得に失敗しました");
       setLoading(false);
       return;
     }
 
-    const reservation = reservationRes.data as ReservationDetail;
+    const result = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      error?: string;
+      reservation?: ReservationDetail;
+      salons?: Salon[];
+      customers?: Customer[];
+      staffs?: Staff[];
+    } | null;
+
+    if (!response.ok || !result?.ok || !result.reservation) {
+      setErrorMessage(result?.error || "予約情報の取得に失敗しました");
+      setLoading(false);
+      return;
+    }
+
+    const reservation = result.reservation;
     const rawMemo = reservation.memo ?? "";
     const nextGalleryReference = extractGalleryReference(rawMemo);
 
-    setSalons((salonsRes.data ?? []) as Salon[]);
-    setAllCustomers((customersRes.data ?? []) as Customer[]);
-    setAllStaffs((staffsRes.data ?? []) as Staff[]);
+    setSalons(result.salons ?? []);
+    setAllCustomers(result.customers ?? []);
+    setAllStaffs(result.staffs ?? []);
 
     setSalonId(reservation.salon_id ?? "");
     setCustomerId(reservation.customer_id ?? "");
@@ -429,11 +416,14 @@ export default function EditReservationPage() {
     setDate(extractDate(reservation.start_at));
     setStartTime(extractTime(reservation.start_at));
     setEndTime(extractTime(reservation.end_at));
-    setStatus(normalizeStatus(reservation.status));
+    const normalizedStatus = normalizeStatus(reservation.status);
+    setStatus(normalizedStatus);
+    setWasInitiallyConfirmed(normalizedStatus === "confirmed");
     setWasInitiallyCancelled(isCancelledStatus(reservation.status));
     setGalleryReference(nextGalleryReference);
     setMemo(removeGalleryReferenceLines(rawMemo));
 
+    setPageDataLoaded(true);
     setLoading(false);
   }
 
@@ -464,41 +454,6 @@ export default function EditReservationPage() {
     setSalonId(nextSalonId);
   }
 
-  async function checkOverlap({
-    startAt,
-    endAt,
-  }: {
-    startAt: string;
-    endAt: string;
-  }) {
-    let query = supabase
-      .from("reservations")
-      .select("id, status, menu, start_at, end_at")
-      .neq("id", reservationId)
-      .lt("start_at", endAt)
-      .gt("end_at", startAt);
-
-    if (salonId) {
-      query = query.eq("salon_id", salonId);
-    }
-
-    if (staffId) {
-      query = query.eq("staff_id", staffId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const activeOverlaps = ((data || []) as OverlapReservation[]).filter(
-      (item) => !isCancelledStatus(item.status)
-    );
-
-    return activeOverlaps;
-  }
-
   function validateRequiredFields() {
     if (!salonId || !staffId || !date || !startTime || !endTime) {
       setErrorMessage("必要項目を入力してください");
@@ -522,7 +477,7 @@ export default function EditReservationPage() {
   }
 
   async function handleConfirmReservation() {
-    if (!reservationId) return;
+    if (!reservationId || confirmRequestPendingRef.current) return;
 
     const confirmed = window.confirm("この予約を『予約確定』にしますか？");
     if (!confirmed) return;
@@ -530,24 +485,12 @@ export default function EditReservationPage() {
     const dateTime = validateRequiredFields();
     if (!dateTime) return;
 
+    confirmRequestPendingRef.current = true;
     setConfirming(true);
     setErrorMessage("");
     setSuccessMessage("");
 
   try {
-    const overlaps = await checkOverlap({
-      startAt: dateTime.startAt,
-      endAt: dateTime.endAt,
-    });
-
-    if (overlaps.length > 0) {
-      setConfirming(false);
-      setErrorMessage(
-        "この時間帯はすでに予約またはブロックがあります。カレンダーで確認してください。"
-      );
-      return;
-    }
-
     const confirmationResponse = await fetch(
       `/api/reservations/${reservationId}/confirm`,
       {
@@ -572,7 +515,6 @@ export default function EditReservationPage() {
     };
 
     if (!confirmationResponse.ok || !confirmation.ok) {
-      setConfirming(false);
       setErrorMessage(confirmation.error || "予約確定に失敗しました");
       return;
     }
@@ -613,16 +555,18 @@ export default function EditReservationPage() {
       }`;
     }
 
-    setConfirming(false);
     setStatus("confirmed");
+    setWasInitiallyConfirmed(true);
     setSuccessMessage(
       `予約確定に変更しました。顧客マイページにも反映されます。${lineNoticeMessage}`
     );
   } catch (error) {
-    setConfirming(false);
     const message =
       error instanceof Error ? error.message : "予約確定に失敗しました";
     setErrorMessage(message);
+  } finally {
+    confirmRequestPendingRef.current = false;
+    setConfirming(false);
   }
   }
 
@@ -712,6 +656,8 @@ export default function EditReservationPage() {
   }
 
   async function cancelReservation() {
+    if (saveRequestPendingRef.current) return;
+
     if (cancellationReason === "other" && !cancellationReasonText.trim()) {
       setErrorMessage("キャンセル理由を入力してください");
       return;
@@ -726,6 +672,7 @@ export default function EditReservationPage() {
 
     if (!confirmed) return;
 
+    saveRequestPendingRef.current = true;
     setSaving(true);
     setErrorMessage("");
     setSuccessMessage("");
@@ -758,6 +705,7 @@ export default function EditReservationPage() {
     } catch {
       setErrorMessage("予約のキャンセル処理に失敗しました");
     } finally {
+      saveRequestPendingRef.current = false;
       setSaving(false);
     }
   }
@@ -765,7 +713,12 @@ export default function EditReservationPage() {
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    if (!reservationId) return;
+    if (!reservationId || saveRequestPendingRef.current) return;
+
+    if (status === "confirmed" && !wasInitiallyConfirmed) {
+      await handleConfirmReservation();
+      return;
+    }
 
     if (
       isCancelledStatus(status) &&
@@ -781,79 +734,83 @@ export default function EditReservationPage() {
 
     const memoForSave = buildMemoForSave(galleryReference, memo);
 
+    saveRequestPendingRef.current = true;
     setSaving(true);
     setErrorMessage("");
     setSuccessMessage("");
 
     try {
-      if (!isCancelledStatus(status)) {
-        const overlaps = await checkOverlap({
-          startAt: dateTime.startAt,
-          endAt: dateTime.endAt,
-        });
-
-        if (overlaps.length > 0) {
-          setSaving(false);
-          setErrorMessage(
-            "この時間帯はすでに予約またはブロックがあります。カレンダーで確認してください。"
-          );
-          return;
+      const response = await fetch(
+        `/api/reservations/${reservationId}/staff-edit`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            salonId,
+            customerId: isExternalBlock ? null : customerId,
+            staffId,
+            menu,
+            startAt: dateTime.startAt,
+            endAt: dateTime.endAt,
+            status,
+            memo: memoForSave || null,
+          }),
         }
-      }
+      );
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
 
-      const { error } = await supabase
-        .from("reservations")
-        .update({
-          salon_id: salonId,
-          customer_id: isExternalBlock ? null : customerId,
-          staff_id: staffId,
-          menu: menu || null,
-          start_at: dateTime.startAt,
-          end_at: dateTime.endAt,
-          status,
-          memo: memoForSave || null,
-        })
-        .eq("id", reservationId);
-
-      setSaving(false);
-
-      if (error) {
-        setErrorMessage("予約の更新に失敗しました");
+      if (!response.ok || !result?.ok) {
+        setErrorMessage(result?.error || "予約の更新に失敗しました");
         return;
       }
 
       router.push(isExternalBlock ? "/reservations/calendar" : customerId ? `/customers/${customerId}` : "/reservations");
     } catch (error) {
-      setSaving(false);
       const message =
         error instanceof Error ? error.message : "予約の更新に失敗しました";
       setErrorMessage(message);
+    } finally {
+      saveRequestPendingRef.current = false;
+      setSaving(false);
     }
   }
 
   async function handleDelete() {
-    if (!reservationId) return;
+    if (!reservationId || deleteRequestPendingRef.current) return;
 
     const confirmed = window.confirm("この予約を削除しますか？");
     if (!confirmed) return;
 
+    deleteRequestPendingRef.current = true;
     setDeleting(true);
     setErrorMessage("");
     setSuccessMessage("");
 
-    const { error } = await supabase
-      .from("reservations")
-      .delete()
-      .eq("id", reservationId);
+    try {
+      const response = await fetch(
+        `/api/reservations/${reservationId}/staff-edit`,
+        { method: "DELETE" }
+      );
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
 
-    setDeleting(false);
+      if (!response.ok || !result?.ok) {
+        setErrorMessage(result?.error || "予約の削除に失敗しました");
+        return;
+      }
 
-    if (error) {
+      router.push(isExternalBlock ? "/reservations/calendar" : customerId ? `/customers/${customerId}` : "/reservations");
+    } catch {
       setErrorMessage("予約の削除に失敗しました");
-      return;
+    } finally {
+      deleteRequestPendingRef.current = false;
+      setDeleting(false);
     }
-
-    router.push(isExternalBlock ? "/reservations/calendar" : customerId ? `/customers/${customerId}` : "/reservations");
   }
 
   const backHref = isExternalBlock
@@ -894,6 +851,19 @@ export default function EditReservationPage() {
         {loading ? (
           <section className="rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
             読み込み中...
+          </section>
+        ) : !pageDataLoaded ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+              {errorMessage || "予約情報の取得に失敗しました"}
+            </div>
+            <button
+              type="button"
+              onClick={loadPageData}
+              className="mt-4 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
           </section>
         ) : (
           <form
