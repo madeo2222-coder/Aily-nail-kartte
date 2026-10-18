@@ -10,34 +10,42 @@ const routes = [
   {
     name: "inbound status",
     path: "inbound-nail-tip-requests/[id]/status",
+    ownerOnly: true,
   },
   {
     name: "inbound mark-paid",
     path: "inbound-nail-tip-requests/[id]/mark-paid",
+    ownerOnly: true,
   },
   {
     name: "inbound complete",
     path: "inbound-nail-tip-requests/[id]/complete",
+    ownerOnly: true,
   },
   {
     name: "inbound start-making",
     path: "inbound-nail-tip-requests/[id]/start-making",
+    ownerOnly: true,
   },
   {
     name: "inbound quote",
     path: "inbound-nail-tip-requests/[id]/quote",
+    ownerOnly: true,
   },
   {
     name: "inbound shipping",
     path: "inbound-nail-tip-requests/[id]/shipping",
+    ownerOnly: true,
   },
   {
     name: "inbound send-quote",
     path: "inbound-nail-tip-requests/[id]/send-quote",
+    ownerOnly: true,
   },
   {
     name: "inbound payment-url",
     path: "inbound-nail-tip-requests/[id]/payment-url",
+    ownerOnly: true,
   },
   { name: "domestic status", path: "nail-tip-orders/[id]/status" },
   { name: "domestic payment", path: "nail-tip-orders/[id]/payment" },
@@ -157,13 +165,21 @@ for (const route of routes) {
     assert.equal(result.clientCreated, false);
     assert.equal(result.externalFetchCalled, false);
     assert.deepEqual(JSON.parse(JSON.stringify(result.authOptions)), {
-      allowedRoles: ["owner", "staff"],
+      allowedRoles: route.ownerOnly ? ["owner"] : ["owner", "staff"],
       legacyAllowed: false,
     });
-    assert.match(
-      result.source,
-      /\.eq\("salon_id", authentication\.principal\.salonId\)/,
-      "privileged commerce reads or writes must be scoped to the authenticated staff salon"
-    );
+    if (route.ownerOnly) {
+      assert.doesNotMatch(
+        result.source,
+        /\.eq\("salon_id", authentication\.principal\.salonId\)/,
+        "inbound requests cannot be scoped by a column that is absent in production"
+      );
+    } else {
+      assert.match(
+        result.source,
+        /\.eq\("salon_id", authentication\.principal\.salonId\)/,
+        "domestic commerce writes must be scoped to the authenticated staff salon"
+      );
+    }
   });
 }

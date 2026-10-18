@@ -35,7 +35,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authentication = await authenticateStaffApi({
-    allowedRoles: ["owner", "staff"],
+    allowedRoles: ["owner"],
     legacyAllowed: false,
   });
 
@@ -63,8 +63,7 @@ export async function POST(
     const { error } = await supabase
       .from("inbound_nail_tip_requests")
       .update({ status })
-      .eq("id", id)
-      .eq("salon_id", authentication.principal.salonId);
+      .eq("id", id);
 
     if (error) {
       return NextResponse.json(

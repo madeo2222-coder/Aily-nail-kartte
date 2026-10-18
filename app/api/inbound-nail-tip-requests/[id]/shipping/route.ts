@@ -78,7 +78,7 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const authentication = await authenticateStaffApi({
-    allowedRoles: ["owner", "staff"],
+    allowedRoles: ["owner"],
     legacyAllowed: false,
   });
 
@@ -116,7 +116,6 @@ export async function POST(
       .from("inbound_nail_tip_requests")
       .select("customer_name, customer_email")
       .eq("id", id)
-      .eq("salon_id", authentication.principal.salonId)
       .single();
 
     if (fetchError || !requestData) {
@@ -144,8 +143,7 @@ export async function POST(
         shipped_at: new Date().toISOString(),
         status: "shipped",
       })
-      .eq("id", id)
-      .eq("salon_id", authentication.principal.salonId);
+      .eq("id", id);
 
     if (error) {
       return NextResponse.json(

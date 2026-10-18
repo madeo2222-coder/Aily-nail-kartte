@@ -26,6 +26,7 @@ const order = {
 };
 
 async function renderPage({
+  authenticated = true,
   orderResult = { data: order, error: null },
   customerResult = {
     data: { id: "customer-1", name: "山田 花子", phone: "09012345678" },
@@ -35,6 +36,7 @@ async function renderPage({
   rejectTable = "",
 } = {}) {
   const queries = [];
+  let clientCreated = false;
   const results = {
     nail_tip_orders: orderResult,
     customers: customerResult,
@@ -43,10 +45,14 @@ async function renderPage({
 
   const supabase = {
     from(table) {
-      queries.push(table);
+      const query = { table, eqs: [] };
+      queries.push(query);
       const chain = {
         select() { return chain; },
-        eq() { return chain; },
+        eq(column, value) {
+          query.eqs.push([column, value]);
+          return chain;
+        },
         order() { return chain; },
         limit() { return chain; },
         single() { return finish(); },
@@ -76,8 +82,21 @@ async function renderPage({
         return { __esModule: true, default: ({ href, children, ...props }) =>
           React.createElement("a", { href, ...props }, children) };
       }
+      if (name === "next/navigation") {
+        return { redirect: path => { throw new Error(`redirect:${path}`); } };
+      }
+      if (name === "@/lib/server/staffAuthentication") {
+        return {
+          authenticateStaff: async () => authenticated
+            ? { ok: true, staff: { salonId: "salon-1" } }
+            : { ok: false, reason: "unauthenticated" },
+        };
+      }
       if (name === "@supabase/supabase-js") {
-        return { createClient: () => supabase };
+        return { createClient: () => {
+          clientCreated = true;
+          return supabase;
+        } };
       }
       if (name === "./OrderPaymentForm") {
         return { __esModule: true, default: props => React.createElement(
@@ -93,9 +112,21 @@ async function renderPage({
     },
   });
 
-  const tree = await exports.default({ params: Promise.resolve({ id: "order-1" }) });
-  return { html: renderToStaticMarkup(tree), queries };
+  let tree;
+  try {
+    tree = await exports.default({ params: Promise.resolve({ id: "order-1" }) });
+  } catch (error) {
+    return { error, queries, clientCreated };
+  }
+  return { html: renderToStaticMarkup(tree), queries, clientCreated };
 }
+
+test("order detail redirects unauthenticated users before privileged reads", async () => {
+  const page = await renderPage({ authenticated: false });
+  assert.equal(page.error?.message, "redirect:/login");
+  assert.equal(page.clientCreated, false);
+  assert.deepEqual(page.queries, []);
+});
 
 test("order detail distinguishes a transient order read failure from a missing order", async () => {
   const failed = await renderPage({
@@ -152,8 +183,17 @@ test("order detail renders successful customer and payment data", async () => {
   assert.match(page.html, /山田 花子/);
   assert.match(page.html, /data-payment-load-failed="false"/);
   assert.deepEqual(page.queries, [
-    "nail_tip_orders",
-    "customers",
-    "nail_tip_order_payments",
+    {
+      table: "nail_tip_orders",
+      eqs: [["id", "order-1"], ["salon_id", "salon-1"]],
+    },
+    {
+      table: "customers",
+      eqs: [["id", "customer-1"], ["salon_id", "salon-1"]],
+    },
+    {
+      table: "nail_tip_order_payments",
+      eqs: [["nail_tip_order_id", "order-1"]],
+    },
   ]);
 });

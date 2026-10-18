@@ -43,7 +43,7 @@ export async function POST(
 ) {
   try {
     const authentication = await authenticateStaffApi({
-      allowedRoles: ["owner", "staff"],
+      allowedRoles: ["owner"],
       legacyAllowed: false,
     });
 
@@ -72,7 +72,6 @@ export async function POST(
       .from("inbound_nail_tip_requests")
       .select("id, quote_amount, payment_status, status")
       .eq("id", id)
-      .eq("salon_id", authentication.principal.salonId)
       .single();
 
     if (selectError || !requestData) {
@@ -119,8 +118,7 @@ export async function POST(
         payment_status: "unpaid",
         status: "quoted",
       })
-      .eq("id", id)
-      .eq("salon_id", authentication.principal.salonId);
+      .eq("id", id);
 
     if (updateError) {
       return NextResponse.json(
