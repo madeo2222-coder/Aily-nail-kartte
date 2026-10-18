@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
 
 type StaffRow = {
   id: string;
   name: string | null;
+  salon_id: string | null;
 };
 
 const timeOptions = [
@@ -36,6 +36,7 @@ export default function ExternalCalendarBlocksPage() {
   const [staffsLoading, setStaffsLoading] = useState(true);
   const [staffsError, setStaffsError] = useState("");
   const staffRequestVersionRef = useRef(0);
+  const submissionInFlightRef = useRef(false);
 
   const [source, setSource] = useState("HPB");
   const [staffId, setStaffId] = useState("");
@@ -56,16 +57,23 @@ export default function ExternalCalendarBlocksPage() {
     setStaffsError("");
 
     try {
-      const { data, error } = await supabase
-        .from("staffs")
-        .select("id,name")
-        .eq("is_active", true)
-        .order("name");
+      const response = await fetch("/api/external-calendar-blocks", {
+        cache: "no-store",
+      });
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        staffs?: StaffRow[];
+      } | null;
 
-      if (error) throw error;
+      if (!response.ok || !result?.ok || !Array.isArray(result.staffs)) {
+        throw new Error(
+          result?.error || "スタッフ情報の取得に失敗しました。",
+        );
+      }
 
       if (requestVersion === staffRequestVersionRef.current) {
-        setStaffs((data || []) as StaffRow[]);
+        setStaffs(result.staffs);
       }
     } catch (error) {
       console.error("スタッフ取得エラー:", error);
@@ -89,6 +97,8 @@ export default function ExternalCalendarBlocksPage() {
   }, [loadStaffs]);
 
   async function handleSave() {
+    if (submissionInFlightRef.current) return;
+
     if (!staffId) {
       alert("担当スタッフを選択してください");
       return;
@@ -104,6 +114,12 @@ export default function ExternalCalendarBlocksPage() {
       return;
     }
 
+    if (!selectedStaff?.salon_id) {
+      alert("担当スタッフのサロン情報を確認してください");
+      return;
+    }
+
+    submissionInFlightRef.current = true;
     setSaving(true);
 
     try {
@@ -114,6 +130,7 @@ export default function ExternalCalendarBlocksPage() {
         },
         body: JSON.stringify({
           source: isContractorBooking ? "業務委託" : source,
+          salonId: selectedStaff.salon_id,
           staffId,
           date,
           startTime,
@@ -145,6 +162,7 @@ export default function ExternalCalendarBlocksPage() {
           : "登録中にエラーが発生しました"
       );
     } finally {
+      submissionInFlightRef.current = false;
       setSaving(false);
     }
   }

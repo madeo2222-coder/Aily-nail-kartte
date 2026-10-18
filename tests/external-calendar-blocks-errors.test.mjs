@@ -57,15 +57,23 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
     useEffect: fn => { effect = fn; },
   };
 
-  function response() {
+  function staffResponse() {
     if (shouldFail) {
       if (rejection) throw new Error("offline");
-      return { data: null, error: { message: "read failed" } };
+      return {
+        ok: false,
+        json: async () => ({ ok: false, error: "read failed" }),
+      };
     }
 
     return {
-      data: empty ? [] : [{ id: "staff-1", name: "黒木" }],
-      error: null,
+      ok: true,
+      json: async () => ({
+        ok: true,
+        staffs: empty
+          ? []
+          : [{ id: "staff-1", name: "黒木", salon_id: "salon-1" }],
+      }),
     };
   }
 
@@ -73,29 +81,14 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
   vm.runInNewContext(compiled, {
     exports,
     console: { error() {} },
-    fetch: async () => ({ ok: true, json: async () => ({ ok: true }) }),
+    fetch: async (_url, options = {}) =>
+      options.method === "POST"
+        ? { ok: true, json: async () => ({ ok: true }) }
+        : staffResponse(),
     alert() {},
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
-      if (name === "@/lib/supabase") {
-        return {
-          supabase: {
-            from(table) {
-              assert.equal(table, "staffs");
-              const chain = {
-                select() { return chain; },
-                eq() { return chain; },
-                order() { return chain; },
-                then(resolve, reject) {
-                  return Promise.resolve().then(response).then(resolve, reject);
-                },
-              };
-              return chain;
-            },
-          },
-        };
-      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });

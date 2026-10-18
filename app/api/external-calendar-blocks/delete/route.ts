@@ -20,21 +20,14 @@ function getSupabaseAdmin() {
 export async function POST(req: NextRequest) {
   const authentication = await authenticateStaffApi({
     allowedRoles: ["owner", "staff"],
-    legacyAllowed: false,
-    salonContextRequired: true,
+    legacyAllowed: true,
+    salonContextRequired: false,
   });
 
   if (!authentication.ok) {
     return NextResponse.json(
       { ok: false, error: authentication.error },
       { status: authentication.status }
-    );
-  }
-
-  if (authentication.principal.authenticationMode !== "supabase") {
-    return NextResponse.json(
-      { ok: false, error: "この予定を削除する権限がありません" },
-      { status: 403 }
     );
   }
 
@@ -71,14 +64,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const belongsToSalon = block.salon_id === authentication.principal.salonId;
+    const authenticatedSalonId =
+      authentication.principal.authenticationMode === "supabase"
+        ? authentication.principal.salonId
+        : null;
+    const belongsToSalon = block.salon_id === authenticatedSalonId;
 
-    if (!belongsToSalon && !block.salon_id && block.staff_id) {
+    if (
+      authenticatedSalonId &&
+      !belongsToSalon &&
+      !block.salon_id &&
+      block.staff_id
+    ) {
       const { data: staff, error: staffError } = await supabase
         .from("staffs")
         .select("id")
         .eq("id", block.staff_id)
-        .eq("salon_id", authentication.principal.salonId)
+        .eq("salon_id", authenticatedSalonId)
         .maybeSingle();
 
       if (staffError) {
@@ -94,7 +96,7 @@ export async function POST(req: NextRequest) {
           { status: 403 }
         );
       }
-    } else if (!belongsToSalon) {
+    } else if (authenticatedSalonId && !belongsToSalon) {
       return NextResponse.json(
         { ok: false, error: "この予定を削除する権限がありません" },
         { status: 403 }
@@ -110,17 +112,23 @@ export async function POST(req: NextRequest) {
       ? deleteQuery.eq("salon_id", block.salon_id)
       : deleteQuery.is("salon_id", null);
 
-    const { error } = await deleteQuery;
+    const { data: deletedBlock, error } = await deleteQuery
+      .select("id")
+      .maybeSingle();
 
-    if (error) {
+    if (error || !deletedBlock) {
       return NextResponse.json(
-        { ok: false, error: error.message },
+        {
+          ok: false,
+          error: error?.message || "予定を削除できませんでした",
+        },
         { status: 500 }
       );
     }
 
     return NextResponse.json({
       ok: true,
+      id: deletedBlock.id,
     });
   } catch (error) {
     return NextResponse.json(
