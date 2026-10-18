@@ -1,15 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
-
-const LINE_PENDING_COOKIE = "customer_line_pending";
-const LINE_SESSION_COOKIE = "customer_line_session";
-
-type PendingPayload = {
-  line_user_id: string;
-  display_name?: string;
-  picture_url?: string;
-  next?: string;
-};
+import {
+  createCustomerLineSessionCookie,
+  LINE_PENDING_COOKIE,
+  LINE_SESSION_COOKIE,
+  readLinePendingCookie,
+} from "@/lib/server/lineLoginCookies";
 
 type CustomerRow = {
   id: string;
@@ -75,16 +71,6 @@ function normalizeName(value: string) {
   return value.replace(/\s/g, "").replace(/　/g, "").trim();
 }
 
-function safeDecodeJson<T>(value: string | undefined): T | null {
-  if (!value) return null;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
 function getSafeRedirectPath(value: string | undefined) {
   if (!value) return "/customer-app";
   if (!value.startsWith("/")) return "/customer-app";
@@ -95,7 +81,7 @@ function getSafeRedirectPath(value: string | undefined) {
 
 export async function POST(request: NextRequest) {
   try {
-    const pending = safeDecodeJson<PendingPayload>(
+    const pending = readLinePendingCookie(
       request.cookies.get(LINE_PENDING_COOKIE)?.value
     );
 
@@ -206,10 +192,13 @@ export async function POST(request: NextRequest) {
 
     response.cookies.set(
       LINE_SESSION_COOKIE,
-      JSON.stringify({
-        customer_id: customer.id,
-        line_user_id: pending.line_user_id,
-      }),
+      createCustomerLineSessionCookie(
+        {
+          customer_id: customer.id,
+          line_user_id: pending.line_user_id,
+        },
+        60 * 60 * 24 * 30
+      ),
       {
         httpOnly: true,
         secure: true,

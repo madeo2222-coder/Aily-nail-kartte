@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -171,105 +171,128 @@ function buildCopyText({
 
 export default function ExternalCalendarTasksPage() {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [doneMap, setDoneMap] = useState<DoneMap>({});
   const [copiedId, setCopiedId] = useState("");
   const [showCompleted, setShowCompleted] = useState(false);
   const [channelFilter, setChannelFilter] = useState<ChannelFilter>("both");
   const [staffFilter, setStaffFilter] = useState("all");
+  const taskRequestVersionRef = useRef(0);
 
-  async function fetchTasks() {
+  const fetchTasks = useCallback(async () => {
+    const requestVersion = taskRequestVersionRef.current + 1;
+    taskRequestVersionRef.current = requestVersion;
     setLoading(true);
+    setLoadError("");
+    setTasks([]);
 
-    const [reservationsResult, customersResult, staffsResult] = await Promise.all([
-      supabase
-        .from("reservations")
-        .select("id, customer_id, staff_id, menu, start_at, end_at, status, memo")
-        .order("start_at", { ascending: true }),
-      supabase.from("customers").select("id, name"),
-      supabase.from("staffs").select("id, name"),
-    ]);
+    try {
+      const [reservationsResult, customersResult, staffsResult] = await Promise.all([
+        supabase
+          .from("reservations")
+          .select("id, customer_id, staff_id, menu, start_at, end_at, status, memo")
+          .order("start_at", { ascending: true }),
+        supabase.from("customers").select("id, name"),
+        supabase.from("staffs").select("id, name"),
+      ]);
 
-    const reservations = (reservationsResult.data || []) as ReservationRow[];
-    const customers = (customersResult.data || []) as CustomerRow[];
-    const staffs = (staffsResult.data || []) as StaffRow[];
+      const sourceError =
+        reservationsResult.error || customersResult.error || staffsResult.error;
+      if (sourceError) throw sourceError;
 
-    const customerMap = new Map(
-      customers.map((customer) => [customer.id, customer.name || "顧客名未設定"])
-    );
+      const reservations = (reservationsResult.data || []) as ReservationRow[];
+      const customers = (customersResult.data || []) as CustomerRow[];
+      const staffs = (staffsResult.data || []) as StaffRow[];
 
-    const staffMap = new Map(
-      staffs.map((staff) => [staff.id, staff.name || "未設定"])
-    );
+      const customerMap = new Map(
+        customers.map((customer) => [customer.id, customer.name || "顧客名未設定"])
+      );
 
-    const now = new Date();
+      const staffMap = new Map(
+        staffs.map((staff) => [staff.id, staff.name || "未設定"])
+      );
 
-    const nextTasks = reservations
-      .filter((row) => {
-        if (!row.customer_id) return false;
-        if (!row.start_at) return false;
-        if (isCancelledStatus(row.status)) return false;
-        if (isExternalBlock(row)) return false;
+      const now = new Date();
 
-        const normalized = normalizeSupabaseDateTime(row.start_at);
-        if (!normalized) return false;
+      const nextTasks = reservations
+        .filter((row) => {
+          if (!row.customer_id) return false;
+          if (!row.start_at) return false;
+          if (isCancelledStatus(row.status)) return false;
+          if (isExternalBlock(row)) return false;
 
-        const start = new Date(normalized);
-        if (Number.isNaN(start.getTime())) return false;
+          const normalized = normalizeSupabaseDateTime(row.start_at);
+          if (!normalized) return false;
 
-        return start >= now;
-      })
-      .map((row) => {
-        const customerName = row.customer_id
-          ? customerMap.get(row.customer_id) || "顧客名未設定"
-          : "顧客名未設定";
+          const start = new Date(normalized);
+          if (Number.isNaN(start.getTime())) return false;
 
-        const staffName = row.staff_id
-          ? staffMap.get(row.staff_id) || "未設定"
-          : "未設定";
+          return start >= now;
+        })
+        .map((row) => {
+          const customerName = row.customer_id
+            ? customerMap.get(row.customer_id) || "顧客名未設定"
+            : "顧客名未設定";
 
-        const menuName = row.menu || "メニュー未設定";
-        const dateLabel = formatJstDate(row.start_at);
-        const startTime = formatJstTime(row.start_at);
-        const endTime = formatJstTime(row.end_at);
-        const timeLabel = `${startTime}〜${endTime}`;
-        const durationLabel = getDurationLabel(row.start_at, row.end_at);
+          const staffName = row.staff_id
+            ? staffMap.get(row.staff_id) || "未設定"
+            : "未設定";
 
-        return {
-          id: row.id,
-          customerName,
-          staffName,
-          menuName,
-          status: row.status || "予約",
-          startAt: row.start_at,
-          endAt: row.end_at,
-          dateLabel,
-          timeLabel,
-          durationLabel,
-          hpbText: buildCopyText({
-            channel: "HPB",
-            dateLabel,
-            timeLabel,
-            durationLabel,
+          const menuName = row.menu || "メニュー未設定";
+          const dateLabel = formatJstDate(row.start_at);
+          const startTime = formatJstTime(row.start_at);
+          const endTime = formatJstTime(row.end_at);
+          const timeLabel = `${startTime}〜${endTime}`;
+          const durationLabel = getDurationLabel(row.start_at, row.end_at);
+
+          return {
+            id: row.id,
             customerName,
             staffName,
             menuName,
-          }),
-          minimoText: buildCopyText({
-            channel: "ミニモ",
+            status: row.status || "予約",
+            startAt: row.start_at,
+            endAt: row.end_at,
             dateLabel,
             timeLabel,
             durationLabel,
-            customerName,
-            staffName,
-            menuName,
-          }),
-        };
-      });
+            hpbText: buildCopyText({
+              channel: "HPB",
+              dateLabel,
+              timeLabel,
+              durationLabel,
+              customerName,
+              staffName,
+              menuName,
+            }),
+            minimoText: buildCopyText({
+              channel: "ミニモ",
+              dateLabel,
+              timeLabel,
+              durationLabel,
+              customerName,
+              staffName,
+              menuName,
+            }),
+          };
+        });
 
-    setTasks(nextTasks);
-    setLoading(false);
-  }
+      if (requestVersion === taskRequestVersionRef.current) {
+        setTasks(nextTasks);
+      }
+    } catch (error) {
+      console.error("external calendar tasks fetch error:", error);
+      if (requestVersion === taskRequestVersionRef.current) {
+        setTasks([]);
+        setLoadError("外部カレンダー反映タスクの取得に失敗しました。");
+      }
+    } finally {
+      if (requestVersion === taskRequestVersionRef.current) {
+        setLoading(false);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(() => {
@@ -284,7 +307,11 @@ export default function ExternalCalendarTasksPage() {
 
       return fetchTasks();
     });
-  }, []);
+
+    return () => {
+      taskRequestVersionRef.current += 1;
+    };
+  }, [fetchTasks]);
 
   const staffOptions = useMemo(() => {
     return Array.from(new Set(tasks.map((task) => task.staffName))).sort((a, b) =>
@@ -388,101 +415,119 @@ export default function ExternalCalendarTasksPage() {
           </div>
         </section>
 
-        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-3xl bg-rose-50 p-4">
-              <div className="text-sm font-bold text-rose-500">反映待ち</div>
-              <div className="mt-2 text-3xl font-black text-slate-900">
-                {pendingTasks.length}件
+        {!loading && !loadError ? (
+          <>
+            <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-3xl bg-rose-50 p-4">
+                  <div className="text-sm font-bold text-rose-500">反映待ち</div>
+                  <div className="mt-2 text-3xl font-black text-slate-900">
+                    {pendingTasks.length}件
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-purple-50 p-4">
+                  <div className="text-sm font-bold text-purple-500">対象予約</div>
+                  <div className="mt-2 text-3xl font-black text-slate-900">
+                    {tasks.length}件
+                  </div>
+                </div>
+
+                <div className="rounded-3xl bg-emerald-50 p-4">
+                  <div className="text-sm font-bold text-emerald-600">運用</div>
+                  <div className="mt-2 text-base font-bold leading-7 text-slate-900">
+                    HPB・ミニモへ手動ブロック登録
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
 
-            <div className="rounded-3xl bg-purple-50 p-4">
-              <div className="text-sm font-bold text-purple-500">対象予約</div>
-              <div className="mt-2 text-3xl font-black text-slate-900">
-                {tasks.length}件
+            <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    表示
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCompleted(false)}
+                      className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+                        !showCompleted
+                          ? "border-rose-300 bg-rose-100 text-rose-700"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      反映待ちのみ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowCompleted(true)}
+                      className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+                        showCompleted
+                          ? "border-rose-300 bg-rose-100 text-rose-700"
+                          : "border-slate-200 bg-white text-slate-600"
+                      }`}
+                    >
+                      すべて
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    媒体
+                  </label>
+                  <select
+                    value={channelFilter}
+                    onChange={(e) => setChannelFilter(e.target.value as ChannelFilter)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm font-bold text-slate-700"
+                  >
+                    <option value="both">HPB＋ミニモ</option>
+                    <option value="hpb">HPBのみ</option>
+                    <option value="minimo">ミニモのみ</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-700">
+                    担当スタッフ
+                  </label>
+                  <select
+                    value={staffFilter}
+                    onChange={(e) => setStaffFilter(e.target.value)}
+                    className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm font-bold text-slate-700"
+                  >
+                    <option value="all">全スタッフ</option>
+                    {staffOptions.map((staffName) => (
+                      <option key={staffName} value={staffName}>
+                        {staffName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-            </div>
-
-            <div className="rounded-3xl bg-emerald-50 p-4">
-              <div className="text-sm font-bold text-emerald-600">運用</div>
-              <div className="mt-2 text-base font-bold leading-7 text-slate-900">
-                HPB・ミニモへ手動ブロック登録
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                表示
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCompleted(false)}
-                  className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
-                    !showCompleted
-                      ? "border-rose-300 bg-rose-100 text-rose-700"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  反映待ちのみ
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowCompleted(true)}
-                  className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
-                    showCompleted
-                      ? "border-rose-300 bg-rose-100 text-rose-700"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  すべて
-                </button>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                媒体
-              </label>
-              <select
-                value={channelFilter}
-                onChange={(e) => setChannelFilter(e.target.value as ChannelFilter)}
-                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm font-bold text-slate-700"
-              >
-                <option value="both">HPB＋ミニモ</option>
-                <option value="hpb">HPBのみ</option>
-                <option value="minimo">ミニモのみ</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-700">
-                担当スタッフ
-              </label>
-              <select
-                value={staffFilter}
-                onChange={(e) => setStaffFilter(e.target.value)}
-                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm font-bold text-slate-700"
-              >
-                <option value="all">全スタッフ</option>
-                {staffOptions.map((staffName) => (
-                  <option key={staffName} value={staffName}>
-                    {staffName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </section>
+            </section>
+          </>
+        ) : null}
 
         {loading ? (
           <section className="rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
             読み込み中...
+          </section>
+        ) : loadError ? (
+          <section
+            role="alert"
+            className="rounded-[28px] border border-rose-200 bg-rose-50 p-6 shadow-sm"
+          >
+            <p className="text-sm font-bold text-rose-800">{loadError}</p>
+            <button
+              type="button"
+              onClick={fetchTasks}
+              className="mt-3 rounded-2xl bg-rose-600 px-4 py-2 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
           </section>
         ) : tasks.length === 0 ? (
           <section className="rounded-[28px] border border-rose-100 bg-white p-6 text-sm text-slate-500 shadow-sm">

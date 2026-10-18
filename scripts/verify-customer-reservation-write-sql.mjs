@@ -1,0 +1,220 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+const { PGlite } = await import(
+  process.env.AILY_PGLITE_MODULE || "@electric-sql/pglite"
+);
+const root = fileURLToPath(new URL("../", import.meta.url));
+const alternativeMigration = await readFile(
+  `${root}/supabase/migrations/20261003120111_reservation_alternative_requests.sql`,
+  "utf8"
+);
+const writeMigration = await readFile(
+  `${root}/supabase/migrations/20261004030707_prevent_customer_reservation_races.sql`,
+  "utf8"
+);
+const db = new PGlite();
+
+await db.exec(`
+CREATE ROLE anon;
+CREATE ROLE authenticated;
+CREATE ROLE service_role BYPASSRLS;
+CREATE TABLE public.salons(id uuid PRIMARY KEY);
+CREATE TABLE public.customers(id uuid PRIMARY KEY, salon_id uuid);
+CREATE TABLE public.staffs(
+  id uuid PRIMARY KEY,
+  salon_id uuid,
+  is_active boolean,
+  role text,
+  customer_booking_enabled boolean
+);
+CREATE TABLE public.reservations(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id uuid,
+  salon_id uuid,
+  staff_id uuid,
+  status text,
+  menu text,
+  memo text,
+  source text,
+  start_at timestamptz,
+  end_at timestamptz
+);
+CREATE TABLE public.external_calendar_blocks(
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  salon_id uuid,
+  staff_id uuid,
+  start_at timestamptz,
+  end_at timestamptz
+);
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO service_role;
+`);
+
+await db.exec(alternativeMigration);
+await db.exec(writeMigration);
+
+await db.exec(`
+INSERT INTO public.salons VALUES ('00000000-0000-0000-0000-000000000001');
+INSERT INTO public.customers VALUES (
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000001'
+);
+INSERT INTO public.staffs VALUES (
+  '00000000-0000-0000-0000-000000000003',
+  '00000000-0000-0000-0000-000000000001',
+  true,
+  'staff',
+  true
+);
+SET ROLE service_role;
+`);
+
+const createReservation = async (startAt, endAt) =>
+  (
+    await db.query(
+      `SELECT * FROM public.create_customer_requested_reservation(
+        '00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-000000000002',
+        '00000000-0000-0000-0000-000000000003',
+        'ジェル', $1, $2, '希望メモ'
+      )`,
+      [startAt, endAt]
+    )
+  ).rows[0];
+
+const created = await createReservation(
+  "2026-10-10T01:00:00.000Z",
+  "2026-10-10T02:30:00.000Z"
+);
+assert.equal(created.outcome, "created");
+assert.ok(created.reservation_id);
+
+const duplicate = await createReservation(
+  "2026-10-10T01:30:00.000Z",
+  "2026-10-10T03:00:00.000Z"
+);
+assert.equal(duplicate.outcome, "slot_unavailable");
+assert.equal(duplicate.reservation_id, null);
+
+const updateReservation = async ({
+  expectedStart = "2026-10-10T01:00:00.000Z",
+  expectedEnd = "2026-10-10T02:30:00.000Z",
+  startAt = "2026-10-11T01:00:00.000Z",
+  endAt = "2026-10-11T02:30:00.000Z",
+} = {}) =>
+  (
+    await db.query(
+      `SELECT * FROM public.update_customer_requested_reservation(
+        $1,
+        '00000000-0000-0000-0000-000000000002',
+        $2, $3,
+        '00000000-0000-0000-0000-000000000003',
+        'ジェル変更', $4, $5, '別日時回答'
+      )`,
+      [created.reservation_id, expectedStart, expectedEnd, startAt, endAt]
+    )
+  ).rows[0];
+
+const updated = await updateReservation();
+assert.equal(updated.outcome, "updated");
+assert.equal(updated.reservation_id, created.reservation_id);
+
+const stale = await updateReservation();
+assert.equal(stale.outcome, "stale");
+assert.equal(stale.reservation_id, null);
+
+await db.exec(`
+INSERT INTO public.external_calendar_blocks(salon_id, staff_id, start_at, end_at)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000003',
+  '2026-10-12T01:00:00.000Z',
+  '2026-10-12T03:00:00.000Z'
+);
+`);
+const blocked = await updateReservation({
+  expectedStart: "2026-10-11T01:00:00.000Z",
+  expectedEnd: "2026-10-11T02:30:00.000Z",
+  startAt: "2026-10-12T01:30:00.000Z",
+  endAt: "2026-10-12T02:30:00.000Z",
+});
+assert.equal(blocked.outcome, "slot_unavailable");
+
+await db.exec(`
+INSERT INTO public.reservation_alternative_requests(
+  reservation_id, customer_id, salon_id, status, message
+) VALUES (
+  '${created.reservation_id}',
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000001',
+  'sent',
+  '別日時を入力してください'
+);
+`);
+
+const cancelled = (
+  await db.query(
+    `SELECT * FROM public.cancel_customer_requested_reservation(
+      $1, '00000000-0000-0000-0000-000000000002'
+    )`,
+    [created.reservation_id]
+  )
+).rows[0];
+assert.equal(cancelled.outcome, "cancelled");
+assert.equal(cancelled.reservation_id, created.reservation_id);
+assert.equal(
+  (
+    await db.query(
+      "SELECT status FROM public.reservation_alternative_requests WHERE reservation_id = $1",
+      [created.reservation_id]
+    )
+  ).rows[0].status,
+  "superseded"
+);
+assert.equal(
+  (
+    await db.query("SELECT status FROM public.reservations WHERE id = $1", [
+      created.reservation_id,
+    ])
+  ).rows[0].status,
+  "cancelled"
+);
+const repeatedCancel = (
+  await db.query(
+    `SELECT * FROM public.cancel_customer_requested_reservation(
+      $1, '00000000-0000-0000-0000-000000000002'
+    )`,
+    [created.reservation_id]
+  )
+).rows[0];
+assert.equal(repeatedCancel.outcome, "stale");
+
+await db.exec("RESET ROLE; SET ROLE anon;");
+await assert.rejects(
+  () =>
+    db.query(`SELECT * FROM public.create_customer_requested_reservation(
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000002',
+      '00000000-0000-0000-0000-000000000003',
+      'ジェル',
+      '2026-10-13T01:00:00.000Z',
+      '2026-10-13T02:30:00.000Z',
+      ''
+    )`),
+  /permission denied/
+);
+await assert.rejects(
+  () =>
+    db.query(`SELECT * FROM public.cancel_customer_requested_reservation(
+      '${created.reservation_id}',
+      '00000000-0000-0000-0000-000000000002'
+    )`),
+  /permission denied/
+);
+
+await db.close();
+console.log(
+  "PASS: customer reservation create/update/cancel is atomic, conflict-aware, stale-safe, and service-role-only"
+);

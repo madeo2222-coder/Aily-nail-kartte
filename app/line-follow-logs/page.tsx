@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Log = {
@@ -17,38 +17,76 @@ type Log = {
 
 export default function LineFollowLogsPage() {
   const [logs, setLogs] = useState<Log[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
+  const requestIdRef = useRef(0);
 
-  async function fetchLogs() {
-    const { data, error } = await supabase
-      .from("line_follow_logs")
-      .select(
+  const fetchLogs = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const { data, error } = await supabase
+        .from("line_follow_logs")
+        .select(
+          `
+          *,
+          customers (
+            name
+          )
         `
-        *,
-        customers (
-          name
         )
-      `
-      )
-      .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false });
 
-    if (error) {
+      if (requestId !== requestIdRef.current) return;
+
+      if (error) throw error;
+
+      setLogs(data || []);
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+
       console.error(error);
-      return;
+      setLogs([]);
+      setErrorMessage(
+        "LINE送信履歴を取得できませんでした。通信状態を確認して再試行してください。"
+      );
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-
-    setLogs(data || []);
-  }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(fetchLogs);
-  }, []);
+
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, [fetchLogs]);
 
   return (
     <div className="p-4">
       <h1 className="mb-6 text-2xl font-bold">LINE送信履歴</h1>
 
-      {logs.length === 0 ? (
-        <p>データなし</p>
+      {loading ? (
+        <p>読み込み中...</p>
+      ) : errorMessage ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700"
+        >
+          <p>{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchLogs()}
+            className="mt-3 rounded-lg border border-red-300 bg-white px-4 py-2 font-medium"
+          >
+            再試行
+          </button>
+        </div>
+      ) : logs.length === 0 ? (
+        <p>送信履歴はありません</p>
       ) : (
         <div className="space-y-4">
           {logs.map((log) => (

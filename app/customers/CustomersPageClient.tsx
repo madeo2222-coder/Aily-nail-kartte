@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Customer = {
@@ -33,34 +33,55 @@ export default function CustomersPageClient() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [keyword, setKeyword] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const requestVersion = useRef(0);
 
-  async function fetchData() {
-    const { data: customersData, error: customersError } = await supabase
-      .from("customers")
-      .select("id, name, name_kana, allergy")
-      .order("created_at", { ascending: false });
+  const fetchData = useCallback(async () => {
+    const version = ++requestVersion.current;
+    setLoading(true);
+    setLoadError(null);
+    setCustomers([]);
+    setVisits([]);
 
-    if (customersError) {
-      console.error("customers取得エラー:", customersError);
-    } else if (customersData) {
-      setCustomers(customersData);
+    try {
+      const [customersResult, visitsResult] = await Promise.all([
+        supabase
+          .from("customers")
+          .select("id, name, name_kana, allergy")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("visits")
+          .select("customer_id, next_visit_date, next_proposal, visit_date")
+          .order("visit_date", { ascending: false }),
+      ]);
+
+      if (version !== requestVersion.current) return;
+
+      if (customersResult.error || visitsResult.error) {
+        console.error("顧客一覧取得エラー:", customersResult.error || visitsResult.error);
+        setLoadError("顧客一覧を取得できませんでした。通信状態を確認して再試行してください。");
+        return;
+      }
+
+      setCustomers((customersResult.data || []) as Customer[]);
+      setVisits((visitsResult.data || []) as Visit[]);
+    } catch (error) {
+      if (version !== requestVersion.current) return;
+      console.error("顧客一覧取得エラー:", error);
+      setLoadError("顧客一覧を取得できませんでした。通信状態を確認して再試行してください。");
+    } finally {
+      if (version === requestVersion.current) setLoading(false);
     }
-
-    const { data: visitsData, error: visitsError } = await supabase
-      .from("visits")
-      .select("customer_id, next_visit_date, next_proposal, visit_date")
-      .order("visit_date", { ascending: false });
-
-    if (visitsError) {
-      console.error("visits取得エラー:", visitsError);
-    } else if (visitsData) {
-      setVisits(visitsData);
-    }
-  }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(fetchData);
-  }, []);
+
+    return () => {
+      requestVersion.current += 1;
+    };
+  }, [fetchData]);
 
   function getLatestVisit(customerId: string) {
     return visits.find((visit) => visit.customer_id === customerId);
@@ -104,23 +125,47 @@ export default function CustomersPageClient() {
                 スタッフページへ
               </Link>
 
-              <Link
-                href="/customers/new"
-                className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
-              >
-                ＋ 顧客を追加
-              </Link>
+              {!loading && !loadError ? (
+                <>
+                  <Link
+                    href="/customers/new"
+                    className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-rose-500 shadow"
+                  >
+                    ＋ 顧客を追加
+                  </Link>
 
-              <Link
-                href="/customers/merge"
-                className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
-              >
-                顧客統合
-              </Link>
+                  <Link
+                    href="/customers/merge"
+                    className="rounded-2xl border border-white/40 bg-white/80 px-4 py-3 text-sm font-bold text-rose-600 backdrop-blur"
+                  >
+                    顧客統合
+                  </Link>
+                </>
+              ) : null}
             </div>
           </div>
         </section>
 
+        {loading ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+            顧客一覧を読み込み中です...
+          </section>
+        ) : loadError ? (
+          <section
+            role="alert"
+            className="rounded-[28px] border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm"
+          >
+            <p>{loadError}</p>
+            <button
+              type="button"
+              onClick={() => void fetchData()}
+              className="mt-4 rounded-2xl border border-red-200 bg-white px-4 py-3 font-bold"
+            >
+              再試行
+            </button>
+          </section>
+        ) : (
+          <>
         <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="mb-4">
             <div className="text-sm font-bold text-slate-900">顧客検索</div>
@@ -230,6 +275,8 @@ export default function CustomersPageClient() {
               );
             })}
           </section>
+        )}
+          </>
         )}
       </div>
     </main>

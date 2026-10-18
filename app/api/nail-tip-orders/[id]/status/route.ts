@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 const allowedStatuses = [
   "requested",
@@ -32,6 +33,18 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authentication = await authenticateStaffApi({
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: false,
+    });
+
+    if (!authentication.ok) {
+      return NextResponse.json(
+        { ok: false, error: authentication.error },
+        { status: authentication.status }
+      );
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -48,26 +61,34 @@ export async function POST(
     }
 
     const supabase = getSupabaseAdmin();
-
-    const updateData: {
-      status: string;
-      payment_status?: string;
-    } = {
-      status,
-    };
-
-    if (status === "payment_waiting") {
-      updateData.payment_status = "payment_waiting";
+    const readQuery = supabase.from("nail_tip_orders")
+      .select("id, status, payment_status").eq("id", id)
+      .eq("salon_id", authentication.principal.salonId);
+    const { data: order, error: readError } = await readQuery.maybeSingle();
+    if (readError) {
+      return NextResponse.json({ ok: false, error: "注文を確認できませんでした" }, { status: 500 });
     }
-
-    if (status === "paid") {
-      updateData.payment_status = "paid";
+    if (!order) {
+      return NextResponse.json({ ok: false, error: "注文が見つかりません" }, { status: 404 });
     }
-
-    const { error } = await supabase
+    if (["paid", "making", "shipped", "completed"].includes(status) && order.payment_status !== "paid") {
+      return NextResponse.json({ ok: false, error: "決済完了を確認できるまで制作・発送へ進めません" }, { status: 409 });
+    }
+    if (status === "shipped" && order.status !== "shipped") {
+      return NextResponse.json({ ok: false, error: "配送会社と追跡番号を発送情報から登録してください" }, { status: 409 });
+    }
+    if (status === "completed" && !["shipped", "completed"].includes(order.status)) {
+      return NextResponse.json({ ok: false, error: "発送を確認してから完了にしてください" }, { status: 409 });
+    }
+    // Payment truth is owned by the verified payment flow, never this form.
+    let updateQuery = supabase
       .from("nail_tip_orders")
-      .update(updateData)
-      .eq("id", id);
+      .update({ status })
+      .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId);
+    updateQuery = order.status === null ? updateQuery.is("status", null) : updateQuery.eq("status", order.status);
+    updateQuery = order.payment_status === null ? updateQuery.is("payment_status", null) : updateQuery.eq("payment_status", order.payment_status);
+    const { data: updated, error } = await updateQuery.select("id").maybeSingle();
 
     if (error) {
       return NextResponse.json(
@@ -77,6 +98,10 @@ export async function POST(
         },
         { status: 500 }
       );
+    }
+
+    if (!updated) {
+      return NextResponse.json({ ok: false, error: "注文が更新されました。再読込して確認してください" }, { status: 409 });
     }
 
     return NextResponse.json({

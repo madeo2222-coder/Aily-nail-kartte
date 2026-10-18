@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -39,6 +39,7 @@ export default function ExpenseNewPage() {
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const saveInFlightRef = useRef(false);
 
   const uploadReceiptImage = async () => {
     if (!receiptFile) return null;
@@ -61,11 +62,16 @@ export default function ExpenseNewPage() {
 
     const { data } = supabase.storage.from("visit-photos").getPublicUrl(fileName);
 
-    return data.publicUrl;
+    return {
+      path: fileName,
+      publicUrl: data.publicUrl,
+    };
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (saveInFlightRef.current) return;
 
     if (!expenseDate) {
       alert("日付を入力してください");
@@ -82,33 +88,56 @@ export default function ExpenseNewPage() {
       return;
     }
 
+    saveInFlightRef.current = true;
     setIsSaving(true);
 
+    let uploadedReceiptPath = "";
+    let expenseSaved = false;
+
     try {
-      const receiptUrl = await uploadReceiptImage();
+      const uploadedReceipt = await uploadReceiptImage();
+      uploadedReceiptPath = uploadedReceipt?.path || "";
 
       const { error } = await supabase.from("expenses").insert({
         expense_date: expenseDate,
         category,
         amount: Number(amount),
         memo: memo.trim() || null,
-        receipt_url: receiptUrl,
+        receipt_url: uploadedReceipt?.publicUrl || null,
       });
 
       if (error) {
         throw new Error(error.message);
       }
 
+      expenseSaved = true;
+
       alert("登録しました");
       router.push("/expenses");
     } catch (error) {
       console.error("経費登録エラー:", error);
+
+      if (uploadedReceiptPath && !expenseSaved) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from("visit-photos")
+            .remove([uploadedReceiptPath]);
+
+          if (cleanupError) {
+            console.error("レシート画像の回収エラー:", cleanupError);
+          }
+        } catch (cleanupError) {
+          console.error("レシート画像の回収エラー:", cleanupError);
+        }
+      }
+
       alert(
         error instanceof Error
           ? `登録に失敗しました: ${error.message}`
           : "登録に失敗しました"
       );
     } finally {
+      saveInFlightRef.current = false;
       setIsSaving(false);
     }
   };

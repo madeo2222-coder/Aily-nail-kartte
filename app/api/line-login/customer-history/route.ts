@@ -1,14 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  LINE_SESSION_COOKIE,
+  readCustomerLineSessionCookie,
+} from "@/lib/server/lineLoginCookies";
 
 export const dynamic = "force-dynamic";
-
-const LINE_SESSION_COOKIE = "customer_line_session";
-
-type LineSessionPayload = {
-  customer_id: string;
-  line_user_id: string;
-};
 
 type VisitRow = {
   id: string;
@@ -53,19 +50,9 @@ function getSupabaseAdmin() {
   });
 }
 
-function safeDecodeJson<T>(value: string | undefined): T | null {
-  if (!value) return null;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
-    const session = safeDecodeJson<LineSessionPayload>(
+    const session = readCustomerLineSessionCookie(
       request.cookies.get(LINE_SESSION_COOKIE)?.value
     );
 

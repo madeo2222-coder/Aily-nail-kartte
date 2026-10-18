@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 type AnyRow = Record<string, unknown>;
 
@@ -75,6 +76,7 @@ function buildShippingLineMessage(params: {
 async function sendLineMessage(params: {
   lineUserId: string;
   messageText: string;
+  retryKey: string;
 }) {
   const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
 
@@ -90,6 +92,7 @@ async function sendLineMessage(params: {
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${channelAccessToken}`,
+      "X-Line-Retry-Key": params.retryKey,
     },
     body: JSON.stringify({
       to: params.lineUserId,
@@ -102,7 +105,10 @@ async function sendLineMessage(params: {
     }),
   });
 
-  if (!lineResponse.ok) {
+  // LINE returns 409 when the same retry key has already been accepted.
+  // Treat that response as success so an uncertain first response can be
+  // retried without reporting a false notification failure.
+  if (!lineResponse.ok && lineResponse.status !== 409) {
     const errorText = await lineResponse.text();
     console.error("LINEネイルチップ発送通知エラー:", errorText);
 
@@ -123,6 +129,18 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authentication = await authenticateStaffApi({
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: false,
+    });
+
+    if (!authentication.ok) {
+      return NextResponse.json(
+        { ok: false, error: authentication.error },
+        { status: authentication.status }
+      );
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -156,6 +174,7 @@ export async function POST(
       .from("nail_tip_orders")
       .select("*")
       .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId)
       .single();
 
     if (orderFetchError || !orderData) {
@@ -170,24 +189,74 @@ export async function POST(
 
     const order = orderData as AnyRow;
 
-    const { error: updateError } = await supabase
-      .from("nail_tip_orders")
-      .update({
-        shipping_company: shippingCompany,
-        tracking_number: trackingNumber,
-        shipped_at: shippedAt,
-        status: "shipped",
-      })
-      .eq("id", id);
+    if (order.payment_status !== "paid" || order.status === "cancelled" || order.status === "completed") {
+      return NextResponse.json({ ok: false, error: "決済完了・注文状況を確認できないため発送できません" }, { status: 409 });
+    }
 
-    if (updateError) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: updateError.message,
-        },
-        { status: 500 }
-      );
+    const previousShippedAt = getString(order, ["shipped_at"]);
+    const isShippingRetry = order.status === "shipped";
+
+    if (isShippingRetry) {
+      const previousShippingCompany = getString(order, ["shipping_company"]);
+      const previousTrackingNumber = getString(order, ["tracking_number"]);
+      const shippedAtTime = Date.parse(previousShippedAt);
+      const retryWindowOpen =
+        Number.isFinite(shippedAtTime) &&
+        Date.now() - shippedAtTime >= 0 &&
+        Date.now() - shippedAtTime < 24 * 60 * 60 * 1000;
+
+      if (
+        previousShippingCompany !== shippingCompany ||
+        previousTrackingNumber !== trackingNumber
+      ) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "発送済み注文の配送情報はこの操作では変更できません。注文を再読込して確認してください",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (!retryWindowOpen) {
+        return NextResponse.json({
+          ok: true,
+          lineSent: false,
+          message:
+            "発送情報は登録済みです。24時間を超えたLINE自動再送は重複防止のため行いません。",
+        });
+      }
+    }
+
+    if (!isShippingRetry) {
+      let updateQuery = supabase
+        .from("nail_tip_orders")
+        .update({
+          shipping_company: shippingCompany,
+          tracking_number: trackingNumber,
+          shipped_at: shippedAt,
+          status: "shipped",
+        })
+        .eq("id", id)
+        .eq("salon_id", authentication.principal.salonId)
+        .eq("payment_status", "paid");
+      updateQuery = order.status === null ? updateQuery.is("status", null) : updateQuery.eq("status", order.status);
+      const { data: updated, error: updateError } = await updateQuery.select("id").maybeSingle();
+
+      if (updateError) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error: updateError.message,
+          },
+          { status: 500 }
+        );
+      }
+
+      if (!updated) {
+        return NextResponse.json({ ok: false, error: "注文が更新されました。再読込して確認してください" }, { status: 409 });
+      }
     }
 
     const customerId = getString(order, ["customer_id"]);
@@ -205,6 +274,7 @@ export async function POST(
       .from("customers")
       .select("*")
       .eq("id", customerId)
+      .eq("salon_id", authentication.principal.salonId)
       .maybeSingle();
 
     const customer = (customerData || null) as AnyRow | null;
@@ -225,12 +295,13 @@ export async function POST(
       customerName,
       shippingCompany,
       trackingNumber,
-      shippedAt,
+      shippedAt: isShippingRetry ? previousShippedAt : shippedAt,
     });
 
     const lineResult = await sendLineMessage({
       lineUserId,
       messageText,
+      retryKey: id,
     });
 
     return NextResponse.json({

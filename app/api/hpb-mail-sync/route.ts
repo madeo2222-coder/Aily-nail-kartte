@@ -1,7 +1,21 @@
 import { NextResponse } from "next/server";
 import { syncHpbMailText } from "@/lib/hpb-mail-sync";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 export async function POST(request: Request) {
+  const authentication = await authenticateStaffApi({
+    allowedRoles: ["owner", "staff"],
+    legacyAllowed: true,
+    salonContextRequired: false,
+  });
+
+  if (!authentication.ok) {
+    return NextResponse.json(
+      { ok: false, error: authentication.error },
+      { status: authentication.status }
+    );
+  }
+
   try {
     const body = await request.json();
     const rawText = String(body.text || body.body || "").trim();

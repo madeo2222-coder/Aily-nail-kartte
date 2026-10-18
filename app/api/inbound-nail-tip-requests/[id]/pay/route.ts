@@ -7,6 +7,7 @@ import { MerchantConfig } from "tg-mdk-node/dist/tgMdk/MerchantConfig.js";
 import { CardAuthorizeRequestDto } from "tg-mdk-node/dist/tgMdkDto/Card/CardAuthorizeRequestDto.js";
 import { CardAuthorizeResponseDto } from "tg-mdk-node/dist/tgMdkDto/Card/CardAuthorizeResponseDto.js";
 import { getVeriTransConfig } from "@/lib/veritrans/config";
+import { getUnsuccessfulCardPaymentStatus, PAYMENT_REVIEW_MESSAGE } from "@/lib/veritrans/payment-result";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -274,18 +275,17 @@ export async function POST(
         supabase,
         paymentId,
         orderId,
-        status: "failed",
-        mstatus: "failure",
+        status: "pending",
+        mstatus: null,
         vResultCode: null,
-        merrMsg: "MDK execution failed",
+        merrMsg: "MDK response unavailable; reconciliation required",
       });
 
       return NextResponse.json(
         {
           ok: false,
-          error: recorded
-            ? "カード決済を完了できませんでした。"
-            : "決済結果の記録に失敗しました。",
+          error: PAYMENT_REVIEW_MESSAGE,
+          paymentStatus: "pending",
         },
         { status: recorded ? 502 : 500 }
       );
@@ -319,7 +319,8 @@ export async function POST(
         return NextResponse.json(
           {
             ok: false,
-            error: "決済結果の反映に失敗しました。",
+            error: PAYMENT_REVIEW_MESSAGE,
+            paymentStatus: "pending",
           },
           { status: 500 }
         );
@@ -328,8 +329,9 @@ export async function POST(
       return NextResponse.json({ ok: true });
     }
 
-    const resultStatus: "pending" | "failed" =
-      pending !== null && pending !== "0" ? "pending" : "failed";
+    const resultStatus = getUnsuccessfulCardPaymentStatus(
+      { mstatus, pending, responseOrderId, vResultCode }, orderId
+    );
     const recorded = await recordPaymentResult({
       supabase,
       paymentId,
@@ -344,7 +346,8 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error: "決済結果の記録に失敗しました。",
+          error: PAYMENT_REVIEW_MESSAGE,
+          paymentStatus: "pending",
         },
         { status: 500 }
       );
@@ -354,7 +357,8 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error: "カード決済の結果を確認中です。店舗へお問い合わせください。",
+          error: PAYMENT_REVIEW_MESSAGE,
+          paymentStatus: "pending",
         },
         { status: 409 }
       );
@@ -364,6 +368,7 @@ export async function POST(
       {
         ok: false,
         error: "カード決済を完了できませんでした。",
+        paymentStatus: "failed",
       },
       { status: 402 }
     );
@@ -373,17 +378,18 @@ export async function POST(
         supabase,
         paymentId,
         orderId,
-        status: "failed",
-        mstatus: "failure",
+        status: "pending",
+        mstatus: null,
         vResultCode: null,
-        merrMsg: "Unexpected payment processing error",
+        merrMsg: "Unexpected payment processing error; reconciliation required",
       }).catch(() => false);
     }
 
     return NextResponse.json(
       {
         ok: false,
-        error: "カード決済処理でエラーが発生しました。",
+        error: paymentId ? PAYMENT_REVIEW_MESSAGE : "カード決済処理でエラーが発生しました。",
+        ...(paymentId ? { paymentStatus: "pending" } : {}),
       },
       { status: 500 }
     );

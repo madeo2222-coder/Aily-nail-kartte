@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
@@ -358,9 +359,12 @@ export default function DesignsPage() {
                   className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm"
                 >
                   <a href={item.photoUrl} target="_blank" rel="noreferrer">
-                    <img
+                    <Image
                       src={item.photoUrl}
                       alt={`${item.customerName} の施術写真`}
+                      width={900}
+                      height={720}
+                      sizes="(max-width: 768px) calc(100vw - 2rem), (max-width: 1280px) 50vw, 33vw"
                       className="h-72 w-full object-cover"
                     />
                   </a>

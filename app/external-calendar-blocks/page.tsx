@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type StaffRow = {
@@ -32,7 +32,10 @@ const timeOptions = [
 
 export default function ExternalCalendarBlocksPage() {
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [staffsLoading, setStaffsLoading] = useState(true);
+  const [staffsError, setStaffsError] = useState("");
+  const staffRequestVersionRef = useRef(0);
 
   const [source, setSource] = useState("HPB");
   const [staffId, setStaffId] = useState("");
@@ -46,19 +49,44 @@ export default function ExternalCalendarBlocksPage() {
   const selectedStaff = staffs.find((staff) => staff.id === staffId);
   const isContractorBooking = selectedStaff?.name?.trim() === "業務委託";
 
-  useEffect(() => {
-    async function loadStaffs() {
-      const { data } = await supabase
+  const loadStaffs = useCallback(async () => {
+    const requestVersion = staffRequestVersionRef.current + 1;
+    staffRequestVersionRef.current = requestVersion;
+    setStaffsLoading(true);
+    setStaffsError("");
+
+    try {
+      const { data, error } = await supabase
         .from("staffs")
         .select("id,name")
         .eq("is_active", true)
         .order("name");
 
-      setStaffs((data || []) as StaffRow[]);
-    }
+      if (error) throw error;
 
-    loadStaffs();
+      if (requestVersion === staffRequestVersionRef.current) {
+        setStaffs((data || []) as StaffRow[]);
+      }
+    } catch (error) {
+      console.error("スタッフ取得エラー:", error);
+      if (requestVersion === staffRequestVersionRef.current) {
+        setStaffs([]);
+        setStaffsError("スタッフ情報の取得に失敗しました。");
+      }
+    } finally {
+      if (requestVersion === staffRequestVersionRef.current) {
+        setStaffsLoading(false);
+      }
+    }
   }, []);
+
+  useEffect(() => {
+    loadStaffs();
+
+    return () => {
+      staffRequestVersionRef.current += 1;
+    };
+  }, [loadStaffs]);
 
   async function handleSave() {
     if (!staffId) {
@@ -76,7 +104,7 @@ export default function ExternalCalendarBlocksPage() {
       return;
     }
 
-    setLoading(true);
+    setSaving(true);
 
     try {
       const res = await fetch("/api/external-calendar-blocks", {
@@ -117,7 +145,7 @@ export default function ExternalCalendarBlocksPage() {
           : "登録中にエラーが発生しました"
       );
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   }
 
@@ -127,7 +155,30 @@ export default function ExternalCalendarBlocksPage() {
         外部予約ブロック登録
       </h1>
 
-      <div className="space-y-4 rounded-2xl border bg-white p-4">
+      {staffsLoading ? (
+        <section className="rounded-2xl border bg-white p-4 text-sm text-slate-500">
+          スタッフ情報を読み込み中...
+        </section>
+      ) : staffsError ? (
+        <section
+          role="alert"
+          className="rounded-2xl border border-rose-200 bg-rose-50 p-4"
+        >
+          <div className="text-sm font-bold text-rose-800">{staffsError}</div>
+          <button
+            type="button"
+            onClick={loadStaffs}
+            className="mt-4 w-full rounded-xl bg-rose-600 px-4 py-3 text-sm font-bold text-white"
+          >
+            再試行
+          </button>
+        </section>
+      ) : staffs.length === 0 ? (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+          有効なスタッフが登録されていません。スタッフ設定を確認してください。
+        </section>
+      ) : (
+        <div className="space-y-4 rounded-2xl border bg-white p-4">
         {!isContractorBooking ? (
           <div>
             <label className="mb-2 block text-sm font-medium">
@@ -264,12 +315,13 @@ export default function ExternalCalendarBlocksPage() {
         <button
           type="button"
           onClick={handleSave}
-          disabled={loading}
+          disabled={saving}
           className="w-full rounded-xl bg-slate-900 px-4 py-3 font-bold text-white"
         >
-          {loading ? "登録中..." : "ブロック登録"}
+          {saving ? "登録中..." : "ブロック登録"}
         </button>
-      </div>
+        </div>
+      )}
     </main>
   );
 }

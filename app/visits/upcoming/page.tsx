@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -49,15 +49,23 @@ export default function UpcomingVisitsPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [filter, setFilter] = useState<"today" | "week" | "all">("week");
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     fetchUpcomingVisits();
+
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, []);
 
   async function fetchUpcomingVisits() {
+    const requestId = ++requestIdRef.current;
+
     try {
       setLoading(true);
       setMessage("");
+      setItems([]);
 
       const { data: visitsData, error: visitsError } = await supabase
         .from("visits")
@@ -65,10 +73,11 @@ export default function UpcomingVisitsPage() {
         .not("next_visit_date", "is", null)
         .order("next_visit_date", { ascending: true });
 
+      if (requestId !== requestIdRef.current) return;
+
       if (visitsError) {
         console.error("visits取得エラー:", visitsError);
-        setMessage(`来店予定の取得に失敗しました: ${visitsError.message}`);
-        setItems([]);
+        setMessage("来店予定を取得できませんでした。時間をおいて再試行してください。");
         return;
       }
 
@@ -92,14 +101,17 @@ export default function UpcomingVisitsPage() {
           .select("id, name, phone")
           .in("id", customerIds);
 
+        if (requestId !== requestIdRef.current) return;
+
         if (customersError) {
           console.error("customers取得エラー:", customersError);
-          setMessage(`顧客情報の取得に失敗しました: ${customersError.message}`);
-        } else {
-          customerMap = new Map(
-            ((customersData || []) as CustomerRow[]).map((c) => [c.id, c])
-          );
+          setMessage("顧客情報を取得できませんでした。時間をおいて再試行してください。");
+          return;
         }
+
+        customerMap = new Map(
+          ((customersData || []) as CustomerRow[]).map((c) => [c.id, c])
+        );
       }
 
       const merged: UpcomingVisit[] = safeVisits
@@ -118,13 +130,18 @@ export default function UpcomingVisitsPage() {
           };
         });
 
-      setItems(merged);
+      if (requestId === requestIdRef.current) {
+        setItems(merged);
+      }
     } catch (err) {
       console.error("予期しないエラー:", err);
-      setMessage("予期しないエラーが発生しました");
-      setItems([]);
+      if (requestId === requestIdRef.current) {
+        setMessage("来店予定を取得できませんでした。時間をおいて再試行してください。");
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -160,52 +177,62 @@ export default function UpcomingVisitsPage() {
           </Link>
         </div>
 
-        <div className="mb-4 flex gap-2">
-          <button
-            type="button"
-            onClick={() => setFilter("today")}
-            className={`rounded-xl px-4 py-2 text-sm font-medium ${
-              filter === "today"
-                ? "bg-black text-white"
-                : "border border-gray-300 bg-white text-gray-700"
-            }`}
-          >
-            今日
-          </button>
+        {!message && (
+          <div className="mb-4 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setFilter("today")}
+              className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                filter === "today"
+                  ? "bg-black text-white"
+                  : "border border-gray-300 bg-white text-gray-700"
+              }`}
+            >
+              今日
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setFilter("week")}
-            className={`rounded-xl px-4 py-2 text-sm font-medium ${
-              filter === "week"
-                ? "bg-black text-white"
-                : "border border-gray-300 bg-white text-gray-700"
-            }`}
-          >
-            今週
-          </button>
+            <button
+              type="button"
+              onClick={() => setFilter("week")}
+              className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                filter === "week"
+                  ? "bg-black text-white"
+                  : "border border-gray-300 bg-white text-gray-700"
+              }`}
+            >
+              今週
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setFilter("all")}
-            className={`rounded-xl px-4 py-2 text-sm font-medium ${
-              filter === "all"
-                ? "bg-black text-white"
-                : "border border-gray-300 bg-white text-gray-700"
-            }`}
-          >
-            全件
-          </button>
-        </div>
-
-        {message && (
-          <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
-            {message}
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className={`rounded-xl px-4 py-2 text-sm font-medium ${
+                filter === "all"
+                  ? "bg-black text-white"
+                  : "border border-gray-300 bg-white text-gray-700"
+              }`}
+            >
+              全件
+            </button>
           </div>
         )}
 
         {loading ? (
           <div className="rounded-2xl bg-white p-6 shadow-sm">読み込み中...</div>
+        ) : message ? (
+          <div
+            role="alert"
+            className="rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm"
+          >
+            <p>{message}</p>
+            <button
+              type="button"
+              onClick={() => void fetchUpcomingVisits()}
+              className="mt-4 rounded-xl bg-slate-900 px-4 py-3 font-bold text-white"
+            >
+              再試行
+            </button>
+          </div>
         ) : filteredItems.length === 0 ? (
           <div className="rounded-2xl bg-white p-6 shadow-sm text-gray-500">
             対象の次回来店予定はありません

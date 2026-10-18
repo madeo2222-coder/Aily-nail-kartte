@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ReservationReferencePhoto from "./ReservationReferencePhoto";
 
 type ReservationRow = {
   id: string;
@@ -415,6 +416,10 @@ function canConfirmReservation(status: string) {
   return status === "予約申請中" || status === "予約受付" || status === "予約";
 }
 
+function canRetryConfirmationLine(status: string) {
+  return status === "予約確定" || status === "confirmed";
+}
+
 function canMarkVisited(status: string) {
   return (
     status === "予約確定" ||
@@ -428,10 +433,12 @@ function canMarkVisited(status: string) {
 export default function ReservationsPageClient() {
   const searchParams = useSearchParams();
   const pendingListRef = useRef<HTMLDivElement | null>(null);
+  const loadRequestIdRef = useRef(0);
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedStaff, setSelectedStaff] = useState("全員");
@@ -454,43 +461,55 @@ export default function ReservationsPageClient() {
   }, [staffs]);
 
   async function fetchReservations() {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
+    setLoadError(null);
 
-    const [reservationsRes, customersRes, staffsRes] = await Promise.all([
-      supabase
-        .from("reservations")
-        .select("*")
-        .order("created_at", { ascending: false }),
-      supabase.from("customers").select("id, name"),
-      supabase.from("staffs").select("id, name"),
-    ]);
+    try {
+      const [reservationsRes, customersRes, staffsRes] = await Promise.all([
+        supabase
+          .from("reservations")
+          .select("*")
+          .order("created_at", { ascending: false }),
+        supabase.from("customers").select("id, name"),
+        supabase.from("staffs").select("id, name"),
+      ]);
 
-    if (reservationsRes.error) {
-      console.error("reservations fetch error:", reservationsRes.error.message);
-      setReservations([]);
-    } else {
+      const queryError =
+        reservationsRes.error || customersRes.error || staffsRes.error;
+      if (queryError) throw queryError;
+      if (requestId !== loadRequestIdRef.current) return;
+
       setReservations((reservationsRes.data as ReservationRow[]) || []);
-    }
-
-    if (customersRes.error) {
-      console.error("customers fetch error:", customersRes.error.message);
-      setCustomers([]);
-    } else {
       setCustomers((customersRes.data as CustomerRow[]) || []);
-    }
-
-    if (staffsRes.error) {
-      console.error("staffs fetch error:", staffsRes.error.message);
-      setStaffs([]);
-    } else {
       setStaffs((staffsRes.data as StaffRow[]) || []);
+    } catch (error) {
+      if (requestId !== loadRequestIdRef.current) return;
+      console.error("reservation page fetch error:", error);
+      setReservations([]);
+      setCustomers([]);
+      setStaffs([]);
+      setLoadError(
+        "予約情報を取得できませんでした。通信状況を確認して再試行してください。"
+      );
+    } finally {
+      if (requestId === loadRequestIdRef.current) {
+        setLoading(false);
+      }
     }
-
-    setLoading(false);
   }
 
   useEffect(() => {
-    void Promise.resolve().then(fetchReservations);
+    let active = true;
+
+    void Promise.resolve().then(() => {
+      if (active) void fetchReservations();
+    });
+
+    return () => {
+      active = false;
+      loadRequestIdRef.current += 1;
+    };
   }, []);
 
   useEffect(() => {
@@ -669,13 +688,17 @@ export default function ReservationsPageClient() {
       const result = (await response.json()) as {
         ok?: boolean;
         sent?: boolean;
+        alreadySent?: boolean;
+        retried?: boolean;
+        error?: string;
         message?: string;
       };
 
       if (!response.ok || !result.ok) {
         console.error("予約確定LINE通知エラー:", result);
         alert(
-          "予約は確定しましたが、LINE通知に失敗しました。LINE_CHANNEL_ACCESS_TOKENやline_user_idを確認してください。"
+          result.error ||
+            "予約は確定しましたが、LINE通知に失敗しました。確定済み予約の『確定LINEを再試行』から再送できます。"
         );
         return;
       }
@@ -688,20 +711,29 @@ export default function ReservationsPageClient() {
         return;
       }
 
-      alert("予約を確定し、LINE通知を送信しました。");
+      alert(
+        result.retried
+          ? "予約確定LINEの再試行が完了しました。"
+          : "予約を確定し、LINE通知を送信しました。"
+      );
     } catch (error) {
       console.error("予約確定LINE通知APIエラー:", error);
       alert("予約は確定しましたが、LINE通知処理でエラーが発生しました。");
     }
   }
 
-  async function updateStatus(
-    id: string,
-    status: string,
-    options?: {
-      sendConfirmedLine?: boolean;
-    }
-  ) {
+  async function handleRetryConfirmationLine(id: string) {
+    const ok = window.confirm(
+      "予約確定LINEを再試行しますか？送信済みの場合は重複送信しません。"
+    );
+    if (!ok) return;
+
+    setUpdatingId(id);
+    await sendReservationConfirmedLine(id);
+    setUpdatingId(null);
+  }
+
+  async function updateStatus(id: string, status: string) {
     setUpdatingId(id);
 
     const { error } = await supabase
@@ -716,10 +748,6 @@ export default function ReservationsPageClient() {
       return;
     }
 
-    if (options?.sendConfirmedLine) {
-      await sendReservationConfirmedLine(id);
-    }
-
     await fetchReservations();
   }
 
@@ -729,9 +757,40 @@ export default function ReservationsPageClient() {
     );
     if (!ok) return;
 
-    await updateStatus(id, "confirmed", {
-      sendConfirmedLine: true,
-    });
+    setUpdatingId(id);
+
+    try {
+      const response = await fetch(`/api/reservations/${id}/confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        confirmed?: boolean;
+        alreadyConfirmed?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        alert(result.error || "予約確定に失敗しました。");
+        return;
+      }
+
+      if (result.confirmed) {
+        await sendReservationConfirmedLine(id);
+      } else {
+        alert(result.message || "この予約は既に確定済みです。");
+      }
+
+      await fetchReservations();
+    } catch (error) {
+      console.error("予約確定APIエラー:", error);
+      alert("予約確定処理でエラーが発生しました。");
+    } finally {
+      setUpdatingId(null);
+    }
   }
 
   async function handleMarkVisited(id: string) {
@@ -755,6 +814,34 @@ export default function ReservationsPageClient() {
         >
           <div className="rounded-3xl border border-rose-100 bg-white p-4 text-sm text-gray-500 shadow-sm">
             読み込み中...
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="min-h-screen bg-rose-50/40">
+        <div
+          className="mx-auto w-full max-w-[920px] p-4"
+          style={{ paddingBottom: "100px" }}
+        >
+          <div
+            role="alert"
+            className="rounded-3xl border border-rose-200 bg-white p-5 shadow-sm"
+          >
+            <p className="text-sm font-bold text-rose-700">{loadError}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              取得に失敗した状態では、予約件数・重複判定・予約操作を表示していません。
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchReservations()}
+              className="mt-4 rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white shadow-sm"
+            >
+              再試行
+            </button>
           </div>
         </div>
       </main>
@@ -1080,12 +1167,11 @@ export default function ReservationsPageClient() {
                                 href={galleryReference.photoUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="mt-3 block overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
+                                className="relative mt-3 block h-56 overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
                               >
-                                <img
+                                <ReservationReferencePhoto
                                   src={galleryReference.photoUrl}
-                                  alt="Aily Gallery参考デザイン"
-                                  className="h-56 w-full object-cover"
+                                  sizes="(max-width: 768px) calc(100vw - 64px), 640px"
                                 />
                               </a>
                             ) : (
@@ -1149,6 +1235,18 @@ export default function ReservationsPageClient() {
                           suppressHydrationWarning
                         >
                           {isUpdating ? "更新中..." : "予約確定・LINE送信"}
+                        </button>
+                      ) : null}
+
+                      {canRetryConfirmationLine(item.status) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRetryConfirmationLine(item.id)}
+                          disabled={isUpdating}
+                          className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 disabled:opacity-50"
+                          suppressHydrationWarning
+                        >
+                          {isUpdating ? "送信中..." : "確定LINEを再試行"}
                         </button>
                       ) : null}
 

@@ -1,12 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
-
-const LINE_SESSION_COOKIE = "customer_line_session";
-
-type LineSessionPayload = {
-  customer_id: string;
-  line_user_id: string;
-};
+import {
+  LINE_SESSION_COOKIE,
+  readCustomerLineSessionCookie,
+} from "@/lib/server/lineLoginCookies";
 
 export type AuthenticatedLineCustomer = {
   id: string;
@@ -27,34 +24,10 @@ function getSupabaseAdmin() {
   });
 }
 
-function parseSession(value: string | undefined): LineSessionPayload | null {
-  if (!value) return null;
-
-  try {
-    const parsed = JSON.parse(value) as Partial<LineSessionPayload>;
-
-    if (
-      typeof parsed.customer_id !== "string" ||
-      !parsed.customer_id.trim() ||
-      typeof parsed.line_user_id !== "string" ||
-      !parsed.line_user_id.trim()
-    ) {
-      return null;
-    }
-
-    return {
-      customer_id: parsed.customer_id.trim(),
-      line_user_id: parsed.line_user_id.trim(),
-    };
-  } catch {
-    return null;
-  }
-}
-
 export async function requireCustomerLineSession(
   request: NextRequest
 ): Promise<AuthenticatedLineCustomer | null> {
-  const session = parseSession(
+  const session = readCustomerLineSessionCookie(
     request.cookies.get(LINE_SESSION_COOKIE)?.value
   );
 

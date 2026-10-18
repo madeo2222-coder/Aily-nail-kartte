@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -17,12 +17,27 @@ function formatYen(value: number) {
   return `¥${Math.round(value).toLocaleString("ja-JP")}`;
 }
 
-function getTodayString() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = `${now.getMonth() + 1}`.padStart(2, "0");
-  const day = `${now.getDate()}`.padStart(2, "0");
+function getDateString(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function getTodayString() {
+  return getDateString();
+}
+
+function getYesterdayString() {
+  return getDateString(-1);
+}
+
+function formatDateLabel(value: string) {
+  const [, month = "", day = ""] = value.split("-");
+  return month && day ? `${Number(month)}月${Number(day)}日` : value;
 }
 
 function getMonthPrefix() {
@@ -36,37 +51,73 @@ export default function SalesDashboardPageClient() {
   const [visits, setVisits] = useState<Visit[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
+  const requestVersionRef = useRef(0);
 
-  async function fetchVisits() {
+  const fetchVisits = useCallback(async () => {
+    const requestVersion = requestVersionRef.current + 1;
+    requestVersionRef.current = requestVersion;
     setLoading(true);
     setErrorMessage("");
+    setVisits([]);
 
-    const { data, error } = await supabase
-      .from("visits")
-      .select("id, customer_id, visit_date, menu_name, price, created_at")
-      .order("visit_date", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("visits")
+        .select("id, customer_id, visit_date, menu_name, price, created_at")
+        .order("visit_date", { ascending: false });
 
-    if (error) {
+      if (requestVersionRef.current !== requestVersion) {
+        return;
+      }
+
+      if (error) {
+        console.error("sales fetch error:", error);
+        setErrorMessage(
+          "売上データを取得できませんでした。集計値は表示していません。"
+        );
+        return;
+      }
+
+      setVisits((data as Visit[]) || []);
+    } catch (error) {
+      if (requestVersionRef.current !== requestVersion) {
+        return;
+      }
+
       console.error("sales fetch error:", error);
-      setErrorMessage("売上ダッシュボードの取得に失敗しました");
-      setVisits([]);
-      setLoading(false);
-      return;
+      setErrorMessage(
+        "売上データを取得できませんでした。集計値は表示していません。"
+      );
+    } finally {
+      if (requestVersionRef.current === requestVersion) {
+        setLoading(false);
+      }
     }
-
-    setVisits((data as Visit[]) || []);
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
-    void Promise.resolve().then(fetchVisits);
-  }, []);
+    let active = true;
+
+    void Promise.resolve().then(() => {
+      if (active) {
+        return fetchVisits();
+      }
+    });
+
+    return () => {
+      active = false;
+      requestVersionRef.current += 1;
+    };
+  }, [fetchVisits]);
 
   const stats = useMemo(() => {
     const todayString = getTodayString();
+    const yesterdayString = getYesterdayString();
     const monthPrefix = getMonthPrefix();
 
     let todaySales = 0;
+    let yesterdaySales = 0;
+    let yesterdayVisitCount = 0;
     let monthSales = 0;
     let visitCount = 0;
     let totalSalesForAverage = 0;
@@ -84,6 +135,11 @@ export default function SalesDashboardPageClient() {
         todaySales += price;
       }
 
+      if (visitDate === yesterdayString) {
+        yesterdaySales += price;
+        yesterdayVisitCount += 1;
+      }
+
       if (visitDate.startsWith(monthPrefix)) {
         monthSales += price;
       }
@@ -99,6 +155,9 @@ export default function SalesDashboardPageClient() {
 
     return {
       todaySales,
+      yesterdaySales,
+      yesterdayVisitCount,
+      yesterdayDate: yesterdayString,
       monthSales,
       visitCount,
       averageUnitPrice,
@@ -111,7 +170,7 @@ export default function SalesDashboardPageClient() {
         <div>
           <h1 className="text-2xl font-bold">売上ダッシュボード</h1>
           <p className="mt-1 text-sm text-gray-500">
-            今日・今月の売上と来店状況を確認できます
+            今日・昨日・今月の売上と来店状況を確認できます
           </p>
         </div>
 
@@ -128,8 +187,18 @@ export default function SalesDashboardPageClient() {
           読み込み中...
         </div>
       ) : errorMessage ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
-          {errorMessage}
+        <div
+          role="alert"
+          className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          <p className="font-medium">{errorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchVisits()}
+            className="mt-3 rounded-lg bg-red-700 px-4 py-2 font-bold text-white"
+          >
+            再試行
+          </button>
         </div>
       ) : (
         <>
@@ -138,6 +207,18 @@ export default function SalesDashboardPageClient() {
               <p className="text-sm text-gray-500">今日の売上</p>
               <p className="mt-2 text-3xl font-bold">
                 {formatYen(stats.todaySales)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+              <p className="text-sm text-amber-800">
+                昨日（{formatDateLabel(stats.yesterdayDate)}）の売上
+              </p>
+              <p className="mt-2 text-3xl font-bold">
+                {formatYen(stats.yesterdaySales)}
+              </p>
+              <p className="mt-2 text-sm text-amber-800">
+                昨日の施術件数：{stats.yesterdayVisitCount.toLocaleString("ja-JP")}件
               </p>
             </div>
 
@@ -167,6 +248,9 @@ export default function SalesDashboardPageClient() {
             <h2 className="text-lg font-bold">補足</h2>
             <div className="mt-3 space-y-2 text-sm text-gray-600">
               <p>・今日の売上：visit_date が今日のデータの price 合計</p>
+              <p>
+                ・昨日の売上：visit_date が昨日のデータの price 合計（責任者不在日の翌日確認用）
+              </p>
               <p>・今月の売上：visit_date が今月のデータの price 合計</p>
               <p>・来店数：visits の件数</p>
               <p>・平均単価：price の平均値</p>

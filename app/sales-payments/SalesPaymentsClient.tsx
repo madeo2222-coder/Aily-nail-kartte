@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -45,15 +45,14 @@ function buildVisitRegistrationUrl(visit: VisitRow) {
 export default function SalesPaymentsClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const visitId = searchParams.get("visit_id");
 
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
 
-  async function moveToCurrentCheckout() {
+  const moveToCurrentCheckout = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
-
-    const visitId = searchParams.get("visit_id");
 
     if (!visitId) {
       router.replace("/visits/new");
@@ -86,11 +85,11 @@ export default function SalesPaymentsClient() {
     }
 
     router.replace(buildVisitRegistrationUrl(data as VisitRow));
-  }
+  }, [router, visitId]);
 
   useEffect(() => {
     void Promise.resolve().then(moveToCurrentCheckout);
-  }, [searchParams]);
+  }, [moveToCurrentCheckout]);
 
   return (
     <main className="min-h-screen bg-rose-50/40">

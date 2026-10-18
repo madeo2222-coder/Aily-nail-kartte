@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { createClient } from "@supabase/supabase-js";
-import { NextRequest, NextResponse } from "next/server";
-import { requireStaffSession } from "@/lib/server/requireStaffSession";
+import { NextResponse } from "next/server";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -71,16 +71,22 @@ function getRpcErrorStatus(error: RpcError) {
 }
 
 export async function POST(
-  request: NextRequest,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   let stage = "request-validation";
 
   try {
-    const authError = await requireStaffSession(request);
+    const authentication = await authenticateStaffApi({
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: false,
+    });
 
-    if (authError) {
-      return authError;
+    if (!authentication.ok) {
+      return NextResponse.json(
+        { ok: false, error: authentication.error },
+        { status: authentication.status }
+      );
     }
 
     if (process.env.VERITRANS_DUMMY?.trim() !== "1") {
@@ -113,6 +119,21 @@ export async function POST(
     ).toISOString();
     stage = "supabase-client";
     const supabase = getSupabaseAdmin();
+
+    stage = "order-authorization";
+    const { data: authorizedOrder, error: orderError } = await supabase
+      .from("nail_tip_orders")
+      .select("id")
+      .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId)
+      .single();
+
+    if (orderError || authorizedOrder?.id !== id) {
+      return NextResponse.json(
+        { ok: false, error: "ネイルチップ注文が見つかりません。" },
+        { status: 404 }
+      );
+    }
 
     stage = "prepare-payment-link-rpc";
     const { data, error } = await supabase.rpc(

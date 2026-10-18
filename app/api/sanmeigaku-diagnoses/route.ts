@@ -1,112 +1,62 @@
-import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAdmin, requireCustomerLineSession } from "@/lib/server/requireCustomerLineSession";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-
-    const salonId = String(body.salonId || "").trim();
-    const customerId = String(body.customerId || "").trim();
-
-    const name = String(body.name || "").trim();
-    const birthday = String(body.birthday || "").trim();
-
-    const fortune = String(body.fortune || "").trim();
-    const mood = String(body.mood || "").trim();
-
-    const luckyColor = String(body.luckyColor || "").trim();
-    const luckyStone = String(body.luckyStone || "").trim();
-    const nailTheme = String(body.nailTheme || "").trim();
-    const message = String(body.message || "").trim();
-
-    const diagnosisType = String(
-      body.diagnosisType || "free_nail"
-    ).trim();
-
-    if (!name) {
+    const customer = await requireCustomerLineSession(request);
+    if (!customer) {
       return NextResponse.json(
-        {
-          ok: false,
-          error: "名前が未入力です",
-        },
-        { status: 400 }
+        { ok: false, error: "診断履歴の保存にはLINEログインが必要です" },
+        { status: 401 }
       );
     }
-
-    if (!birthday) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: "生年月日が未入力です",
-        },
-        { status: 400 }
-      );
+    const body: unknown = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ ok: false, error: "診断内容を確認してください" }, { status: 400 });
     }
-
-    const insertData: {
-      salon_id?: string;
-      customer_id?: string;
-      name: string;
-      birthday: string;
-      fortune: string;
-      mood: string;
-      lucky_color: string;
-      lucky_stone: string;
-      nail_theme: string;
-      diagnosis_message: string;
-      diagnosis_type: string;
-    } = {
-      name,
-      birthday,
-      fortune,
-      mood,
-      lucky_color: luckyColor,
-      lucky_stone: luckyStone,
-      nail_theme: nailTheme,
-      diagnosis_message: message,
-      diagnosis_type: diagnosisType,
+    const values = body as Record<string, unknown>;
+    const limits: Record<string, number> = {
+      name: 100, birthday: 10, fortune: 100, mood: 100,
+      luckyColor: 100, luckyStone: 100, nailTheme: 200, message: 4000,
     };
-
-    if (salonId) {
-      insertData.salon_id = salonId;
+    const fields: Record<string, string> = {};
+    for (const [key, limit] of Object.entries(limits)) {
+      const value = values[key] ?? "";
+      if (typeof value !== "string" || value.length > limit) {
+        return NextResponse.json({ ok: false, error: "診断内容を確認してください" }, { status: 400 });
+      }
+      fields[key] = value.trim();
     }
-
-    if (customerId) {
-      insertData.customer_id = customerId;
+    const birthday = new Date(`${fields.birthday}T00:00:00+09:00`);
+    if (!fields.name || !/^\d{4}-\d{2}-\d{2}$/.test(fields.birthday) ||
+        !Number.isFinite(birthday.getTime()) || birthday.getTime() > Date.now() ||
+        new Date(birthday.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10) !== fields.birthday ||
+        (values.diagnosisType !== undefined && values.diagnosisType !== "free_nail")) {
+      return NextResponse.json({ ok: false, error: "お名前・生年月日・診断内容を確認してください" }, { status: 400 });
     }
-
-    const { data, error } = await supabase
+    // Identity comes only from the verified LINE session, never the request body.
+    const { data, error } = await getSupabaseAdmin()
       .from("sanmeigaku_diagnoses")
-      .insert(insertData)
+      .insert({
+        customer_id: customer.id,
+        salon_id: customer.salonId,
+        name: fields.name,
+        birthday: fields.birthday,
+        fortune: fields.fortune,
+        mood: fields.mood,
+        lucky_color: fields.luckyColor,
+        lucky_stone: fields.luckyStone,
+        nail_theme: fields.nailTheme,
+        diagnosis_message: fields.message,
+        diagnosis_type: "free_nail",
+      })
       .select("id")
       .single();
-
-    if (error) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: error.message,
-        },
-        { status: 500 }
-      );
+    if (error || !data?.id) {
+      return NextResponse.json({ ok: false, error: "診断履歴を保存できませんでした" }, { status: 500 });
     }
-
-    return NextResponse.json({
-      ok: true,
-      diagnosisId: data.id,
-    });
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "診断保存に失敗しました";
-
-    return NextResponse.json(
-      {
-        ok: false,
-        error: message,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: true, diagnosisId: data.id });
+  } catch {
+    return NextResponse.json({ ok: false, error: "診断履歴を保存できませんでした" }, { status: 500 });
   }
 }

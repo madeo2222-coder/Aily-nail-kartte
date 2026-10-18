@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import ReservationReferencePhoto from "../../ReservationReferencePhoto";
 
 type Salon = {
   id: string;
@@ -72,6 +73,14 @@ type CancellationResult = {
     status?: "sent" | "skipped" | "not_linked" | "failed";
     message?: string;
   };
+};
+
+type AlternativeRequestResult = {
+  ok?: boolean;
+  sent?: boolean;
+  alreadySent?: boolean;
+  error?: string;
+  message?: string;
 };
 
 const STATUS_OPTIONS: { value: ReservationStatus; label: string }[] = [
@@ -326,6 +335,7 @@ export default function EditReservationPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [requestingAlternative, setRequestingAlternative] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -512,17 +522,17 @@ export default function EditReservationPage() {
   }
 
   async function handleConfirmReservation() {
-  if (!reservationId) return;
+    if (!reservationId) return;
 
-  const confirmed = window.confirm("この予約を『予約確定』にしますか？");
-  if (!confirmed) return;
+    const confirmed = window.confirm("この予約を『予約確定』にしますか？");
+    if (!confirmed) return;
 
-  const dateTime = validateRequiredFields();
-  if (!dateTime) return;
+    const dateTime = validateRequiredFields();
+    if (!dateTime) return;
 
-  setConfirming(true);
-  setErrorMessage("");
-  setSuccessMessage("");
+    setConfirming(true);
+    setErrorMessage("");
+    setSuccessMessage("");
 
   try {
     const overlaps = await checkOverlap({
@@ -538,51 +548,69 @@ export default function EditReservationPage() {
       return;
     }
 
-    const { error } = await supabase
-      .from("reservations")
-      .update({
-  salon_id: salonId,
-  customer_id: isExternalBlock ? null : customerId,
-  staff_id: staffId,
-  menu: menu || null,
-  start_at: dateTime.startAt,
-  end_at: dateTime.endAt,
-  status: "confirmed",
-  memo: buildMemoForSave(galleryReference, memo) || null,
-})
-      .eq("id", reservationId);
+    const confirmationResponse = await fetch(
+      `/api/reservations/${reservationId}/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerId: isExternalBlock ? null : customerId,
+          staffId,
+          menu: menu || null,
+          startAt: dateTime.startAt,
+          endAt: dateTime.endAt,
+          memo: buildMemoForSave(galleryReference, memo) || null,
+        }),
+      }
+    );
+    const confirmation = (await confirmationResponse.json()) as {
+      ok?: boolean;
+      confirmed?: boolean;
+      alreadyConfirmed?: boolean;
+      error?: string;
+      message?: string;
+    };
 
-    if (error) {
+    if (!confirmationResponse.ok || !confirmation.ok) {
       setConfirming(false);
-      setErrorMessage("予約確定に失敗しました");
+      setErrorMessage(confirmation.error || "予約確定に失敗しました");
       return;
     }
 
     let lineNoticeMessage = "";
 
-    try {
-      const lineRes = await fetch("/api/send-reservation-confirmed-line", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          reservationId,
-        }),
-      });
+    if (confirmation.confirmed) {
+      try {
+        const lineRes = await fetch("/api/send-reservation-confirmed-line", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            reservationId,
+          }),
+        });
 
-      const lineData = await lineRes.json();
+        const lineData = await lineRes.json();
 
-      if (lineData?.sent) {
-        lineNoticeMessage = " 顧客へLINE通知も送信しました。";
-      } else if (lineData?.message) {
-        lineNoticeMessage = ` LINE通知：${lineData.message}`;
-      } else {
-        lineNoticeMessage = " LINE通知は送信されませんでした。";
+        if (lineData?.sent) {
+          lineNoticeMessage = " 顧客へLINE通知も送信しました。";
+        } else if (lineData?.error) {
+          lineNoticeMessage = ` LINE通知：${lineData.error}`;
+        } else if (lineData?.message) {
+          lineNoticeMessage = ` LINE通知：${lineData.message}`;
+        } else {
+          lineNoticeMessage = " LINE通知は送信されませんでした。";
+        }
+      } catch (lineError) {
+        console.error("予約確定LINE通知エラー:", lineError);
+        lineNoticeMessage = " LINE通知処理でエラーが発生しました。";
       }
-    } catch (lineError) {
-      console.error("予約確定LINE通知エラー:", lineError);
-      lineNoticeMessage = " LINE通知処理でエラーが発生しました。";
+    } else {
+      lineNoticeMessage = ` ${
+        confirmation.message ||
+        "既に予約確定済みのためLINEは再送していません。"
+      }`;
     }
 
     setConfirming(false);
@@ -596,7 +624,92 @@ export default function EditReservationPage() {
       error instanceof Error ? error.message : "予約確定に失敗しました";
     setErrorMessage(message);
   }
-}
+  }
+
+  async function retryConfirmationLine() {
+    if (!reservationId) return;
+
+    const confirmed = window.confirm(
+      "予約確定LINEを再試行しますか？送信済みの場合は重複送信しません。"
+    );
+    if (!confirmed) return;
+
+    setConfirming(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch("/api/send-reservation-confirmed-line", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservationId }),
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        sent?: boolean;
+        alreadySent?: boolean;
+        retried?: boolean;
+        error?: string;
+        message?: string;
+      };
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(result.error || "予約確定LINEの再試行に失敗しました。");
+        return;
+      }
+
+      setSuccessMessage(
+        result.alreadySent
+          ? result.message || "予約確定LINEは送信済みです。重複送信していません。"
+          : result.message || "予約確定LINEを送信しました。"
+      );
+    } catch (error) {
+      console.error("予約確定LINE再試行エラー:", error);
+      setErrorMessage("予約確定LINEの再試行中にエラーが発生しました。");
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  async function requestAlternativeTime() {
+    if (!reservationId) return;
+
+    const confirmed = window.confirm(
+      "この日時では予約確定できないことをLINEで知らせ、別の希望日時の入力を依頼しますか？"
+    );
+
+    if (!confirmed) return;
+
+    setRequestingAlternative(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
+    try {
+      const response = await fetch(
+        `/api/reservations/${reservationId}/request-alternative`,
+        { method: "POST" }
+      );
+      const result = (await response.json()) as AlternativeRequestResult;
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(
+          result.error || "別日時入力のLINE送信に失敗しました"
+        );
+        return;
+      }
+
+      setSuccessMessage(
+        result.message ||
+          (result.alreadySent
+            ? "別日時入力のLINEは送信済みです。"
+            : "別日時入力のLINEを送信しました。")
+      );
+    } catch {
+      setErrorMessage("別日時入力のLINE送信に失敗しました");
+    } finally {
+      setRequestingAlternative(false);
+    }
+  }
 
   async function cancelReservation() {
     if (cancellationReason === "other" && !cancellationReasonText.trim()) {
@@ -824,15 +937,56 @@ export default function EditReservationPage() {
                   >
                     {confirming ? "確定中..." : "予約確定にする"}
                   </button>
+                ) : isAlreadyConfirmed ? (
+                  <div className="flex flex-col items-stretch gap-2 sm:items-end">
+                    <div className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-blue-700">
+                      予約確定済み
+                    </div>
+                    {!isExternalBlock ? (
+                      <button
+                        type="button"
+                        onClick={retryConfirmationLine}
+                        disabled={confirming || saving || deleting}
+                        className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 disabled:opacity-60"
+                      >
+                        {confirming ? "送信中..." : "確定LINEを再試行"}
+                      </button>
+                    ) : null}
+                  </div>
                 ) : (
                   <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
-                    {isAlreadyConfirmed
-                      ? "予約確定済み"
-                      : "キャンセル中の予約です"}
+                    キャンセル中の予約です
                   </div>
                 )}
               </div>
             </section>
+
+            {status === "予約" && !isExternalBlock && customerId ? (
+              <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-sm font-bold text-amber-900">
+                      この日時では確定できない場合
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-amber-800">
+                      LINE連携済みのお客様へお知らせし、この予約の別希望日時入力ページへ案内します。送信済みの場合は重複送信しません。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={requestAlternativeTime}
+                    disabled={
+                      requestingAlternative || confirming || saving || deleting
+                    }
+                    className="shrink-0 rounded-2xl bg-amber-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
+                  >
+                    {requestingAlternative
+                      ? "LINE送信中..."
+                      : "別日時をLINEで依頼"}
+                  </button>
+                </div>
+              </section>
+            ) : null}
 
             {galleryReference.hasGallery ? (
               <section className="rounded-[28px] border border-pink-100 bg-pink-50 p-4">
@@ -845,12 +999,11 @@ export default function EditReservationPage() {
                     href={galleryReference.photoUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-3 block overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
+                    className="relative mt-3 block h-72 overflow-hidden rounded-3xl border border-pink-100 bg-white shadow-sm"
                   >
-                    <img
+                    <ReservationReferencePhoto
                       src={galleryReference.photoUrl}
-                      alt="Aily Gallery参考デザイン"
-                      className="h-72 w-full object-cover"
+                      sizes="(max-width: 768px) calc(100vw - 64px), 768px"
                     />
                   </a>
                 ) : (

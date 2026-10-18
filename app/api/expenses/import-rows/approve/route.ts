@@ -49,7 +49,9 @@ export async function POST(req: NextRequest) {
 
     const { data: row, error: rowError } = await supabase
       .from("expense_import_rows")
-      .select("*")
+      .select(
+        "id, expense_date, amount, vendor_raw, description_raw, review_status, matched_expense_id, excluded_flag"
+      )
       .eq("id", rowId)
       .single();
 
@@ -60,6 +62,87 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (row.excluded_flag === true) {
+      return NextResponse.json(
+        { error: "除外済みの取込候補は正式登録できません" },
+        { status: 409 }
+      );
+    }
+
+    if (row.matched_expense_id) {
+      const { data: existingExpense, error: existingExpenseError } =
+        await supabase
+          .from("expenses")
+          .select("id")
+          .eq("id", row.matched_expense_id)
+          .maybeSingle();
+
+      if (existingExpenseError) {
+        return NextResponse.json(
+          { error: `登録済み経費の確認に失敗しました: ${existingExpenseError.message}` },
+          { status: 500 }
+        );
+      }
+
+      if (!existingExpense) {
+        return NextResponse.json(
+          {
+            error:
+              "取込候補の登録状態が不整合です。経費一覧を確認してから再試行してください",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (row.review_status !== "confirmed") {
+        const { error: repairError } = await supabase
+          .from("expense_import_rows")
+          .update({ review_status: "confirmed" })
+          .eq("id", rowId);
+
+        if (repairError) {
+          return NextResponse.json(
+            { error: `取込候補の状態補正に失敗しました: ${repairError.message}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      return NextResponse.json({
+        ok: true,
+        expenseId: existingExpense.id,
+        alreadyApproved: true,
+      });
+    }
+
+    if (row.review_status === "confirmed") {
+      return NextResponse.json(
+        {
+          error:
+            "確定済みの取込候補に経費の紐づきがありません。経費一覧を確認してください",
+        },
+        { status: 409 }
+      );
+    }
+
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json(
+        { error: "取込候補の金額が不正です" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      typeof row.expense_date !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(row.expense_date)
+    ) {
+      return NextResponse.json(
+        { error: "取込候補の日付が不正です" },
+        { status: 400 }
+      );
+    }
+
     const text = `${row.vendor_raw || ""} ${row.description_raw || ""}`.trim();
 
     const { data: insertedExpense, error: insertError } = await supabase
@@ -67,7 +150,7 @@ export async function POST(req: NextRequest) {
       .insert({
         expense_date: row.expense_date,
         category: guessCategory(text),
-        amount: Math.round(Number(row.amount || 0)),
+        amount: Math.round(amount),
         memo: text || null,
         receipt_url: null,
         source_import_row_id: row.id,
@@ -82,17 +165,109 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { error: updateError } = await supabase
-      .from("expense_import_rows")
-      .update({
-        review_status: "confirmed",
-        excluded_flag: false,
-        matched_expense_id: insertedExpense.id,
-      })
-      .eq("id", rowId);
+    let updateError: { message?: string } | null = null;
+    let updatedRow: { id: string } | null = null;
+    let updateOutcomeUnknown = false;
 
-    if (updateError) {
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+    try {
+      const result = await supabase
+        .from("expense_import_rows")
+        .update({
+          review_status: "confirmed",
+          excluded_flag: false,
+          matched_expense_id: insertedExpense.id,
+        })
+        .eq("id", rowId)
+        .eq("excluded_flag", false)
+        .is("matched_expense_id", null)
+        .select("id")
+        .maybeSingle();
+
+      updateError = result.error;
+      updatedRow = result.data;
+    } catch (error) {
+      updateOutcomeUnknown = true;
+      updateError = {
+        message: error instanceof Error ? error.message : "取込候補の更新に失敗しました",
+      };
+    }
+
+    if (updateError || !updatedRow) {
+      if (updateOutcomeUnknown) {
+        try {
+          const { data: reconciledRow, error: reconciliationError } =
+            await supabase
+              .from("expense_import_rows")
+              .select("matched_expense_id, review_status")
+              .eq("id", rowId)
+              .maybeSingle();
+
+          if (reconciliationError) {
+            return NextResponse.json(
+              {
+                error:
+                  "経費登録後の取込候補更新結果を確認できません。経費一覧の確認が必要です",
+                expenseId: insertedExpense.id,
+                repairRequired: true,
+              },
+              { status: 500 }
+            );
+          }
+
+          if (reconciledRow?.matched_expense_id === insertedExpense.id) {
+            return NextResponse.json({
+              ok: true,
+              expenseId: insertedExpense.id,
+              reconciledAfterNetworkError: true,
+            });
+          }
+        } catch {
+          return NextResponse.json(
+            {
+              error:
+                "経費登録後の取込候補更新結果を確認できません。経費一覧の確認が必要です",
+              expenseId: insertedExpense.id,
+              repairRequired: true,
+            },
+            { status: 500 }
+          );
+        }
+      }
+
+      let rollbackError: { message?: string } | null = null;
+
+      try {
+        const rollbackResult = await supabase
+          .from("expenses")
+          .delete()
+          .eq("id", insertedExpense.id);
+        rollbackError = rollbackResult.error;
+      } catch (error) {
+        rollbackError = {
+          message: error instanceof Error ? error.message : "補償削除に失敗しました",
+        };
+      }
+
+      if (rollbackError) {
+        return NextResponse.json(
+          {
+            error:
+              "経費登録後の取込候補更新と補償削除に失敗しました。経費一覧の確認が必要です",
+            expenseId: insertedExpense.id,
+            repairRequired: true,
+          },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          error: `取込候補の更新に失敗したため経費登録を取り消しました: ${
+            updateError?.message ?? "別の処理で状態が更新されました"
+          }`,
+        },
+        { status: 409 }
+      );
     }
 
     return NextResponse.json({ ok: true, expenseId: insertedExpense.id });

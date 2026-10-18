@@ -1,14 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  LINE_SESSION_COOKIE,
+  readCustomerLineSessionCookie,
+} from "@/lib/server/lineLoginCookies";
 
 export const dynamic = "force-dynamic";
-
-const LINE_SESSION_COOKIE = "customer_line_session";
-
-type LineSessionPayload = {
-  customer_id: string;
-  line_user_id: string;
-};
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -23,16 +20,6 @@ function getSupabaseAdmin() {
       persistSession: false,
     },
   });
-}
-
-function safeDecodeJson<T>(value: string | undefined): T | null {
-  if (!value) return null;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 function isUsefulGalleryText(value: string | null | undefined) {
@@ -67,7 +54,7 @@ export async function GET(
   }
 ) {
   try {
-    const session = safeDecodeJson<LineSessionPayload>(
+    const session = readCustomerLineSessionCookie(
       request.cookies.get(LINE_SESSION_COOKIE)?.value
     );
 

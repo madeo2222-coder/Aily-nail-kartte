@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 
@@ -27,6 +28,7 @@ export default function CustomerIntakeListPage() {
   const [savingId, setSavingId] = useState("");
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [loadErrorMessage, setLoadErrorMessage] = useState("");
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [intakes, setIntakes] = useState<CustomerIntake[]>([]);
@@ -34,14 +36,14 @@ export default function CustomerIntakeListPage() {
   const [linkSelections, setLinkSelections] = useState<
     Record<string, string>
   >({});
+  const requestIdRef = useRef(0);
 
-  useEffect(() => {
-    void fetchData();
-  }, []);
+  const fetchData = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
 
-  async function fetchData() {
     try {
       setLoading(true);
+      setLoadErrorMessage("");
       setErrorMessage("");
       setMessage("");
 
@@ -63,6 +65,7 @@ export default function CustomerIntakeListPage() {
 
       if (customersError) throw customersError;
       if (intakesError) throw intakesError;
+      if (requestId !== requestIdRef.current) return;
 
       const customerRows = (customersData as Customer[]) || [];
       const intakeRows = (intakesData as CustomerIntake[]) || [];
@@ -81,15 +84,27 @@ export default function CustomerIntakeListPage() {
 
       setLinkSelections(nextSelections);
     } catch (error: unknown) {
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "初回入力一覧の取得に失敗しました。"
+      if (requestId !== requestIdRef.current) return;
+
+      console.error("初回入力一覧の取得エラー:", error);
+      setCustomers([]);
+      setIntakes([]);
+      setLinkSelections({});
+      setLoadErrorMessage(
+        "初回入力一覧を取得できませんでした。通信状態を確認して再試行してください。"
       );
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void Promise.resolve().then(fetchData);
+
+    return () => {
+      requestIdRef.current += 1;
+    };
+  }, [fetchData]);
 
   const filteredIntakes = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -236,6 +251,26 @@ export default function CustomerIntakeListPage() {
         </div>
       </div>
 
+      {loading ? (
+        <div className="rounded-2xl border bg-white p-4 text-sm text-gray-600">
+          読み込み中...
+        </div>
+      ) : loadErrorMessage ? (
+        <div
+          role="alert"
+          className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+        >
+          <p>{loadErrorMessage}</p>
+          <button
+            type="button"
+            onClick={() => void fetchData()}
+            className="mt-3 rounded-xl border border-red-300 bg-white px-4 py-2 font-medium"
+          >
+            再試行
+          </button>
+        </div>
+      ) : (
+        <>
       <section className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border bg-white p-4 shadow-sm">
           <div className="text-xs text-gray-500">総件数</div>
@@ -277,11 +312,7 @@ export default function CustomerIntakeListPage() {
         </div>
       ) : null}
 
-      {loading ? (
-        <div className="rounded-2xl border bg-white p-4 text-sm text-gray-600">
-          読み込み中...
-        </div>
-      ) : filteredIntakes.length === 0 ? (
+      {filteredIntakes.length === 0 ? (
         <div className="rounded-2xl border bg-white p-6 text-sm text-gray-600">
           該当する初回入力データはありません。
         </div>
@@ -375,12 +406,16 @@ export default function CustomerIntakeListPage() {
                           署名
                         </div>
 
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={intake.signature_data_url}
-                          alt="署名"
-                          className="max-h-40 w-auto"
-                        />
+                        <div className="relative h-40 w-full overflow-hidden rounded-lg">
+                          <Image
+                            src={intake.signature_data_url}
+                            alt="署名"
+                            fill
+                            sizes="(max-width: 1023px) calc(100vw - 80px), 560px"
+                            className="object-contain object-left"
+                            unoptimized
+                          />
+                        </div>
                       </div>
                     ) : null}
                   </div>
@@ -483,6 +518,8 @@ export default function CustomerIntakeListPage() {
             );
           })}
         </div>
+      )}
+        </>
       )}
     </main>
   );

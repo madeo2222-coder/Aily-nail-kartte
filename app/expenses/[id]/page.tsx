@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import {
+  EXPENSE_RECEIPT_BUCKET,
+  getExpenseReceiptStoragePath,
+} from "@/lib/expenseReceiptStorage";
+import ExpenseReceiptImage from "../ExpenseReceiptImage";
 
 type ExpenseRow = {
   id: string;
@@ -37,6 +42,7 @@ export default function ExpenseEditPage() {
   const expenseId = params?.id;
 
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<"not-found" | "failed" | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -46,6 +52,7 @@ export default function ExpenseEditPage() {
   const [memo, setMemo] = useState("");
   const [receiptUrl, setReceiptUrl] = useState<string | null>(null);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const writeInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!expenseId || expenseId === "[id]") {
@@ -54,44 +61,55 @@ export default function ExpenseEditPage() {
     }
   }, [expenseId, router]);
 
-  const fetchExpense = async () => {
+  const fetchExpense = useCallback(async () => {
     if (!expenseId || expenseId === "[id]") return;
 
     setIsLoading(true);
+    setLoadError(null);
 
-    const { data, error } = await supabase
-      .from("expenses")
-      .select("id, expense_date, category, amount, memo, receipt_url")
-      .eq("id", expenseId)
-      .single();
+    try {
+      const { data, error } = await supabase
+        .from("expenses")
+        .select("id, expense_date, category, amount, memo, receipt_url")
+        .eq("id", expenseId)
+        .single();
 
-    if (error || !data) {
+      if (error || !data) {
+        console.error("経費詳細取得エラー:", error);
+        setLoadError(error ? (error.code === "PGRST116" ? "not-found" : "failed") : "not-found");
+        return;
+      }
+
+      const row = data as ExpenseRow;
+
+      setExpenseDate(row.expense_date ?? "");
+      setCategory(
+        row.category && EXPENSE_CATEGORIES.includes(row.category as never)
+          ? row.category
+          : "雑費"
+      );
+      setAmount(String(row.amount ?? ""));
+      setMemo(row.memo ?? "");
+      setReceiptUrl(row.receipt_url ?? null);
+    } catch (error) {
       console.error("経費詳細取得エラー:", error);
-      alert(`経費データの取得に失敗しました: ${error?.message ?? "not found"}`);
-      router.push("/expenses");
-      return;
+      setLoadError("failed");
+    } finally {
+      setIsLoading(false);
     }
-
-    const row = data as ExpenseRow;
-
-    setExpenseDate(row.expense_date ?? "");
-    setCategory(
-      row.category && EXPENSE_CATEGORIES.includes(row.category as never)
-        ? row.category
-        : "雑費"
-    );
-    setAmount(String(row.amount ?? ""));
-    setMemo(row.memo ?? "");
-    setReceiptUrl(row.receipt_url ?? null);
-    setIsLoading(false);
-  };
-
-  useEffect(() => {
-    void fetchExpense();
   }, [expenseId]);
 
+  useEffect(() => {
+    void Promise.resolve().then(fetchExpense);
+  }, [fetchExpense]);
+
   const uploadReceiptImage = async () => {
-    if (!receiptFile) return receiptUrl;
+    if (!receiptFile) {
+      return {
+        path: "",
+        publicUrl: receiptUrl,
+      };
+    }
 
     const ext = receiptFile.name.split(".").pop() || "jpg";
     const fileName = `expense-${Date.now()}-${Math.random()
@@ -99,7 +117,7 @@ export default function ExpenseEditPage() {
       .slice(2)}.${ext}`;
 
     const { error: uploadError } = await supabase.storage
-      .from("visit-photos")
+      .from(EXPENSE_RECEIPT_BUCKET)
       .upload(fileName, receiptFile, {
         cacheControl: "3600",
         upsert: false,
@@ -109,13 +127,20 @@ export default function ExpenseEditPage() {
       throw new Error(`画像アップロードに失敗しました: ${uploadError.message}`);
     }
 
-    const { data } = supabase.storage.from("visit-photos").getPublicUrl(fileName);
+    const { data } = supabase.storage
+      .from(EXPENSE_RECEIPT_BUCKET)
+      .getPublicUrl(fileName);
 
-    return data.publicUrl;
+    return {
+      path: fileName,
+      publicUrl: data.publicUrl,
+    };
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (writeInFlightRef.current) return;
 
     if (!expenseId || expenseId === "[id]") {
       alert("IDが不正です");
@@ -137,10 +162,21 @@ export default function ExpenseEditPage() {
       return;
     }
 
+    writeInFlightRef.current = true;
     setIsSaving(true);
 
+    let uploadedReceiptPath = "";
+    let expenseSaved = false;
+
     try {
-      const nextReceiptUrl = await uploadReceiptImage();
+      const previousReceiptPath = receiptFile
+        ? getExpenseReceiptStoragePath(
+            receiptUrl,
+            process.env.NEXT_PUBLIC_SUPABASE_URL
+          )
+        : null;
+      const nextReceipt = await uploadReceiptImage();
+      uploadedReceiptPath = nextReceipt.path;
 
       const { error } = await supabase
         .from("expenses")
@@ -149,7 +185,7 @@ export default function ExpenseEditPage() {
           category,
           amount: Number(amount),
           memo: memo.trim() || null,
-          receipt_url: nextReceiptUrl,
+          receipt_url: nextReceipt.publicUrl,
         })
         .eq("id", expenseId);
 
@@ -157,14 +193,50 @@ export default function ExpenseEditPage() {
         throw new Error(error.message);
       }
 
+      expenseSaved = true;
+
+      if (
+        uploadedReceiptPath &&
+        previousReceiptPath &&
+        previousReceiptPath !== uploadedReceiptPath
+      ) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from(EXPENSE_RECEIPT_BUCKET)
+            .remove([previousReceiptPath]);
+
+          if (cleanupError) {
+            console.error("旧レシート画像の回収エラー:", cleanupError);
+          }
+        } catch (cleanupError) {
+          console.error("旧レシート画像の回収エラー:", cleanupError);
+        }
+      }
+
       alert("更新しました");
       router.push("/expenses");
     } catch (error) {
       console.error("経費更新エラー:", error);
+
+      if (uploadedReceiptPath && !expenseSaved) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from(EXPENSE_RECEIPT_BUCKET)
+            .remove([uploadedReceiptPath]);
+
+          if (cleanupError) {
+            console.error("レシート画像の回収エラー:", cleanupError);
+          }
+        } catch (cleanupError) {
+          console.error("レシート画像の回収エラー:", cleanupError);
+        }
+      }
+
       alert(
         error instanceof Error ? `保存に失敗しました: ${error.message}` : "保存に失敗しました"
       );
     } finally {
+      writeInFlightRef.current = false;
       setIsSaving(false);
     }
   };
@@ -175,11 +247,14 @@ export default function ExpenseEditPage() {
       return;
     }
 
+    if (writeInFlightRef.current) return;
+
     const ok = window.confirm(
       "この経費を削除しますか？\nCSV由来の確定データなら review に戻します。"
     );
     if (!ok) return;
 
+    writeInFlightRef.current = true;
     setIsDeleting(true);
 
     try {
@@ -203,6 +278,7 @@ export default function ExpenseEditPage() {
       console.error("経費削除エラー:", error);
       alert(error instanceof Error ? error.message : "削除に失敗しました");
     } finally {
+      writeInFlightRef.current = false;
       setIsDeleting(false);
     }
   };
@@ -211,6 +287,41 @@ export default function ExpenseEditPage() {
     return (
       <main className="p-4 pb-24 max-w-xl mx-auto">
         <div className="rounded-2xl border p-6">読み込み中...</div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="p-4 pb-24 max-w-xl mx-auto">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-6" role="alert">
+          <h1 className="text-lg font-bold text-red-900">
+            {loadError === "not-found"
+              ? "経費データが見つかりません"
+              : "経費データを取得できませんでした"}
+          </h1>
+          <p className="mt-2 text-sm text-red-800">
+            {loadError === "not-found"
+              ? "削除済み、または参照できない経費の可能性があります。"
+              : "通信状況を確認して、もう一度お試しください。"}
+          </p>
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => void fetchExpense()}
+              className="rounded-xl border border-red-300 bg-white px-4 py-3 font-medium text-red-900"
+            >
+              再試行
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/expenses")}
+              className="rounded-xl border border-red-300 bg-white px-4 py-3 font-medium text-red-900"
+            >
+              経費一覧に戻る
+            </button>
+          </div>
+        </div>
       </main>
     );
   }
@@ -282,11 +393,7 @@ export default function ExpenseEditPage() {
 
           {receiptUrl && (
             <div className="mb-3">
-              <img
-                src={receiptUrl}
-                alt="レシート"
-                className="w-full rounded-xl border"
-              />
+              <ExpenseReceiptImage src={receiptUrl} variant="detail" />
             </div>
           )}
 
@@ -305,7 +412,7 @@ export default function ExpenseEditPage() {
         <div className="grid grid-cols-1 gap-3">
           <button
             type="submit"
-            disabled={isSaving}
+            disabled={isSaving || isDeleting}
             className="w-full rounded-xl border px-4 py-3 font-medium"
           >
             {isSaving ? "保存中..." : "保存する"}
@@ -314,7 +421,7 @@ export default function ExpenseEditPage() {
           <button
             type="button"
             onClick={handleDelete}
-            disabled={isDeleting}
+            disabled={isDeleting || isSaving}
             className="w-full rounded-xl border px-4 py-3"
           >
             {isDeleting ? "削除中..." : "削除する"}

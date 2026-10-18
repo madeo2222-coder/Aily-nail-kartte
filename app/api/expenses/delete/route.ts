@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireStaffSession } from "@/lib/server/requireStaffSession";
+import {
+  EXPENSE_RECEIPT_BUCKET,
+  getExpenseReceiptStoragePath,
+} from "@/lib/expenseReceiptStorage";
 
 export async function POST(req: NextRequest) {
   const authError = await requireStaffSession(req);
@@ -31,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     const { data: expenseRow, error: expenseFetchError } = await supabase
       .from("expenses")
-      .select("id, source_import_row_id")
+      .select("id, source_import_row_id, receipt_url")
       .eq("id", expenseId)
       .single();
 
@@ -88,6 +92,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let receiptCleanupFailed = false;
+    const receiptPath = getExpenseReceiptStoragePath(
+      expenseRow.receipt_url,
+      supabaseUrl
+    );
+
+    if (receiptPath) {
+      try {
+        const { error: receiptCleanupError } = await supabase.storage
+          .from(EXPENSE_RECEIPT_BUCKET)
+          .remove([receiptPath]);
+
+        if (receiptCleanupError) {
+          receiptCleanupFailed = true;
+          console.error("削除済み経費のレシート回収エラー:", receiptCleanupError);
+        }
+      } catch (receiptCleanupError) {
+        receiptCleanupFailed = true;
+        console.error("削除済み経費のレシート回収エラー:", receiptCleanupError);
+      }
+    }
+
     if (restoreIds.length > 0) {
       const { error: restoreError } = await supabase
         .from("expense_import_rows")
@@ -111,6 +137,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       restoredCount: restoreIds.length,
+      receiptCleanupFailed,
     });
   } catch (error) {
     console.error("expense delete API error:", error);

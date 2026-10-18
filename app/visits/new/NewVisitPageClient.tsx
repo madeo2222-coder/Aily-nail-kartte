@@ -1,9 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import {
+  VISIT_PHOTO_ACCEPT,
+  createVisitPhotoPath,
+  validateVisitPhotoFile,
+  validateVisitPhotoMetadata,
+} from "@/lib/visitPhotoStorage";
 
 type Customer = {
   id: string;
@@ -93,13 +100,6 @@ function formatYen(value: number) {
   return amount < 0 ? `-¥${absoluteAmount}` : `¥${absoluteAmount}`;
 }
 
-function getFileExtension(fileName: string) {
-  const parts = fileName.split(".");
-  const extension = parts.length > 1 ? parts.pop() : "";
-
-  return extension ? extension.toLowerCase() : "jpg";
-}
-
 export default function NewVisitPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -113,8 +113,10 @@ export default function NewVisitPageClient() {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [customerLoadError, setCustomerLoadError] = useState("");
+  const customerRequestVersionRef = useRef(0);
 
-  const [customerId, setCustomerId] = useState(preselectedCustomerId);
+  const [customerId, setCustomerId] = useState("");
   const [visitDate, setVisitDate] = useState(
     prefilledVisitDate || new Date().toISOString().split("T")[0]
   );
@@ -131,18 +133,11 @@ export default function NewVisitPageClient() {
   ]);
 
   const [visitPhotos, setVisitPhotos] = useState<PhotoPreview[]>([]);
+  const photoPreviewUrls = useRef(new Set<string>());
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    void fetchCustomers();
-  }, []);
-
-  useEffect(() => {
-    if (preselectedCustomerId) {
-      setCustomerId(preselectedCustomerId);
-    }
-
     if (prefilledVisitDate) {
       setVisitDate(prefilledVisitDate);
     }
@@ -159,7 +154,6 @@ export default function NewVisitPageClient() {
       setMemo(prefilledMemo);
     }
   }, [
-    preselectedCustomerId,
     prefilledVisitDate,
     prefilledMenuName,
     prefilledStaffName,
@@ -167,31 +161,72 @@ export default function NewVisitPageClient() {
   ]);
 
   useEffect(() => {
+    const urls = photoPreviewUrls.current;
     return () => {
-      visitPhotos.forEach((photo) => {
-        URL.revokeObjectURL(photo.previewUrl);
-      });
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
     };
-  }, [visitPhotos]);
+  }, []);
 
-  async function fetchCustomers() {
+  const fetchCustomers = useCallback(async () => {
+    const requestVersion = customerRequestVersionRef.current + 1;
+    customerRequestVersionRef.current = requestVersion;
     setLoadingCustomers(true);
+    setCustomerLoadError("");
+    setMessage("");
+    setCustomers([]);
+    setCustomerId("");
 
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, name, phone, salon_id")
-      .order("name", { ascending: true });
+    try {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("id, name, phone, salon_id")
+        .order("name", { ascending: true });
 
-    if (error) {
+      if (customerRequestVersionRef.current !== requestVersion) {
+        return;
+      }
+
+      if (error) {
+        console.error("customers取得エラー:", error);
+        setCustomerLoadError(
+          "顧客一覧を取得できませんでした。来店登録はまだ行われていません。"
+        );
+        return;
+      }
+
+      const loadedCustomers = data || [];
+      setCustomers(loadedCustomers);
+      setCustomerId(
+        loadedCustomers.some(
+          (customer) => customer.id === preselectedCustomerId
+        )
+          ? preselectedCustomerId
+          : ""
+      );
+    } catch (error) {
+      if (customerRequestVersionRef.current !== requestVersion) {
+        return;
+      }
+
       console.error("customers取得エラー:", error);
-      setMessage("顧客一覧の取得に失敗しました");
-      setLoadingCustomers(false);
-      return;
+      setCustomerLoadError(
+        "顧客一覧を取得できませんでした。来店登録はまだ行われていません。"
+      );
+    } finally {
+      if (customerRequestVersionRef.current === requestVersion) {
+        setLoadingCustomers(false);
+      }
     }
+  }, [preselectedCustomerId]);
 
-    setCustomers(data || []);
-    setLoadingCustomers(false);
-  }
+  useEffect(() => {
+    void fetchCustomers();
+
+    return () => {
+      customerRequestVersionRef.current += 1;
+    };
+  }, [fetchCustomers]);
 
   const selectedCustomer = useMemo(() => {
     return customers.find((customer) => customer.id === customerId) || null;
@@ -277,36 +312,35 @@ export default function NewVisitPageClient() {
       return;
     }
 
-    const imageFiles = files.filter((file) =>
-      file.type.startsWith("image/")
-    );
-
-    if (imageFiles.length !== files.length) {
-      setMessage("写真ファイルのみ選択できます");
-    } else {
-      setMessage("");
+    const acceptedFiles: File[] = [];
+    let rejectionMessage = "";
+    for (const file of files) {
+      try {
+        validateVisitPhotoMetadata(file);
+        acceptedFiles.push(file);
+      } catch (error) {
+        rejectionMessage = error instanceof Error ? error.message : "写真を選択できませんでした。";
+      }
     }
+    setMessage(rejectionMessage);
 
-    const newPhotos = imageFiles.map((file) => ({
-      id: createPhotoId(),
-      file,
-      previewUrl: URL.createObjectURL(file),
-    }));
+    const newPhotos = acceptedFiles.map((file) => {
+      const previewUrl = URL.createObjectURL(file);
+      photoPreviewUrls.current.add(previewUrl);
+      return { id: createPhotoId(), file, previewUrl };
+    });
 
     setVisitPhotos((previous) => [...previous, ...newPhotos]);
     e.target.value = "";
   }
 
   function removePhoto(photoId: string) {
-    setVisitPhotos((previous) => {
-      const target = previous.find((photo) => photo.id === photoId);
+    const target = visitPhotos.find((photo) => photo.id === photoId);
+    if (target && photoPreviewUrls.current.delete(target.previewUrl)) {
+      URL.revokeObjectURL(target.previewUrl);
+    }
 
-      if (target) {
-        URL.revokeObjectURL(target.previewUrl);
-      }
-
-      return previous.filter((photo) => photo.id !== photoId);
-    });
+    setVisitPhotos((previous) => previous.filter((photo) => photo.id !== photoId));
   }
 
   async function uploadVisitPhotos({
@@ -323,15 +357,14 @@ export default function NewVisitPageClient() {
     const uploadedPhotoRows = [];
 
     for (const photo of visitPhotos) {
-      const extension = getFileExtension(photo.file.name);
-      const filePath = `${visitId}/${Date.now()}_${Math.random()
-        .toString(36)
-        .slice(2, 10)}.${extension}`;
+      const validatedPhoto = await validateVisitPhotoFile(photo.file);
+      const filePath = createVisitPhotoPath(visitId, validatedPhoto.extension);
 
       const { error: uploadError } = await supabase.storage
         .from(VISIT_PHOTO_BUCKET)
-        .upload(filePath, photo.file, {
+        .upload(filePath, validatedPhoto.file, {
           cacheControl: "3600",
+          contentType: validatedPhoto.contentType,
           upsert: false,
         });
 
@@ -370,8 +403,18 @@ export default function NewVisitPageClient() {
     e.preventDefault();
     setMessage("");
 
+    if (loadingCustomers || customerLoadError) {
+      setMessage("顧客一覧を再取得してから登録してください");
+      return;
+    }
+
     if (!customerId) {
       setMessage("顧客を選択してください");
+      return;
+    }
+
+    if (!selectedCustomer) {
+      setMessage("有効な顧客を選択してください");
       return;
     }
 
@@ -432,6 +475,13 @@ export default function NewVisitPageClient() {
 
     if (paymentTotal !== totalPrice) {
       setMessage("売上金額と支払い内訳合計を一致させてください");
+      return;
+    }
+
+    try {
+      await Promise.all(visitPhotos.map((photo) => validateVisitPhotoFile(photo.file)));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "写真を確認できませんでした。");
       return;
     }
 
@@ -622,6 +672,47 @@ export default function NewVisitPageClient() {
           </p>
         </section>
 
+        {loadingCustomers ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm">
+            <p className="text-sm font-bold text-slate-700">
+              顧客一覧を読み込み中...
+            </p>
+          </section>
+        ) : customerLoadError ? (
+          <section
+            role="alert"
+            className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 shadow-sm"
+          >
+            <h2 className="text-lg font-bold text-amber-900">
+              顧客一覧を確認できません
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-amber-800">
+              {customerLoadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => void fetchCustomers()}
+              className="mt-4 rounded-2xl bg-amber-900 px-4 py-3 text-sm font-bold text-white"
+            >
+              再試行
+            </button>
+          </section>
+        ) : customers.length === 0 ? (
+          <section className="rounded-[28px] border border-rose-100 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900">
+              登録可能な顧客がいません
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              来店履歴を登録する前に顧客を追加してください。
+            </p>
+            <Link
+              href="/customers/new"
+              className="mt-4 inline-block rounded-2xl bg-rose-600 px-4 py-3 text-sm font-bold text-white"
+            >
+              顧客を追加
+            </Link>
+          </section>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
             <h2 className="mb-4 text-lg font-bold text-slate-900">
@@ -634,9 +725,7 @@ export default function NewVisitPageClient() {
               className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
             >
               <option value="">
-                {loadingCustomers
-                  ? "読み込み中..."
-                  : "顧客を選択してください"}
+                顧客を選択してください
               </option>
 
               {customers.map((customer) => (
@@ -820,7 +909,7 @@ export default function NewVisitPageClient() {
             <label className="block cursor-pointer rounded-[28px] border border-dashed border-rose-300 bg-rose-50/50 px-4 py-6 text-center">
               <input
                 type="file"
-                accept="image/*"
+                accept={VISIT_PHOTO_ACCEPT}
                 multiple
                 onChange={handlePhotoChange}
                 className="hidden"
@@ -838,11 +927,16 @@ export default function NewVisitPageClient() {
                     key={photo.id}
                     className="overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm"
                   >
-                    <img
-                      src={photo.previewUrl}
-                      alt="施術後写真プレビュー"
-                      className="h-36 w-full object-cover"
-                    />
+                    <div className="relative h-36 w-full">
+                      <Image
+                        src={photo.previewUrl}
+                        alt="施術後写真プレビュー"
+                        fill
+                        sizes="(max-width: 640px) calc(50vw - 30px), 264px"
+                        className="object-cover"
+                        unoptimized
+                      />
+                    </div>
 
                     <div className="p-2">
                       <button
@@ -894,6 +988,7 @@ export default function NewVisitPageClient() {
             {saving ? "登録中..." : "登録する"}
           </button>
         </form>
+        )}
 
         <Link
           href="/visits"

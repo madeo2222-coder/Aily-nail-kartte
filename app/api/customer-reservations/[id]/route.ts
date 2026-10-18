@@ -1,14 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  LINE_SESSION_COOKIE,
+  readCustomerLineSessionCookie,
+} from "@/lib/server/lineLoginCookies";
 
 export const dynamic = "force-dynamic";
-
-const LINE_SESSION_COOKIE = "customer_line_session";
-
-type LineSessionPayload = {
-  customer_id: string;
-  line_user_id: string;
-};
 
 type AnyRow = Record<string, unknown>;
 
@@ -23,6 +20,28 @@ type UpdateRequestBody = {
   requestMessage?: string;
 };
 
+type ReservationWriteRow = {
+  outcome: string;
+  reservation_id: string | null;
+};
+
+function getReservationWriteRow(value: unknown): ReservationWriteRow | null {
+  const row = Array.isArray(value) ? value[0] : value;
+
+  if (!row || typeof row !== "object") return null;
+
+  const candidate = row as Record<string, unknown>;
+  if (
+    typeof candidate.outcome !== "string" ||
+    (candidate.reservation_id !== null &&
+      typeof candidate.reservation_id !== "string")
+  ) {
+    return null;
+  }
+
+  return candidate as ReservationWriteRow;
+}
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -36,16 +55,6 @@ function getSupabaseAdmin() {
       persistSession: false,
     },
   });
-}
-
-function safeDecodeJson<T>(value: string | undefined): T | null {
-  if (!value) return null;
-
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
-  }
 }
 
 function getString(row: AnyRow | null, keys: string[]) {
@@ -161,7 +170,7 @@ function formatDateTime(value: string) {
 }
 
 async function getAuthenticatedCustomer(request: NextRequest) {
-  const session = safeDecodeJson<LineSessionPayload>(
+  const session = readCustomerLineSessionCookie(
     request.cookies.get(LINE_SESSION_COOKIE)?.value
   );
 
@@ -410,16 +419,46 @@ export async function PATCH(
         );
       }
 
-      const { error } = await supabaseAdmin
-        .from("reservations")
-        .update({
-          status: "cancelled",
-        })
-        .eq("id", id)
-        .eq("customer_id", customerId);
+      const { data: cancelData, error } = await supabaseAdmin.rpc(
+        "cancel_customer_requested_reservation",
+        {
+          p_reservation_id: id,
+          p_customer_id: customerId,
+        }
+      );
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      const cancelResult = getReservationWriteRow(cancelData);
+
+      if (!cancelResult) {
+        throw new Error("予約取消結果を確認できませんでした");
+      }
+
+      if (
+        cancelResult.outcome === "stale" ||
+        cancelResult.outcome === "not_found"
+      ) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "予約状態が更新されています。最新の内容を読み込み直してください",
+          },
+          { status: 409 }
+        );
+      }
+
+      if (
+        cancelResult.outcome !== "cancelled" ||
+        cancelResult.reservation_id !== id
+      ) {
+        return NextResponse.json(
+          { ok: false, error: "予約取消結果を確認できませんでした" },
+          { status: 409 }
+        );
       }
 
       await sendAdminLineMessage(
@@ -673,30 +712,69 @@ export async function PATCH(
     const previousMenu =
       getString(reservation, ["menu", "menu_name"]) || "未設定";
 
-    const updatePayload: {
-      start_at: string;
-      end_at: string;
-      menu: string;
-      memo: string;
-      source: string;
-      staff_id?: string | null;
-    } = {
-      start_at: startIso,
-      end_at: endIso,
-      menu,
-      memo,
-      source: "customer-app",
-      staff_id: staffId || null,
-    };
-
-    const { error: updateError } = await supabaseAdmin
-      .from("reservations")
-      .update(updatePayload)
-      .eq("id", id)
-      .eq("customer_id", customerId);
+    const { data: writeData, error: updateError } = await supabaseAdmin.rpc(
+      "update_customer_requested_reservation",
+      {
+        p_reservation_id: id,
+        p_customer_id: customerId,
+        p_expected_start_at: previousStartAt || null,
+        p_expected_end_at: getString(reservation, ["end_at"]) || null,
+        p_staff_id: staffId || null,
+        p_menu: menu,
+        p_start_at: startIso,
+        p_end_at: endIso,
+        p_memo: memo,
+      }
+    );
 
     if (updateError) {
       throw new Error(updateError.message);
+    }
+
+    const writeResult = getReservationWriteRow(writeData);
+
+    if (!writeResult) {
+      throw new Error("予約更新結果を確認できませんでした");
+    }
+
+    if (
+      writeResult.outcome === "stale" ||
+      writeResult.outcome === "not_found"
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "予約状態が更新されています。最新の内容を読み込み直してください",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (writeResult.outcome === "slot_unavailable") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: staffId
+            ? "選択した担当者はその時間帯に既に予約があります"
+            : "その時間帯には既に予約があります",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (writeResult.outcome === "invalid_staff") {
+      return NextResponse.json(
+        { ok: false, error: "選択した担当者は現在予約できません" },
+        { status: 409 }
+      );
+    }
+
+    if (writeResult.outcome !== "updated" || !writeResult.reservation_id) {
+      return NextResponse.json(
+        { ok: false, error: "予約内容を確認できませんでした" },
+        { status: 409 }
+      );
     }
 
     await sendAdminLineMessage(

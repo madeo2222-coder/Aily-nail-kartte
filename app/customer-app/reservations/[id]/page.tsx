@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 
 type ReservationDetail = {
@@ -31,6 +31,16 @@ type StaffRow = {
 type DetailResponse = {
   ok: boolean;
   reservation?: ReservationDetail;
+  error?: string;
+};
+
+type SessionResponse = {
+  authenticated?: boolean;
+};
+
+type StaffResponse = {
+  ok?: boolean;
+  staffs?: StaffRow[];
   error?: string;
 };
 
@@ -169,6 +179,7 @@ export default function CustomerReservationDetailPage() {
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [signedOut, setSignedOut] = useState(false);
 
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -181,12 +192,15 @@ export default function CustomerReservationDetailPage() {
   const todayText = useMemo(() => getTodayText(), []);
   const maxDateText = useMemo(() => addDaysText(todayText, 30), [todayText]);
 
-  async function fetchReservation() {
+  const fetchReservation = useCallback(async () => {
     setLoading(true);
     setErrorMessage("");
+    setSignedOut(false);
+    setReservation(null);
+    setStaffs([]);
 
     try {
-      const [reservationResponse, staffResponse] = await Promise.all([
+      const [reservationResponse, sessionResponse] = await Promise.all([
         fetch(`/api/customer-reservations/${reservationId}`, {
           cache: "no-store",
         }),
@@ -197,68 +211,72 @@ export default function CustomerReservationDetailPage() {
 
       const reservationJson =
         (await reservationResponse.json()) as DetailResponse;
+      const sessionJson = (await sessionResponse.json()) as SessionResponse;
+
+      if (!sessionResponse.ok) {
+        setErrorMessage("ログイン状態の確認に失敗しました");
+        return;
+      }
+
+      if (!sessionJson.authenticated) {
+        setErrorMessage("予約内容を確認するにはLINEログインが必要です");
+        setSignedOut(true);
+        return;
+      }
 
       if (!reservationResponse.ok || !reservationJson.ok) {
         setErrorMessage(
           reservationJson.error || "予約情報の取得に失敗しました"
         );
-        setReservation(null);
         return;
       }
 
       const nextReservation = reservationJson.reservation || null;
-      setReservation(nextReservation);
 
-      if (nextReservation) {
-        const parts = getJstInputParts(nextReservation.startAt);
-
-        setDate(parts.date);
-        setTime(parts.time);
-        setMenu(nextReservation.menu);
-        setStaffId(nextReservation.staffId || "");
-        setMemo(nextReservation.memo || "");
-
-        const start = new Date(nextReservation.startAt);
-        const end = new Date(nextReservation.endAt);
-        const minutes = Math.round(
-          (end.getTime() - start.getTime()) / 60000
-        );
-
-        setDurationMinutes(
-          Number.isFinite(minutes) && minutes > 0
-            ? String(minutes)
-            : "90"
-        );
+      if (!nextReservation) {
+        setErrorMessage("予約情報が見つかりません");
+        return;
       }
-
-      void staffResponse;
 
       const staffResult = await fetch("/api/customer-reservations/staffs", {
         cache: "no-store",
       });
+      const staffJson = (await staffResult.json()) as StaffResponse;
 
-      if (staffResult.ok) {
-        const staffJson = (await staffResult.json()) as {
-          ok?: boolean;
-          staffs?: StaffRow[];
-        };
-
-        setStaffs(staffJson.staffs || []);
-      } else {
-        setStaffs([]);
+      if (!staffResult.ok || !staffJson.ok) {
+        setErrorMessage(
+          staffJson.error || "担当スタッフ情報の取得に失敗しました"
+        );
+        return;
       }
+
+      const parts = getJstInputParts(nextReservation.startAt);
+      const start = new Date(nextReservation.startAt);
+      const end = new Date(nextReservation.endAt);
+      const minutes = Math.round((end.getTime() - start.getTime()) / 60000);
+
+      setDate(parts.date);
+      setTime(parts.time);
+      setMenu(nextReservation.menu);
+      setStaffId(nextReservation.staffId || "");
+      setMemo(nextReservation.memo || "");
+      setDurationMinutes(
+        Number.isFinite(minutes) && minutes > 0 ? String(minutes) : "90"
+      );
+      setStaffs(staffJson.staffs || []);
+      setReservation(nextReservation);
     } catch (error) {
       console.error(error);
       setErrorMessage("予約情報の読み込みに失敗しました");
     } finally {
       setLoading(false);
     }
-  }
+  }, [reservationId]);
 
   useEffect(() => {
     if (!reservationId) return;
-    void fetchReservation();
-  }, [reservationId]);
+    void Promise.resolve().then(fetchReservation);
+  }, [reservationId, fetchReservation]);
 
   async function runAction(body: Record<string, unknown>) {
     setSaving(true);
@@ -363,11 +381,33 @@ export default function CustomerReservationDetailPage() {
     return (
       <main className="min-h-screen bg-slate-50 pb-24">
         <div className="mx-auto max-w-md space-y-4 px-4 py-6">
-          <div className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm">
+          <div
+            role="alert"
+            className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm"
+          >
             <h1 className="text-xl font-bold text-slate-900">予約確認</h1>
             <p className="mt-3 text-sm leading-6 text-rose-600">
               {errorMessage || "予約情報が見つかりません"}
             </p>
+
+            {signedOut ? (
+              <Link
+                href={`/customer-app/login?next=${encodeURIComponent(
+                  `/customer-app/reservations/${reservationId}`
+                )}`}
+                className="mt-4 block w-full rounded-2xl bg-green-500 px-4 py-3 text-center text-sm font-bold text-white"
+              >
+                LINEでログインして予約を確認
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void fetchReservation()}
+                className="mt-4 w-full rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
+              >
+                再試行
+              </button>
+            )}
           </div>
 
           <Link

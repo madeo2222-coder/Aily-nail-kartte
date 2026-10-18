@@ -1,24 +1,33 @@
-import { createClient } from "@supabase/supabase-js";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getNailTipProduct } from "@/lib/nail-tip-products/catalog";
+import {
+  getSupabaseAdmin,
+  requireCustomerLineSession,
+} from "@/lib/server/requireCustomerLineSession";
+import { resolveCustomerBookingSalonId } from "@/lib/server/customerReservationAvailability";
 
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export async function POST(request: NextRequest) {
+  let customer: Awaited<ReturnType<typeof requireCustomerLineSession>>;
 
-  if (!url || !key) {
-    throw new Error("Supabase admin environment variables are missing.");
+  try {
+    customer = await requireCustomerLineSession(request);
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: "顧客認証の確認に失敗しました" },
+      { status: 500 }
+    );
   }
 
-  return createClient(url, key);
-}
+  if (!customer) {
+    return NextResponse.json(
+      { ok: false, error: "LINEログインが必要です" },
+      { status: 401 }
+    );
+  }
 
-export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    const salonId = String(body.salonId || "").trim();
-    const customerId = String(body.customerId || "").trim();
     const luckyColor = String(body.luckyColor || "").trim();
     const luckyStone = String(body.luckyStone || "").trim();
     const nailTheme = String(body.nailTheme || "").trim();
@@ -52,12 +61,24 @@ export async function POST(request: Request) {
       .join("\n");
 
     const supabase = getSupabaseAdmin();
+    // Older customer rows may have no salon_id. The existing reservation resolver
+    // permits a fallback only when the database has exactly one salon.
+    const salonId = await resolveCustomerBookingSalonId(
+      supabase,
+      customer.salonId
+    );
+    if (!salonId) {
+      return NextResponse.json(
+        { ok: false, error: "注文先の店舗を特定できません" },
+        { status: 409 }
+      );
+    }
 
     const { data, error } = await supabase
       .from("nail_tip_orders")
       .insert({
-        salon_id: salonId || null,
-        customer_id: customerId || null,
+        salon_id: salonId,
+        customer_id: customer.id,
         lucky_color: luckyColor,
         lucky_stone: luckyStone,
         nail_theme: nailTheme,

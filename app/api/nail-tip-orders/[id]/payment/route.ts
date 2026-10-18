@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
+import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 type AnyRow = Record<string, unknown>;
 
@@ -136,6 +137,18 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const authentication = await authenticateStaffApi({
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: false,
+    });
+
+    if (!authentication.ok) {
+      return NextResponse.json(
+        { ok: false, error: authentication.error },
+        { status: authentication.status }
+      );
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -160,6 +173,7 @@ export async function POST(
       .from("nail_tip_orders")
       .select("*")
       .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId)
       .single();
 
     if (orderFetchError || !orderData) {
@@ -203,7 +217,8 @@ export async function POST(
         payment_status: "payment_waiting",
         status: "payment_waiting",
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("salon_id", authentication.principal.salonId);
 
     if (error) {
       return NextResponse.json(
@@ -229,6 +244,7 @@ export async function POST(
       .from("customers")
       .select("*")
       .eq("id", customerId)
+      .eq("salon_id", authentication.principal.salonId)
       .maybeSingle();
 
     const customer = (customerData || null) as AnyRow | null;

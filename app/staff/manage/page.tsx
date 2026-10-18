@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
 type StaffRow = {
@@ -17,32 +17,48 @@ export default function StaffManagePage() {
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const staffRequestVersionRef = useRef(0);
 
-  async function fetchStaffs() {
+  const fetchStaffs = useCallback(async () => {
+    const requestVersion = staffRequestVersionRef.current + 1;
+    staffRequestVersionRef.current = requestVersion;
     setLoading(true);
+    setLoadError("");
 
-    const { data, error } = await supabase
-      .from("staffs")
-      .select("id, name, role, salon_id, user_id, created_at")
-      .order("created_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("staffs")
+        .select("id, name, role, salon_id, user_id, created_at")
+        .order("created_at", { ascending: false });
 
-    if (error) {
+      if (error) throw error;
+
+      if (requestVersion === staffRequestVersionRef.current) {
+        setStaffs((data as StaffRow[]) || []);
+      }
+    } catch (error) {
       console.error("staffs fetch error:", error);
-      alert("スタッフ一覧の取得に失敗しました");
-      setStaffs([]);
-      setLoading(false);
-      return;
+      if (requestVersion === staffRequestVersionRef.current) {
+        setStaffs([]);
+        setLoadError("スタッフ一覧の取得に失敗しました。");
+      }
+    } finally {
+      if (requestVersion === staffRequestVersionRef.current) {
+        setLoading(false);
+      }
     }
-
-    setStaffs((data as StaffRow[]) || []);
-    setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(fetchStaffs);
-  }, []);
+
+    return () => {
+      staffRequestVersionRef.current += 1;
+    };
+  }, [fetchStaffs]);
 
   async function handleAddStaff(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -56,23 +72,28 @@ export default function StaffManagePage() {
 
     setSaving(true);
 
-    const { error } = await supabase.from("staffs").insert([
-      {
-        name: trimmedName,
-      },
-    ]);
+    try {
+      const { error } = await supabase.from("staffs").insert([
+        {
+          name: trimmedName,
+        },
+      ]);
 
-    setSaving(false);
+      if (error) throw error;
 
-    if (error) {
+      alert("スタッフを追加しました");
+      setName("");
+      await fetchStaffs();
+    } catch (error) {
       console.error("staff insert error:", error);
-      alert(`スタッフ追加に失敗しました: ${error.message}`);
-      return;
+      alert(
+        error instanceof Error
+          ? `スタッフ追加に失敗しました: ${error.message}`
+          : "スタッフ追加に失敗しました"
+      );
+    } finally {
+      setSaving(false);
     }
-
-    alert("スタッフを追加しました");
-    setName("");
-    await fetchStaffs();
   }
 
   async function handleDeleteStaff(id: string, staffName: string) {
@@ -81,18 +102,23 @@ export default function StaffManagePage() {
 
     setDeletingId(id);
 
-    const { error } = await supabase.from("staffs").delete().eq("id", id);
+    try {
+      const { error } = await supabase.from("staffs").delete().eq("id", id);
 
-    setDeletingId(null);
+      if (error) throw error;
 
-    if (error) {
+      alert("スタッフを削除しました");
+      await fetchStaffs();
+    } catch (error) {
       console.error("staff delete error:", error);
-      alert(`スタッフ削除に失敗しました: ${error.message}`);
-      return;
+      alert(
+        error instanceof Error
+          ? `スタッフ削除に失敗しました: ${error.message}`
+          : "スタッフ削除に失敗しました"
+      );
+    } finally {
+      setDeletingId(null);
     }
-
-    alert("スタッフを削除しました");
-    await fetchStaffs();
   }
 
   return (
@@ -119,35 +145,37 @@ export default function StaffManagePage() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-bold text-slate-900">スタッフ追加</h2>
-          <p className="mt-2 text-sm text-slate-500">
-            まずは名前だけ追加できるシンプルな登録です。
-          </p>
+        {!loading && !loadError ? (
+          <section className="mt-6 rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-bold text-slate-900">スタッフ追加</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              まずは名前だけ追加できるシンプルな登録です。
+            </p>
 
-          <form onSubmit={handleAddStaff} className="mt-4 space-y-4">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                スタッフ名
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="例: 田中 / 佐藤 / 山本"
-                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
-              />
-            </div>
+            <form onSubmit={handleAddStaff} className="mt-4 space-y-4">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  スタッフ名
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例: 田中 / 佐藤 / 山本"
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
+                />
+              </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
-            >
-              {saving ? "追加中..." : "スタッフを追加"}
-            </button>
-          </form>
-        </section>
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {saving ? "追加中..." : "スタッフを追加"}
+              </button>
+            </form>
+          </section>
+        ) : null}
 
         <section className="mt-6 rounded-[28px] border border-rose-100 bg-white p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -158,14 +186,30 @@ export default function StaffManagePage() {
               </p>
             </div>
 
-            <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
-              {staffs.length}名
-            </div>
+            {!loading && !loadError ? (
+              <div className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
+                {staffs.length}名
+              </div>
+            ) : null}
           </div>
 
           {loading ? (
             <div className="rounded-3xl bg-rose-50 p-4 text-sm text-slate-500">
               読み込み中...
+            </div>
+          ) : loadError ? (
+            <div
+              role="alert"
+              className="rounded-3xl border border-rose-200 bg-rose-50 p-4"
+            >
+              <p className="text-sm font-bold text-rose-800">{loadError}</p>
+              <button
+                type="button"
+                onClick={fetchStaffs}
+                className="mt-3 rounded-2xl bg-rose-600 px-4 py-2 text-sm font-bold text-white"
+              >
+                再試行
+              </button>
             </div>
           ) : staffs.length === 0 ? (
             <div className="rounded-3xl bg-rose-50 p-4 text-sm text-slate-500">
