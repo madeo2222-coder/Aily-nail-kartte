@@ -1,19 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
-
-function normalizeName(value: string) {
-  return value
-    .replace(/\s+/g, "")
-    .replace(/　+/g, "")
-    .trim();
-}
-
-function normalizePhone(value: string) {
-  return value.replace(/[^\d]/g, "");
-}
 
 export default function NewCustomerPage() {
   const router = useRouter();
@@ -22,46 +10,12 @@ export default function NewCustomerPage() {
   const [phone, setPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
-
-  async function findExistingCustomer(params: {
-    name: string;
-    phone: string;
-  }) {
-    const compareName = normalizeName(params.name);
-    const comparePhone = normalizePhone(params.phone);
-
-    const { data, error } = await supabase
-      .from("customers")
-      .select("id, name, phone")
-      .not("name", "is", null);
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    const customers = data || [];
-
-    if (comparePhone) {
-      const phoneMatch = customers.find((customer) => {
-        return normalizePhone(customer.phone || "") === comparePhone;
-      });
-
-      if (phoneMatch?.id) return phoneMatch.id;
-    }
-
-    const nameMatch = customers.find((customer) => {
-      return normalizeName(customer.name || "") === compareName;
-    });
-
-    if (nameMatch?.id) return nameMatch.id;
-
-    return "";
-  }
+  const submissionInFlight = useRef(false);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
 
-    if (submitting) return;
+    if (submissionInFlight.current || submitting) return;
 
     const trimmedName = name.trim();
     const trimmedPhone = phone.trim();
@@ -71,51 +25,41 @@ export default function NewCustomerPage() {
       return;
     }
 
+    submissionInFlight.current = true;
     setSubmitting(true);
     setErrorMessage("");
 
     try {
-      const existingCustomerId = await findExistingCustomer({
-        name: trimmedName,
-        phone: trimmedPhone,
+      const response = await fetch("/api/customers/staff-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: trimmedName,
+          phone: trimmedPhone,
+        }),
       });
-
-      if (existingCustomerId) {
-        alert("同じ顧客が見つかったため、既存カルテを開きます。");
-        router.push(`/customers/${existingCustomerId}`);
-        return;
-      }
-
-      const payload = {
-        name: trimmedName,
-        phone: trimmedPhone ? trimmedPhone : null,
+      const result = (await response.json()) as {
+        ok?: boolean;
+        id?: string;
+        existing?: boolean;
+        error?: string;
       };
 
-      const { data, error } = await supabase
-        .from("customers")
-        .insert([payload])
-        .select("id")
-        .single();
-
-      if (error) {
-        setErrorMessage(error.message || "顧客登録に失敗しました。");
-        setSubmitting(false);
-        return;
+      if (!response.ok || !result.ok || !result.id) {
+        throw new Error(result.error || "顧客登録に失敗しました。");
       }
 
-      const newId =
-        data && typeof data.id === "string" && data.id.trim() ? data.id : "";
-
-      if (newId) {
-        router.push(`/customers/${newId}`);
-        return;
+      if (result.existing) {
+        alert("同じ顧客が見つかったため、既存カルテを開きます。");
       }
 
-      router.push("/customers");
+      router.push(`/customers/${result.id}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "顧客登録に失敗しました。";
       setErrorMessage(message);
+    } finally {
+      submissionInFlight.current = false;
       setSubmitting(false);
     }
   }
