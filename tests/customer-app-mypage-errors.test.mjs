@@ -32,7 +32,12 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failure = "", rejection = false, meOk = true } = {}) {
+async function mount({
+  failure = "",
+  rejection = false,
+  meOk = true,
+  ordersOk = true,
+} = {}) {
   const states = [];
   const tableCalls = new Map();
   let cursor = 0;
@@ -83,15 +88,29 @@ async function mount({ failure = "", rejection = false, meOk = true } = {}) {
     window: { location: { href: "" } },
     console: { error() {} },
     fetch: async url => {
-      assert.equal(url, "/api/line-login/me");
-      if (shouldFail && !meOk) return { ok: false, json: async () => ({}) };
-      return {
-        ok: true,
-        json: async () => ({
-          authenticated: true,
-          customer: { id: "customer-1", name: "顧客A", salon_id: null },
-        }),
-      };
+      if (url === "/api/line-login/me") {
+        if (shouldFail && !meOk) return { ok: false, json: async () => ({}) };
+        return {
+          ok: true,
+          json: async () => ({
+            authenticated: true,
+            customer: { id: "customer-1", name: "顧客A", salon_id: null },
+          }),
+        };
+      }
+      if (url === "/api/customer-app/nail-tip-orders") {
+        if (!ordersOk) {
+          return {
+            ok: false,
+            json: async () => ({ ok: false, error: "orders failed" }),
+          };
+        }
+        return {
+          ok: true,
+          json: async () => ({ ok: true, orders: [] }),
+        };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
     },
     require(name) {
       if (name === "react") return hooks;
@@ -159,7 +178,6 @@ for (const failure of [
   "sanmeigaku_diagnoses:1",
   "reservations:1",
   "staffs:1",
-  "nail_tip_orders:1",
 ]) {
   test(`customer mypage blocks false empty state after ${failure} query error`, async () => {
     const page = await mount({ failure });
@@ -167,6 +185,21 @@ for (const failure of [
     assert.doesNotMatch(page.html(), /現在の来店回数|注文履歴はありません|未来の予約はありません/);
   });
 }
+
+test("customer mypage blocks false empty state after authenticated order API error", async () => {
+  const page = await mount({ ordersOk: false });
+  assert.match(page.html(), /role="alert"/);
+  assert.doesNotMatch(page.html(), /注文履歴はありません/);
+});
+
+test("customer mypage reads order history through the signed-session API", () => {
+  const source = readFileSync(
+    new URL("../app/customer-app/mypage/page.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(source, /fetch\(\s*"\/api\/customer-app\/nail-tip-orders"/);
+  assert.doesNotMatch(source, /\.from\("nail_tip_orders"\)/);
+});
 
 test("customer mypage also handles rejected reads and retries", async () => {
   const page = await mount({ failure: "reservations:1", rejection: true });

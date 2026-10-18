@@ -28,6 +28,13 @@
 - 認証済みスタッフのサロン範囲を検査し、読取後に別操作で状態が変わった場合は409を返す。
 - 返金・キャンセル後の決済精算、発送通知の永続的な再送管理は未完成。
 
+### 注文相談の保存・再表示
+
+- 注文相談の作成先を、署名済みLINE顧客と安全に解決できた店舗から決める。ブラウザから顧客ID・店舗IDを指定させない。
+- 送信中・応答喪失・受付済みを区別し、結果不明時は再送を止めてマイページの履歴確認へ案内する。
+- マイページの注文履歴は匿名ブラウザからDBを直接読む経路を使わず、署名済みLINEセッションで顧客IDを固定する専用APIから再表示する。
+- DB制約による注文作成の完全な冪等性は未完成。現在の画面ガードを越える別端末・別セッション間の重複防止は残件。
+
 ### 予約の空き枠
 
 - DBの日時表記が `Z`、`+00:00`、`+09:00` で異なっても同じ瞬間として重複判定する。
@@ -46,7 +53,7 @@
 
 | 検証 | 実施結果 | 範囲・限界 |
 | --- | --- | --- |
-| `node --test --test-concurrency=4 tests/*.test.mjs` | 500件成功、失敗0 | 新規47件を含む。ルート・画面ハンドラー・既存業務機能のローカル検証 |
+| `node --test tests/*.test.mjs` | 521件成功、失敗0 | 署名済み注文履歴API、送信ガード、ルート・画面ハンドラー・既存業務機能のローカル検証 |
 | TypeScript・変更TS/TSXのESLint・差分検査 | 成功 | 本番DB接続の成功を意味しない |
 | `next build --webpack` | 完了 | ダミー設定のみ。初回は既定のNodeヒープ上限で中断、6GiB指定で再実行して静的生成・最適化・ルート一覧まで完了 |
 | `verify-payment-pending-sql.mjs` | 成功 | PGlite上で既存決済migrationを実行。保留中の再課金防止、成功の冪等性、匿名実行拒否を検証 |
@@ -86,6 +93,10 @@ StarRevenue `madeo2222-coder/v0-star-revenue` の確認時点の最新SHAは `b5
 - `app/inbound-nail-tip-pay/[id]/PaymentPageClient.tsx`
 - `app/api/nail-tip-orders/[id]/status/route.ts`
 - `app/api/nail-tip-orders/[id]/shipping/route.ts`
+- `app/api/nail-tip-orders/route.ts`
+- `app/api/customer-app/nail-tip-orders/route.ts`
+- `app/customer-app/nail-tip-order/page.tsx`
+- `app/customer-app/mypage/page.tsx`
 - `lib/server/customerReservationAvailability.ts`
 - `app/api/sanmeigaku-diagnoses/route.ts`
 - `app/customer-app/sanmeigaku/page.tsx`

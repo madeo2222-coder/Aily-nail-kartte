@@ -27,7 +27,10 @@ export async function GET(request: NextRequest) {
         payment_due_at,
         payment_status,
         status,
-        created_at
+        created_at,
+        shipping_company,
+        tracking_number,
+        shipped_at
       `
       )
       .eq("customer_id", customer.id)
