@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
 
 type CustomerRelation =
   | {
@@ -197,48 +196,29 @@ export default function VisitsPageClient() {
     setIsPreviewOpen(false);
 
     try {
-      const { data, error } = await supabase
-        .from("visits")
-        .select(
-          `
-          id,
-          customer_id,
-          visit_date,
-          price,
-          payment_method,
-          memo,
-          next_visit_date,
-          next_proposal,
-          next_suggestion,
-          customers (
-            name
-          )
-        `
-        )
-        .order("visit_date", { ascending: false });
+      const response = await fetch("/api/visits/list-data", {
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        visits?: Visit[];
+        payments?: VisitPayment[];
+      };
 
-      if (error) throw error;
-
-      const nextVisits = (data as Visit[]) || [];
-      const nextPaymentMap: Record<string, VisitPayment[]> = {};
-      const visitIds = nextVisits.map((visit) => visit.id).filter(Boolean);
-
-      if (visitIds.length > 0) {
-        const { data: paymentData, error: paymentError } = await supabase
-          .from("visit_payments")
-          .select("id, visit_id, payment_method, amount, sort_order")
-          .in("visit_id", visitIds)
-          .order("sort_order", { ascending: true });
-
-        if (paymentError) throw paymentError;
-
-        ((paymentData || []) as VisitPayment[]).forEach((row) => {
-          if (!nextPaymentMap[row.visit_id]) {
-            nextPaymentMap[row.visit_id] = [];
-          }
-          nextPaymentMap[row.visit_id].push(row);
-        });
+      if (!response.ok || !result.ok) {
+        throw new Error(result.error || "施術実績を取得できませんでした。");
       }
+
+      const nextVisits = result.visits || [];
+      const nextPaymentMap: Record<string, VisitPayment[]> = {};
+
+      (result.payments || []).forEach((row) => {
+        if (!nextPaymentMap[row.visit_id]) {
+          nextPaymentMap[row.visit_id] = [];
+        }
+        nextPaymentMap[row.visit_id].push(row);
+      });
 
       if (requestVersion !== visitsRequestVersionRef.current) return;
 

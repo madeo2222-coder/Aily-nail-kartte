@@ -29,12 +29,12 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failingTable = "", rejection = false, empty = false } = {}) {
+async function mount({ rejection = false, failure = false, empty = false } = {}) {
   const states = [];
+  const requests = [];
   let cursor = 0;
   let effect;
-  let activeFailure = failingTable;
-  const queries = [];
+  let activeFailure = failure;
 
   const hooks = {
     useState(initial) {
@@ -76,17 +76,6 @@ async function mount({ failingTable = "", rejection = false, empty = false } = {
     sort_order: 1,
   }];
 
-  function response(table) {
-    if (activeFailure === table) {
-      if (rejection) throw new Error(`${table} offline`);
-      return { data: null, error: { message: `${table} failed` } };
-    }
-    return {
-      data: table === "visits" ? (empty ? [] : visits) : payments,
-      error: null,
-    };
-  }
-
   const exports = {};
   vm.runInNewContext(compiled, {
     exports,
@@ -107,33 +96,30 @@ async function mount({ failingTable = "", rejection = false, empty = false } = {
       createElement: () => ({ click() {} }),
     },
     window: { print() {} },
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      if (activeFailure && rejection) throw new Error("offline");
+      if (activeFailure) {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ ok: false, error: "read failed" }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          visits: empty ? [] : visits,
+          payments: empty ? [] : payments,
+        }),
+      };
+    },
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
-      if (name === "@/lib/supabase") {
-        return {
-          supabase: {
-            from(table) {
-              assert.ok(table === "visits" || table === "visit_payments");
-              const query = { table, selected: "", ids: [] };
-              queries.push(query);
-              const chain = {
-                select(value) { query.selected = value; return chain; },
-                in(column, values) {
-                  assert.equal(column, "visit_id");
-                  query.ids = values;
-                  return chain;
-                },
-                order() {
-                  return Promise.resolve().then(() => response(table));
-                },
-              };
-              return chain;
-            },
-          },
-        };
-      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -154,7 +140,7 @@ async function mount({ failingTable = "", rejection = false, empty = false } = {
 
   return {
     html,
-    queries,
+    requests,
     tree,
     async retry() {
       const button = findNode(
@@ -162,7 +148,7 @@ async function mount({ failingTable = "", rejection = false, empty = false } = {
         node => node.type === "button" && node.props.children === "再試行"
       );
       assert.ok(button, "retry button exists");
-      activeFailure = "";
+      activeFailure = false;
       const promise = button.props.onClick();
       assert.match(html(), /読み込み中/);
       await promise;
@@ -171,40 +157,31 @@ async function mount({ failingTable = "", rejection = false, empty = false } = {
 }
 
 for (const rejection of [false, true]) {
-  test(`visits report blocks output after visits ${rejection ? "rejection" : "query error"}`, async () => {
-    const page = await mount({ failingTable: "visits", rejection });
+  test(`visits report blocks incomplete API data after ${rejection ? "rejection" : "error response"}`, async () => {
+    const page = await mount({ failure: true, rejection });
     assert.match(page.html(), /role="alert"/);
     assert.match(page.html(), /施術実績を取得できませんでした/);
     assert.doesNotMatch(
       page.html(),
       /施術件数|売上合計|来店履歴がありません|売上明細CSV|PDFプレビュー|来店履歴を追加/
     );
-    assert.equal(page.queries.filter(query => query.table === "visit_payments").length, 0);
+    assert.equal(page.requests.length, 1);
   });
 }
 
-for (const rejection of [false, true]) {
-  test(`visits report blocks partial data after payments ${rejection ? "rejection" : "query error"}`, async () => {
-    const page = await mount({ failingTable: "visit_payments", rejection });
-    assert.match(page.html(), /role="alert"/);
-    assert.doesNotMatch(page.html(), /顧客A|12,000|売上明細CSV|PDFプレビュー/);
-  });
-}
-
-test("visits report retries both authoritative sources", async () => {
-  const page = await mount({ failingTable: "visit_payments" });
+test("visits report retries the authenticated API", async () => {
+  const page = await mount({ failure: true });
   await page.retry();
   assert.doesNotMatch(page.html(), /role="alert"|来店履歴がありません/);
   assert.match(page.html(), /顧客A|12,000|売上明細CSV|PDFプレビュー/);
-  assert.equal(page.queries.filter(query => query.table === "visits").length, 2);
-  assert.equal(page.queries.filter(query => query.table === "visit_payments").length, 2);
+  assert.equal(page.requests.length, 2);
 });
 
 test("visits report preserves a successful empty result", async () => {
   const page = await mount({ empty: true });
   assert.doesNotMatch(page.html(), /role="alert"/);
   assert.match(page.html(), /施術件数|売上合計|来店履歴がありません/);
-  assert.equal(page.queries.filter(query => query.table === "visit_payments").length, 0);
+  assert.equal(page.requests.length, 1);
 });
 
 test("visits report renders complete visit and payment data", async () => {
@@ -213,5 +190,8 @@ test("visits report renders complete visit and payment data", async () => {
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /カード/);
   assert.match(page.html(), /12,000/);
-  assert.deepEqual(page.queries.at(-1).ids, ["visit-1"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(page.requests)), [{
+    url: "/api/visits/list-data",
+    options: { cache: "no-store" },
+  }]);
 });
