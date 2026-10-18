@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "@/lib/supabase";
 
 type Customer = {
   id: string;
@@ -45,27 +44,28 @@ export default function CustomersPageClient() {
     setVisits([]);
 
     try {
-      const [customersResult, visitsResult] = await Promise.all([
-        supabase
-          .from("customers")
-          .select("id, name, name_kana, allergy")
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("visits")
-          .select("customer_id, next_visit_date, next_proposal, visit_date")
-          .order("visit_date", { ascending: false }),
-      ]);
+      const response = await fetch("/api/customers/list-data", {
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        customers?: Customer[];
+        visits?: Visit[];
+      };
 
       if (version !== requestVersion.current) return;
 
-      if (customersResult.error || visitsResult.error) {
-        console.error("顧客一覧取得エラー:", customersResult.error || visitsResult.error);
-        setLoadError("顧客一覧を取得できませんでした。通信状態を確認して再試行してください。");
-        return;
+      if (
+        !response.ok ||
+        !result.ok ||
+        !Array.isArray(result.customers) ||
+        !Array.isArray(result.visits)
+      ) {
+        throw new Error("Customer list response is invalid");
       }
 
-      setCustomers((customersResult.data || []) as Customer[]);
-      setVisits((visitsResult.data || []) as Visit[]);
+      setCustomers(result.customers);
+      setVisits(result.visits);
     } catch (error) {
       if (version !== requestVersion.current) return;
       console.error("顧客一覧取得エラー:", error);

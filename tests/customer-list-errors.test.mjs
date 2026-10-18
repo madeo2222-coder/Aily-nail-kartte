@@ -31,7 +31,7 @@ function findNode(node, predicate) {
 
 async function mount({ failureTable = "", rejection = false, empty = false } = {}) {
   const states = [];
-  const queries = [];
+  const requests = [];
   let cursor = 0;
   let effect;
   let shouldFail = Boolean(failureTable);
@@ -54,29 +54,6 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     useEffect: fn => { effect = fn; },
   };
 
-  function response(table) {
-    if (shouldFail && table === failureTable) {
-      if (rejection) throw new Error("offline");
-      return { data: null, error: { message: "read failed" } };
-    }
-    if (empty) return { data: [], error: null };
-    if (table === "customers") {
-      return {
-        data: [{ id: "customer-1", name: "顧客A", name_kana: "コキャクエー", allergy: "金属" }],
-        error: null,
-      };
-    }
-    return {
-      data: [{
-        customer_id: "customer-1",
-        next_visit_date: "2026-10-10",
-        next_proposal: "秋ネイル",
-        visit_date: "2026-09-20",
-      }],
-      error: null,
-    };
-  }
-
   const exports = {};
   vm.runInNewContext(compiled, {
     exports,
@@ -84,24 +61,40 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     Set,
     Promise,
     console: { error() {} },
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      if (shouldFail && rejection) throw new Error("offline");
+      if (shouldFail) {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ ok: false, error: `${failureTable} read failed` }),
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          customers: empty
+            ? []
+            : [{ id: "customer-1", name: "顧客A", name_kana: "コキャクエー", allergy: "金属" }],
+          visits: empty
+            ? []
+            : [{
+                customer_id: "customer-1",
+                next_visit_date: "2026-10-10",
+                next_proposal: "秋ネイル",
+                visit_date: "2026-09-20",
+              }],
+        }),
+      };
+    },
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
-      if (name === "@/lib/supabase") return { supabase: {
-        from(table) {
-          const query = { table };
-          queries.push(query);
-          const chain = {
-            select(columns) { query.columns = columns; return chain; },
-            order(column, options) { query.order = [column, options]; return chain; },
-            then(resolve, reject) {
-              return Promise.resolve().then(() => response(table)).then(resolve, reject);
-            },
-          };
-          return chain;
-        },
-      } };
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -113,7 +106,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
   await setImmediate();
 
   return {
-    queries,
+    requests,
     html,
     async retry() {
       const button = findNode(tree(), node => node.type === "button" && node.props.children === "再試行");
@@ -150,7 +143,7 @@ test("customer list preserves an authoritative empty result", async () => {
   assert.match(page.html(), /表示件数 0件/);
   assert.match(page.html(), /条件に合うお客様はいません/);
   assert.match(page.html(), /顧客を追加/);
-  assert.equal(page.queries.length, 2);
+  assert.equal(page.requests.length, 1);
 });
 
 test("customer list renders complete customer and visit data", async () => {
@@ -160,5 +153,8 @@ test("customer list renders complete customer and visit data", async () => {
   assert.match(page.html(), /金属/);
   assert.match(page.html(), /2026\/10\/10/);
   assert.match(page.html(), /秋ネイル/);
-  assert.equal(page.queries.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(page.requests)), [{
+    url: "/api/customers/list-data",
+    options: { cache: "no-store" },
+  }]);
 });
