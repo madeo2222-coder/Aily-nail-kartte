@@ -32,6 +32,14 @@ const CANCELLATION_REASONS: Record<CancellationReason, string> = {
 };
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
+const CANCELLED_STATUSES = new Set([
+  "キャンセル",
+  "cancelled",
+  "canceled",
+  "cancel",
+  "取消",
+  "取り消し",
+]);
 
 function isCancellationReason(value: string): value is CancellationReason {
   return Object.prototype.hasOwnProperty.call(CANCELLATION_REASONS, value);
@@ -97,7 +105,7 @@ function getSupabaseAdmin() {
 }
 
 function isCancelledStatus(status: string | null) {
-  return status === "キャンセル" || status === "cancelled";
+  return CANCELLED_STATUSES.has((status ?? "").trim().toLowerCase());
 }
 
 function formatReservationDate(value: string | null) {
