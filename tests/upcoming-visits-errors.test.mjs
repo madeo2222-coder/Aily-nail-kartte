@@ -37,7 +37,7 @@ function findNode(node, predicate) {
 
 async function mount({ failureTable = "", rejection = false, empty = false } = {}) {
   const states = [];
-  const queries = [];
+  const requests = [];
   let cursor = 0;
   let effect;
   let shouldFail = Boolean(failureTable);
@@ -59,30 +59,6 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     useEffect: fn => { effect = fn; },
   };
 
-  function response(table) {
-    if (shouldFail && table === failureTable) {
-      if (rejection) throw new Error("offline");
-      return { data: null, error: { message: "read failed" } };
-    }
-    if (empty) return { data: [], error: null };
-    if (table === "visits") {
-      return {
-        data: [{
-          id: "visit-1",
-          customer_id: "customer-1",
-          visit_date: "2026-09-20",
-          next_visit_date: "2026-09-30",
-          next_suggestion: "秋ネイル",
-        }],
-        error: null,
-      };
-    }
-    return {
-      data: [{ id: "customer-1", name: "顧客A", phone: "090-0000-0000" }],
-      error: null,
-    };
-  }
-
   const exports = {};
   vm.runInNewContext(compiled, {
     exports,
@@ -91,26 +67,37 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
     Set,
     Promise,
     console: { error() {} },
+    fetch: async (url, options) => {
+      requests.push({ url, options });
+      if (shouldFail && rejection) throw new Error("offline");
+      if (shouldFail) {
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({ ok: false, error: "read failed" }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          items: empty ? [] : [{
+            id: "visit-1",
+            customer_id: "customer-1",
+            customer_name: "顧客A",
+            phone: "090-0000-0000",
+            last_visit_date: "2026-09-20",
+            next_visit_date: "2026-09-30",
+            next_suggestion: "秋ネイル",
+          }],
+        }),
+      };
+    },
     require(name) {
       if (name === "react") return hooks;
       if (name === "next/link") return { default: "a" };
       if (name === "react/jsx-runtime") return require(name);
-      if (name === "@/lib/supabase") return { supabase: {
-        from(table) {
-          const query = { table, filters: [] };
-          queries.push(query);
-          const chain = {
-            select() { return chain; },
-            not(column, operator, value) { query.filters.push(["not", column, operator, value]); return chain; },
-            order(column, options) { query.order = [column, options]; return chain; },
-            in(column, value) { query.filters.push(["in", column, value]); return chain; },
-            then(resolve, reject) {
-              return Promise.resolve().then(() => response(table)).then(resolve, reject);
-            },
-          };
-          return chain;
-        },
-      } };
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -122,7 +109,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
   await setImmediate();
 
   return {
-    queries,
+    requests,
     html,
     async retry() {
       const button = findNode(tree(), node => node.type === "button" && node.props.children === "再試行");
@@ -153,7 +140,7 @@ test("upcoming visits preserves a successful empty result", async () => {
   const page = await mount({ empty: true });
   assert.doesNotMatch(page.html(), /role="alert"/);
   assert.match(page.html(), /対象の次回来店予定はありません/);
-  assert.equal(page.queries.length, 1);
+  assert.equal(page.requests.length, 1);
 });
 
 test("upcoming visits renders complete customer data after successful reads", async () => {
@@ -161,5 +148,8 @@ test("upcoming visits renders complete customer data after successful reads", as
   assert.doesNotMatch(page.html(), /role="alert"|顧客名：不明/);
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /090-0000-0000/);
-  assert.equal(page.queries.length, 2);
+  assert.deepEqual(JSON.parse(JSON.stringify(page.requests)), [{
+    url: "/api/visits/upcoming-data",
+    options: { cache: "no-store" },
+  }]);
 });

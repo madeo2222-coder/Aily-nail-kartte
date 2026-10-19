@@ -2,21 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
-
-type VisitRow = {
-  id: string;
-  customer_id: string;
-  visit_date?: string | null;
-  next_visit_date?: string | null;
-  next_suggestion?: string | null;
-};
-
-type CustomerRow = {
-  id: string;
-  name: string;
-  phone?: string | null;
-};
 
 type UpcomingVisit = {
   id: string;
@@ -67,71 +52,27 @@ export default function UpcomingVisitsPage() {
       setMessage("");
       setItems([]);
 
-      const { data: visitsData, error: visitsError } = await supabase
-        .from("visits")
-        .select("id, customer_id, visit_date, next_visit_date, next_suggestion")
-        .not("next_visit_date", "is", null)
-        .order("next_visit_date", { ascending: true });
+      const response = await fetch("/api/visits/upcoming-data", {
+        cache: "no-store",
+      });
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        items?: UpcomingVisit[];
+      };
 
       if (requestId !== requestIdRef.current) return;
 
-      if (visitsError) {
-        console.error("visits取得エラー:", visitsError);
-        setMessage("来店予定を取得できませんでした。時間をおいて再試行してください。");
+      if (!response.ok || !result.ok) {
+        setMessage(
+          result.error ||
+            "来店予定を取得できませんでした。時間をおいて再試行してください。"
+        );
         return;
       }
 
-      const safeVisits: VisitRow[] = (visitsData || []).map((v: VisitRow) => ({
-        id: v.id,
-        customer_id: v.customer_id,
-        visit_date: v.visit_date ?? null,
-        next_visit_date: v.next_visit_date ?? null,
-        next_suggestion: v.next_suggestion ?? null,
-      }));
-
-      const customerIds = Array.from(
-        new Set(safeVisits.map((v) => v.customer_id).filter(Boolean))
-      );
-
-      let customerMap = new Map<string, CustomerRow>();
-
-      if (customerIds.length > 0) {
-        const { data: customersData, error: customersError } = await supabase
-          .from("customers")
-          .select("id, name, phone")
-          .in("id", customerIds);
-
-        if (requestId !== requestIdRef.current) return;
-
-        if (customersError) {
-          console.error("customers取得エラー:", customersError);
-          setMessage("顧客情報を取得できませんでした。時間をおいて再試行してください。");
-          return;
-        }
-
-        customerMap = new Map(
-          ((customersData || []) as CustomerRow[]).map((c) => [c.id, c])
-        );
-      }
-
-      const merged: UpcomingVisit[] = safeVisits
-        .filter((v) => v.next_visit_date)
-        .map((v) => {
-          const customer = customerMap.get(v.customer_id);
-
-          return {
-            id: v.id,
-            customer_id: v.customer_id,
-            customer_name: customer?.name || "不明",
-            phone: customer?.phone || null,
-            last_visit_date: v.visit_date || null,
-            next_visit_date: v.next_visit_date as string,
-            next_suggestion: v.next_suggestion || null,
-          };
-        });
-
       if (requestId === requestIdRef.current) {
-        setItems(merged);
+        setItems(result.items || []);
       }
     } catch (err) {
       console.error("予期しないエラー:", err);
