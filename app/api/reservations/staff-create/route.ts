@@ -6,6 +6,7 @@ import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 export const dynamic = "force-dynamic";
 
 const NORMAL_STATUSES = new Set(["予約", "来店", "完了", "キャンセル"]);
+const ACTIVE_RESERVATION_STATUSES = new Set(["予約", "confirmed", "予約確定"]);
 const CANCELLED_STATUSES = new Set([
   "キャンセル",
   "cancelled",
@@ -206,6 +207,17 @@ export async function POST(request: NextRequest) {
     return errorResponse("予約ステータスを確認してください。", 400);
   }
 
+  const storedStatus = mode === "external" ? "予約確定" : requestedStatus;
+  if (
+    ACTIVE_RESERVATION_STATUSES.has(storedStatus) &&
+    new Date(startAt).getTime() <= Date.now()
+  ) {
+    return errorResponse(
+      "開始時刻を過ぎた予約は登録できません。日時を確認してください。",
+      409,
+    );
+  }
+
   try {
     const supabase = getSupabaseAdmin();
     const staffResult = await supabase
@@ -285,7 +297,7 @@ export async function POST(request: NextRequest) {
       menu,
       start_at: new Date(startAt).toISOString(),
       end_at: new Date(endAt).toISOString(),
-      status: mode === "external" ? "予約確定" : requestedStatus,
+      status: storedStatus,
       memo: memo || null,
     };
     const insertResult = await supabase

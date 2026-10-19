@@ -29,8 +29,8 @@ const reservation = {
   customer_id: CUSTOMER_ID,
   staff_id: STAFF_ID,
   menu: "ワンカラー",
-  start_at: "2026-10-19T01:00:00.000Z",
-  end_at: "2026-10-19T02:30:00.000Z",
+  start_at: "2099-10-19T01:00:00.000Z",
+  end_at: "2099-10-19T02:30:00.000Z",
   status: "予約",
   memo: "確認メモ",
 };
@@ -242,8 +242,8 @@ function patchRequest(overrides = {}) {
         customerId: CUSTOMER_ID,
         staffId: STAFF_ID,
         menu: "ワンカラー",
-        startAt: "2026-10-19T01:00:00.000Z",
-        endAt: "2026-10-19T02:30:00.000Z",
+        startAt: "2099-10-19T01:00:00.000Z",
+        endAt: "2099-10-19T02:30:00.000Z",
         status: "来店",
         memo: "更新メモ",
         ...overrides,
@@ -410,6 +410,52 @@ test("staff edit cannot bypass the confirmation workflow", async () => {
     runtime.calls.some((call) => call.operation === "update"),
     false,
   );
+});
+
+test("staff edit rejects moving an active reservation into elapsed time", async () => {
+  const runtime = executeRoute({ authentication: principal() });
+  const response = await runtime.exports.PATCH(
+    patchRequest({
+      startAt: "2020-10-19T01:00:00.000Z",
+      endAt: "2020-10-19T02:30:00.000Z",
+      status: "予約",
+    }),
+    context(),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /開始時刻を過ぎた日時/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
+test("staff edit preserves non-time corrections on an existing elapsed reservation", async () => {
+  const elapsedReservation = {
+    ...reservation,
+    start_at: "2020-10-19T01:00:00.000Z",
+    end_at: "2020-10-19T02:30:00.000Z",
+    status: "予約",
+  };
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: { reservationSingle: { data: elapsedReservation, error: null } },
+  });
+  const response = await runtime.exports.PATCH(
+    patchRequest({
+      startAt: elapsedReservation.start_at,
+      endAt: elapsedReservation.end_at,
+      status: "予約",
+      memo: "過去予約のメモ補正",
+    }),
+    context(),
+  );
+
+  assert.equal(response.status, 200);
+  const update = runtime.calls.find((call) => call.operation === "update");
+  assert.equal(update.value.memo, "過去予約のメモ補正");
 });
 
 test("staff delete scopes the lookup and delete to the authenticated salon", async () => {

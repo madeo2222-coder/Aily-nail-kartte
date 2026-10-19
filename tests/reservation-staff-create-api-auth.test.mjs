@@ -211,8 +211,8 @@ function postRequest(overrides = {}) {
         customerId: CUSTOMER_ID,
         staffId: STAFF_ID,
         menu: "ワンカラー",
-        startAt: "2026-10-19T01:00:00.000Z",
-        endAt: "2026-10-19T02:30:00.000Z",
+        startAt: "2099-10-19T01:00:00.000Z",
+        endAt: "2099-10-19T02:30:00.000Z",
         status: "予約",
         memo: "確認メモ",
         ...overrides,
@@ -348,8 +348,8 @@ test("staff reservation creation validates ownership, both calendars, and insert
       customer_id: CUSTOMER_ID,
       staff_id: STAFF_ID,
       menu: "ワンカラー",
-      start_at: "2026-10-19T01:00:00.000Z",
-      end_at: "2026-10-19T02:30:00.000Z",
+      start_at: "2099-10-19T01:00:00.000Z",
+      end_at: "2099-10-19T02:30:00.000Z",
       status: "予約",
       memo: "確認メモ",
     },
@@ -375,6 +375,38 @@ test("staff reservation creation refuses a matching external-calendar block", as
     runtime.calls.some((call) => call.operation === "insert"),
     false,
   );
+});
+
+test("staff reservation creation rejects an elapsed active reservation before database access", async () => {
+  const runtime = executeRoute({ authentication: principal() });
+  const response = await runtime.exports.POST(
+    postRequest({
+      startAt: "2020-10-19T01:00:00.000Z",
+      endAt: "2020-10-19T02:30:00.000Z",
+      status: "予約",
+    }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /開始時刻を過ぎた予約/);
+  assert.equal(runtime.clientCreated, false);
+  assert.equal(runtime.calls.length, 0);
+});
+
+test("staff reservation creation preserves completed-history backfill", async () => {
+  const runtime = executeRoute({ authentication: principal() });
+  const response = await runtime.exports.POST(
+    postRequest({
+      startAt: "2020-10-19T01:00:00.000Z",
+      endAt: "2020-10-19T02:30:00.000Z",
+      status: "完了",
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  const insert = runtime.calls.find((call) => call.operation === "insert");
+  assert.equal(insert.insert[0].status, "完了");
 });
 
 test("signed shared login may create a validated reservation for the selected salon", async () => {

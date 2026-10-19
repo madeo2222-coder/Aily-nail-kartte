@@ -20,6 +20,7 @@ const CANCELLED_STATUSES = new Set([
   "declined",
 ]);
 const CONFIRMED_STATUSES = new Set(["confirmed", "予約確定"]);
+const ACTIVE_RESERVATION_STATUSES = new Set(["予約", "confirmed", "予約確定"]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -262,6 +263,24 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (reservationResult.error) return internalErrorResponse();
     if (!reservationResult.data) {
       return errorResponse("予約が見つかりません。", 404);
+    }
+
+    const nextStartTime = new Date(startAt).getTime();
+    const currentStartTime = new Date(
+      reservationResult.data.start_at || "",
+    ).getTime();
+    const activatesElapsedTime =
+      ACTIVE_RESERVATION_STATUSES.has(status) &&
+      nextStartTime <= Date.now() &&
+      (!ACTIVE_RESERVATION_STATUSES.has(
+        reservationResult.data.status || "",
+      ) || currentStartTime !== nextStartTime);
+
+    if (activatesElapsedTime) {
+      return errorResponse(
+        "開始時刻を過ぎた日時へ予約を変更できません。日時を確認してください。",
+        409,
+      );
     }
 
     if (
