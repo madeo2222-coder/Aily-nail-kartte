@@ -2,6 +2,7 @@ import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   appendExternalCancellationMemo,
+  buildManualReservationLookupWindow,
   buildExternalCustomerId,
   buildExternalReservationId,
   findExternalReservationCandidate,
@@ -558,11 +559,13 @@ async function findDelayedManualEntry(
   context: SyncContext,
   customerId: string | null = null
 ) {
+  const lookupWindow = buildManualReservationLookupWindow(parsed.startAt);
   const { data, error } = await context.supabase
     .from("reservations")
     .select("id, customer_id, staff_id, menu, memo, status")
     .eq("salon_id", context.salonId)
-    .eq("start_at", parsed.startAt);
+    .gte("start_at", lookupWindow.from)
+    .lte("start_at", lookupWindow.to);
 
   if (error) throw new Error(error.message);
 

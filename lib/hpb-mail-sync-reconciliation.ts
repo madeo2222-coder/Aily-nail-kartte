@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 export type MailSyncSource = "hpb" | "minimo";
 
+export const MANUAL_RESERVATION_TIME_TOLERANCE_MINUTES = 5;
+
 export type ManualReservationCandidate = {
   id: string;
   customer_id: string | null;
@@ -14,6 +16,26 @@ export type ManualReservationCandidate = {
 type ExternalReservationCandidate = {
   memo: string | null;
 };
+
+export function buildManualReservationLookupWindow(startAt: string) {
+  const parsedStartAt = new Date(startAt);
+
+  if (!Number.isFinite(parsedStartAt.getTime())) {
+    throw new Error("外部予約の開始日時を照合できませんでした。");
+  }
+
+  const toleranceMilliseconds =
+    MANUAL_RESERVATION_TIME_TOLERANCE_MINUTES * 60 * 1000;
+
+  return {
+    from: new Date(
+      parsedStartAt.getTime() - toleranceMilliseconds
+    ).toISOString(),
+    to: new Date(
+      parsedStartAt.getTime() + toleranceMilliseconds
+    ).toISOString(),
+  };
+}
 
 const CANCELLED_STATUSES = new Set([
   "cancelled",

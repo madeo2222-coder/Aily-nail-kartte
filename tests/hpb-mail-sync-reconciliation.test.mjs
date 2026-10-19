@@ -47,6 +47,41 @@ test("external reservation and customer IDs are stable and namespaced", () => {
   );
 });
 
+test("manual reservation lookup tolerates a small staff-entry time difference", () => {
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        reconciliation.buildManualReservationLookupWindow(
+          "2026-10-19T01:00:00.000Z"
+        )
+      )
+    ),
+    {
+      from: "2026-10-19T00:55:00.000Z",
+      to: "2026-10-19T01:05:00.000Z",
+    }
+  );
+});
+
+test("manual reservation lookup rejects an invalid timestamp", () => {
+  assert.throws(
+    () => reconciliation.buildManualReservationLookupWindow("invalid"),
+    /開始日時を照合できません/
+  );
+});
+
+test("mail sync uses the bounded lookup window instead of exact timestamp equality", () => {
+  const source = readFileSync(
+    new URL("../lib/hpb-mail-sync.ts", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(source, /buildManualReservationLookupWindow\(parsed\.startAt\)/);
+  assert.match(source, /\.gte\("start_at", lookupWindow\.from\)/);
+  assert.match(source, /\.lte\("start_at", lookupWindow\.to\)/);
+  assert.doesNotMatch(source, /\.eq\("start_at", parsed\.startAt\)/);
+});
+
 test("external reservation lookup requires an exact memo line", () => {
   const result = reconciliation.findExternalReservationCandidate({
     source: "hpb",
