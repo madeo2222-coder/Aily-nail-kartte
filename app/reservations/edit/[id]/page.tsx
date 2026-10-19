@@ -570,13 +570,14 @@ export default function EditReservationPage() {
   }
 
   async function retryConfirmationLine() {
-    if (!reservationId) return;
+    if (!reservationId || confirmRequestPendingRef.current) return;
 
     const confirmed = window.confirm(
       "予約確定LINEを再試行しますか？送信済みの場合は重複送信しません。"
     );
     if (!confirmed) return;
 
+    confirmRequestPendingRef.current = true;
     setConfirming(true);
     setErrorMessage("");
     setSuccessMessage("");
@@ -610,12 +611,13 @@ export default function EditReservationPage() {
       console.error("予約確定LINE再試行エラー:", error);
       setErrorMessage("予約確定LINEの再試行中にエラーが発生しました。");
     } finally {
+      confirmRequestPendingRef.current = false;
       setConfirming(false);
     }
   }
 
   async function requestAlternativeTime() {
-    if (!reservationId) return;
+    if (!reservationId || confirmRequestPendingRef.current) return;
 
     const confirmed = window.confirm(
       "この日時では予約確定できないことをLINEで知らせ、別の希望日時の入力を依頼しますか？"
@@ -623,6 +625,7 @@ export default function EditReservationPage() {
 
     if (!confirmed) return;
 
+    confirmRequestPendingRef.current = true;
     setRequestingAlternative(true);
     setErrorMessage("");
     setSuccessMessage("");
@@ -650,6 +653,7 @@ export default function EditReservationPage() {
     } catch {
       setErrorMessage("別日時入力のLINE送信に失敗しました");
     } finally {
+      confirmRequestPendingRef.current = false;
       setRequestingAlternative(false);
     }
   }

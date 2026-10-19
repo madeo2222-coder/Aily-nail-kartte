@@ -468,3 +468,34 @@ test("migration protects the delivery ledger and customer updates close its stat
     /grant execute on function public\.cancel_customer_requested_reservation[\s\S]*to service_role/i
   );
 });
+
+test("staff UI synchronously locks confirmation and alternative LINE actions", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  for (const functionName of [
+    "retryConfirmationLine",
+    "requestAlternativeTime",
+  ]) {
+    const functionStart = pageSource.indexOf(`async function ${functionName}()`);
+    assert.notEqual(functionStart, -1, `${functionName} exists`);
+
+    const nextFunction = pageSource.indexOf("\n  async function ", functionStart + 1);
+    const functionSource = pageSource.slice(
+      functionStart,
+      nextFunction === -1 ? undefined : nextFunction
+    );
+
+    assert.match(
+      functionSource,
+      /if \(!reservationId \|\| confirmRequestPendingRef\.current\) return;/
+    );
+    assert.match(functionSource, /confirmRequestPendingRef\.current = true;/);
+    assert.match(
+      functionSource,
+      /finally \{[\s\S]*confirmRequestPendingRef\.current = false;/
+    );
+  }
+});
