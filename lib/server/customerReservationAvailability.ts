@@ -3,6 +3,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const OPENING_TIME = "10:00";
 const CLOSING_TIME = "19:00";
 const SLOT_INTERVAL_MINUTES = 30;
+const CANCELLED_STATUSES = new Set([
+  "キャンセル",
+  "cancelled",
+  "canceled",
+  "cancel",
+  "取消",
+  "取り消し",
+]);
 
 export type CustomerBookingStaff = {
   id: string;
@@ -22,7 +30,7 @@ export type CustomerAvailabilitySlot = {
 };
 
 function isCancelledStatus(status: string | null | undefined) {
-  return status === "キャンセル" || status === "cancelled";
+  return CANCELLED_STATUSES.has((status || "").trim().toLowerCase());
 }
 
 function buildUtcIsoFromJst(date: string, time: string) {

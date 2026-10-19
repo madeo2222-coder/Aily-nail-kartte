@@ -44,11 +44,21 @@ test("timestamps with Z, +00:00, and +09:00 block the same interval", async () =
     assert.ok(slots.includes("11:00"));
   }
 });
-test("unassigned blocks exclude all staff; cancelled reservations do not", async () => {
+test("unassigned blocks exclude all staff; every supported cancelled status does not", async () => {
   const api = load("2026-10-17T20:00:00Z");
   const interval = { staff_id: null, start_at: "2026-10-18T10:00:00+09:00", end_at: "2026-10-18T11:00:00+09:00" };
   assert.equal((await times(api, db({ blocks: [interval] })))[0], "11:00");
-  assert.equal((await times(api, db({ reservations: [{ ...interval, status: "cancelled" }] })))[0], "10:00");
+  for (const status of ["キャンセル", "cancelled", "canceled", "cancel", "取消", "取り消し", " CANCELLED "]) {
+    assert.equal(
+      (await times(api, db({ reservations: [{ ...interval, status }] })))[0],
+      "10:00",
+      status
+    );
+  }
+  assert.equal(
+    (await times(api, db({ reservations: [{ ...interval, status: "confirmed" }] })))[0],
+    "11:00"
+  );
 });
 test("invalid dates, leap-day rollovers and out-of-range dates are rejected", () => {
   const api = load("2026-02-20T00:00:00Z");
