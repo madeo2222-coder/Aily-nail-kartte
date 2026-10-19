@@ -222,6 +222,28 @@ test("returns a conflict when the final database check finds an overlap", async 
   assert.match(response.body.error, /別の予約またはブロック/);
 });
 
+test("rejects an elapsed reservation before the confirmation RPC", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      salon_id: "salon-1",
+      customer_id: "customer-1",
+      staff_id: "staff-1",
+      menu: "ジェル",
+      start_at: "2020-10-02T01:30:00.000Z",
+      end_at: "2020-10-02T03:00:00.000Z",
+      status: "requested",
+      memo: "",
+    },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.confirmed, false);
+  assert.match(response.body.error, /開始時刻を過ぎた予約/);
+  assert.equal(runtime.rpcCalls.length, 0);
+});
+
 test("does not request another LINE send for an already confirmed reservation", async () => {
   const runtime = loadRoute({
     rpcResult: [

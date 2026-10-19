@@ -203,6 +203,18 @@ export async function POST(
       );
     }
 
+    if (startDate.getTime() <= Date.now()) {
+      return NextResponse.json(
+        {
+          ok: false,
+          confirmed: false,
+          error:
+            "開始時刻を過ぎた予約は確定できません。別の日時を案内してください。",
+        },
+        { status: 409 }
+      );
+    }
+
     const { data, error } = await supabaseAdmin.rpc(
       "confirm_staff_reservation",
       {
