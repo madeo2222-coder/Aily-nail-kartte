@@ -38,6 +38,7 @@ async function mount({ mode = "success", preselectedCustomerId = "" } = {}) {
   const states = [];
   const effects = [];
   const queries = [];
+  const requests = [];
   let cursor = 0;
   let responseMode = mode;
 
@@ -86,6 +87,41 @@ async function mount({ mode = "success", preselectedCustomerId = "" } = {}) {
     },
     alert() {},
     console: { error() {} },
+    fetch(url, options) {
+      requests.push({ url, options });
+
+      return Promise.resolve()
+        .then(() => {
+          if (responseMode === "rejection") throw new Error("offline");
+
+          if (responseMode === "query-error") {
+            return {
+              ok: false,
+              status: 500,
+              json: async () => ({ ok: false, error: "read failed" }),
+            };
+          }
+
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              ok: true,
+              customers:
+                responseMode === "empty"
+                  ? []
+                  : [
+                      {
+                        id: "customer-1",
+                        name: "顧客A",
+                        phone: "090-0000-0000",
+                        salon_id: "salon-1",
+                      },
+                    ],
+            }),
+          };
+        });
+    },
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
@@ -107,48 +143,7 @@ async function mount({ mode = "success", preselectedCustomerId = "" } = {}) {
             from(table) {
               const query = { table };
               queries.push(query);
-              const chain = {
-                select(columns) {
-                  query.columns = columns;
-                  return chain;
-                },
-                order(column, options) {
-                  query.order = [column, options];
-                  return chain;
-                },
-                then(resolve, reject) {
-                  return Promise.resolve()
-                    .then(() => {
-                      if (responseMode === "rejection") {
-                        throw new Error("offline");
-                      }
-                      if (responseMode === "query-error") {
-                        return {
-                          data: null,
-                          error: { message: "read failed" },
-                        };
-                      }
-
-                      return {
-                        data:
-                          responseMode === "empty"
-                            ? []
-                            : [
-                                {
-                                  id: "customer-1",
-                                  name: "顧客A",
-                                  phone: "090-0000-0000",
-                                  salon_id: "salon-1",
-                                },
-                              ],
-                        error: null,
-                      };
-                    })
-                    .then(resolve, reject);
-                },
-              };
-
-              return chain;
+              return query;
             },
             storage: { from() {} },
             rpc() {},
@@ -183,6 +178,7 @@ async function mount({ mode = "success", preselectedCustomerId = "" } = {}) {
     html,
     initialHtml,
     queries,
+    requests,
     async retry() {
       const button = findNode(
         tree(),
@@ -225,7 +221,9 @@ test("new visit preserves an authoritative empty customer result", async () => {
   assert.match(page.html(), /登録可能な顧客がいません/);
   assert.match(page.html(), /顧客を追加/);
   assert.doesNotMatch(page.html(), />登録する<|写真を選択する|<form/);
-  assert.equal(page.queries.length, 1);
+  assert.equal(page.queries.length, 0);
+  assert.equal(page.requests[0].url, "/api/visits/registration-data");
+  assert.equal(page.requests[0].options.cache, "no-store");
 });
 
 test("new visit accepts only a preselected customer in the loaded master", async () => {

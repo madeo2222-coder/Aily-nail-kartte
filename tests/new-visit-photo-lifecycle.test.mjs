@@ -62,6 +62,21 @@ async function mount() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, {
     exports, console,
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        customers: [
+          {
+            id: "customer-1",
+            name: "顧客A",
+            phone: null,
+            salon_id: "salon-1",
+          },
+        ],
+      }),
+    }),
     URL: {
       createObjectURL() { const url = `blob:test-${++nextUrl}`; active.add(url); return url; },
       revokeObjectURL(url) { revoked.push(url); active.delete(url); },
@@ -75,15 +90,7 @@ async function mount() {
         useRouter: () => ({ push() { throw new Error("Unexpected navigation"); } }),
         useSearchParams: () => ({ get: () => null }),
       };
-      if (name === "@/lib/supabase") return { supabase: {
-        from(table) {
-          assert.equal(table, "customers");
-          return { select: () => ({ order: async () => ({
-            data: [{ id: "customer-1", name: "顧客A", phone: null, salon_id: "salon-1" }],
-            error: null,
-          }) }) };
-        },
-      } };
+      if (name === "@/lib/supabase") return { supabase: {} };
       if (name === "@/lib/visitPhotoStorage") return {
         VISIT_PHOTO_ACCEPT: "image/jpeg,image/png,image/webp",
         validateVisitPhotoMetadata(file) {

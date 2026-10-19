@@ -19,6 +19,11 @@ type Customer = {
   salon_id?: string | null;
 };
 
+type RegistrationDataResponse = {
+  ok: true;
+  customers: Customer[];
+};
+
 type PaymentLine = {
   id: string;
   payment_method: string;
@@ -100,6 +105,37 @@ function formatYen(value: number) {
   return amount < 0 ? `-¥${absoluteAmount}` : `¥${absoluteAmount}`;
 }
 
+function isCustomer(value: unknown): value is Customer {
+  if (typeof value !== "object" || value === null) return false;
+
+  const customer = value as Record<string, unknown>;
+
+  return (
+    typeof customer.id === "string" &&
+    typeof customer.name === "string" &&
+    (customer.phone === null || typeof customer.phone === "string") &&
+    (customer.salon_id === undefined ||
+      customer.salon_id === null ||
+      typeof customer.salon_id === "string")
+  );
+}
+
+function parseRegistrationData(value: unknown): RegistrationDataResponse | null {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("ok" in value) ||
+    value.ok !== true ||
+    !("customers" in value) ||
+    !Array.isArray(value.customers) ||
+    !value.customers.every(isCustomer)
+  ) {
+    return null;
+  }
+
+  return { ok: true, customers: value.customers };
+}
+
 export default function NewVisitPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -178,24 +214,25 @@ export default function NewVisitPageClient() {
     setCustomerId("");
 
     try {
-      const { data, error } = await supabase
-        .from("customers")
-        .select("id, name, phone, salon_id")
-        .order("name", { ascending: true });
+      const response = await fetch("/api/visits/registration-data", {
+        cache: "no-store",
+      });
+      const responseBody: unknown = await response.json().catch(() => null);
 
       if (customerRequestVersionRef.current !== requestVersion) {
         return;
       }
 
-      if (error) {
-        console.error("customers取得エラー:", error);
+      const registrationData = parseRegistrationData(responseBody);
+
+      if (!response.ok || !registrationData) {
         setCustomerLoadError(
           "顧客一覧を取得できませんでした。来店登録はまだ行われていません。"
         );
         return;
       }
 
-      const loadedCustomers = data || [];
+      const loadedCustomers = registrationData.customers;
       setCustomers(loadedCustomers);
       setCustomerId(
         loadedCustomers.some(
