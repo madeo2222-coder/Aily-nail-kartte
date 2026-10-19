@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type StaffRow = {
   id: string;
@@ -14,10 +15,6 @@ type ReservationRow = {
   start_at: string | null;
   end_at: string | null;
 };
-
-function isCancelledStatus(status: string | null) {
-  return status === "キャンセル" || status === "cancelled";
-}
 
 function normalizeDurationMinutes(value: unknown) {
   const minutes = Number(value);
@@ -260,7 +257,7 @@ export async function POST(request: Request) {
     }
 
     const overlaps = ((overlapData || []) as ReservationRow[]).filter(
-      (reservation) => !isCancelledStatus(reservation.status)
+      (reservation) => !isCancelledReservationStatus(reservation.status)
     );
 
     const busyStaffIds = new Set(

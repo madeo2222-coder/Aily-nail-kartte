@@ -11,6 +11,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(new URL("../lib/reservation-status.ts", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: reservationStatusExports, Set, String }
+);
 const source = readFileSync(new URL("../app/customers/[id]/page.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
@@ -51,6 +64,7 @@ async function loadPage({ reservations = [], reservationError = null, rejectRese
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
+      if (name === "@/lib/reservation-status") return reservationStatusExports;
       if (name === "@/lib/supabase") return { supabase };
       if (name === "next/link") return { default: "a" };
       if (name === "next/image") {

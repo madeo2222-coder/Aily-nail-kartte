@@ -10,6 +10,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(new URL("../lib/reservation-status.ts", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: reservationStatusExports, Set, String }
+);
 const source = readFileSync(
   new URL("../app/customer-app/reservations/[id]/page.tsx", import.meta.url),
   "utf8"
@@ -96,6 +109,7 @@ async function loadPage({
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
       if (name === "next/navigation") return { useParams: () => ({ id: reservationId }) };
+      if (name === "@/lib/reservation-status") return reservationStatusExports;
       throw new Error(`Unexpected import: ${name}`);
     },
     console,

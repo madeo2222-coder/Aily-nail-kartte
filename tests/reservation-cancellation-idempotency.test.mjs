@@ -16,6 +16,22 @@ const compiled = ts.transpileModule(source, {
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/reservation-status.ts", import.meta.url),
+      "utf8",
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText,
+  { exports: reservationStatusExports, Set, String },
+);
 
 class MockResponse {
   constructor(body, status = 200) {
@@ -114,6 +130,9 @@ function loadRoute(status) {
             },
           }),
         };
+      }
+      if (name === "@/lib/reservation-status") {
+        return reservationStatusExports;
       }
       return require(name);
     },

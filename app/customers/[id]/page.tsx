@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type Customer = {
   id: string;
@@ -232,7 +233,11 @@ function getReservationTime(reservation: Reservation) {
 }
 
 function isActiveReservation(status: string | null) {
-  return status !== "キャンセル" && status !== "cancelled" && status !== "完了" && status !== "completed";
+  return (
+    !isCancelledReservationStatus(status) &&
+    status !== "完了" &&
+    status !== "completed"
+  );
 }
 
 function getPointBenefitText(visitCount: number) {

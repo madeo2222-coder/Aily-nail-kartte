@@ -4,6 +4,23 @@ import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
 
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/reservation-status.ts", import.meta.url),
+      "utf8",
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText,
+  { exports: reservationStatusExports, Set, String },
+);
+
 function load(now = "2026-10-18T03:15:00Z") {
   class FixedDate extends Date {
     constructor(...args) { super(...(args.length ? args : [now])); }
@@ -12,7 +29,17 @@ function load(now = "2026-10-18T03:15:00Z") {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(readFileSync(new URL("../lib/server/customerReservationAvailability.ts", import.meta.url), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText, { exports, Date: FixedDate, Intl });
+  }).outputText, {
+    exports,
+    Date: FixedDate,
+    Intl,
+    require(name) {
+      if (name === "@/lib/reservation-status") {
+        return reservationStatusExports;
+      }
+      throw new Error(`Unexpected module: ${name}`);
+    },
+  });
   return exports;
 }
 function db({ reservations = [], blocks = [], error = false, filters = [] } = {}) {

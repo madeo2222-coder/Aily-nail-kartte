@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 export const dynamic = "force-dynamic";
 
@@ -32,14 +33,6 @@ const CANCELLATION_REASONS: Record<CancellationReason, string> = {
 };
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
-const CANCELLED_STATUSES = new Set([
-  "キャンセル",
-  "cancelled",
-  "canceled",
-  "cancel",
-  "取消",
-  "取り消し",
-]);
 
 function isCancellationReason(value: string): value is CancellationReason {
   return Object.prototype.hasOwnProperty.call(CANCELLATION_REASONS, value);
@@ -102,10 +95,6 @@ function getSupabaseAdmin() {
   return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
-}
-
-function isCancelledStatus(status: string | null) {
-  return CANCELLED_STATUSES.has((status ?? "").trim().toLowerCase());
 }
 
 function formatReservationDate(value: string | null) {
@@ -248,7 +237,7 @@ export async function POST(
       );
     }
 
-    if (isCancelledStatus(reservation.status)) {
+    if (isCancelledReservationStatus(reservation.status)) {
       return NextResponse.json({
         ok: true,
         cancelled: false,

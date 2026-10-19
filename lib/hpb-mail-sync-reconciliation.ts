@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
+
+export { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 export type MailSyncSource = "hpb" | "minimo";
 
@@ -37,15 +40,6 @@ export function buildManualReservationLookupWindow(startAt: string) {
   };
 }
 
-const CANCELLED_STATUSES = new Set([
-  "cancelled",
-  "canceled",
-  "cancel",
-  "キャンセル",
-  "取消",
-  "取り消し",
-]);
-
 function normalize(value: string | null | undefined) {
   return String(value || "")
     .normalize("NFKC")
@@ -67,12 +61,6 @@ function hasSourceMarker(source: MailSyncSource, value: string) {
 
 function hasExternalReservationKey(value: string) {
   return value.includes("hpb予約番号") || value.includes("ミニモ予約id");
-}
-
-export function isCancelledReservationStatus(
-  status: string | null | undefined
-) {
-  return CANCELLED_STATUSES.has(normalize(status));
 }
 
 export function appendExternalCancellationMemo({

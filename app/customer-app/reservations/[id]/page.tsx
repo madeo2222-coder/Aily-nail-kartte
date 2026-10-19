@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type ReservationDetail = {
   id: string;
@@ -141,7 +142,7 @@ function getStatusLabel(status: string) {
   if (status === "requested") return "予約申請中";
   if (status === "confirmed") return "予約確定";
   if (status === "completed") return "来店完了";
-  if (status === "cancelled" || status === "キャンセル") {
+  if (isCancelledReservationStatus(status)) {
     return "キャンセル";
   }
 
@@ -161,7 +162,7 @@ function getStatusClass(status: string) {
     return "bg-emerald-100 text-emerald-700";
   }
 
-  if (status === "cancelled" || status === "キャンセル") {
+  if (isCancelledReservationStatus(status)) {
     return "bg-slate-200 text-slate-600";
   }
 

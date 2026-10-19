@@ -17,7 +17,15 @@ function loadTypeScriptModule(path) {
   }).outputText;
   const exports = {};
 
-  vm.runInNewContext(compiled, { exports, require });
+  vm.runInNewContext(compiled, {
+    exports,
+    require(name) {
+      if (name === "@/lib/reservation-status") {
+        return loadTypeScriptModule("../lib/reservation-status.ts");
+      }
+      return require(name);
+    },
+  });
   return exports;
 }
 

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type ReservationRow = {
   id: string;
@@ -245,16 +246,12 @@ function formatMonthLabel(monthText: string) {
 }
 
 function normalizeStatus(status: string | null) {
+  if (isCancelledReservationStatus(status)) return "キャンセル";
   if (status === "requested") return "予約申請中";
   if (status === "confirmed") return "予約確定";
   if (status === "completed") return "完了";
-  if (status === "cancelled") return "キャンセル";
   if (status === "予約") return "予約受付";
   return status || "予約申請中";
-}
-
-function isCancelledStatus(status: string) {
-  return status === "キャンセル" || status === "cancelled";
 }
 
 function normalizeBriefText(value: string | null | undefined) {
@@ -412,7 +409,7 @@ function getSourceBadgeClass(sourceLabel: string) {
 }
 
 function getStatusColor(status: string, sourceLabel: string) {
-  if (isCancelledStatus(status)) {
+  if (isCancelledReservationStatus(status)) {
     return "border-zinc-300 bg-zinc-100 text-zinc-500 opacity-60";
   }
 
@@ -479,7 +476,12 @@ function buildTimeSlots() {
 function hasOverlap(a: CalendarReservation, b: CalendarReservation) {
   if (a.id === b.id) return false;
   if (a.staffId !== b.staffId) return false;
-  if (isCancelledStatus(a.status) || isCancelledStatus(b.status)) return false;
+  if (
+    isCancelledReservationStatus(a.status) ||
+    isCancelledReservationStatus(b.status)
+  ) {
+    return false;
+  }
 
   return a.startMinute < b.endMinute && b.startMinute < a.endMinute;
 }
@@ -829,7 +831,7 @@ export default function ReservationsCalendarPage() {
 
     staffFilteredReservations.forEach((reservation) => {
       if (!reservation.date) return;
-      if (isCancelledStatus(reservation.status)) return;
+      if (isCancelledReservationStatus(reservation.status)) return;
 
       map.set(reservation.date, (map.get(reservation.date) || 0) + 1);
     });
@@ -1362,12 +1364,12 @@ export default function ReservationsCalendarPage() {
                             <div className="mt-1 flex flex-wrap gap-1">
                               <span
                                 className={`rounded-full px-2 py-0.5 ${
-                                  isCancelledStatus(reservation.status)
+                                  isCancelledReservationStatus(reservation.status)
                                     ? "bg-zinc-700 text-white"
                                     : "bg-white/70"
                                 }`}
                               >
-                                {isCancelledStatus(reservation.status)
+                                {isCancelledReservationStatus(reservation.status)
                                   ? "キャンセル済み"
                                   : reservation.status}
                               </span>
@@ -1381,7 +1383,7 @@ export default function ReservationsCalendarPage() {
                               </span>
 
                               {!reservation.isExternalBlock &&
-                              !isCancelledStatus(reservation.status) ? (
+                              !isCancelledReservationStatus(reservation.status) ? (
                                 <span
                                   className={`rounded-full px-2 py-0.5 font-bold ${
                                     !reservation.customerId
@@ -1401,7 +1403,7 @@ export default function ReservationsCalendarPage() {
                             </div>
 
                             {!reservation.isExternalBlock &&
-                            !isCancelledStatus(reservation.status) &&
+                            !isCancelledReservationStatus(reservation.status) &&
                             (reservation.allergy || reservation.caution) ? (
                               <div className="mt-1 truncate rounded-lg bg-red-50/90 px-2 py-1 font-bold text-red-700">
                                 ⚠ {joinBriefParts([
@@ -1412,7 +1414,7 @@ export default function ReservationsCalendarPage() {
                             ) : null}
 
                             {!reservation.isExternalBlock &&
-                            !isCancelledStatus(reservation.status) &&
+                            !isCancelledReservationStatus(reservation.status) &&
                             reservation.previousMemo ? (
                               <div className="mt-1 truncate rounded-lg bg-white/70 px-2 py-1 text-slate-700">
                                 💬 前回: {reservation.previousMemo}
@@ -1420,7 +1422,7 @@ export default function ReservationsCalendarPage() {
                             ) : null}
 
                             {!reservation.isExternalBlock &&
-                            !isCancelledStatus(reservation.status) &&
+                            !isCancelledReservationStatus(reservation.status) &&
                             reservation.previousMenu ? (
                               <div className="mt-1 truncate rounded-lg bg-white/70 px-2 py-1 text-slate-700">
                                 💅 前回: {reservation.previousMenu}
@@ -1428,7 +1430,7 @@ export default function ReservationsCalendarPage() {
                             ) : null}
 
                             {!reservation.isExternalBlock &&
-                            !isCancelledStatus(reservation.status) &&
+                            !isCancelledReservationStatus(reservation.status) &&
                             reservation.nextProposal ? (
                               <div className="mt-1 truncate rounded-lg bg-amber-50/90 px-2 py-1 font-bold text-amber-800">
                                 ✨ 提案: {reservation.nextProposal}
@@ -1441,7 +1443,7 @@ export default function ReservationsCalendarPage() {
                             ? "ring-2 ring-rose-400"
                             : ""
                         } ${
-                          isCancelledStatus(reservation.status)
+                          isCancelledReservationStatus(reservation.status)
                             ? "line-through"
                             : ""
                         }`;

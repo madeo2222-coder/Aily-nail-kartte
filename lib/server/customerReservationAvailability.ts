@@ -1,16 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 const OPENING_TIME = "10:00";
 const CLOSING_TIME = "19:00";
 const SLOT_INTERVAL_MINUTES = 30;
-const CANCELLED_STATUSES = new Set([
-  "キャンセル",
-  "cancelled",
-  "canceled",
-  "cancel",
-  "取消",
-  "取り消し",
-]);
 
 export type CustomerBookingStaff = {
   id: string;
@@ -28,10 +21,6 @@ export type CustomerAvailabilitySlot = {
   time: string;
   staffIds: string[];
 };
-
-function isCancelledStatus(status: string | null | undefined) {
-  return CANCELLED_STATUSES.has((status || "").trim().toLowerCase());
-}
 
 function buildUtcIsoFromJst(date: string, time: string) {
   const value = new Date(`${date}T${time}:00+09:00`);
@@ -177,7 +166,7 @@ export async function getCustomerReservationAvailability({
     name: typeof staff.name === "string" ? staff.name : null,
   })) as CustomerBookingStaff[];
   const reservations = ((reservationResult.data || []) as BusyRow[]).filter(
-    (row) => !isCancelledStatus(row.status)
+    (row) => !isCancelledReservationStatus(row.status)
   );
   const blocks = (blockResult.data || []) as BusyRow[];
   // Validate before filtering, including rows for an unassigned/other staff.

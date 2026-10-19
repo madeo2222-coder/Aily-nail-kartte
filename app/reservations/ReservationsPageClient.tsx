@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ReservationReferencePhoto from "./ReservationReferencePhoto";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type ReservationRow = {
   id: string;
@@ -239,7 +240,7 @@ function getStatusBadgeClass(status: string) {
     return "bg-slate-100 text-slate-700";
   }
 
-  if (status === "キャンセル" || status === "cancelled") {
+  if (isCancelledReservationStatus(status)) {
     return "bg-rose-100 text-rose-700";
   }
 
@@ -268,10 +269,10 @@ function buildReservationTime(row: ReservationRow) {
 function normalizeStatus(row: ReservationRow) {
   const raw = pickString(row, ["status"], "予約");
 
+  if (isCancelledReservationStatus(raw)) return "キャンセル";
   if (raw === "requested") return "予約申請中";
   if (raw === "confirmed") return "予約確定";
   if (raw === "completed") return "完了";
-  if (raw === "cancelled") return "キャンセル";
   if (raw === "予約") return "予約受付";
 
   return raw;
@@ -370,7 +371,12 @@ function hasOverlap(a: NormalizedReservation, b: NormalizedReservation) {
   if (a.reservationDate !== b.reservationDate) return false;
   if (a.staffName !== b.staffName) return false;
   if (a.staffName === "未設定" || b.staffName === "未設定") return false;
-  if (a.status === "キャンセル" || b.status === "キャンセル") return false;
+  if (
+    isCancelledReservationStatus(a.status) ||
+    isCancelledReservationStatus(b.status)
+  ) {
+    return false;
+  }
 
   const [aHour, aMinute] = a.reservationTime.split(":").map(Number);
   const [bHour, bMinute] = b.reservationTime.split(":").map(Number);

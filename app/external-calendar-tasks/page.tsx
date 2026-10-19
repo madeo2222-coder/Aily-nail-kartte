@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type ReservationRow = {
   id: string;
@@ -122,10 +123,6 @@ function getDurationLabel(startAt: string | null, endAt: string | null) {
   return `${hour}時間${minute}分`;
 }
 
-function isCancelledStatus(status: string | null | undefined) {
-  return status === "キャンセル" || status === "cancelled";
-}
-
 function isExternalBlock(row: ReservationRow) {
   if (!row.customer_id) return true;
 
@@ -225,7 +222,7 @@ export default function ExternalCalendarTasksPage() {
         .filter((row) => {
           if (!row.customer_id) return false;
           if (!row.start_at) return false;
-          if (isCancelledStatus(row.status)) return false;
+          if (isCancelledReservationStatus(row.status)) return false;
           if (isExternalBlock(row)) return false;
 
           const normalized = normalizeSupabaseDateTime(row.start_at);

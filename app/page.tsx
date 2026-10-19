@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type Customer = {
   id: string;
@@ -177,12 +178,8 @@ function getReservationDate(reservation: Reservation) {
   );
 }
 
-function isCancelledReservation(status: string | null | undefined) {
-  return status === "キャンセル" || status === "cancelled";
-}
-
 function isActiveReservation(reservation: Reservation) {
-  return !isCancelledReservation(reservation.status);
+  return !isCancelledReservationStatus(reservation.status);
 }
 
 export default function HomePage() {

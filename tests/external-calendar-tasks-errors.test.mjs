@@ -8,6 +8,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(new URL("../lib/reservation-status.ts", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: reservationStatusExports, Set, String }
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/external-calendar-tasks/page.tsx", import.meta.url),
@@ -127,6 +140,7 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
       if (name === "react") return hooks;
       if (name === "next/link") return { default: "a" };
       if (name === "react/jsx-runtime") return require(name);
+      if (name === "@/lib/reservation-status") return reservationStatusExports;
       throw new Error(`Unexpected import: ${name}`);
     },
   });

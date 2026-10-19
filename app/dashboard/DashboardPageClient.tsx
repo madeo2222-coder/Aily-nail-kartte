@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import DailySalesSummary from "./DailySalesSummary";
 
 type VisitRow = {
@@ -222,10 +223,10 @@ function buildReservationTime(row: ReservationRow) {
 function normalizeStatus(row: ReservationRow) {
   const raw = pickString(row, ["status"], "予約");
 
+  if (isCancelledReservationStatus(raw)) return "キャンセル";
   if (raw === "requested") return "予約申請中";
   if (raw === "confirmed") return "予約確定";
   if (raw === "completed") return "完了";
-  if (raw === "cancelled") return "キャンセル";
   if (raw === "予約") return "予約受付";
 
   return raw;
@@ -264,7 +265,7 @@ function getStatusBadgeClass(status: string) {
     return "bg-slate-100 text-slate-700";
   }
 
-  if (status === "キャンセル" || status === "cancelled") {
+  if (isCancelledReservationStatus(status)) {
     return "bg-rose-100 text-rose-700";
   }
 
@@ -291,7 +292,7 @@ function getStatusOrder(status: string) {
   if (status === "来店予定" || status === "来店") return 3;
   if (status === "完了待ち") return 4;
   if (status === "完了" || status === "completed") return 5;
-  if (status === "キャンセル" || status === "cancelled") return 6;
+  if (isCancelledReservationStatus(status)) return 6;
 
   return 9;
 }

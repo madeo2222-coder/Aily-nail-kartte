@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ReservationReferencePhoto from "../../ReservationReferencePhoto";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
 type Salon = {
   id: string;
@@ -164,11 +165,11 @@ function buildDateTime(targetDate: string, targetTime: string) {
 function normalizeStatus(value: string | null): ReservationStatus {
   if (!value) return "予約";
 
+  if (isCancelledReservationStatus(value)) return "キャンセル";
   if (value === "pending") return "予約";
   if (value === "requested") return "予約";
   if (value === "confirmed") return "confirmed";
   if (value === "completed") return "完了";
-  if (value === "cancelled") return "キャンセル";
 
   if (value === "予約受付") return "予約";
   if (value === "予約申請中") return "予約";
@@ -192,10 +193,6 @@ function getStatusLabel(value: ReservationStatus) {
   if (value === "confirmed") return "予約確定";
   if (value === "予約") return "予約申請中";
   return value;
-}
-
-function isCancelledStatus(value: string | null | undefined) {
-  return value === "キャンセル" || value === "cancelled";
 }
 
 function extractLineValue(memo: string, label: string) {
@@ -419,7 +416,9 @@ export default function EditReservationPage() {
     const normalizedStatus = normalizeStatus(reservation.status);
     setStatus(normalizedStatus);
     setWasInitiallyConfirmed(normalizedStatus === "confirmed");
-    setWasInitiallyCancelled(isCancelledStatus(reservation.status));
+    setWasInitiallyCancelled(
+      isCancelledReservationStatus(reservation.status)
+    );
     setGalleryReference(nextGalleryReference);
     setMemo(removeGalleryReferenceLines(rawMemo));
 
@@ -721,7 +720,7 @@ export default function EditReservationPage() {
     }
 
     if (
-      isCancelledStatus(status) &&
+      isCancelledReservationStatus(status) &&
       !isExternalBlock &&
       !wasInitiallyCancelled
     ) {

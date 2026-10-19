@@ -8,6 +8,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(new URL("../lib/reservation-status.ts", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: reservationStatusExports, Set, String }
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -147,6 +160,7 @@ async function mount({ failureMode = "", empty = false } = {}) {
       if (name === "./ReservationReferencePhoto") {
         return { default: () => null };
       }
+      if (name === "@/lib/reservation-status") return reservationStatusExports;
       throw new Error(`Unexpected import: ${name}`);
     },
   });
