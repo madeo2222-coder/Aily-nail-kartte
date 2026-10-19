@@ -500,9 +500,8 @@ test("reservation edit page uses the guarded API and synchronous request locks",
   assert.match(pageSource, /\/api\/reservations\/\$\{reservationId\}\/staff-edit/);
   assert.match(pageSource, /method:\s*"PATCH"/);
   assert.match(pageSource, /method:\s*"DELETE"/);
-  assert.match(pageSource, /saveRequestPendingRef\.current/);
-  assert.match(pageSource, /deleteRequestPendingRef\.current/);
-  assert.match(pageSource, /confirmRequestPendingRef\.current/);
+  assert.match(pageSource, /mutationRequestPendingRef\.current/);
+  assert.doesNotMatch(pageSource, /(?:save|delete|confirm)RequestPendingRef/);
   assert.match(pageSource, /status === "confirmed" && !wasInitiallyConfirmed/);
   assert.match(pageSource, /!pageDataLoaded/);
 });

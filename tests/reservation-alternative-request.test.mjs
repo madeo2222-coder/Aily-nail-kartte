@@ -469,17 +469,21 @@ test("migration protects the delivery ledger and customer updates close its stat
   );
 });
 
-test("staff UI synchronously locks confirmation and alternative LINE actions", () => {
+test("staff UI synchronously locks every competing reservation mutation", () => {
   const pageSource = readFileSync(
     new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
     "utf8"
   );
 
   for (const functionName of [
+    "handleConfirmReservation",
     "retryConfirmationLine",
     "requestAlternativeTime",
+    "cancelReservation",
+    "handleSubmit",
+    "handleDelete",
   ]) {
-    const functionStart = pageSource.indexOf(`async function ${functionName}()`);
+    const functionStart = pageSource.indexOf(`async function ${functionName}(`);
     assert.notEqual(functionStart, -1, `${functionName} exists`);
 
     const nextFunction = pageSource.indexOf("\n  async function ", functionStart + 1);
@@ -490,12 +494,12 @@ test("staff UI synchronously locks confirmation and alternative LINE actions", (
 
     assert.match(
       functionSource,
-      /if \(!reservationId \|\| confirmRequestPendingRef\.current\) return;/
+      /if \(!reservationId \|\| mutationRequestPendingRef\.current\) return;/
     );
-    assert.match(functionSource, /confirmRequestPendingRef\.current = true;/);
+    assert.match(functionSource, /mutationRequestPendingRef\.current = true;/);
     assert.match(
       functionSource,
-      /finally \{[\s\S]*confirmRequestPendingRef\.current = false;/
+      /finally \{[\s\S]*mutationRequestPendingRef\.current = false;/
     );
   }
 });
