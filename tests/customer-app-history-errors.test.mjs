@@ -8,6 +8,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(new URL("../lib/reservation-status.ts", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: reservationStatusExports, Set, String }
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/customer-app/history/page.tsx", import.meta.url),
@@ -32,7 +45,7 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ mode = "success" } = {}) {
+async function mount({ mode = "success", reservations = [] } = {}) {
   const states = [];
   let cursor = 0;
   let effect;
@@ -94,7 +107,7 @@ async function mount({ mode = "success" } = {}) {
           customer: { id: "customer-1", name: "顧客A" },
           visits: [],
           visitPhotos: [],
-          reservations: [],
+          reservations,
           diagnoses: [],
           nailTipOrders: [],
         }),
@@ -105,6 +118,7 @@ async function mount({ mode = "success" } = {}) {
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
       if (name === "../CustomerPhoto") return { default: "img" };
+      if (name === "@/lib/reservation-status") return reservationStatusExports;
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -167,4 +181,35 @@ test("customer history retries a failed read and preserves a legitimate empty re
   assert.match(page.html(), /0回/);
   assert.match(page.html(), /予約中データはありません/);
   assert.match(page.html(), /まだ来店履歴がありません/);
+});
+
+test("customer history labels every supported cancelled spelling consistently", async () => {
+  const page = await mount({
+    reservations: [
+      {
+        id: "reservation-1",
+        menu: "メニューA",
+        status: "ＣＡＮＣＥＬＬＥＤ",
+        start_at: "2026-10-19T01:00:00Z",
+        end_at: "2026-10-19T02:00:00Z",
+        staff_name: "担当A",
+        source: "customer-app",
+        created_at: "2026-10-01T00:00:00Z",
+      },
+      {
+        id: "reservation-2",
+        menu: "メニューB",
+        status: "取 り 消 し",
+        start_at: "2026-10-20T01:00:00Z",
+        end_at: "2026-10-20T02:00:00Z",
+        staff_name: "担当B",
+        source: "customer-app",
+        created_at: "2026-10-02T00:00:00Z",
+      },
+    ],
+  });
+
+  const html = page.html();
+  assert.equal((html.match(/>キャンセル<\/div>/g) || []).length, 2);
+  assert.doesNotMatch(html, /ＣＡＮＣＥＬＬＥＤ|取 り 消 し/);
 });

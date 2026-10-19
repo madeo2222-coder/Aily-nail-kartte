@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import { supabase } from "@/lib/supabase";
 import CustomerPhoto from "./CustomerPhoto";
 
@@ -301,17 +302,17 @@ export default function CustomerAppPage() {
           .from("reservations")
           .select("id, customer_id, staff_id, menu, start_at, status")
           .eq("customer_id", currentCustomer.id)
-          .neq("status", "キャンセル")
           .gte("start_at", nowIso)
-          .order("start_at", { ascending: true })
-          .limit(1);
+          .order("start_at", { ascending: true });
 
         if (!isCurrent()) return;
         if (nextReservationError) throw nextReservationError;
 
         const nextReservation =
-          ((nextReservationData || [])[0] as ReservationRow | undefined) ||
-          null;
+          ((nextReservationData || []) as ReservationRow[]).find(
+            (reservation) =>
+              !isCancelledReservationStatus(reservation.status)
+          ) || null;
 
         if (nextReservation) {
           setNextReservationId(nextReservation.id);
@@ -342,16 +343,16 @@ export default function CustomerAppPage() {
             .from("reservations")
             .select("id, customer_id, staff_id, menu, start_at, status")
             .eq("customer_id", currentCustomer.id)
-            .neq("status", "キャンセル")
-            .order("start_at", { ascending: false })
-            .limit(1);
+            .order("start_at", { ascending: false });
 
           if (!isCurrent()) return;
           if (latestReservationError) throw latestReservationError;
 
           const latestReservation =
-            ((latestReservationData || [])[0] as ReservationRow | undefined) ||
-            null;
+            ((latestReservationData || []) as ReservationRow[]).find(
+              (reservation) =>
+                !isCancelledReservationStatus(reservation.status)
+            ) || null;
 
           if (latestReservation?.staff_id) {
             const { data: staffData, error: staffError } = await supabase

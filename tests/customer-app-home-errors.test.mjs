@@ -8,6 +8,19 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const reservationStatusExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(new URL("../lib/reservation-status.ts", import.meta.url), "utf8"),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: reservationStatusExports, Set, String }
+);
 const compiled = ts.transpileModule(
   readFileSync(new URL("../app/customer-app/page.tsx", import.meta.url), "utf8"),
   {
@@ -29,7 +42,12 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failureTable = "", rejection = false, meOk = true } = {}) {
+async function mount({
+  failureTable = "",
+  rejection = false,
+  meOk = true,
+  reservations = [],
+} = {}) {
   const states = [];
   const queries = [];
   let cursor = 0;
@@ -59,7 +77,10 @@ async function mount({ failureTable = "", rejection = false, meOk = true } = {})
       if (rejection) throw new Error("offline");
       return { data: null, error: { message: "read failed" } };
     }
-    return { data: [], error: null };
+    return {
+      data: table === "reservations" ? reservations : [],
+      error: null,
+    };
   }
 
   const exports = {};
@@ -88,6 +109,7 @@ async function mount({ failureTable = "", rejection = false, meOk = true } = {})
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
       if (name === "./CustomerPhoto") return { default: () => null };
+      if (name === "@/lib/reservation-status") return reservationStatusExports;
       if (name === "@/lib/supabase") return { supabase: {
         from(table) {
           const query = { table, filters: [] };
@@ -157,4 +179,38 @@ test("customer home shows the load error before the logged-out prompt", async ()
   const page = await mount({ meOk: false });
   assert.match(page.html(), /role="alert"/);
   assert.doesNotMatch(page.html(), /LINEからのご来店ありがとうございます/);
+});
+
+test("customer home skips every cancelled spelling before choosing the next reservation", async () => {
+  const page = await mount({
+    reservations: [
+      {
+        id: "cancelled-1",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "キャンセル済み",
+        start_at: "2026-11-01T01:00:00Z",
+        status: "取 り 消 し",
+      },
+      {
+        id: "active-1",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "有効予約",
+        start_at: "2026-11-02T01:00:00Z",
+        status: "confirmed",
+      },
+    ],
+  });
+
+  const html = page.html();
+  assert.match(html, /次回予約：2026\/11\/2 10:00/);
+  assert.match(html, /\/customer-app\/reservations\/active-1/);
+  assert.doesNotMatch(html, /\/customer-app\/reservations\/cancelled-1/);
+  assert.equal(
+    page.queries.some(query =>
+      query.filters.some(filter => filter[0] === "neq" && filter[1] === "status")
+    ),
+    false
+  );
 });

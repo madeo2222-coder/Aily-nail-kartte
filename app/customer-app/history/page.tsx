@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import CustomerPhoto from "../CustomerPhoto";
 
 type VisitRow = {
@@ -134,6 +135,8 @@ function buildRepeatReservationHref(visit: VisitRow) {
 }
 
 function getReservationStatusLabel(status: string | null) {
+  if (isCancelledReservationStatus(status)) return "キャンセル";
+
   switch (status) {
     case "requested":
       return "予約申請中";
@@ -141,9 +144,6 @@ function getReservationStatusLabel(status: string | null) {
       return "予約確定";
     case "completed":
       return "来店完了";
-    case "cancelled":
-    case "キャンセル":
-      return "キャンセル";
     default:
       return status || "未設定";
   }
