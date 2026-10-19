@@ -503,22 +503,22 @@ export default function EditReservationPage() {
         }),
       }
     );
-    const confirmation = (await confirmationResponse.json()) as {
+    const confirmation = (await confirmationResponse.json().catch(() => null)) as {
       ok?: boolean;
       confirmed?: boolean;
       alreadyConfirmed?: boolean;
       error?: string;
       message?: string;
-    };
+    } | null;
 
-    if (!confirmationResponse.ok || !confirmation.ok) {
-      setErrorMessage(confirmation.error || "予約確定に失敗しました");
+    if (!confirmationResponse.ok || !confirmation?.ok) {
+      setErrorMessage(confirmation?.error || "予約確定に失敗しました");
       return;
     }
 
     let lineNoticeMessage = "";
 
-    if (confirmation.confirmed) {
+    if (confirmation.confirmed || confirmation.alreadyConfirmed) {
       try {
         const lineRes = await fetch("/api/send-reservation-confirmed-line", {
           method: "POST",
@@ -530,7 +530,12 @@ export default function EditReservationPage() {
           }),
         });
 
-        const lineData = await lineRes.json();
+        const lineData = (await lineRes.json().catch(() => null)) as {
+          sent?: boolean;
+          alreadySent?: boolean;
+          error?: string;
+          message?: string;
+        } | null;
 
         if (lineData?.sent) {
           lineNoticeMessage = " 顧客へLINE通知も送信しました。";
@@ -548,7 +553,7 @@ export default function EditReservationPage() {
     } else {
       lineNoticeMessage = ` ${
         confirmation.message ||
-        "既に予約確定済みのためLINEは再送していません。"
+        "予約確定の結果を確認できませんでした。"
       }`;
     }
 

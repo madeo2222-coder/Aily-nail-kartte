@@ -697,19 +697,19 @@ export default function ReservationsPageClient() {
         }),
       });
 
-      const result = (await response.json()) as {
+      const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
         sent?: boolean;
         alreadySent?: boolean;
         retried?: boolean;
         error?: string;
         message?: string;
-      };
+      } | null;
 
-      if (!response.ok || !result.ok) {
+      if (!response.ok || !result?.ok) {
         console.error("予約確定LINE通知エラー:", result);
         alert(
-          result.error ||
+          result?.error ||
             "予約は確定しましたが、LINE通知に失敗しました。確定済み予約の『確定LINEを再試行』から再送できます。"
         );
         return;
@@ -800,10 +800,10 @@ export default function ReservationsPageClient() {
         return;
       }
 
-      if (result.confirmed) {
+      if (result.confirmed || result.alreadyConfirmed) {
         await sendReservationConfirmedLine(id);
       } else {
-        alert(result.message || "この予約は既に確定済みです。");
+        alert(result.message || "予約確定の結果を確認できませんでした。");
       }
 
       await fetchReservations();

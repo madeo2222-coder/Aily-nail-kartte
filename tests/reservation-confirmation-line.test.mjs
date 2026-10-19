@@ -303,4 +303,17 @@ test("migration and staff screens preserve idempotent retry controls", () => {
   assert.match(migration, /grant execute on function public\.claim_reservation_confirmation_delivery[\s\S]*to service_role/i);
   assert.match(listPage, /確定LINEを再試行/);
   assert.match(editPage, /確定LINEを再試行/);
+  assert.match(
+    listPage,
+    /if \(result\.confirmed \|\| result\.alreadyConfirmed\) \{[\s\S]{0,120}await sendReservationConfirmedLine\(id\)/
+  );
+  assert.match(
+    editPage,
+    /if \(confirmation\.confirmed \|\| confirmation\.alreadyConfirmed\) \{[\s\S]{0,180}\/api\/send-reservation-confirmed-line/
+  );
+  assert.match(listPage, /response\.json\(\)\.catch\(\(\) => null\)/);
+  assert.match(
+    editPage,
+    /confirmationResponse\s*\.json\(\)\s*\.catch\(\(\) => null\)/
+  );
 });
