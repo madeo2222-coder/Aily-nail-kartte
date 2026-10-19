@@ -56,12 +56,22 @@ function principal(authenticationMode = "supabase") {
 
 function executeRoute({
   authentication,
-  result = {
+  customerResult = {
     data: [
       {
         id: "customer-1",
         name: "顧客A",
         phone: "090-0000-0000",
+        salon_id: SALON_ID,
+      },
+    ],
+    error: null,
+  },
+  staffResult = {
+    data: [
+      {
+        id: "staff-1",
+        name: "担当A",
         salon_id: SALON_ID,
       },
     ],
@@ -89,7 +99,9 @@ function executeRoute({
         return query;
       },
       then(resolve, reject) {
-        return Promise.resolve(result).then(resolve, reject);
+        return Promise.resolve(
+          table === "staffs" ? staffResult : customerResult,
+        ).then(resolve, reject);
       },
     };
     return query;
@@ -175,25 +187,50 @@ test("registration data API scopes individual staff reads to their salon", async
 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
+  assert.equal(body.authenticationMode, "supabase");
   assert.equal(body.customers[0].id, "customer-1");
+  assert.equal(body.staffs[0].id, "staff-1");
   assert.deepEqual(JSON.parse(JSON.stringify(runtime.calls[0].filters)), [
     { column: "salon_id", value: SALON_ID },
   ]);
   assert.deepEqual(runtime.calls[0].selects, ["id, name, phone, salon_id"]);
+  assert.deepEqual(JSON.parse(JSON.stringify(runtime.calls[1].filters)), [
+    { column: "salon_id", value: SALON_ID },
+    { column: "role", value: "staff" },
+    { column: "is_active", value: true },
+  ]);
+  assert.deepEqual(runtime.calls[1].selects, ["id, name, salon_id"]);
 });
 
 test("registration data API keeps signed shared-login reads available", async () => {
   const runtime = executeRoute({ authentication: principal("legacy") });
   const response = await runtime.exports.GET();
+  const body = await response.json();
 
   assert.equal(response.status, 200);
+  assert.equal(body.authenticationMode, "legacy");
+  assert.deepEqual(JSON.parse(JSON.stringify(body.staffs)), []);
   assert.deepEqual(runtime.calls[0].filters, []);
+  assert.equal(runtime.calls.length, 1);
 });
 
 test("registration data API fails closed after a customer read error", async () => {
   const runtime = executeRoute({
     authentication: principal(),
-    result: { data: null, error: { message: "read failed" } },
+    customerResult: { data: null, error: { message: "read failed" } },
+  });
+
+  const response = await runtime.exports.GET();
+  const body = await response.json();
+
+  assert.equal(response.status, 500);
+  assert.equal(body.ok, false);
+});
+
+test("registration data API fails closed after a staff read error", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    staffResult: { data: null, error: { message: "read failed" } },
   });
 
   const response = await runtime.exports.GET();

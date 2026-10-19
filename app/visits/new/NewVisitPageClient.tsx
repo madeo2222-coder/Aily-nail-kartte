@@ -19,9 +19,17 @@ type Customer = {
   salon_id?: string | null;
 };
 
+type Staff = {
+  id: string;
+  name: string;
+  salon_id: string;
+};
+
 type RegistrationDataResponse = {
   ok: true;
+  authenticationMode: "supabase" | "legacy";
   customers: Customer[];
+  staffs: Staff[];
 };
 
 type PaymentLine = {
@@ -55,6 +63,25 @@ const PAYMENT_METHOD_OPTIONS = [
 
 const VISIT_PHOTO_BUCKET = "visit-photos";
 const DEFAULT_SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const KNOWN_VISIT_API_ERRORS = new Set([
+  "スタッフ認証が必要です。",
+  "この操作を行う権限がありません。",
+  "入力内容を確認してください。",
+  "顧客情報を確認できません。",
+  "担当スタッフを確認できません。",
+  "予約情報を確認できません。",
+  "この予約は既に完了しています。",
+  "この予約には既に来店履歴があります。",
+  "支払い内容を確認してください。",
+  "売上金額と支払い内訳合計を一致させてください。",
+  "利用できるクーポン残高を確認してください。",
+  "予約状態が変更されたため登録できませんでした。",
+  "来店登録を開始できませんでした。",
+  "来店登録に失敗しました。",
+  "来店登録結果を確認できませんでした。",
+]);
 
 function createLineId() {
   return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -105,6 +132,47 @@ function formatYen(value: number) {
   return amount < 0 ? `-¥${absoluteAmount}` : `¥${absoluteAmount}`;
 }
 
+function visitApiErrorMessage(status: number, value: unknown) {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    typeof value.error === "string" &&
+    KNOWN_VISIT_API_ERRORS.has(value.error)
+  ) {
+    return value.error;
+  }
+
+  if (status === 401 || status === 403) {
+    return "ログイン状態を確認して、もう一度お試しください。";
+  }
+
+  if (status === 409) {
+    return "登録済みの内容やクーポン残高を確認してください。";
+  }
+
+  return "来店登録に失敗しました。入力内容を確認してください。";
+}
+
+function getCreatedVisitId(value: unknown) {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("ok" in value) ||
+    value.ok !== true ||
+    !("visit" in value) ||
+    typeof value.visit !== "object" ||
+    value.visit === null ||
+    !("id" in value.visit) ||
+    typeof value.visit.id !== "string" ||
+    !UUID_PATTERN.test(value.visit.id)
+  ) {
+    return null;
+  }
+
+  return value.visit.id;
+}
+
 function isCustomer(value: unknown): value is Customer {
   if (typeof value !== "object" || value === null) return false;
 
@@ -120,6 +188,18 @@ function isCustomer(value: unknown): value is Customer {
   );
 }
 
+function isStaff(value: unknown): value is Staff {
+  if (typeof value !== "object" || value === null) return false;
+
+  const staff = value as Record<string, unknown>;
+
+  return (
+    typeof staff.id === "string" &&
+    typeof staff.name === "string" &&
+    typeof staff.salon_id === "string"
+  );
+}
+
 function parseRegistrationData(value: unknown): RegistrationDataResponse | null {
   if (
     typeof value !== "object" ||
@@ -128,12 +208,23 @@ function parseRegistrationData(value: unknown): RegistrationDataResponse | null 
     value.ok !== true ||
     !("customers" in value) ||
     !Array.isArray(value.customers) ||
-    !value.customers.every(isCustomer)
+    !value.customers.every(isCustomer) ||
+    !("staffs" in value) ||
+    !Array.isArray(value.staffs) ||
+    !value.staffs.every(isStaff) ||
+    !("authenticationMode" in value) ||
+    (value.authenticationMode !== "supabase" &&
+      value.authenticationMode !== "legacy")
   ) {
     return null;
   }
 
-  return { ok: true, customers: value.customers };
+  return {
+    ok: true,
+    authenticationMode: value.authenticationMode,
+    customers: value.customers,
+    staffs: value.staffs,
+  };
 }
 
 export default function NewVisitPageClient() {
@@ -148,6 +239,10 @@ export default function NewVisitPageClient() {
   const prefilledMemo = searchParams.get("memo") || "";
 
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [staffs, setStaffs] = useState<Staff[]>([]);
+  const [authenticationMode, setAuthenticationMode] = useState<
+    "supabase" | "legacy" | null
+  >(null);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [customerLoadError, setCustomerLoadError] = useState("");
   const customerRequestVersionRef = useRef(0);
@@ -163,6 +258,7 @@ export default function NewVisitPageClient() {
   const [nextVisitDate, setNextVisitDate] = useState("");
   const [nextProposal, setNextProposal] = useState("");
   const [staffName, setStaffName] = useState(prefilledStaffName);
+  const [staffId, setStaffId] = useState("");
 
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([
     createPaymentLine("現金", ""),
@@ -171,7 +267,9 @@ export default function NewVisitPageClient() {
   const [visitPhotos, setVisitPhotos] = useState<PhotoPreview[]>([]);
   const photoPreviewUrls = useRef(new Set<string>());
   const [saving, setSaving] = useState(false);
+  const [submissionLocked, setSubmissionLocked] = useState(false);
   const [message, setMessage] = useState("");
+  const submissionLockRef = useRef(false);
 
   useEffect(() => {
     if (prefilledVisitDate) {
@@ -211,7 +309,10 @@ export default function NewVisitPageClient() {
     setCustomerLoadError("");
     setMessage("");
     setCustomers([]);
+    setStaffs([]);
+    setAuthenticationMode(null);
     setCustomerId("");
+    setStaffId("");
 
     try {
       const response = await fetch("/api/visits/registration-data", {
@@ -234,11 +335,20 @@ export default function NewVisitPageClient() {
 
       const loadedCustomers = registrationData.customers;
       setCustomers(loadedCustomers);
+      setStaffs(registrationData.staffs);
+      setAuthenticationMode(registrationData.authenticationMode);
       setCustomerId(
         loadedCustomers.some(
           (customer) => customer.id === preselectedCustomerId
         )
           ? preselectedCustomerId
+          : ""
+      );
+      setStaffId(
+        registrationData.authenticationMode === "supabase"
+          ? registrationData.staffs.find(
+              (staff) => staff.name === prefilledStaffName
+            )?.id || ""
           : ""
       );
     } catch (error) {
@@ -255,7 +365,7 @@ export default function NewVisitPageClient() {
         setLoadingCustomers(false);
       }
     }
-  }, [preselectedCustomerId]);
+  }, [prefilledStaffName, preselectedCustomerId]);
 
   useEffect(() => {
     void fetchCustomers();
@@ -270,6 +380,10 @@ export default function NewVisitPageClient() {
   }, [customers, customerId]);
 
   const resolvedSalonId = selectedCustomer?.salon_id || DEFAULT_SALON_ID;
+
+  const selectedStaff = useMemo(() => {
+    return staffs.find((staff) => staff.id === staffId) || null;
+  }, [staffId, staffs]);
 
   const totalPrice = useMemo(() => {
     return toSafeNumber(price);
@@ -425,20 +539,37 @@ export default function NewVisitPageClient() {
       });
     }
 
-    const { error: photoInsertError } = await supabase
-      .from("visit_photos")
-      .insert(uploadedPhotoRows);
+    const response = await fetch(`/api/visits/${visitId}/photos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        salonId,
+        photos: uploadedPhotoRows.map((photo) => ({
+          imageUrl: photo.image_url,
+          photoType: photo.photo_type,
+        })),
+      }),
+    });
+    const responseBody: unknown = await response.json().catch(() => null);
 
-    if (photoInsertError) {
-      throw new Error(
-        `写真情報の保存に失敗しました: ${photoInsertError.message}`
-      );
+    if (
+      !response.ok ||
+      typeof responseBody !== "object" ||
+      responseBody === null ||
+      !("ok" in responseBody) ||
+      responseBody.ok !== true
+    ) {
+      throw new Error("写真情報の保存に失敗しました");
     }
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage("");
+
+    if (submissionLockRef.current || saving || submissionLocked) {
+      return;
+    }
 
     if (loadingCustomers || customerLoadError) {
       setMessage("顧客一覧を再取得してから登録してください");
@@ -455,12 +586,31 @@ export default function NewVisitPageClient() {
       return;
     }
 
+    if (!authenticationMode) {
+      setMessage("ログイン状態を確認して、顧客一覧を再取得してください");
+      return;
+    }
+
+    if (
+      authenticationMode === "supabase" &&
+      !prefilledReservationId &&
+      !selectedStaff
+    ) {
+      setMessage("担当スタッフを選択してください");
+      return;
+    }
+
     if (!visitDate) {
       setMessage("来店日を入力してください");
       return;
     }
 
-    if (!price || Number(price) < 0 || !Number.isFinite(totalPrice)) {
+    if (
+      !price ||
+      Number(price) < 0 ||
+      !Number.isFinite(totalPrice) ||
+      !Number.isSafeInteger(totalPrice)
+    ) {
       setMessage("売上金額を正しく入力してください");
       return;
     }
@@ -522,145 +672,200 @@ export default function NewVisitPageClient() {
       return;
     }
 
+    submissionLockRef.current = true;
     setSaving(true);
+    let keepSubmissionLocked = false;
+    let visitCommitted = false;
 
     try {
       const normalizedMenuName = menuName.trim() || null;
+      let insertedVisitId: string;
 
-      const mainPaymentMethod =
-        cleanedPaymentLines.length === 1
-          ? cleanedPaymentLines[0].payment_method
-          : "複数";
+      if (authenticationMode === "supabase") {
+        const response = await fetch("/api/visits", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reservationId: prefilledReservationId || null,
+            customerId,
+            staffId: prefilledReservationId ? null : selectedStaff?.id || null,
+            visitDate,
+            menuName: normalizedMenuName,
+            color: color.trim() || null,
+            price: totalPrice,
+            memo: memo.trim() || null,
+            nextVisitDate: nextVisitDate || null,
+            nextProposal: nextProposal.trim() || null,
+            payments: cleanedPaymentLines.map((line) => ({
+              method: line.payment_method,
+              amount: line.amount,
+            })),
+          }),
+        });
+        const responseBody: unknown = await response.json().catch(() => null);
 
-      const visitPayload = {
-        customer_id: customerId,
-        salon_id: resolvedSalonId,
-        visit_date: visitDate,
-        menu_name: normalizedMenuName,
-        menu: normalizedMenuName,
-        color: color.trim() || null,
-        price: totalPrice,
-        payment_method: mainPaymentMethod,
-        payment_status: "paid",
-        paid_amount: totalPrice,
-        unpaid_amount: 0,
-        memo: memo.trim() || null,
-        next_visit_date: nextVisitDate || null,
-        next_proposal: nextProposal.trim() || null,
-        staff_name: staffName.trim() || null,
-      };
+        if (!response.ok) {
+          setMessage(visitApiErrorMessage(response.status, responseBody));
 
-      const { data: insertedVisit, error: visitError } = await supabase
-        .from("visits")
-        .insert([visitPayload])
-        .select("id")
-        .single();
+          if (response.status >= 500) {
+            keepSubmissionLocked = true;
+            setMessage(
+              "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
+            );
+          }
+          return;
+        }
 
-      if (visitError || !insertedVisit) {
-        console.error("visits insert error:", visitError);
-        setMessage(
-          `来店履歴の登録に失敗しました: ${
-            visitError?.message || "insert failed"
-          }`
-        );
-        return;
-      }
+        const createdVisitId = getCreatedVisitId(responseBody);
+        if (!createdVisitId) {
+          keepSubmissionLocked = true;
+          setMessage(
+            "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
+          );
+          return;
+        }
 
-      const { count: visitCount } = await supabase
-        .from("visits")
-        .select("*", {
-          count: "exact",
-          head: true,
-        })
-        .eq("customer_id", customerId);
+        insertedVisitId = createdVisitId;
+        visitCommitted = true;
+        keepSubmissionLocked = true;
+      } else {
+        const mainPaymentMethod =
+          cleanedPaymentLines.length === 1
+            ? cleanedPaymentLines[0].payment_method
+            : "複数";
 
-      if (visitCount) {
-        if (visitCount % 12 === 0) {
-          await supabase.rpc("increment_coupon_1000", {
+        const visitPayload = {
+          customer_id: customerId,
+          salon_id: resolvedSalonId,
+          visit_date: visitDate,
+          menu_name: normalizedMenuName,
+          menu: normalizedMenuName,
+          color: color.trim() || null,
+          price: totalPrice,
+          payment_method: mainPaymentMethod,
+          payment_status: "paid",
+          paid_amount: totalPrice,
+          unpaid_amount: 0,
+          memo: memo.trim() || null,
+          next_visit_date: nextVisitDate || null,
+          next_proposal: nextProposal.trim() || null,
+          staff_name: staffName.trim() || null,
+        };
+
+        const { data: insertedVisit, error: visitError } = await supabase
+          .from("visits")
+          .insert([visitPayload])
+          .select("id")
+          .single();
+
+        if (visitError || !insertedVisit || !UUID_PATTERN.test(insertedVisit.id)) {
+          console.error("visits insert error:", visitError);
+          setMessage(
+            `来店履歴の登録に失敗しました: ${
+              visitError?.message || "insert failed"
+            }`
+          );
+          return;
+        }
+
+        insertedVisitId = insertedVisit.id;
+        visitCommitted = true;
+        keepSubmissionLocked = true;
+
+        const { count: visitCount } = await supabase
+          .from("visits")
+          .select("*", {
+            count: "exact",
+            head: true,
+          })
+          .eq("customer_id", customerId);
+
+        if (visitCount) {
+          if (visitCount % 12 === 0) {
+            await supabase.rpc("increment_coupon_1000", {
+              customer_id_input: customerId,
+            });
+
+            await supabase.from("coupon_histories").insert({
+              customer_id: customerId,
+              visit_id: insertedVisitId,
+              coupon_type: "coupon_1000",
+              action: "earned",
+              amount: 1000,
+              note: "12回来店達成",
+            });
+          } else if (visitCount % 6 === 0) {
+            await supabase.rpc("increment_coupon_500", {
+              customer_id_input: customerId,
+            });
+
+            await supabase.from("coupon_histories").insert({
+              customer_id: customerId,
+              visit_id: insertedVisitId,
+              coupon_type: "coupon_500",
+              action: "earned",
+              amount: 500,
+              note: "6回来店達成",
+            });
+          }
+        }
+
+        const visitPaymentsPayload = cleanedPaymentLines.map((line) => ({
+          visit_id: insertedVisitId,
+          payment_method: line.payment_method,
+          amount: line.amount,
+          sort_order: line.sort_order,
+        }));
+
+        const { error: paymentError } = await supabase
+          .from("visit_payments")
+          .insert(visitPaymentsPayload);
+
+        if (paymentError) {
+          throw new Error(
+            `支払い内訳の登録に失敗しました: ${paymentError.message}`
+          );
+        }
+
+        const discountTotal = cleanedPaymentLines
+          .filter((line) => isDiscountMethod(line.payment_method))
+          .reduce((sum, line) => sum + Math.abs(line.amount), 0);
+
+        if (discountTotal >= 1000) {
+          await supabase.rpc("decrement_coupon_1000", {
             customer_id_input: customerId,
           });
 
           await supabase.from("coupon_histories").insert({
             customer_id: customerId,
-            visit_id: insertedVisit.id,
+            visit_id: insertedVisitId,
             coupon_type: "coupon_1000",
-            action: "earned",
-            amount: 1000,
-            note: "12回来店達成",
+            action: "used",
+            amount: -1000,
+            note: "会計時利用",
           });
-        } else if (visitCount % 6 === 0) {
-          await supabase.rpc("increment_coupon_500", {
+        } else if (discountTotal >= 500) {
+          await supabase.rpc("decrement_coupon_500", {
             customer_id_input: customerId,
           });
 
           await supabase.from("coupon_histories").insert({
             customer_id: customerId,
-            visit_id: insertedVisit.id,
+            visit_id: insertedVisitId,
             coupon_type: "coupon_500",
-            action: "earned",
-            amount: 500,
-            note: "6回来店達成",
+            action: "used",
+            amount: -500,
+            note: "会計時利用",
           });
         }
       }
 
-      const visitPaymentsPayload = cleanedPaymentLines.map((line) => ({
-        visit_id: insertedVisit.id,
-        payment_method: line.payment_method,
-        amount: line.amount,
-        sort_order: line.sort_order,
-      }));
-
-      const { error: paymentError } = await supabase
-        .from("visit_payments")
-        .insert(visitPaymentsPayload);
-
-      if (paymentError) {
-        console.error("visit_payments insert error:", paymentError);
-        setMessage(
-          `支払い内訳の登録に失敗しました: ${paymentError.message}`
-        );
-        return;
-      }
-
-      const discountTotal = cleanedPaymentLines
-        .filter((line) => isDiscountMethod(line.payment_method))
-        .reduce((sum, line) => sum + Math.abs(line.amount), 0);
-
-      if (discountTotal >= 1000) {
-        await supabase.rpc("decrement_coupon_1000", {
-          customer_id_input: customerId,
-        });
-
-        await supabase.from("coupon_histories").insert({
-          customer_id: customerId,
-          visit_id: insertedVisit.id,
-          coupon_type: "coupon_1000",
-          action: "used",
-          amount: -1000,
-          note: "会計時利用",
-        });
-      } else if (discountTotal >= 500) {
-        await supabase.rpc("decrement_coupon_500", {
-          customer_id_input: customerId,
-        });
-
-        await supabase.from("coupon_histories").insert({
-          customer_id: customerId,
-          visit_id: insertedVisit.id,
-          coupon_type: "coupon_500",
-          action: "used",
-          amount: -500,
-          note: "会計時利用",
-        });
-      }
-
       await uploadVisitPhotos({
-        visitId: insertedVisit.id,
+        visitId: insertedVisitId,
         salonId: resolvedSalonId,
       });
 
-      if (prefilledReservationId) {
+      if (authenticationMode === "legacy" && prefilledReservationId) {
         const { error: reservationUpdateError } = await supabase
           .from("reservations")
           .update({ status: "完了" })
@@ -688,8 +893,17 @@ export default function NewVisitPageClient() {
           ? error.message
           : "来店履歴の登録に失敗しました";
 
-      setMessage(errorMessage);
+      setMessage(
+        visitCommitted
+          ? `来店履歴は登録されましたが、後続処理に失敗しました。再送信しないでください。${errorMessage}`
+          : errorMessage
+      );
     } finally {
+      if (keepSubmissionLocked) {
+        setSubmissionLocked(true);
+      } else {
+        submissionLockRef.current = false;
+      }
       setSaving(false);
     }
   }
@@ -813,13 +1027,32 @@ export default function NewVisitPageClient() {
                 className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
               />
 
-              <input
-                type="text"
-                value={staffName}
-                onChange={(e) => setStaffName(e.target.value)}
-                placeholder="担当者"
-                className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
-              />
+              {authenticationMode === "supabase" && !prefilledReservationId ? (
+                <select
+                  value={staffId}
+                  onChange={(e) => setStaffId(e.target.value)}
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+                >
+                  <option value="">担当スタッフを選択してください</option>
+                  {staffs.map((staff) => (
+                    <option key={staff.id} value={staff.id}>
+                      {staff.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={staffName}
+                  onChange={(e) => setStaffName(e.target.value)}
+                  placeholder="担当者"
+                  readOnly={
+                    authenticationMode === "supabase" &&
+                    Boolean(prefilledReservationId)
+                  }
+                  className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm read-only:text-slate-500"
+                />
+              )}
 
               <textarea
                 value={memo}
@@ -1019,10 +1252,14 @@ export default function NewVisitPageClient() {
 
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || submissionLocked}
             className="w-full rounded-2xl bg-slate-900 px-4 py-4 text-sm font-bold text-white disabled:opacity-50"
           >
-            {saving ? "登録中..." : "登録する"}
+            {saving
+              ? "登録中..."
+              : submissionLocked
+                ? "登録結果を確認してください"
+                : "登録する"}
           </button>
         </form>
         )}

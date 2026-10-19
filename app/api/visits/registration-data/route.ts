@@ -56,15 +56,28 @@ export async function GET() {
       customersQuery = customersQuery.eq("salon_id", salonId);
     }
 
-    const customersResult = await customersQuery;
+    const [customersResult, staffsResult] = await Promise.all([
+      customersQuery,
+      salonId
+        ? supabase
+            .from("staffs")
+            .select("id, name, salon_id")
+            .eq("salon_id", salonId)
+            .eq("role", "staff")
+            .eq("is_active", true)
+            .order("name", { ascending: true })
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
-    if (customersResult.error) {
+    if (customersResult.error || staffsResult.error) {
       return readErrorResponse();
     }
 
     return NextResponse.json({
       ok: true,
+      authenticationMode: authentication.principal.authenticationMode,
       customers: customersResult.data || [],
+      staffs: staffsResult.data || [],
     });
   } catch {
     return readErrorResponse();

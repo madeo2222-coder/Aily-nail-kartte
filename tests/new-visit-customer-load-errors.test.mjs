@@ -107,6 +107,8 @@ async function mount({ mode = "success", preselectedCustomerId = "" } = {}) {
             status: 200,
             json: async () => ({
               ok: true,
+              authenticationMode: "legacy",
+              staffs: [],
               customers:
                 responseMode === "empty"
                   ? []
