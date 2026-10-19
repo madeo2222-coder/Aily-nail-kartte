@@ -7,6 +7,7 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const VISIT_ID = "40000000-0000-4000-8000-000000000004";
 const source = readFileSync(
   new URL("../app/visits/[id]/edit/page.tsx", import.meta.url),
   "utf8"
@@ -104,13 +105,35 @@ async function mount() {
     },
     alert() {},
     confirm() { return false; },
+    fetch: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        visit: {
+          id: VISIT_ID,
+          customer_id: null,
+          visit_date: "2026-09-27",
+          menu: "ワンカラー",
+          menu_name: null,
+          color: "ピンク",
+          memo: null,
+          price: 5000,
+          payment_method: "現金",
+          created_at: "2026-09-27T00:00:00",
+        },
+        customer: null,
+        photos: [],
+        payments: [],
+      }),
+    }),
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
       if (name === "next/navigation") {
         return {
-          useParams: () => ({ id: "visit-1" }),
+          useParams: () => ({ id: VISIT_ID }),
           useRouter: () => ({ push() { throw new Error("Unexpected navigation"); } }),
         };
       }
