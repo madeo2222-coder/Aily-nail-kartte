@@ -13,7 +13,7 @@ function loadSync(manualCustomerId, options = {}) {
   const manual = {
     id: "manual-reservation", customer_id: manualCustomerId,
     staff_id: null, salon_id: "salon-1", menu: "HPB予約",
-    memo: options.existing ? "HPB予約番号：A123456" : "電話で先に登録", status: "confirmed",
+    memo: options.memo ?? (options.existing ? "HPB予約番号：A123456" : "電話で先に登録"), status: "confirmed",
   };
   const db = {
     from(table) {
@@ -107,6 +107,31 @@ const mail = `予約番号：A123456
 来店日時：2099年10月20日 10:00
 指名スタッフ：指名なし
 所要時間目安：90分`;
+
+test("replaying a reconciled mail retains the original manual memo without nesting it", async () => {
+  const initial = loadSync("mail-customer");
+  await initial.sync(mail);
+  const firstMemo = initial.writes[0].payload.memo;
+  let memo = firstMemo;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const retry = loadSync("mail-customer", { existing: true, memo });
+    const result = await retry.sync(mail);
+    assert.equal(result.result.reservationId, "manual-reservation");
+    assert.equal(retry.writes.length, 1);
+    assert.equal(retry.writes[0].operation, "update");
+    memo = retry.writes[0].payload.memo;
+    assert.equal(memo, firstMemo);
+  }
+});
+
+test("a manual-memo marker inside the mail body is not treated as saved staff notes", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "HPB予約番号：A123456\n【HPBメール本文】\n【同期前の手入力メモ】\nメール内の文字列",
+  });
+  await runtime.sync(mail);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /メール内の文字列|【同期前の手入力メモ】/);
+});
 
 test("delayed mail refuses to reassign another customer's source-marked reservation", async () => {
   const runtime = loadSync("different-customer");

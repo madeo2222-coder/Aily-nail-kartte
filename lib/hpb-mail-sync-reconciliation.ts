@@ -108,6 +108,18 @@ export function buildExternalReservationId(
   return buildDeterministicId("reservation", source, reservationNumber);
 }
 
+// Read only the saved notes before the generated mail body, never the whole
+// previous sync memo (which would grow recursively on every retry).
+export function readSyncedManualMemo(memo: string | null | undefined, sourceLabel: string) {
+  const text = String(memo || "").replace(/\r\n?/g, "\n");
+  const bodyBoundary = text.indexOf(`\n【${sourceLabel}メール本文】\n`);
+  if (bodyBoundary < 0) return "";
+  const header = text.slice(0, bodyBoundary);
+  const marker = "\n【同期前の手入力メモ】\n";
+  const start = header.indexOf(marker);
+  return start < 0 ? "" : header.slice(start + marker.length).trim();
+}
+
 export function buildExternalCustomerId(
   source: MailSyncSource,
   reservationNumber: string

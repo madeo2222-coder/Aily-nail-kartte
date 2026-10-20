@@ -8,6 +8,7 @@ import {
   findExternalReservationCandidate,
   findManualReservationCandidate,
   isCancelledReservationStatus,
+  readSyncedManualMemo,
   type MailSyncSource,
 } from "@/lib/hpb-mail-sync-reconciliation";
 
@@ -606,7 +607,9 @@ async function upsertReservation(
           context,
           customerMatch.customerId
         );
-  const preservedManualMemo = delayedManualEntry?.memo?.trim() || "";
+  const preservedManualMemo = delayedManualEntry
+    ? delayedManualEntry.memo?.trim() || ""
+    : readSyncedManualMemo(existing?.memo, sourceLabel);
 
   const memo = [
     `${reservationKey}：${parsed.reservationNumber}`,
@@ -625,7 +628,7 @@ async function upsertReservation(
     customerMatch.autoCreated ? `${sourceLabel}顧客自動作成：true` : "",
     `${sourceLabel}担当：${parsed.staffName}`,
     parsed.price ? `${sourceLabel}金額：${parsed.price}円` : "",
-    delayedManualEntry ? `${sourceLabel}手入力予約を同期済み：true` : "",
+    delayedManualEntry || preservedManualMemo ? `${sourceLabel}手入力予約を同期済み：true` : "",
     preservedManualMemo ? "【同期前の手入力メモ】" : "",
     preservedManualMemo,
     "",
