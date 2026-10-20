@@ -100,6 +100,28 @@ console.log(
   `PASS: migrated confirmation delivery schema passes all ${deliveryChecks.length} catalog checks`
 );
 
+// Comma-separated has_table_privilege arguments mean ANY, not ALL.
+// Exercise the real read-only preflight against every required-grant subset.
+const deliveryPrivileges = ["SELECT", "INSERT", "UPDATE"];
+for (let mask = 0; mask < 8; mask += 1) {
+  const granted = deliveryPrivileges.filter((_, index) => mask & (1 << index));
+  await db.exec(
+    "REVOKE ALL ON public.reservation_confirmation_deliveries FROM service_role;"
+  );
+  if (granted.length) {
+    await db.exec(
+      `GRANT ${granted.join(", ")} ON public.reservation_confirmation_deliveries TO service_role;`
+    );
+  }
+  const checks = await inspectConfirmationDelivery();
+  const access = checks.find((row) =>
+    row.section === "delivery_ledger" && row.check_name === "table_access:service_role"
+  );
+  assert.equal(access.result, mask === 7 ? "PASS" : "FAIL",
+    `service_role privileges: ${granted.join(", ") || "none"}`);
+}
+console.log("PASS: delivery preflight requires all three grants across all 8 subsets");
+
 await db.exec(`
 INSERT INTO public.salons VALUES ('00000000-0000-0000-0000-000000000001');
 INSERT INTO public.customers VALUES (

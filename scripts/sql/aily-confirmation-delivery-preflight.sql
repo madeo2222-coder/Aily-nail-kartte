@@ -78,7 +78,9 @@ with expected_columns(table_name, column_name, type_name) as (
     case
       when roles.oid is null or not exists (select 1 from delivery_table) then 'MISSING'
       when roles.name = 'service_role' then
-        case when has_table_privilege(roles.oid, (select oid from delivery_table), 'SELECT,INSERT,UPDATE')
+        case when has_table_privilege(roles.oid, (select oid from delivery_table), 'SELECT')
+          and has_table_privilege(roles.oid, (select oid from delivery_table), 'INSERT')
+          and has_table_privilege(roles.oid, (select oid from delivery_table), 'UPDATE')
           then 'PASS' else 'FAIL' end
       when has_table_privilege(
         roles.oid,
