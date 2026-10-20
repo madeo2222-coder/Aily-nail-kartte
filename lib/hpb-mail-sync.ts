@@ -664,12 +664,20 @@ async function upsertReservation(
   const reservationToUpdate = existing || delayedManualEntry;
 
   if (reservationToUpdate?.id) {
-    const { error } = await context.supabase
+    const { data, error } = await context.supabase
       .from("reservations")
       .update(reservationPayload)
-      .eq("id", reservationToUpdate.id);
+      .eq("id", reservationToUpdate.id)
+      .eq("salon_id", context.salonId)
+      .select("id")
+      .maybeSingle();
 
     if (error) throw new Error(error.message);
+    if (data?.id !== reservationToUpdate.id) {
+      throw new Error(
+        "予約の更新結果を確認できません。予約一覧を確認してから再試行してください。"
+      );
+    }
 
     return {
       mode: "updated",
@@ -751,15 +759,23 @@ async function cancelReservation(
     };
   }
 
-  const { error } = await context.supabase
+  const { data, error } = await context.supabase
     .from("reservations")
     .update({
       status: "キャンセル",
       memo: nextMemo,
     })
-    .eq("id", existing.id);
+    .eq("id", existing.id)
+    .eq("salon_id", context.salonId)
+    .select("id")
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
+  if (data?.id !== existing.id) {
+    throw new Error(
+      "キャンセルの更新結果を確認できません。予約一覧を確認してから再試行してください。"
+    );
+  }
 
   return {
     mode: "cancelled",
