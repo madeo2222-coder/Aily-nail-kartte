@@ -589,6 +589,15 @@ async function upsertReservation(
     ? null
     : await findDelayedManualEntry(parsed, context);
   const customerMatch = await findOrCreateCustomer(parsed, context);
+  if (
+    sourceMarkedManualEntry?.customer_id &&
+    customerMatch.customerId &&
+    sourceMarkedManualEntry.customer_id !== customerMatch.customerId
+  ) {
+    throw new Error(
+      "手入力予約とメールの顧客が一致しません。誤更新を避けるため同期を停止しました。"
+    );
+  }
   const delayedManualEntry =
     existing || sourceMarkedManualEntry || !customerMatch.customerId
       ? sourceMarkedManualEntry
