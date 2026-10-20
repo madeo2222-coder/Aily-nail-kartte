@@ -586,6 +586,15 @@ async function upsertReservation(
   const sourceLabel = getSourceLabel(parsed.source);
   const reservationKey = getReservationNumberMemoKey(parsed.source);
   const existing = await findExistingExternalReservation(parsed, context);
+  // Gmail replays earlier booking mails on every sync. A known cancellation
+  // must survive even when its later cancellation mail cannot be fetched.
+  if (existing && isCancelledReservationStatus(existing.status)) {
+    return {
+      mode: "cancelled",
+      reservationId: existing.id,
+      alreadyCancelled: true,
+    };
+  }
   const sourceMarkedManualEntry = existing
     ? null
     : await findDelayedManualEntry(parsed, context);

@@ -13,10 +13,13 @@ function loadSync(manualCustomerId, options = {}) {
   const manual = {
     id: "manual-reservation", customer_id: manualCustomerId,
     staff_id: null, salon_id: "salon-1", menu: "HPB予約",
-    memo: options.memo ?? (options.existing ? "HPB予約番号：A123456" : "電話で先に登録"), status: "confirmed",
+    memo: options.memo ?? (options.existing ? "HPB予約番号：A123456" : "電話で先に登録"), status: options.status ?? "confirmed",
   };
   const db = {
     from(table) {
+      if (table === "customers" && options.rejectCustomerLookup) {
+        throw new Error("cancelled replay must not resolve or create customers");
+      }
       let operation = "read";
       let externalLookup = false;
       let payload;
@@ -107,6 +110,35 @@ const mail = `予約番号：A123456
 来店日時：2099年10月20日 10:00
 指名スタッフ：指名なし
 所要時間目安：90分`;
+
+test("replaying the original booking after cancellation does not reactivate it", async () => {
+  const initial = loadSync("mail-customer");
+  await initial.sync(mail);
+  const cancellation = loadSync("mail-customer", {
+    existing: true, memo: initial.writes[0].payload.memo,
+  });
+  await cancellation.sync(`ご予約のキャンセル\n${mail}`);
+  const cancelled = cancellation.writes[0].payload;
+  const replay = loadSync("mail-customer", {
+    existing: true, memo: cancelled.memo, status: cancelled.status,
+  });
+  const result = await replay.sync(mail);
+  assert.equal(replay.writes.length, 0);
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(result.result.alreadyCancelled, true);
+});
+
+test("all recognized cancellation states stop replay before customer resolution", async () => {
+  for (const status of ["キャンセル", "cancelled", "canceled", "cancel", "取消", "取り消し"]) {
+    const runtime = loadSync("mail-customer", {
+      existing: true, status, rejectCustomerLookup: true,
+    });
+    const result = await runtime.sync(mail);
+    assert.equal(result.result.alreadyCancelled, true, status);
+    assert.equal(runtime.writes.length, 0, status);
+  }
+});
 
 test("replaying a reconciled mail retains the original manual memo without nesting it", async () => {
   const initial = loadSync("mail-customer");
