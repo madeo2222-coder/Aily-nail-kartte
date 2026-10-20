@@ -107,7 +107,10 @@ export async function POST(
   try {
     rawBody = await request.json();
   } catch {
-    rawBody = {};
+    return NextResponse.json(
+      { ok: false, confirmed: false, error: "予約内容を読み取れませんでした。画面を再読み込みしてから再試行してください。" },
+      { status: 400 }
+    );
   }
 
   if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {

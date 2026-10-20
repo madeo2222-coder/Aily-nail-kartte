@@ -49,6 +49,7 @@ function createReadQuery(row, calls, error = null) {
 function loadRoute({
   authenticated = true,
   body = {},
+  rawBody,
   reservation,
   rpcResult = [{ outcome: "confirmed", reservation_id: "reservation-1" }],
   rpcError = null,
@@ -142,7 +143,13 @@ function loadRoute({
 
   async function post() {
     const response = await exports.POST(
-      { async json() { return body; } },
+      rawBody === undefined
+        ? { async json() { return body; } }
+        : new Request("https://example.test/api/reservations/reservation-1/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: rawBody,
+          }),
       { params: Promise.resolve({ id: "reservation-1" }) }
     );
     return { body: await response.json(), status: response.status };
@@ -171,6 +178,27 @@ test("rejects unauthenticated confirmation before privileged reads", async () =>
     legacyAllowed: false,
     salonContextRequired: true,
   });
+});
+
+test("rejects malformed or empty JSON before reading or confirming a reservation", async () => {
+  for (const rawBody of ["", '{"startAt":', "not-json"]) {
+    const runtime = loadRoute({ rawBody });
+    const response = await runtime.post();
+    assert.equal(response.status, 400, `invalid body: ${JSON.stringify(rawBody)}`);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.confirmed, false);
+    assert.equal(runtime.clientCreated, false);
+    assert.equal(runtime.rpcCalls.length, 0);
+  }
+});
+
+test("preserves the reservation list's explicit empty JSON confirmation", async () => {
+  const runtime = loadRoute({ rawBody: "{}" });
+  const response = await runtime.post();
+  assert.equal(response.status, 200);
+  assert.equal(response.body.confirmed, true);
+  assert.equal(runtime.rpcCalls.length, 1);
+  assert.equal(runtime.rpcCalls[0].args.p_start_at, "2099-10-02T01:30:00.000Z");
 });
 
 test("scopes the reservation read and atomic confirmation to the staff salon", async () => {
