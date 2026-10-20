@@ -64,6 +64,7 @@ function loadRoute({
     },
   ],
   lineResponses = [new MockResponse({}, 200)],
+  completionResult = { data: true, error: null },
   reservation,
   customer,
 } = {}) {
@@ -109,7 +110,8 @@ function loadRoute({
       }
       if (name === "complete_reservation_alternative_request") {
         completionCalls.push(args);
-        return { data: true, error: null };
+        if (completionResult instanceof Error) throw completionResult;
+        return completionResult;
       }
       throw new Error(`Unexpected RPC: ${name}`);
     },
@@ -267,6 +269,40 @@ test("does not call LINE again after the request is already sent", async () => {
   assert.equal(response.body.alreadySent, true);
   assert.equal(runtime.lineCalls.length, 0);
   assert.equal(runtime.completionCalls.length, 0);
+});
+
+test("does not invite a retry when a network failure cannot be recorded", async () => {
+  for (const completionResult of [
+    { data: false, error: null },
+    { data: null, error: { message: "private database detail" } },
+    new Error("private connection detail"),
+  ]) {
+    const runtime = loadRoute({
+      lineResponses: [new Error("LINE response lost")],
+      completionResult,
+    });
+    const response = await runtime.post();
+    assert.equal(response.status, 500);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.sent, false);
+    assert.equal(response.body.status, "unknown");
+    assert.equal(response.body.retryable, false);
+    assert.match(response.body.error, /再送せず/);
+    assert.doesNotMatch(response.body.error, /private/);
+    assert.equal(runtime.lineCalls.length, 1);
+    assert.equal(runtime.completionCalls.length, 1);
+    assert.equal(runtime.completionCalls[0].p_status, "failed");
+  }
+});
+
+test("keeps the retry path when a network failure is successfully recorded", async () => {
+  const runtime = loadRoute({ lineResponses: [new Error("LINE timeout")] });
+  const response = await runtime.post();
+  assert.equal(response.status, 502);
+  assert.equal(response.body.status, "failed");
+  assert.equal(response.body.retryable, true);
+  assert.equal(runtime.lineCalls.length, 1);
+  assert.equal(runtime.completionCalls[0].p_attempt_count, 1);
 });
 
 test("records a failed send and retries with the same LINE retry key", async () => {

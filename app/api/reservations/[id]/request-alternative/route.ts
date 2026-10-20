@@ -382,12 +382,35 @@ export async function POST(
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "LINE APIへの接続に失敗しました";
-      await supabaseAdmin.rpc("complete_reservation_alternative_request", {
-        p_reservation_id: reservation.id,
-        p_attempt_count: claim.attempt_count,
-        p_status: "failed",
-        p_error: errorMessage,
-      });
+      let failureRecorded = false;
+      try {
+        const { data, error: completionError } = await supabaseAdmin.rpc(
+          "complete_reservation_alternative_request",
+          {
+            p_reservation_id: reservation.id,
+            p_attempt_count: claim.attempt_count,
+            p_status: "failed",
+            p_error: errorMessage,
+          }
+        );
+        failureRecorded = !completionError && data === true;
+      } catch {
+        // A lost LINE response and an unrecorded failure leave delivery unknown.
+        // Do not turn this into a confirmed failure or invite an immediate retry.
+      }
+
+      if (!failureRecorded) {
+        return NextResponse.json(
+          {
+            ok: false,
+            sent: false,
+            status: "unknown",
+            retryable: false,
+            error: "LINE送信結果を保存できませんでした。再送せず、通知状態とLINEの送信履歴を確認してください。",
+          },
+          { status: 500 }
+        );
+      }
 
       return NextResponse.json(
         {
