@@ -20,6 +20,8 @@ node scripts/analyze-aily-preflight.mjs \
 
 出力が`MISSING`の連続したmigrationだけを依存順の適用候補として扱います。`PRESENT`は再実行しません。`要確認`になった場合は既存オブジェクトを変更せず、表示された検査名を個別に照合します。
 
+前提条件は別日時側33項目、確定通知側16項目の**検査名がすべて揃うこと**を確認します。1行でも欠ければ、残りがPASSでも適用候補は出しません。表示された不足は「結果ファイルにない」という意味であり、実DBのオブジェクトがないとは判定しません。まず既に受領した原本から欠けた行を回収し、同じSQLの再実行や再提出を一律に依頼しないでください。
+
 | 結果 | 次の工程 |
 | --- | --- |
 | prerequisiteがすべてPASS、ledgerとfunctionがすべてMISSING | 新規migration適用候補。承認後に適用します。 |
@@ -71,3 +73,14 @@ node scripts/analyze-aily-preflight.mjs \
 `scripts/verify-alternative-request-sql.mjs` と `scripts/verify-staff-reservation-confirmation-sql.mjs` はPGlite 0.5.8のメモリ内PostgreSQLを使い、実際のmigration・確認SQL・RPCを実行します。Ailyの実DBには接続しません。権限不足、予約競合、古い更新、送信失敗後の同一キー再試行、送信済み通知の重複防止を検証します。SupabaseのData API・RLS設定全体や実LINE送信の検証とは区別します。
 
 PGliteはアプリの依存関係に追加せず、任意の一時フォルダへ `@electric-sql/pglite@0.5.8` をインストールしてください。`AILY_PGLITE_MODULE` にその `dist/index.js` の絶対パスを指定して `node scripts/verify-alternative-request-sql.mjs` を実行できます。
+
+## 2026-10-21 前提条件の部分結果による誤判定を修正
+
+- 利用者・目的: DB導入を案内する担当者が、欠けた確認結果から適用候補を出さないようにする。
+- 範囲: `analyze-aily-preflight.mjs` のオフライン判定。SQL・migration・実DB・アプリ画面は変更しない。保存済み `52a70de53a5389ef0766ef588e7441eee6ee22e0` の必須権限修正を維持する。
+- 受入条件: 上記コマンドへ不完全なCSV/JSONを渡した場合、要確認と不足項目を表示し、適用候補を出さない。完全な結果では従来の依存順判定を維持する。
+- 回帰: 修正前は両結果の前提条件がreservations.idのPASSだけでも全4件を適用候補にした。修正後は拒否。49項目の各1行欠落を、migration全件PRESENT/全件MISSINGの双方で検査する。期待項目は実際の2本の読取SQLのPGlite出力と照合する。
+- 検証結果: 関連9件、全回帰682件成功（失敗0・skip0、PGlite 0.5.10を外部検証フォルダに使用）。全lint・独立型検査・diff check・fixture設定のNext webpack build（93ページ生成、最終trace、exit 0）成功。依存lockfileと本番設定は変更なし。
+- 残件: 実DBの未確認migration/権限、許可されたテスト予約の保存→再表示・通知の実接続受入、本番公開承認。オフライン検査成功は実DBの導入成功を意味しない。
+- 予定: 判定修正は保存後に利用でき、デプロイ不要。アプリ側の保存済み修正と合わせる次回統合Previewは2026-10-21 08:05:12.408 JST以降が候補（直前に全環境の最終試行を再確認）。現場受入・本番日は実接続確認と承認待ちのため未確定。
+- 本人操作: 今回の判定修正のために新たな操作は不要。既受領の表権限/RLS/スタッフ集計は再利用する。実DBの手動作業が必要な時だけ、未確認項目の読取SQLを一つずつ具体化する。

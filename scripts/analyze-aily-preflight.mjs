@@ -3,6 +3,31 @@
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
+// These are the complete prerequisite rows emitted by the two checked-in SQL
+// files, not merely the rows that happened to survive a copy/export.
+export const PREREQUISITES = {
+  alternative: [
+    "reservations.id", "reservations.customer_id", "reservations.salon_id",
+    "reservations.staff_id", "reservations.status", "reservations.menu",
+    "reservations.memo", "reservations.source", "reservations.start_at", "reservations.end_at",
+    "customers.id", "customers.salon_id", "salons.id",
+    "staffs.id", "staffs.salon_id", "staffs.is_active", "staffs.role", "staffs.customer_booking_enabled",
+    "external_calendar_blocks.salon_id", "external_calendar_blocks.staff_id",
+    "external_calendar_blocks.start_at", "external_calendar_blocks.end_at",
+    "unique_id:reservations", "unique_id:customers", "unique_id:salons", "unique_id:staffs",
+    "role:anon", "role:authenticated", "role:service_role",
+    "service_role_lock:reservations", "service_role_lock:staffs",
+    "service_role_lock:customers", "service_role_lock:external_calendar_blocks",
+  ],
+  confirmation: [
+    "reservations.id", "reservations.customer_id", "reservations.salon_id",
+    "reservations.staff_id", "reservations.status",
+    "customers.id", "customers.salon_id", "customers.line_user_id", "salons.id",
+    "staffs.id", "staffs.salon_id", "staffs.is_active", "staffs.role",
+    "role:anon", "role:authenticated", "role:service_role",
+  ],
+};
+
 const FUNCTION_SUFFIXES = [
   "body",
   "invoker",
@@ -214,6 +239,11 @@ export function analyzePreflight({ alternative, confirmation }) {
   const blockers = [];
 
   for (const [source, rows] of Object.entries(sources)) {
+    for (const name of PREREQUISITES[source]) {
+      if (!indexes[source].has(`prerequisite\u0000${name}`)) {
+        blockers.push(`${source}: prerequisite/${name}が結果にありません（部分結果では判定できません）`);
+      }
+    }
     const prerequisites = rows.filter((row) => row.section === "prerequisite");
     if (!prerequisites.length) {
       blockers.push(`${source}: prerequisite結果がありません`);
