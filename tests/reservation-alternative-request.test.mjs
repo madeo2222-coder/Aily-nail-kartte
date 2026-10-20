@@ -503,3 +503,40 @@ test("staff UI synchronously locks every competing reservation mutation", () => 
     );
   }
 });
+
+test("staff mutation buttons are disabled throughout every pending operation", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+  const sourceFile = ts.createSourceFile("page.tsx", pageSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const buttons = [];
+  let pendingExpression;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === "isMutating") {
+      pendingExpression = node.initializer.getText(sourceFile);
+    }
+    if (ts.isJsxOpeningElement(node) && node.tagName.getText(sourceFile) === "button") {
+      const disabled = node.attributes.properties.find(
+        (attribute) => ts.isJsxAttribute(attribute) && attribute.name.text === "disabled"
+      );
+      if (disabled) buttons.push(disabled.initializer.expression.getText(sourceFile));
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sourceFile);
+  assert.equal(buttons.length, 5, "all five write/notification buttons are covered");
+  for (let mask = 0; mask < 16; mask++) {
+    const state = {
+      saving: Boolean(mask & 1),
+      deleting: Boolean(mask & 2),
+      confirming: Boolean(mask & 4),
+      requestingAlternative: Boolean(mask & 8),
+    };
+    if (pendingExpression) state.isMutating = vm.runInNewContext(pendingExpression, state);
+    for (const expression of buttons) {
+      assert.equal(vm.runInNewContext(expression, state), mask !== 0,
+        `${expression}: ${JSON.stringify(state)}`);
+    }
+  }
+});

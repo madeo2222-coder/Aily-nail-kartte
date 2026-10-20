@@ -825,6 +825,7 @@ export default function EditReservationPage() {
     ? `/customers/${customerId}`
     : "/reservations";
   const isAlreadyConfirmed = status === "confirmed";
+  const isMutating = saving || deleting || confirming || requestingAlternative;
 
   return (
     <main className="min-h-screen bg-rose-50/40">
@@ -874,6 +875,7 @@ export default function EditReservationPage() {
         ) : (
           <form
             onSubmit={handleSubmit}
+            aria-busy={isMutating}
             className="space-y-4 rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6"
           >
             {errorMessage ? (
@@ -908,7 +910,7 @@ export default function EditReservationPage() {
                   <button
                     type="button"
                     onClick={handleConfirmReservation}
-                    disabled={confirming || saving || deleting}
+                    disabled={isMutating}
                     className="rounded-2xl bg-blue-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
                   >
                     {confirming ? "確定中..." : "予約確定にする"}
@@ -922,7 +924,7 @@ export default function EditReservationPage() {
                       <button
                         type="button"
                         onClick={retryConfirmationLine}
-                        disabled={confirming || saving || deleting}
+                        disabled={isMutating}
                         className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 disabled:opacity-60"
                       >
                         {confirming ? "送信中..." : "確定LINEを再試行"}
@@ -951,9 +953,7 @@ export default function EditReservationPage() {
                   <button
                     type="button"
                     onClick={requestAlternativeTime}
-                    disabled={
-                      requestingAlternative || confirming || saving || deleting
-                    }
+                    disabled={isMutating}
                     className="shrink-0 rounded-2xl bg-amber-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
                   >
                     {requestingAlternative
@@ -1224,7 +1224,7 @@ export default function EditReservationPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <button
                 type="submit"
-                disabled={saving || confirming}
+                disabled={isMutating}
                 className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
               >
                 {saving ? "更新中..." : "更新する"}
@@ -1233,7 +1233,7 @@ export default function EditReservationPage() {
               <button
                 type="button"
                 onClick={handleDelete}
-                disabled={deleting || confirming || saving}
+                disabled={isMutating}
                 className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
               >
                 {deleting ? "削除中..." : isExternalBlock ? "ブロックを削除する" : "削除する"}
