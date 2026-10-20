@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 type SyncItem = {
   ok?: boolean;
@@ -54,6 +54,8 @@ export default function HpbMailSyncTestPage() {
   const [result, setResult] = useState<SyncResult | null>(null);
   const [sending, setSending] = useState(false);
   const [gmailSyncing, setGmailSyncing] = useState(false);
+  const syncInFlight = useRef(false);
+  const busy = sending || gmailSyncing;
 
   const summary = useMemo(() => {
     const items = result?.results || [];
@@ -73,11 +75,13 @@ export default function HpbMailSyncTestPage() {
   }, [result]);
 
   async function handleSync() {
+    if (syncInFlight.current) return;
     if (!mailText.trim()) {
       alert("予約メール本文を貼り付けてください");
       return;
     }
 
+    syncInFlight.current = true;
     setSending(true);
     setResult(null);
 
@@ -101,16 +105,19 @@ export default function HpbMailSyncTestPage() {
       console.error(error);
       alert("通信エラーが発生しました");
     } finally {
+      syncInFlight.current = false;
       setSending(false);
     }
   }
 
   async function handleGmailSync() {
+    if (syncInFlight.current) return;
     const ok = window.confirm(
       "Gmailから最新の予約メールを取得して同期しますか？"
     );
     if (!ok) return;
 
+    syncInFlight.current = true;
     setGmailSyncing(true);
     setResult(null);
 
@@ -139,6 +146,7 @@ export default function HpbMailSyncTestPage() {
       console.error(error);
       alert("Gmail同期の通信エラーが発生しました");
     } finally {
+      syncInFlight.current = false;
       setGmailSyncing(false);
     }
   }
@@ -185,7 +193,7 @@ export default function HpbMailSyncTestPage() {
           <button
             type="button"
             onClick={handleGmailSync}
-            disabled={gmailSyncing}
+            disabled={busy}
             className="mt-4 w-full rounded-2xl bg-orange-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
             {gmailSyncing ? "予約同期中..." : "予約今すぐ同期"}
@@ -357,7 +365,7 @@ export default function HpbMailSyncTestPage() {
           <button
             type="button"
             onClick={handleSync}
-            disabled={sending}
+            disabled={busy}
             className="mt-4 w-full rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
             {sending ? "同期中..." : "予約メール本文を同期テスト"}
