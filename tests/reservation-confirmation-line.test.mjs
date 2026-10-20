@@ -248,6 +248,29 @@ test("keeps confirmation retry available after a recorded network failure", asyn
   assert.equal(runtime.completionCalls[0].p_attempt_count, 1);
 });
 
+test("does not resend after confirmation LINE succeeds but its delivery record cannot be saved", async () => {
+  for (const completionResult of [
+    { data: false, error: null },
+    { data: null, error: { message: "private database detail" } },
+    new Error("private connection detail"),
+  ]) {
+    const runtime = loadRoute({ completionResult });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 500);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.sent, true);
+    assert.equal(response.body.status, "sent_unrecorded");
+    assert.equal(response.body.retryable, false);
+    assert.match(response.body.error, /LINEは送信されました/);
+    assert.match(response.body.error, /再送せず/);
+    assert.doesNotMatch(response.body.error, /private/);
+    assert.equal(runtime.lineCalls.length, 1);
+    assert.equal(runtime.completionCalls.length, 1);
+    assert.equal(runtime.completionCalls[0].p_status, "sent");
+  }
+});
+
 test("records failure and safely retries with the same LINE retry key", async () => {
   const retryKey = "123e4567-e89b-12d3-a456-426614174000";
   const runtime = loadRoute({
@@ -353,5 +376,9 @@ test("migration and staff screens preserve idempotent retry controls", () => {
   assert.match(
     editPage,
     /confirmationResponse\s*\.json\(\)\s*\.catch\(\(\) => null\)/
+  );
+  assert.match(
+    editPage,
+    /if \(!lineRes\.ok \|\| lineData\?\.error\) \{[\s\S]{0,180}else if \(lineData\?\.sent\)/
   );
 });

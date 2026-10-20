@@ -537,10 +537,12 @@ export default function EditReservationPage() {
           message?: string;
         } | null;
 
-        if (lineData?.sent) {
+        if (!lineRes.ok || lineData?.error) {
+          lineNoticeMessage = ` LINE通知：${
+            lineData?.error || "送信結果を確認できませんでした。"
+          }`;
+        } else if (lineData?.sent) {
           lineNoticeMessage = " 顧客へLINE通知も送信しました。";
-        } else if (lineData?.error) {
-          lineNoticeMessage = ` LINE通知：${lineData.error}`;
         } else if (lineData?.message) {
           lineNoticeMessage = ` LINE通知：${lineData.message}`;
         } else {

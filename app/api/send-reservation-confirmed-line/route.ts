@@ -339,17 +339,35 @@ export async function POST(request: Request) {
     const lineErrorText = accepted ? "" : (
       await lineResponse.text().catch(() => `LINE API HTTP ${lineResponse.status}: response body unavailable`)
     ).slice(0, 1000);
-    const { data: completed, error: completionError } = await supabaseAdmin.rpc(
-      "complete_reservation_confirmation_delivery",
-      {
-        p_reservation_id: reservation.id,
-        p_attempt_count: claim.attempt_count,
-        p_status: accepted ? "sent" : "failed",
-        p_error: lineErrorText || null,
-      }
-    );
-    if (completionError || completed !== true) {
-      throw new Error(completionError?.message || "LINE送信結果を保存できませんでした");
+    let completionRecorded = false;
+    try {
+      const { data: completed, error: completionError } =
+        await supabaseAdmin.rpc(
+          "complete_reservation_confirmation_delivery",
+          {
+            p_reservation_id: reservation.id,
+            p_attempt_count: claim.attempt_count,
+            p_status: accepted ? "sent" : "failed",
+            p_error: lineErrorText || null,
+          }
+        );
+      completionRecorded = !completionError && completed === true;
+    } catch {
+      // The LINE response is known, but its delivery ledger could not be updated.
+    }
+    if (!completionRecorded) {
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: accepted,
+          status: accepted ? "sent_unrecorded" : "unknown",
+          retryable: false,
+          error: accepted
+            ? "LINEは送信されましたが送信記録を保存できませんでした。再送せず、通知状態とLINEの送信履歴を確認してください。"
+            : "LINE送信結果を保存できませんでした。再送せず、通知状態とLINEの送信履歴を確認してください。",
+        },
+        { status: 500 }
+      );
     }
     if (!accepted) {
       return NextResponse.json(
