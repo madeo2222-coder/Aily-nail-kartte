@@ -601,14 +601,20 @@ export default function EditReservationPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reservationId }),
       });
-      const result = (await response.json()) as {
+      const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
         sent?: boolean;
         alreadySent?: boolean;
         retried?: boolean;
         error?: string;
         message?: string;
-      };
+      } | null;
+
+      if (!result) {
+        setMutationResultUnknown(true);
+        setErrorMessage("");
+        return;
+      }
 
       if (!response.ok || !result.ok) {
         setErrorMessage(result.error || "予約確定LINEの再試行に失敗しました。");
@@ -621,8 +627,9 @@ export default function EditReservationPage() {
           : result.message || "予約確定LINEを送信しました。"
       );
     } catch (error) {
-      console.error("予約確定LINE再試行エラー:", error);
-      setErrorMessage("予約確定LINEの再試行中にエラーが発生しました。");
+      console.error("予約確定LINE再試行結果の確認エラー:", error);
+      setMutationResultUnknown(true);
+      setErrorMessage("");
     } finally {
       mutationRequestPendingRef.current = false;
       setConfirming(false);
@@ -713,7 +720,15 @@ export default function EditReservationPage() {
           reasonText: cancellationReasonText,
         }),
       });
-      const result = (await response.json()) as CancellationResult;
+      const result = (await response.json().catch(() => null)) as
+        | CancellationResult
+        | null;
+
+      if (!result) {
+        setMutationResultUnknown(true);
+        setErrorMessage("");
+        return;
+      }
 
       if (!response.ok || !result.ok) {
         setErrorMessage(result.error || "予約のキャンセルに失敗しました");
@@ -728,8 +743,10 @@ export default function EditReservationPage() {
             ? "予約は既にキャンセル済みです。LINEは再送していません。"
             : "予約をキャンセルしました。")
       );
-    } catch {
-      setErrorMessage("予約のキャンセル処理に失敗しました");
+    } catch (error) {
+      console.error("予約キャンセル結果の確認エラー:", error);
+      setMutationResultUnknown(true);
+      setErrorMessage("");
     } finally {
       mutationRequestPendingRef.current = false;
       setSaving(false);
@@ -788,16 +805,22 @@ export default function EditReservationPage() {
         error?: string;
       } | null;
 
-      if (!response.ok || !result?.ok) {
-        setErrorMessage(result?.error || "予約の更新に失敗しました");
+      if (!result) {
+        setMutationResultUnknown(true);
+        setErrorMessage("");
+        return;
+      }
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(result.error || "予約の更新に失敗しました");
         return;
       }
 
       router.push(isExternalBlock ? "/reservations/calendar" : customerId ? `/customers/${customerId}` : "/reservations");
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "予約の更新に失敗しました";
-      setErrorMessage(message);
+      console.error("予約更新結果の確認エラー:", error);
+      setMutationResultUnknown(true);
+      setErrorMessage("");
     } finally {
       mutationRequestPendingRef.current = false;
       setSaving(false);
@@ -825,14 +848,22 @@ export default function EditReservationPage() {
         error?: string;
       } | null;
 
-      if (!response.ok || !result?.ok) {
-        setErrorMessage(result?.error || "予約の削除に失敗しました");
+      if (!result) {
+        setMutationResultUnknown(true);
+        setErrorMessage("");
+        return;
+      }
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(result.error || "予約の削除に失敗しました");
         return;
       }
 
       router.push(isExternalBlock ? "/reservations/calendar" : customerId ? `/customers/${customerId}` : "/reservations");
-    } catch {
-      setErrorMessage("予約の削除に失敗しました");
+    } catch (error) {
+      console.error("予約削除結果の確認エラー:", error);
+      setMutationResultUnknown(true);
+      setErrorMessage("");
     } finally {
       mutationRequestPendingRef.current = false;
       setDeleting(false);

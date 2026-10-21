@@ -608,7 +608,7 @@ test("staff mutation buttons are disabled throughout every pending operation", (
   }
 });
 
-test("staff UI blocks retries when confirmation or alternative request results are unknown", () => {
+test("staff UI blocks retries when any reservation mutation result is unknown", () => {
   const pageSource = readFileSync(
     new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
     "utf8"
@@ -626,6 +626,35 @@ test("staff UI blocks retries when confirmation or alternative request results a
     pageSource,
     /別日時LINE依頼結果の確認エラー:[\s\S]{0,180}setMutationResultUnknown\(true\)/
   );
+  for (const errorLabel of [
+    "予約確定LINE再試行結果の確認エラー:",
+    "予約キャンセル結果の確認エラー:",
+    "予約更新結果の確認エラー:",
+    "予約削除結果の確認エラー:",
+  ]) {
+    assert.match(
+      pageSource,
+      new RegExp(`${errorLabel}[\\s\\S]{0,180}setMutationResultUnknown\\(true\\)`)
+    );
+  }
+  for (const functionName of [
+    "retryConfirmationLine",
+    "cancelReservation",
+    "handleSubmit",
+    "handleDelete",
+  ]) {
+    const functionStart = pageSource.indexOf(`async function ${functionName}(`);
+    const nextFunction = pageSource.indexOf("\n  async function ", functionStart + 1);
+    const functionSource = pageSource.slice(
+      functionStart,
+      nextFunction === -1 ? undefined : nextFunction
+    );
+    assert.match(
+      functionSource,
+      /if \(!result\) \{[\s\S]{0,180}setMutationResultUnknown\(true\)/,
+      `${functionName} blocks after an unparseable response`
+    );
+  }
   assert.match(
     pageSource,
     /同じ操作を繰り返さず、最新情報を再読み込みしてください。/
