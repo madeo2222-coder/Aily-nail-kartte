@@ -36,6 +36,7 @@ function loadRoute({
   syncFailures = [],
   messageGetFailures = [],
   messageInternalDates = {},
+  messagePayloads = {},
   messageGetDelayMs = 0,
 } = {}) {
   const authOptions = [];
@@ -116,7 +117,7 @@ function loadRoute({
                             internalDate: Object.hasOwn(messageInternalDates, id)
                               ? messageInternalDates[id]
                               : "0",
-                            payload: {
+                            payload: messagePayloads[id] ?? {
                               mimeType: "text/plain",
                               headers: [
                                 {
@@ -314,6 +315,57 @@ test("Gmail sync uses each message timestamp when search order is misleading", a
 
   assert.equal(response.status, 200);
   assert.deepEqual(runtime.syncedTexts, ["older-message", "newer-message"]);
+});
+
+test("Gmail sync preserves field boundaries in an HTML-only reservation mail", async () => {
+  const html = `<div>予約番号：A123456</div><div>氏名：テスト顧客</div><div>来店日時：2099年10月20日 10:00</div>`;
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "html-only" }] }],
+    messagePayloads: {
+      "html-only": {
+        mimeType: "text/html",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { data: Buffer.from(html).toString("base64url") },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.equal(
+    runtime.syncedTexts[0],
+    "予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00"
+  );
+});
+
+test("Gmail sync prefers the plain part instead of duplicating multipart content", async () => {
+  const plain = `予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00`;
+  const html = `<div>予約番号：A123456</div><div>氏名：テスト顧客</div><div>来店日時：2099年10月20日 10:00</div>`;
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "multipart" }] }],
+    messagePayloads: {
+      multipart: {
+        mimeType: "multipart/alternative",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: Buffer.from(plain).toString("base64url") },
+          },
+          {
+            mimeType: "text/html",
+            body: { data: Buffer.from(html).toString("base64url") },
+          },
+        ],
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedTexts, [plain]);
 });
 
 test("Gmail sync fails closed when a message timestamp is unavailable", async () => {

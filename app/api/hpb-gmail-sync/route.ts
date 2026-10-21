@@ -11,6 +11,7 @@ function decodeBase64Url(value: string) {
 
 type GmailMessagePart = {
   mimeType?: string | null;
+  filename?: string | null;
   body?: { data?: string | null } | null;
   parts?: GmailMessagePart[] | null;
 };
@@ -27,29 +28,69 @@ const GMAIL_MESSAGE_FETCH_CONCURRENCY = 5;
 const RESERVATION_MAIL_QUERY =
   'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ミニモサロンツール" OR "予約ID")';
 
-function extractPlainText(payload: GmailMessagePart | null | undefined): string {
-  if (!payload) return "";
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
+      const codePoint = Number.parseInt(hex, 16);
+      return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match;
+    })
+    .replace(/&#(\d+);/g, (match, decimal: string) => {
+      const codePoint = Number.parseInt(decimal, 10);
+      return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : match;
+    })
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'");
+}
 
-  if (payload.mimeType === "text/plain" && payload.body?.data) {
-    return decodeBase64Url(payload.body.data);
-  }
-
-  if (payload.mimeType === "text/html" && payload.body?.data) {
-    return decodeBase64Url(payload.body.data)
+function htmlToPlainText(value: string) {
+  return decodeHtmlEntities(
+    value
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
       .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
+      .replace(/<\/(?:p|div|li|tr|table|section|article|h[1-6])\s*>/gi, "\n")
+      .replace(/<\/(?:td|th)\s*>/gi, "\t")
       .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">");
+  )
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n");
+}
+
+function collectMimeText(
+  payload: GmailMessagePart | null | undefined,
+  mimeType: "text/plain" | "text/html"
+): string[] {
+  if (!payload) return [];
+
+  if (payload.filename?.trim()) return [];
+
+  if (payload.mimeType === mimeType && payload.body?.data) {
+    const decoded = decodeBase64Url(payload.body.data);
+    return [mimeType === "text/html" ? htmlToPlainText(decoded) : decoded];
   }
 
   if (Array.isArray(payload.parts)) {
-    return payload.parts.map(extractPlainText).filter(Boolean).join("\n");
+    return payload.parts.flatMap((part) => collectMimeText(part, mimeType));
   }
 
-  return "";
+  return [];
+}
+
+function extractPlainText(payload: GmailMessagePart | null | undefined): string {
+  const plainText = collectMimeText(payload, "text/plain")
+    .filter((value) => value.trim())
+    .join("\n");
+
+  if (plainText) return plainText;
+
+  return collectMimeText(payload, "text/html")
+    .filter((value) => value.trim())
+    .join("\n");
 }
 
 function isTargetReservationMail(subject: string, bodyText: string) {
