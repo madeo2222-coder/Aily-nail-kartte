@@ -37,6 +37,7 @@ function loadSync(manualCustomerId, options = {}) {
         limit() { return query; },
         ilike() { externalLookup = true; return query; },
         update(value) { operation = "update"; payload = value; return query; },
+        insert(value) { operation = "insert"; payload = value; return query; },
         upsert(value) { operation = "upsert"; payload = value; return query; },
         single() { return query; },
         maybeSingle() { return query; },
@@ -44,12 +45,14 @@ function loadSync(manualCustomerId, options = {}) {
           if (operation !== "read") {
             writes.push({ table, operation, payload, selected, filters });
             const data = Object.hasOwn(options, "updateData")
-              ? options.updateData : { id: manual.id };
+              ? options.updateData : { id: payload?.id ?? manual.id };
             return Promise.resolve({ data, error: options.updateError ?? null }).then(resolve, reject);
           }
           const data = table === "salons" ? [{ id: "salon-1" }]
             : table === "customers" ? [customer]
-              : table === "reservations" ? (externalLookup && !options.existing ? [] : [manual])
+              : table === "reservations" ? (options.missingReservation
+                  ? []
+                  : externalLookup && !options.existing ? [] : [manual])
                 : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
         },
@@ -199,6 +202,57 @@ test("replaying the original booking after cancellation does not reactivate it",
   assert.equal(result.result.reservationId, "manual-reservation");
   assert.equal(result.result.alreadyCancelled, true);
 });
+
+test("a cancellation received before its booking creates a persistent tombstone", async () => {
+  const cancellation = loadSync("mail-customer", {
+    missingReservation: true,
+    rejectCustomerLookup: true,
+  });
+  const result = await cancellation.sync(`ご予約のキャンセル\n${mail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.createdCancellation, true);
+  assert.equal(cancellation.writes.length, 1);
+  assert.equal(cancellation.writes[0].operation, "insert");
+  assert.equal(cancellation.writes[0].payload.status, "キャンセル");
+  assert.equal(cancellation.writes[0].payload.salon_id, "salon-1");
+  assert.equal(cancellation.writes[0].payload.customer_id, undefined);
+  assert.match(cancellation.writes[0].payload.memo, /^HPB予約番号：A123456/m);
+  assert.match(cancellation.writes[0].payload.memo, /【HPBキャンセルメール本文】/);
+
+  const replay = loadSync("mail-customer", {
+    existing: true,
+    status: cancellation.writes[0].payload.status,
+    memo: cancellation.writes[0].payload.memo,
+    rejectCustomerLookup: true,
+  });
+  const replayResult = await replay.sync(mail);
+
+  assert.equal(replayResult.result.mode, "cancelled");
+  assert.equal(replayResult.result.alreadyCancelled, true);
+  assert.equal(replay.writes.length, 0);
+});
+
+for (const [reason, response] of [
+  ["no inserted row", { updateData: null }],
+  ["unexpected row", { updateData: { id: "other-reservation" } }],
+  ["database error", { updateError: { message: "fixture insert rejected" } }],
+]) {
+  test(`an unmatched cancellation does not report success for ${reason}`, async () => {
+    const runtime = loadSync("mail-customer", {
+      missingReservation: true,
+      rejectCustomerLookup: true,
+      ...response,
+    });
+
+    await assert.rejects(
+      runtime.sync(`ご予約のキャンセル\n${mail}`),
+      /保存結果を確認できません|fixture insert rejected/
+    );
+    assert.equal(runtime.writes.length, 1);
+    assert.equal(runtime.writes[0].operation, "insert");
+  });
+}
 
 test("all recognized cancellation states stop replay before customer resolution", async () => {
   for (const status of ["キャンセル", "cancelled", "canceled", "cancel", "取消", "取り消し"]) {

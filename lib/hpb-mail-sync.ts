@@ -783,13 +783,14 @@ async function cancelReservation(
   context: SyncContext
 ) {
   const sourceLabel = getSourceLabel(parsed.source);
+  const reservationKey = getReservationNumberMemoKey(parsed.source);
+  const deterministicId = buildExternalReservationId(
+    parsed.source,
+    parsed.reservationNumber
+  );
   let existing = await findExistingExternalReservation(parsed, context);
 
   if (!existing) {
-    const deterministicId = buildExternalReservationId(
-      parsed.source,
-      parsed.reservationNumber
-    );
     const { data, error } = await context.supabase
       .from("reservations")
       .select("id, salon_id, staff_id, memo, status")
@@ -801,9 +802,55 @@ async function cancelReservation(
   }
 
   if (!existing?.id) {
+    const cancellationMemo = appendExternalCancellationMemo({
+      existingMemo: [
+        `${reservationKey}：${parsed.reservationNumber}`,
+        `${sourceLabel}氏名：${parsed.customerName}`,
+        `${sourceLabel}担当：${parsed.staffName}`,
+      ].join("\n"),
+      sourceLabel,
+      rawText,
+    });
+    const cancellationPayload: {
+      id: string;
+      salon_id: string;
+      menu: string;
+      start_at: string;
+      end_at: string;
+      status: string;
+      memo: string;
+      staff_id?: string | null;
+    } = {
+      id: deterministicId,
+      salon_id: context.salonId,
+      menu: parsed.menu,
+      start_at: parsed.startAt,
+      end_at: parsed.endAt,
+      status: "キャンセル",
+      memo: cancellationMemo,
+    };
+
+    if (context.staffId) {
+      cancellationPayload.staff_id = context.staffId;
+    }
+
+    const { data, error } = await context.supabase
+      .from("reservations")
+      .insert(cancellationPayload)
+      .select("id")
+      .single();
+
+    if (error) throw new Error(error.message);
+    if (data?.id !== deterministicId) {
+      throw new Error(
+        "キャンセル予約の保存結果を確認できません。予約一覧を確認してから再試行してください。"
+      );
+    }
+
     return {
-      mode: "cancel_missing",
-      reservationId: null,
+      mode: "cancelled",
+      reservationId: deterministicId,
+      createdCancellation: true,
     };
   }
 
