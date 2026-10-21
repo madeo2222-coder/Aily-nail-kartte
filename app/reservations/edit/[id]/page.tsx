@@ -7,6 +7,8 @@ import ReservationReferencePhoto from "../../ReservationReferencePhoto";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import {
   getConfirmationLineRetryLock,
+  readConfirmationLineRetryLock,
+  saveConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import type {
   ConfirmationLineApiResult,
@@ -436,6 +438,11 @@ export default function EditReservationPage() {
   }
 
   useEffect(() => {
+    setConfirmationLineRetryLock(
+      reservationId
+        ? readConfirmationLineRetryLock(window.localStorage, reservationId)
+        : null
+    );
     loadPageData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationId]);
@@ -551,6 +558,11 @@ export default function EditReservationPage() {
           () => null
         )) as ConfirmationLineApiResult | null;
         const retryLock = getConfirmationLineRetryLock(lineData);
+        saveConfirmationLineRetryLock(
+          window.localStorage,
+          reservationId,
+          retryLock
+        );
         setConfirmationLineRetryLock(retryLock);
 
         if (!lineRes.ok || lineData?.error) {
@@ -569,6 +581,11 @@ export default function EditReservationPage() {
       } catch (lineError) {
         console.error("予約確定LINE通知エラー:", lineError);
         const retryLock = getConfirmationLineRetryLock(null);
+        saveConfirmationLineRetryLock(
+          window.localStorage,
+          reservationId,
+          retryLock
+        );
         setConfirmationLineRetryLock(retryLock);
         lineNoticeMessage = ` LINE通知：${
           retryLock?.message || "送信結果を確認できませんでした。"
@@ -618,7 +635,13 @@ export default function EditReservationPage() {
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationLineApiResult | null;
-      setConfirmationLineRetryLock(getConfirmationLineRetryLock(result));
+      const retryLock = getConfirmationLineRetryLock(result);
+      saveConfirmationLineRetryLock(
+        window.localStorage,
+        reservationId,
+        retryLock
+      );
+      setConfirmationLineRetryLock(retryLock);
 
       if (!result) {
         setErrorMessage("");
@@ -637,7 +660,13 @@ export default function EditReservationPage() {
       );
     } catch (error) {
       console.error("予約確定LINE再試行結果の確認エラー:", error);
-      setConfirmationLineRetryLock(getConfirmationLineRetryLock(null));
+      const retryLock = getConfirmationLineRetryLock(null);
+      saveConfirmationLineRetryLock(
+        window.localStorage,
+        reservationId,
+        retryLock
+      );
+      setConfirmationLineRetryLock(retryLock);
       setErrorMessage("");
     } finally {
       mutationRequestPendingRef.current = false;

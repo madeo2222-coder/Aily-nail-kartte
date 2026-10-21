@@ -19,11 +19,33 @@ function loadRetryLockModule() {
     },
   }).outputText;
   const exports = {};
-  vm.runInNewContext(compiled, { exports, require, Set });
+  vm.runInNewContext(compiled, { exports, require, Set, Date, JSON, Number });
   return exports;
 }
 
-const { getConfirmationLineRetryLock } = loadRetryLockModule();
+const {
+  CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
+  getConfirmationLineRetryLock,
+  readConfirmationLineRetryLock,
+  saveConfirmationLineRetryLock,
+} = loadRetryLockModule();
+
+function createMemoryStorage() {
+  const entries = new Map();
+
+  return {
+    getItem(key) {
+      return entries.has(key) ? entries.get(key) : null;
+    },
+    setItem(key, value) {
+      entries.set(key, value);
+    },
+    removeItem(key) {
+      entries.delete(key);
+    },
+    entries,
+  };
+}
 
 test("blocks an immediate retry when the browser cannot read the LINE result", () => {
   const lock = getConfirmationLineRetryLock(null);
@@ -80,6 +102,84 @@ test("removes retry after a known successful or already completed send", () => {
   );
 });
 
+test("restores a retry lock after a page reload within the retry window", () => {
+  const storage = createMemoryStorage();
+  const lock = {
+    kind: "history_check",
+    message: "通知履歴を確認してください。",
+  };
+
+  saveConfirmationLineRetryLock(storage, "reservation-1", lock, 1_000);
+
+  const restored = readConfirmationLineRetryLock(
+    storage,
+    "reservation-1",
+    2_000
+  );
+  assert.equal(restored.kind, "history_check");
+  assert.match(restored.message, /同じ送信を繰り返さず/);
+  assert.doesNotMatch([...storage.entries.values()][0], /通知履歴/);
+});
+
+test("clears retryable, expired, and malformed stored locks", () => {
+  const storage = createMemoryStorage();
+  const lock = { kind: "sent", message: "送信済みです。" };
+
+  saveConfirmationLineRetryLock(storage, "reservation-1", lock, 1_000);
+  saveConfirmationLineRetryLock(storage, "reservation-1", null, 2_000);
+  assert.equal(
+    readConfirmationLineRetryLock(storage, "reservation-1", 3_000),
+    null
+  );
+
+  saveConfirmationLineRetryLock(storage, "reservation-2", lock, 1_000);
+  assert.equal(
+    readConfirmationLineRetryLock(
+      storage,
+      "reservation-2",
+      1_000 + CONFIRMATION_LINE_RETRY_LOCK_TTL_MS
+    ),
+    null
+  );
+
+  storage.setItem(
+    "aily:confirmation-line-retry-lock:v1:reservation-3",
+    "not-json"
+  );
+  assert.equal(
+    readConfirmationLineRetryLock(storage, "reservation-3", 3_000),
+    null
+  );
+  assert.equal(storage.entries.size, 0);
+});
+
+test("storage failures do not replace the current screen's in-memory guard", () => {
+  const unavailableStorage = {
+    getItem() {
+      throw new Error("blocked");
+    },
+    setItem() {
+      throw new Error("blocked");
+    },
+    removeItem() {
+      throw new Error("blocked");
+    },
+  };
+
+  assert.doesNotThrow(() =>
+    saveConfirmationLineRetryLock(
+      unavailableStorage,
+      "reservation-1",
+      getConfirmationLineRetryLock(null),
+      1_000
+    )
+  );
+  assert.equal(
+    readConfirmationLineRetryLock(unavailableStorage, "reservation-1", 2_000),
+    null
+  );
+});
+
 test("both staff reservation screens apply the shared retry lock", () => {
   const listPage = readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -94,6 +194,11 @@ test("both staff reservation screens apply the shared retry lock", () => {
     assert.match(source, /getConfirmationLineRetryLock\(result|lineData|null/);
     assert.match(source, /confirmationLineRetryLock/);
     assert.match(source, /確定LINEを再試行/);
+    assert.match(
+      source,
+      /readConfirmationLineRetryLock\([\s\S]{0,80}window\.localStorage/
+    );
+    assert.match(source, /saveConfirmationLineRetryLock\(/);
   }
   assert.match(
     listPage,

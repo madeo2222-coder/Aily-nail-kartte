@@ -7,6 +7,8 @@ import ReservationReferencePhoto from "./ReservationReferencePhoto";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import {
   getConfirmationLineRetryLock,
+  readConfirmationLineRetryLock,
+  saveConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import type {
   ConfirmationLineApiResult,
@@ -502,9 +504,24 @@ export default function ReservationsPageClient() {
       }
       if (requestId !== loadRequestIdRef.current) return;
 
-      setReservations(result.reservations);
+      const fetchedReservations = result.reservations;
+
+      setReservations(fetchedReservations);
       setCustomers(result.customers);
       setStaffs(result.staffs);
+      setConfirmationLineRetryLocks(() => {
+        const restored: Record<string, ConfirmationLineRetryLock> = {};
+
+        for (const reservation of fetchedReservations) {
+          const lock = readConfirmationLineRetryLock(
+            window.localStorage,
+            reservation.id
+          );
+          if (lock) restored[reservation.id] = lock;
+        }
+
+        return restored;
+      });
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return;
       console.error("reservation page fetch error:", error);
@@ -711,6 +728,7 @@ export default function ReservationsPageClient() {
         () => null
       )) as ConfirmationLineApiResult | null;
       const retryLock = getConfirmationLineRetryLock(result);
+      saveConfirmationLineRetryLock(window.localStorage, id, retryLock);
       setConfirmationLineRetryLocks((current) => {
         if (retryLock) return { ...current, [id]: retryLock };
         const next = { ...current };
@@ -745,6 +763,7 @@ export default function ReservationsPageClient() {
       console.error("予約確定LINE通知APIエラー:", error);
       const retryLock = getConfirmationLineRetryLock(null);
       if (!retryLock) return;
+      saveConfirmationLineRetryLock(window.localStorage, id, retryLock);
       setConfirmationLineRetryLocks((current) => ({
         ...current,
         [id]: retryLock,
