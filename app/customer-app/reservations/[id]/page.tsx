@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
 
@@ -175,6 +175,7 @@ export default function CustomerReservationDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const actionPendingRef = useRef(false);
   const [reservation, setReservation] =
     useState<ReservationDetail | null>(null);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
@@ -306,6 +307,8 @@ export default function CustomerReservationDetailPage() {
   }, [reservationId, fetchReservation]);
 
   async function runAction(body: Record<string, unknown>) {
+    if (actionPendingRef.current) return;
+    actionPendingRef.current = true;
     setSaving(true);
     setMessage("");
     setWarningMessage("");
@@ -343,6 +346,7 @@ export default function CustomerReservationDetailPage() {
       console.error(error);
       setErrorMessage("通信エラーが発生しました");
     } finally {
+      actionPendingRef.current = false;
       setSaving(false);
     }
   }

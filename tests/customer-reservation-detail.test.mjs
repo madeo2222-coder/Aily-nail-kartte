@@ -49,12 +49,19 @@ async function loadPage({
   const requests = [];
   let reservationReadCount = 0;
   let cursor = 0;
+  let refCursor = 0;
+  const refs = [];
 
   const hooks = {
     useState(initial) {
       const index = cursor++;
       if (!(index in states)) states[index] = initial;
       return [states[index], (value) => { states[index] = value; }];
+    },
+    useRef(initial) {
+      const index = refCursor++;
+      if (!(index in refs)) refs[index] = { current: initial };
+      return refs[index];
     },
     useMemo: (fn) => fn(),
     useCallback: (fn) => fn,
@@ -136,6 +143,7 @@ async function loadPage({
 
   const renderElement = () => {
     cursor = 0;
+    refCursor = 0;
     return exports.default();
   };
   const render = () => renderToStaticMarkup(renderElement());
@@ -316,4 +324,37 @@ test("keeps the saved result and blocks stale actions when post-save refresh fai
       ["/api/line-login/me", "GET"],
     ]
   );
+});
+
+test("submits a reservation action only once during a fast double click", async () => {
+  let resolvePatch;
+  const patchResponse = new Promise((resolve) => {
+    resolvePatch = resolve;
+  });
+  const page = await loadPage({ patchResponse });
+  const updateButton = findElement(
+    page.renderElement(),
+    (node) => node.type === "button" && /この内容に変更する/.test(getElementText(node))
+  );
+
+  assert.ok(updateButton);
+  const firstClick = updateButton.props.onClick();
+  const secondClick = updateButton.props.onClick();
+
+  assert.equal(
+    page.requests.filter(({ options }) => options.method === "PATCH").length,
+    1
+  );
+
+  resolvePatch(response({
+    body: { ok: true, message: "予約希望を変更しました" },
+  }));
+  await Promise.all([firstClick, secondClick]);
+  await setImmediate();
+
+  assert.equal(
+    page.requests.filter(({ options }) => options.method === "PATCH").length,
+    1
+  );
+  assert.match(page.render(), /予約希望を変更しました/);
 });
