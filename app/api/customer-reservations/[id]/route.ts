@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import {
   LINE_SESSION_COOKIE,
@@ -28,6 +29,13 @@ type UpdateRequestBody = {
 type ReservationWriteRow = {
   outcome: string;
   reservation_id: string | null;
+};
+
+type AdminLineDeliveryResult = {
+  accepted: boolean;
+  alreadyAccepted: boolean;
+  retryable: boolean;
+  status: "sent" | "failed" | "unknown" | "not_configured";
 };
 
 function getReservationWriteRow(value: unknown): ReservationWriteRow | null {
@@ -170,7 +178,23 @@ async function getOwnedReservation(params: {
   return (data || null) as AnyRow | null;
 }
 
-async function sendAdminLineMessage(text: string) {
+function createAdminLineRetryKey(parts: string[]) {
+  const hex = createHash("sha256").update(parts.join("\u001f")).digest("hex");
+  const variant = ["8", "9", "a", "b"][Number.parseInt(hex[16], 16) % 4];
+
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+async function sendAdminLineMessage(
+  text: string,
+  retryKey?: string
+): Promise<AdminLineDeliveryResult> {
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const adminUserId = process.env.LINE_ADMIN_USER_ID;
 
@@ -178,33 +202,77 @@ async function sendAdminLineMessage(text: string) {
     console.log(
       "管理者LINE通知をスキップしました: LINE_CHANNEL_ACCESS_TOKEN または LINE_ADMIN_USER_ID が未設定です"
     );
-    return false;
+    return {
+      accepted: false,
+      alreadyAccepted: false,
+      retryable: false,
+      status: "not_configured",
+    };
   }
 
-  const response = await fetch("https://api.line.me/v2/bot/message/push", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      to: adminUserId,
-      messages: [
-        {
-          type: "text",
-          text,
-        },
-      ],
-    }),
-  });
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        ...(retryKey ? { "X-Line-Retry-Key": retryKey } : {}),
+      },
+      body: JSON.stringify({
+        to: adminUserId,
+        messages: [
+          {
+            type: "text",
+            text,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("管理者LINE通知エラー:", errorText);
-    return false;
+    if (response.ok) {
+      return {
+        accepted: true,
+        alreadyAccepted: false,
+        retryable: false,
+        status: "sent",
+      };
+    }
+
+    const acceptedRequestId = response.headers
+      .get("x-line-accepted-request-id")
+      ?.trim();
+
+    if (response.status === 409 && acceptedRequestId) {
+      return {
+        accepted: true,
+        alreadyAccepted: true,
+        retryable: false,
+        status: "sent",
+      };
+    }
+
+    console.error("管理者LINE通知エラー:", response.status);
+
+    return {
+      accepted: false,
+      alreadyAccepted: false,
+      retryable:
+        response.status === 408 ||
+        response.status === 429 ||
+        response.status >= 500,
+      status: "failed",
+    };
+  } catch (error) {
+    console.error("管理者LINE通知の応答を確認できませんでした", error);
+
+    return {
+      accepted: false,
+      alreadyAccepted: false,
+      retryable: true,
+      status: "unknown",
+    };
   }
-
-  return true;
 }
 
 export async function GET(
@@ -455,8 +523,7 @@ export async function PATCH(
           ? "予約キャンセル希望が届きました"
           : "予約変更希望が届きました";
 
-      await sendAdminLineMessage(
-        [
+      const lineMessage = [
           `💅 ${title}`,
           "",
           `お客様名：${customerName}`,
@@ -471,15 +538,49 @@ export async function PATCH(
           requestMessage || "詳細記載なし",
           "",
           `予約ID：${id}`,
-        ].join("\n")
+        ].join("\n");
+      const lineRetryKey = createAdminLineRetryKey([
+        "customer-confirmed-reservation-request",
+        id,
+        customerId,
+        currentStatus,
+        getString(reservation, ["start_at"]),
+        getString(reservation, ["updated_at"]),
+        action,
+        requestMessage,
+      ]);
+      const delivery = await sendAdminLineMessage(
+        lineMessage,
+        lineRetryKey
       );
+
+      if (!delivery.accepted) {
+        const retryMessage =
+          delivery.status === "unknown"
+            ? "店舗LINEの応答を確認できませんでした。送信完了を確認できていません。同じ内容で再試行してください"
+            : delivery.retryable
+              ? "店舗へ通知できませんでした。同じ内容で再試行してください"
+              : "店舗へ通知できませんでした。時間をおいて再試行するか、店舗へ直接ご連絡ください";
+
+        return NextResponse.json(
+          {
+            ok: false,
+            error: retryMessage,
+            retryable: delivery.retryable,
+            deliveryStatus: delivery.status,
+          },
+          { status: delivery.status === "not_configured" ? 503 : 502 }
+        );
+      }
 
       return NextResponse.json({
         ok: true,
         message:
-          action === "request_cancel"
-            ? "キャンセル希望を店舗へ送りました"
-            : "変更希望を店舗へ送りました",
+          delivery.alreadyAccepted
+            ? "店舗への送信済み依頼を確認しました。重複送信していません"
+            : action === "request_cancel"
+              ? "キャンセル希望を店舗へ送りました"
+              : "変更希望を店舗へ送りました",
       });
     }
 
