@@ -5,6 +5,13 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ReservationReferencePhoto from "../../ReservationReferencePhoto";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getConfirmationLineRetryLock,
+} from "@/lib/reservation-confirmation-line-retry";
+import type {
+  ConfirmationLineApiResult,
+  ConfirmationLineRetryLock,
+} from "@/lib/reservation-confirmation-line-retry";
 
 type Salon = {
   id: string;
@@ -329,6 +336,8 @@ export default function EditReservationPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
+  const [confirmationLineRetryLock, setConfirmationLineRetryLock] =
+    useState<ConfirmationLineRetryLock | null>(null);
 
   const [salons, setSalons] = useState<Salon[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -538,16 +547,17 @@ export default function EditReservationPage() {
           }),
         });
 
-        const lineData = (await lineRes.json().catch(() => null)) as {
-          sent?: boolean;
-          alreadySent?: boolean;
-          error?: string;
-          message?: string;
-        } | null;
+        const lineData = (await lineRes.json().catch(
+          () => null
+        )) as ConfirmationLineApiResult | null;
+        const retryLock = getConfirmationLineRetryLock(lineData);
+        setConfirmationLineRetryLock(retryLock);
 
         if (!lineRes.ok || lineData?.error) {
           lineNoticeMessage = ` LINE通知：${
-            lineData?.error || "送信結果を確認できませんでした。"
+            lineData?.error ||
+            retryLock?.message ||
+            "送信結果を確認できませんでした。"
           }`;
         } else if (lineData?.sent) {
           lineNoticeMessage = " 顧客へLINE通知も送信しました。";
@@ -558,7 +568,11 @@ export default function EditReservationPage() {
         }
       } catch (lineError) {
         console.error("予約確定LINE通知エラー:", lineError);
-        lineNoticeMessage = " LINE通知処理でエラーが発生しました。";
+        const retryLock = getConfirmationLineRetryLock(null);
+        setConfirmationLineRetryLock(retryLock);
+        lineNoticeMessage = ` LINE通知：${
+          retryLock?.message || "送信結果を確認できませんでした。"
+        }`;
       }
     } else {
       lineNoticeMessage = ` ${
@@ -601,17 +615,12 @@ export default function EditReservationPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reservationId }),
       });
-      const result = (await response.json().catch(() => null)) as {
-        ok?: boolean;
-        sent?: boolean;
-        alreadySent?: boolean;
-        retried?: boolean;
-        error?: string;
-        message?: string;
-      } | null;
+      const result = (await response.json().catch(
+        () => null
+      )) as ConfirmationLineApiResult | null;
+      setConfirmationLineRetryLock(getConfirmationLineRetryLock(result));
 
       if (!result) {
-        setMutationResultUnknown(true);
         setErrorMessage("");
         return;
       }
@@ -628,7 +637,7 @@ export default function EditReservationPage() {
       );
     } catch (error) {
       console.error("予約確定LINE再試行結果の確認エラー:", error);
-      setMutationResultUnknown(true);
+      setConfirmationLineRetryLock(getConfirmationLineRetryLock(null));
       setErrorMessage("");
     } finally {
       mutationRequestPendingRef.current = false;
@@ -987,7 +996,7 @@ export default function EditReservationPage() {
                     <div className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-blue-700">
                       予約確定済み
                     </div>
-                    {!isExternalBlock ? (
+                    {!isExternalBlock && !confirmationLineRetryLock ? (
                       <button
                         type="button"
                         onClick={retryConfirmationLine}
@@ -996,6 +1005,16 @@ export default function EditReservationPage() {
                       >
                         {confirming ? "送信中..." : "確定LINEを再試行"}
                       </button>
+                    ) : confirmationLineRetryLock ? (
+                      <div
+                        className={`max-w-sm rounded-2xl border px-4 py-3 text-xs font-bold leading-5 ${
+                          confirmationLineRetryLock.kind === "sent"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-amber-200 bg-amber-50 text-amber-900"
+                        }`}
+                      >
+                        {confirmationLineRetryLock.message}
+                      </div>
                     ) : null}
                   </div>
                 ) : (

@@ -372,7 +372,10 @@ test("migration and staff screens preserve idempotent retry controls", () => {
     editPage,
     /if \(confirmation\.confirmed \|\| confirmation\.alreadyConfirmed\) \{[\s\S]{0,180}\/api\/send-reservation-confirmed-line/
   );
-  assert.match(listPage, /response\.json\(\)\.catch\(\(\) => null\)/);
+  assert.match(
+    listPage,
+    /response\.json\(\)\.catch\([\s\S]{0,40}\(\) => null[\s\S]{0,10}\)/
+  );
   assert.match(
     editPage,
     /confirmationResponse\s*\.json\(\)\s*\.catch\(\(\) => null\)/

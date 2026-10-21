@@ -627,7 +627,6 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
     /別日時LINE依頼結果の確認エラー:[\s\S]{0,180}setMutationResultUnknown\(true\)/
   );
   for (const errorLabel of [
-    "予約確定LINE再試行結果の確認エラー:",
     "予約キャンセル結果の確認エラー:",
     "予約更新結果の確認エラー:",
     "予約削除結果の確認エラー:",
@@ -637,12 +636,11 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
       new RegExp(`${errorLabel}[\\s\\S]{0,180}setMutationResultUnknown\\(true\\)`)
     );
   }
-  for (const functionName of [
-    "retryConfirmationLine",
-    "cancelReservation",
-    "handleSubmit",
-    "handleDelete",
-  ]) {
+  assert.match(
+    pageSource,
+    /予約確定LINE再試行結果の確認エラー:[\s\S]{0,180}setConfirmationLineRetryLock\(getConfirmationLineRetryLock\(null\)\)/
+  );
+  for (const functionName of ["cancelReservation", "handleSubmit", "handleDelete"]) {
     const functionStart = pageSource.indexOf(`async function ${functionName}(`);
     const nextFunction = pageSource.indexOf("\n  async function ", functionStart + 1);
     const functionSource = pageSource.slice(
@@ -655,6 +653,22 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
       `${functionName} blocks after an unparseable response`
     );
   }
+  const retryFunctionStart = pageSource.indexOf(
+    "async function retryConfirmationLine("
+  );
+  const retryFunctionEnd = pageSource.indexOf(
+    "\n  async function ",
+    retryFunctionStart + 1
+  );
+  const retryFunctionSource = pageSource.slice(
+    retryFunctionStart,
+    retryFunctionEnd
+  );
+  assert.match(
+    retryFunctionSource,
+    /setConfirmationLineRetryLock\(getConfirmationLineRetryLock\(result\)\)[\s\S]{0,180}if \(!result\)/,
+    "retryConfirmationLine blocks only the uncertain LINE retry after an unparseable response"
+  );
   assert.match(
     pageSource,
     /同じ操作を繰り返さず、最新情報を再読み込みしてください。/

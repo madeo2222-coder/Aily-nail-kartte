@@ -21,6 +21,22 @@ vm.runInNewContext(
   ).outputText,
   { exports: reservationStatusExports, Set, String }
 );
+const confirmationLineRetryExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/reservation-confirmation-line-retry.ts", import.meta.url),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: confirmationLineRetryExports, Set }
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -161,6 +177,9 @@ async function mount({ failureMode = "", empty = false } = {}) {
         return { default: () => null };
       }
       if (name === "@/lib/reservation-status") return reservationStatusExports;
+      if (name === "@/lib/reservation-confirmation-line-retry") {
+        return confirmationLineRetryExports;
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });

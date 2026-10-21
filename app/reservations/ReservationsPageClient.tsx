@@ -5,6 +5,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ReservationReferencePhoto from "./ReservationReferencePhoto";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getConfirmationLineRetryLock,
+} from "@/lib/reservation-confirmation-line-retry";
+import type {
+  ConfirmationLineApiResult,
+  ConfirmationLineRetryLock,
+} from "@/lib/reservation-confirmation-line-retry";
 
 type ReservationRow = {
   id: string;
@@ -445,6 +452,9 @@ export default function ReservationsPageClient() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [confirmationLineRetryLocks, setConfirmationLineRetryLocks] = useState<
+    Record<string, ConfirmationLineRetryLock>
+  >({});
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedStaff, setSelectedStaff] = useState("全員");
   const [showPendingOnly, setShowPendingOnly] = useState(false);
@@ -697,19 +707,22 @@ export default function ReservationsPageClient() {
         }),
       });
 
-      const result = (await response.json().catch(() => null)) as {
-        ok?: boolean;
-        sent?: boolean;
-        alreadySent?: boolean;
-        retried?: boolean;
-        error?: string;
-        message?: string;
-      } | null;
+      const result = (await response.json().catch(
+        () => null
+      )) as ConfirmationLineApiResult | null;
+      const retryLock = getConfirmationLineRetryLock(result);
+      setConfirmationLineRetryLocks((current) => {
+        if (retryLock) return { ...current, [id]: retryLock };
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
 
       if (!response.ok || !result?.ok) {
         console.error("予約確定LINE通知エラー:", result);
         alert(
           result?.error ||
+            retryLock?.message ||
             "予約は確定しましたが、LINE通知に失敗しました。確定済み予約の『確定LINEを再試行』から再送できます。"
         );
         return;
@@ -730,7 +743,13 @@ export default function ReservationsPageClient() {
       );
     } catch (error) {
       console.error("予約確定LINE通知APIエラー:", error);
-      alert("予約は確定しましたが、LINE通知処理でエラーが発生しました。");
+      const retryLock = getConfirmationLineRetryLock(null);
+      if (!retryLock) return;
+      setConfirmationLineRetryLocks((current) => ({
+        ...current,
+        [id]: retryLock,
+      }));
+      alert(`予約は確定しました。${retryLock.message}`);
     }
   }
 
@@ -1261,15 +1280,29 @@ export default function ReservationsPageClient() {
                       ) : null}
 
                       {canRetryConfirmationLine(item.status) ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRetryConfirmationLine(item.id)}
-                          disabled={isUpdating}
-                          className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 disabled:opacity-50"
-                          suppressHydrationWarning
-                        >
-                          {isUpdating ? "送信中..." : "確定LINEを再試行"}
-                        </button>
+                        confirmationLineRetryLocks[item.id] ? (
+                          <div
+                            className={`max-w-sm rounded-2xl border px-4 py-3 text-xs font-bold leading-5 ${
+                              confirmationLineRetryLocks[item.id].kind === "sent"
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                                : "border-amber-200 bg-amber-50 text-amber-900"
+                            }`}
+                          >
+                            {confirmationLineRetryLocks[item.id].message}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleRetryConfirmationLine(item.id)
+                            }
+                            disabled={isUpdating}
+                            className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 disabled:opacity-50"
+                            suppressHydrationWarning
+                          >
+                            {isUpdating ? "送信中..." : "確定LINEを再試行"}
+                          </button>
+                        )
                       ) : null}
 
                       {canMarkVisited(item.status) ? (
