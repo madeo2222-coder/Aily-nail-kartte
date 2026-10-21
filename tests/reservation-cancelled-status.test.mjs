@@ -55,3 +55,31 @@ test("active and completed reservation states are never cancelled", () => {
     assert.equal(exports.isCancelledReservationStatus(status), false, status);
   }
 });
+
+test("staff-progressed reservation states are normalized consistently", () => {
+  for (const status of [
+    "来店",
+    "来店予定",
+    "完了待ち",
+    "完了",
+    "completed",
+    " COMPLETED ",
+    "ＣＯＭＰＬＥＴＥＤ",
+  ]) {
+    assert.equal(exports.isProgressedReservationStatus(status), true, status);
+  }
+});
+
+test("new and cancelled reservation states are not staff-progressed", () => {
+  for (const status of [
+    null,
+    "",
+    "requested",
+    "confirmed",
+    "予約",
+    "キャンセル",
+    "cancelled",
+  ]) {
+    assert.equal(exports.isProgressedReservationStatus(status), false, status);
+  }
+});

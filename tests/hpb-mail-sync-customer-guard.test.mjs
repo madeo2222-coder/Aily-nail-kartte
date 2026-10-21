@@ -211,6 +211,29 @@ test("all recognized cancellation states stop replay before customer resolution"
   }
 });
 
+test("replaying a booking preserves staff-progressed reservation states", async () => {
+  for (const status of ["来店", "来店予定", "完了待ち", "完了", "completed"]) {
+    const runtime = loadSync("mail-customer", { existing: true, status });
+    const result = await runtime.sync(mail);
+
+    assert.equal(result.result.mode, "updated", status);
+    assert.equal(runtime.writes.length, 1, status);
+    assert.equal(runtime.writes[0].operation, "update", status);
+    assert.equal(runtime.writes[0].payload.status, status, status);
+  }
+});
+
+test("replaying an active booking still converges its state to confirmed", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    status: "予約",
+  });
+  await runtime.sync(mail);
+
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].payload.status, "confirmed");
+});
+
 test("replaying a reconciled mail retains the original manual memo without nesting it", async () => {
   const initial = loadSync("mail-customer");
   await initial.sync(mail);

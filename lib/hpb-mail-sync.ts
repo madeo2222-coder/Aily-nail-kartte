@@ -11,6 +11,7 @@ import {
   readSyncedManualMemo,
   type MailSyncSource,
 } from "@/lib/hpb-mail-sync-reconciliation";
+import { isProgressedReservationStatus } from "@/lib/reservation-status";
 
 type MailSource = MailSyncSource;
 
@@ -694,6 +695,13 @@ async function upsertReservation(
     .filter(Boolean)
     .join("\n");
 
+  const reservationToUpdate = existing || delayedManualEntry;
+  const synchronizedStatus = isProgressedReservationStatus(
+    reservationToUpdate?.status
+  )
+    ? reservationToUpdate!.status!
+    : "confirmed";
+
   const reservationPayload: {
     salon_id: string;
     menu: string;
@@ -708,7 +716,7 @@ async function upsertReservation(
     menu: parsed.menu,
     start_at: parsed.startAt,
     end_at: parsed.endAt,
-    status: "confirmed",
+    status: synchronizedStatus,
     memo,
   };
 
@@ -719,8 +727,6 @@ async function upsertReservation(
   if (context.staffId) {
     reservationPayload.staff_id = context.staffId;
   }
-
-  const reservationToUpdate = existing || delayedManualEntry;
 
   if (reservationToUpdate?.id) {
     const { data, error } = await context.supabase
