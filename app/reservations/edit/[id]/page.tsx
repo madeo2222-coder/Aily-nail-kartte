@@ -328,6 +328,7 @@ export default function EditReservationPage() {
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
 
   const [salons, setSalons] = useState<Salon[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -420,6 +421,7 @@ export default function EditReservationPage() {
     setGalleryReference(nextGalleryReference);
     setMemo(removeGalleryReferenceLines(rawMemo));
 
+    setMutationResultUnknown(false);
     setPageDataLoaded(true);
     setLoading(false);
   }
@@ -511,6 +513,12 @@ export default function EditReservationPage() {
       message?: string;
     } | null;
 
+    if (!confirmation) {
+      setMutationResultUnknown(true);
+      setErrorMessage("");
+      return;
+    }
+
     if (!confirmationResponse.ok || !confirmation?.ok) {
       setErrorMessage(confirmation?.error || "予約確定に失敗しました");
       return;
@@ -565,9 +573,9 @@ export default function EditReservationPage() {
       `予約確定に変更しました。顧客マイページにも反映されます。${lineNoticeMessage}`
     );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "予約確定に失敗しました";
-    setErrorMessage(message);
+    console.error("予約確定結果の確認エラー:", error);
+    setMutationResultUnknown(true);
+    setErrorMessage("");
   } finally {
     mutationRequestPendingRef.current = false;
     setConfirming(false);
@@ -640,7 +648,15 @@ export default function EditReservationPage() {
         `/api/reservations/${reservationId}/request-alternative`,
         { method: "POST" }
       );
-      const result = (await response.json()) as AlternativeRequestResult;
+      const result = (await response.json().catch(() => null)) as
+        | AlternativeRequestResult
+        | null;
+
+      if (!result) {
+        setMutationResultUnknown(true);
+        setErrorMessage("");
+        return;
+      }
 
       if (!response.ok || !result.ok) {
         setErrorMessage(
@@ -655,8 +671,10 @@ export default function EditReservationPage() {
             ? "別日時入力のLINEは送信済みです。"
             : "別日時入力のLINEを送信しました。")
       );
-    } catch {
-      setErrorMessage("別日時入力のLINE送信に失敗しました");
+    } catch (error) {
+      console.error("別日時LINE依頼結果の確認エラー:", error);
+      setMutationResultUnknown(true);
+      setErrorMessage("");
     } finally {
       mutationRequestPendingRef.current = false;
       setRequestingAlternative(false);
@@ -828,6 +846,7 @@ export default function EditReservationPage() {
     : "/reservations";
   const isAlreadyConfirmed = status === "confirmed";
   const isMutating = saving || deleting || confirming || requestingAlternative;
+  const mutationControlsDisabled = isMutating || mutationResultUnknown;
 
   return (
     <main className="min-h-screen bg-rose-50/40">
@@ -892,6 +911,21 @@ export default function EditReservationPage() {
               </div>
             ) : null}
 
+            {mutationResultUnknown ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+                <p>
+                  通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void loadPageData()}
+                  className="mt-3 w-full rounded-2xl border border-amber-300 bg-white px-4 py-3 text-sm font-bold text-amber-900"
+                >
+                  最新情報を再読み込み
+                </button>
+              </div>
+            ) : null}
+
             <section className="rounded-[28px] border border-blue-100 bg-blue-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -912,7 +946,7 @@ export default function EditReservationPage() {
                   <button
                     type="button"
                     onClick={handleConfirmReservation}
-                    disabled={isMutating}
+                    disabled={mutationControlsDisabled}
                     className="rounded-2xl bg-blue-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
                   >
                     {confirming ? "確定中..." : "予約確定にする"}
@@ -926,7 +960,7 @@ export default function EditReservationPage() {
                       <button
                         type="button"
                         onClick={retryConfirmationLine}
-                        disabled={isMutating}
+                        disabled={mutationControlsDisabled}
                         className="rounded-2xl border border-blue-200 bg-white px-4 py-3 text-sm font-bold text-blue-700 disabled:opacity-60"
                       >
                         {confirming ? "送信中..." : "確定LINEを再試行"}
@@ -955,7 +989,7 @@ export default function EditReservationPage() {
                   <button
                     type="button"
                     onClick={requestAlternativeTime}
-                    disabled={isMutating}
+                    disabled={mutationControlsDisabled}
                     className="shrink-0 rounded-2xl bg-amber-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
                   >
                     {requestingAlternative
@@ -1226,7 +1260,7 @@ export default function EditReservationPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <button
                 type="submit"
-                disabled={isMutating}
+                disabled={mutationControlsDisabled}
                 className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
               >
                 {saving ? "更新中..." : "更新する"}
@@ -1235,7 +1269,7 @@ export default function EditReservationPage() {
               <button
                 type="button"
                 onClick={handleDelete}
-                disabled={isMutating}
+                disabled={mutationControlsDisabled}
                 className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
               >
                 {deleting ? "削除中..." : isExternalBlock ? "ブロックを削除する" : "削除する"}

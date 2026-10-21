@@ -571,9 +571,13 @@ test("staff mutation buttons are disabled throughout every pending operation", (
   const sourceFile = ts.createSourceFile("page.tsx", pageSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const buttons = [];
   let pendingExpression;
+  let disabledExpression;
   function visit(node) {
     if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === "isMutating") {
       pendingExpression = node.initializer.getText(sourceFile);
+    }
+    if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === "mutationControlsDisabled") {
+      disabledExpression = node.initializer.getText(sourceFile);
     }
     if (ts.isJsxOpeningElement(node) && node.tagName.getText(sourceFile) === "button") {
       const disabled = node.attributes.properties.find(
@@ -585,17 +589,50 @@ test("staff mutation buttons are disabled throughout every pending operation", (
   }
   visit(sourceFile);
   assert.equal(buttons.length, 5, "all five write/notification buttons are covered");
-  for (let mask = 0; mask < 16; mask++) {
+  assert.ok(pendingExpression, "pending mutation expression exists");
+  assert.ok(disabledExpression, "blocked mutation expression exists");
+  for (let mask = 0; mask < 32; mask++) {
     const state = {
       saving: Boolean(mask & 1),
       deleting: Boolean(mask & 2),
       confirming: Boolean(mask & 4),
       requestingAlternative: Boolean(mask & 8),
+      mutationResultUnknown: Boolean(mask & 16),
     };
-    if (pendingExpression) state.isMutating = vm.runInNewContext(pendingExpression, state);
+    state.isMutating = vm.runInNewContext(pendingExpression, state);
+    state.mutationControlsDisabled = vm.runInNewContext(disabledExpression, state);
     for (const expression of buttons) {
       assert.equal(vm.runInNewContext(expression, state), mask !== 0,
         `${expression}: ${JSON.stringify(state)}`);
     }
   }
+});
+
+test("staff UI blocks retries when confirmation or alternative request results are unknown", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    pageSource,
+    /const \[mutationResultUnknown, setMutationResultUnknown\] = useState\(false\)/
+  );
+  assert.match(
+    pageSource,
+    /if \(!confirmation\) \{[\s\S]{0,180}setMutationResultUnknown\(true\)/
+  );
+  assert.match(
+    pageSource,
+    /別日時LINE依頼結果の確認エラー:[\s\S]{0,180}setMutationResultUnknown\(true\)/
+  );
+  assert.match(
+    pageSource,
+    /同じ操作を繰り返さず、最新情報を再読み込みしてください。/
+  );
+  assert.match(pageSource, /最新情報を再読み込み/);
+  assert.match(
+    pageSource,
+    /setMutationResultUnknown\(false\);[\s\S]{0,120}setPageDataLoaded\(true\)/
+  );
 });
