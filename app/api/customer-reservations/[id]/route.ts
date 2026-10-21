@@ -275,6 +275,14 @@ async function sendAdminLineMessage(
   }
 }
 
+function getAdminLineWarning(delivery: AdminLineDeliveryResult) {
+  if (delivery.accepted) return "";
+
+  return delivery.status === "unknown"
+    ? "予約操作は完了しましたが、店舗LINEの送信結果を確認できませんでした。必要に応じて店舗へ直接ご連絡ください"
+    : "予約操作は完了しましたが、店舗LINEへ通知できませんでした。必要に応じて店舗へ直接ご連絡ください";
+}
+
 export async function GET(
   request: NextRequest,
   context: {
@@ -485,7 +493,7 @@ export async function PATCH(
         );
       }
 
-      await sendAdminLineMessage(
+      const delivery = await sendAdminLineMessage(
         [
           "💅 予約希望が取り消されました",
           "",
@@ -496,12 +504,22 @@ export async function PATCH(
           `メニュー：${
             getString(reservation, ["menu", "menu_name"]) || "未設定"
           }`,
-        ].join("\n")
+        ].join("\n"),
+        createAdminLineRetryKey([
+          "customer-requested-reservation-cancel",
+          id,
+          customerId,
+          currentStatus,
+          getString(reservation, ["start_at"]),
+          getString(reservation, ["menu", "menu_name"]),
+        ])
       );
 
       return NextResponse.json({
         ok: true,
         message: "予約希望を取り消しました",
+        notificationWarning: getAdminLineWarning(delivery) || undefined,
+        notificationStatus: delivery.status,
       });
     }
 
@@ -758,7 +776,7 @@ export async function PATCH(
       );
     }
 
-    await sendAdminLineMessage(
+    const delivery = await sendAdminLineMessage(
       [
         "💅 予約希望が変更されました",
         "",
@@ -771,12 +789,25 @@ export async function PATCH(
         "",
         "備考：",
         memo || "-",
-      ].join("\n")
+      ].join("\n"),
+      createAdminLineRetryKey([
+        "customer-requested-reservation-update",
+        id,
+        customerId,
+        currentStatus,
+        startIso,
+        endIso,
+        menu,
+        assignedStaffId,
+        memo,
+      ])
     );
 
     return NextResponse.json({
       ok: true,
       message: "予約希望を変更しました",
+      notificationWarning: getAdminLineWarning(delivery) || undefined,
+      notificationStatus: delivery.status,
     });
   } catch (error) {
     const message =

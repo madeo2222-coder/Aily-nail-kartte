@@ -11,6 +11,10 @@ const routeSource = readFileSync(
   new URL("../app/api/customer-reservations/[id]/route.ts", import.meta.url),
   "utf8"
 );
+const pageSource = readFileSync(
+  new URL("../app/customer-app/reservations/[id]/page.tsx", import.meta.url),
+  "utf8"
+);
 const compiledRoute = ts.transpileModule(routeSource, {
   compilerOptions: {
     module: ts.ModuleKind.CommonJS,
@@ -55,6 +59,7 @@ function loadRoute({
   reservation,
 } = {}) {
   const lineCalls = [];
+  const rpcCalls = [];
   const lineQueue = [...lineResponses];
   const defaultReservation = {
     id: "reservation-1",
@@ -82,6 +87,25 @@ function loadRoute({
         return createReadQuery(reservation ?? defaultReservation);
       }
       throw new Error(`Unexpected table: ${table}`);
+    },
+    async rpc(name, args) {
+      rpcCalls.push({ name, args });
+
+      if (name === "cancel_customer_requested_reservation") {
+        return {
+          data: [{ outcome: "cancelled", reservation_id: "reservation-1" }],
+          error: null,
+        };
+      }
+
+      if (name === "update_customer_requested_reservation") {
+        return {
+          data: [{ outcome: "updated", reservation_id: "reservation-1" }],
+          error: null,
+        };
+      }
+
+      throw new Error(`Unexpected RPC: ${name}`);
     },
   };
   const exports = {};
@@ -141,13 +165,15 @@ function loadRoute({
       if (name === "@/lib/server/customerReservationAvailability") {
         return {
           getCustomerReservationAvailability() {
-            throw new Error("Unexpected availability read");
+            return {
+              slots: [{ time: "10:30", staffIds: ["staff-1"] }],
+            };
           },
           isValidCustomerBookingDate() {
-            throw new Error("Unexpected date validation");
+            return true;
           },
-          normalizeCustomerBookingDuration() {
-            throw new Error("Unexpected duration normalization");
+          normalizeCustomerBookingDuration(value) {
+            return Number(value);
           },
         };
       }
@@ -173,7 +199,7 @@ function loadRoute({
     return { body: await response.json(), status: response.status };
   }
 
-  return { lineCalls, patch };
+  return { lineCalls, patch, rpcCalls };
 }
 
 test("confirmed change request succeeds only after LINE accepts it", async () => {
@@ -243,5 +269,83 @@ test("retry reuses one key and treats LINE duplicate acceptance as sent", async 
     ]
   );
   assert.equal(runtime.lineCalls[0].options.body, runtime.lineCalls[1].options.body);
+});
+
+test("requested cancellation stays saved and reports a LINE notification warning", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      status: "requested",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      source: "customer-app",
+      memo: "",
+    },
+    lineResponses: [new MockResponse("temporary failure", 500)],
+  });
+  const response = await runtime.patch({ action: "cancel" });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.message, "予約希望を取り消しました");
+  assert.equal(response.body.notificationStatus, "failed");
+  assert.match(response.body.notificationWarning, /予約操作は完了/);
+  assert.match(response.body.notificationWarning, /店舗LINEへ通知できませんでした/);
+  assert.equal(runtime.rpcCalls[0].name, "cancel_customer_requested_reservation");
+  assert.match(
+    runtime.lineCalls[0].options.headers["X-Line-Retry-Key"],
+    /^[0-9a-f-]{36}$/
+  );
+});
+
+test("requested update stays saved when the LINE response is unknown", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      status: "requested",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      source: "customer-app",
+      memo: "",
+    },
+    lineResponses: [new Error("LINE response lost")],
+  });
+  const response = await runtime.patch({
+    action: "update",
+    date: "2099-10-03",
+    time: "10:30",
+    menu: "フレンチ",
+    staffId: "staff-1",
+    memo: "短め希望",
+    durationMinutes: 90,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.message, "予約希望を変更しました");
+  assert.equal(response.body.notificationStatus, "unknown");
+  assert.match(response.body.notificationWarning, /送信結果を確認できませんでした/);
+  assert.equal(runtime.rpcCalls[0].name, "update_customer_requested_reservation");
+  assert.match(
+    runtime.lineCalls[0].options.headers["X-Line-Retry-Key"],
+    /^[0-9a-f-]{36}$/
+  );
+});
+
+test("customer page renders the notification warning separately from success", () => {
+  assert.match(pageSource, /notificationWarning\?: string/);
+  assert.match(
+    pageSource,
+    /setWarningMessage\(json\.notificationWarning \|\| ""\)/
+  );
+  assert.match(
+    pageSource,
+    /warningMessage[\s\S]{0,220}border-amber-200[\s\S]{0,180}\{warningMessage\}/
+  );
 });
 

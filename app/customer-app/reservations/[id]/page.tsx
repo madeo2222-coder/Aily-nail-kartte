@@ -179,6 +179,7 @@ export default function CustomerReservationDetailPage() {
     useState<ReservationDetail | null>(null);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [message, setMessage] = useState("");
+  const [warningMessage, setWarningMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [signedOut, setSignedOut] = useState(false);
 
@@ -282,6 +283,7 @@ export default function CustomerReservationDetailPage() {
   async function runAction(body: Record<string, unknown>) {
     setSaving(true);
     setMessage("");
+    setWarningMessage("");
     setErrorMessage("");
 
     try {
@@ -300,6 +302,7 @@ export default function CustomerReservationDetailPage() {
         ok?: boolean;
         message?: string;
         error?: string;
+        notificationWarning?: string;
       };
 
       if (!response.ok || !json.ok) {
@@ -308,6 +311,7 @@ export default function CustomerReservationDetailPage() {
       }
 
       setMessage(json.message || "更新しました");
+      setWarningMessage(json.notificationWarning || "");
       await fetchReservation();
     } catch (error) {
       console.error(error);
@@ -440,6 +444,12 @@ export default function CustomerReservationDetailPage() {
         {message ? (
           <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-700">
             {message}
+          </section>
+        ) : null}
+
+        {warningMessage ? (
+          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+            {warningMessage}
           </section>
         ) : null}
 
