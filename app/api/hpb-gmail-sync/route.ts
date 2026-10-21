@@ -162,6 +162,7 @@ type FetchedGmailMessage =
   | {
       ok: true;
       messageId: string;
+      threadId: string | null;
       internalDate: number;
       subject: string;
       bodyText: string;
@@ -169,6 +170,7 @@ type FetchedGmailMessage =
   | {
       ok: false;
       messageId: string;
+      threadId: string | null;
       error: string;
     };
 
@@ -204,10 +206,12 @@ async function fetchReservationMessages(
     const batchResults = await Promise.all(
       batch.map(async (message): Promise<FetchedGmailMessage> => {
         const messageId = message.id;
+        const threadId = message.threadId || null;
         if (!messageId) {
           return {
             ok: false,
             messageId: "unknown",
+            threadId,
             error: "GmailメッセージIDを取得できませんでした",
           };
         }
@@ -239,6 +243,7 @@ async function fetchReservationMessages(
           return {
             ok: true,
             messageId,
+            threadId,
             internalDate,
             subject,
             bodyText,
@@ -247,6 +252,7 @@ async function fetchReservationMessages(
           return {
             ok: false,
             messageId,
+            threadId,
             error:
               error instanceof Error
                 ? `Gmail本文の取得に失敗しました: ${error.message}`
@@ -312,6 +318,11 @@ async function runHpbGmailSync() {
     (parameters) => gmail.users.messages.get(parameters)
   );
   const results = [];
+  const failedThreadIds = new Set(
+    fetchedMessages.flatMap((message) =>
+      !message.ok && message.threadId ? [message.threadId] : []
+    )
+  );
 
   for (const message of fetchedMessages) {
     if (!message.ok) {
@@ -325,7 +336,24 @@ async function runHpbGmailSync() {
       continue;
     }
 
-    const { messageId, subject, bodyText } = message;
+    const { messageId, threadId, subject, bodyText } = message;
+
+    // A reservation/change/cancellation chain is commonly kept in one Gmail
+    // thread. If even one message in that thread cannot be read, applying an
+    // older readable message can temporarily roll the reservation back. Keep
+    // unrelated threads moving, but defer this entire thread until a retry can
+    // establish the complete event order.
+    if (threadId && failedThreadIds.has(threadId)) {
+      results.push({
+        messageId,
+        subject,
+        skipped: false,
+        ok: false,
+        error:
+          "同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました。再試行してください。",
+      });
+      continue;
+    }
 
     if (!isTargetReservationMail(subject, bodyText)) {
       results.push({

@@ -425,7 +425,10 @@ test("Gmail sync keeps successful reservations when one message body cannot be f
   const runtime = loadRoute({
     listPages: [
       {
-        messages: [{ id: "newer-fetch-failed" }, { id: "older-succeeded" }],
+        messages: [
+          { id: "newer-fetch-failed", threadId: "failed-thread" },
+          { id: "older-succeeded", threadId: "independent-thread" },
+        ],
       },
     ],
     messageGetFailures: ["newer-fetch-failed"],
@@ -443,6 +446,36 @@ test("Gmail sync keeps successful reservations when one message body cannot be f
   assert.equal(body.results[1].messageId, "newer-fetch-failed");
   assert.match(body.results[1].error, /Gmail本文の取得に失敗しました/);
   assert.deepEqual(runtime.syncedTexts, ["older-succeeded"]);
+});
+
+test("Gmail sync defers a successful message when another message in the same thread cannot be fetched", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "newer-fetch-failed", threadId: "reservation-thread" },
+          { id: "older-succeeded", threadId: "reservation-thread" },
+        ],
+      },
+    ],
+    messageGetFailures: ["newer-fetch-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, false);
+  assert.equal(body.processedCount, 2);
+  assert.equal(body.syncedCount, 0);
+  assert.equal(body.failedCount, 2);
+  assert.match(
+    body.results[0].error,
+    /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
+  );
+  assert.equal(body.results[1].messageId, "newer-fetch-failed");
+  assert.deepEqual(runtime.syncedTexts, []);
 });
 
 test("Gmail sync reports a gateway failure when no message body can be fetched", async () => {
