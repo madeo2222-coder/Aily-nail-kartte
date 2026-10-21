@@ -249,14 +249,19 @@ function parseHpbMail(
   const startAt = parseJapaneseDateTime(dateText);
 
   if (!reservationNumber) throw new Error("予約番号を解析できませんでした");
-  if (!customerName) throw new Error("氏名を解析できませんでした");
-  if (!startAt) throw new Error("来店日時を解析できませんでした");
+  if (action === "reservation" && !customerName) {
+    throw new Error("氏名を解析できませんでした");
+  }
+  if (action === "reservation" && !startAt) {
+    throw new Error("来店日時を解析できませんでした");
+  }
 
   const durationMinutes = parseDurationMinutes(text);
-  const startDate = new Date(startAt);
-  const endAt = new Date(
-    startDate.getTime() + durationMinutes * 60 * 1000
-  ).toISOString();
+  const endAt = startAt
+    ? new Date(
+        new Date(startAt).getTime() + durationMinutes * 60 * 1000
+      ).toISOString()
+    : "";
 
   const staffName =
     extractFirstMatch(text, [
@@ -281,7 +286,7 @@ function parseHpbMail(
     customerKana,
     compareCustomerKana,
     phone,
-    startAt,
+    startAt: startAt || "",
     endAt,
     menu: menu.trim(),
     staffName,
@@ -328,14 +333,19 @@ function parseMinimoMail(
   const startAt = parseMinimoDateTime(dateText);
 
   if (!reservationNumber) throw new Error("ミニモ予約IDを解析できませんでした");
-  if (!customerName) throw new Error("ミニモ氏名を解析できませんでした");
-  if (!startAt) throw new Error("ミニモ来店日時を解析できませんでした");
+  if (action === "reservation" && !customerName) {
+    throw new Error("ミニモ氏名を解析できませんでした");
+  }
+  if (action === "reservation" && !startAt) {
+    throw new Error("ミニモ来店日時を解析できませんでした");
+  }
 
   const durationMinutes = parseDurationMinutes(text);
-  const startDate = new Date(startAt);
-  const endAt = new Date(
-    startDate.getTime() + durationMinutes * 60 * 1000
-  ).toISOString();
+  const endAt = startAt
+    ? new Date(
+        new Date(startAt).getTime() + durationMinutes * 60 * 1000
+      ).toISOString()
+    : "";
 
   const staffName =
     extractFirstMatch(text, [
@@ -362,7 +372,7 @@ function parseMinimoMail(
     customerKana: "",
     compareCustomerKana: "",
     phone,
-    startAt,
+    startAt: startAt || "",
     endAt,
     menu: menu.trim(),
     staffName,
@@ -802,6 +812,12 @@ async function cancelReservation(
   }
 
   if (!existing?.id) {
+    if (!parsed.customerName || !parsed.startAt || !parsed.endAt) {
+      throw new Error(
+        "外部予約番号に一致する予約がなく、キャンセル予約の保存に必要な氏名と来店日時が不足しています。"
+      );
+    }
+
     const cancellationMemo = appendExternalCancellationMemo({
       existingMemo: [
         `${reservationKey}：${parsed.reservationNumber}`,

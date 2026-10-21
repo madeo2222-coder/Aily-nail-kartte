@@ -147,6 +147,50 @@ test("minimo cancellation in the Gmail subject is not replayed as a booking", as
   assert.doesNotMatch(runtime.writes[0].payload.memo, /予約キャンセルのお知らせ/);
 });
 
+for (const [source, body, subject, memo] of [
+  [
+    "HPB",
+    "予約番号：A123456",
+    "【SALON BOARD】予約キャンセルのお知らせ",
+    "HPB予約番号：A123456",
+  ],
+  [
+    "minimo",
+    "予約ID：MINIMO-123",
+    "【ミニモ】予約キャンセルのお知らせ",
+    "ミニモ予約ID：MINIMO-123",
+  ],
+]) {
+  test(`${source} cancellation with only its external ID cancels the existing reservation`, async () => {
+    const runtime = loadSync("mail-customer", {
+      existing: true,
+      memo,
+      rejectCustomerLookup: true,
+    });
+
+    const result = await runtime.sync(body, subject);
+
+    assert.equal(result.parsed.action, "cancel");
+    assert.equal(result.result.mode, "cancelled");
+    assert.equal(runtime.writes.length, 1);
+    assert.equal(runtime.writes[0].operation, "update");
+    assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  });
+
+  test(`${source} cancellation with only its external ID stops when no reservation exists`, async () => {
+    const runtime = loadSync("mail-customer", {
+      missingReservation: true,
+      rejectCustomerLookup: true,
+    });
+
+    await assert.rejects(
+      runtime.sync(body, subject),
+      /氏名と来店日時が不足しています/
+    );
+    assert.equal(runtime.writes.length, 0);
+  });
+}
+
 const mail = `予約番号：A123456
 氏名：テスト顧客
 電話番号：09000000000
