@@ -123,9 +123,39 @@ function parseJapaneseDateTime(value: string) {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
 
-  return new Date(
-    Date.UTC(year, month - 1, day, hour - 9, minute, 0)
-  ).toISOString();
+  if (
+    year < 1000 ||
+    year > 9999 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31 ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+
+  const utcTime = Date.UTC(year, month - 1, day, hour - 9, minute, 0);
+  if (!Number.isFinite(utcTime)) return null;
+
+  // Date.UTC normalizes impossible dates (for example, February 30) into a
+  // different day. Round-trip the parsed values in JST so malformed provider
+  // mail cannot silently create or update a reservation at the wrong time.
+  const jstTime = new Date(utcTime + 9 * 60 * 60 * 1000);
+  if (
+    jstTime.getUTCFullYear() !== year ||
+    jstTime.getUTCMonth() + 1 !== month ||
+    jstTime.getUTCDate() !== day ||
+    jstTime.getUTCHours() !== hour ||
+    jstTime.getUTCMinutes() !== minute
+  ) {
+    return null;
+  }
+
+  return new Date(utcTime).toISOString();
 }
 
 function parseDurationMinutes(text: string) {

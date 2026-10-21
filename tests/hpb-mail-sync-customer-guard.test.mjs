@@ -17,6 +17,9 @@ function loadSync(manualCustomerId, options = {}) {
   };
   const db = {
     from(table) {
+      if (options.rejectDatabaseAccess) {
+        throw new Error("invalid mail must stop before database access");
+      }
       if (table === "customers" && options.rejectCustomerLookup) {
         throw new Error("cancelled replay must not resolve or create customers");
       }
@@ -110,6 +113,37 @@ const mail = `予約番号：A123456
 来店日時：2099年10月20日 10:00
 指名スタッフ：指名なし
 所要時間目安：90分`;
+
+for (const [label, invalidDateTime] of [
+  ["an impossible calendar date", "2099年2月30日 10:00"],
+  ["an out-of-range month", "2099年13月20日 10:00"],
+  ["an out-of-range hour", "2099年10月20日 24:00"],
+  ["an out-of-range minute", "2099年10月20日 10:60"],
+]) {
+  test(`HPB mail rejects ${label} before database access`, async () => {
+    const runtime = loadSync("mail-customer", { rejectDatabaseAccess: true });
+    await assert.rejects(
+      runtime.sync(mail.replace("2099年10月20日 10:00", invalidDateTime)),
+      /来店日時を解析できませんでした/
+    );
+    assert.equal(runtime.writes.length, 0);
+  });
+}
+
+test("minimo mail rejects an impossible calendar date before database access", async () => {
+  const runtime = loadSync("mail-customer", { rejectDatabaseAccess: true });
+  await assert.rejects(
+    runtime.sync(`ミニモ予約受付
+予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年2月30日 10:00
+担当者：指名なし
+施術時間：90分`),
+    /ミニモ来店日時を解析できませんでした/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
 
 test("replaying the original booking after cancellation does not reactivate it", async () => {
   const initial = loadSync("mail-customer");
