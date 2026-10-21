@@ -613,6 +613,31 @@ async function findExistingExternalReservation(
   return existing;
 }
 
+async function readReservationAfterInsertConflict(
+  deterministicId: string,
+  context: SyncContext
+) {
+  const { data, error } = await context.supabase
+    .from("reservations")
+    .select("id, salon_id, staff_id, memo, status")
+    .eq("id", deterministicId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data?.id) {
+    throw new Error(
+      "同時に保存された予約を確認できません。予約一覧を確認してから再試行してください。"
+    );
+  }
+  if (data.salon_id !== context.salonId) {
+    throw new Error(
+      "同じ外部予約番号が別サロンにあります。誤更新を避けるため同期を停止しました。"
+    );
+  }
+
+  return data as ExistingReservation;
+}
+
 async function findDelayedManualEntry(
   parsed: ParsedHpbMail,
   context: SyncContext,
@@ -768,17 +793,67 @@ async function upsertReservation(
   );
   const { data, error } = await context.supabase
     .from("reservations")
-    .upsert(
-      {
-        id: deterministicId,
-        ...reservationPayload,
-      },
-      { onConflict: "id" }
-    )
+    .insert({
+      id: deterministicId,
+      ...reservationPayload,
+    })
     .select("id")
     .single();
 
+  if (error?.code === "23505") {
+    const concurrentReservation = await readReservationAfterInsertConflict(
+      deterministicId,
+      context
+    );
+
+    if (isCancelledReservationStatus(concurrentReservation.status)) {
+      return {
+        mode: "cancelled",
+        reservationId: concurrentReservation.id,
+        alreadyCancelled: true,
+      };
+    }
+
+    const preserveConcurrentProgress = isProgressedReservationStatus(
+      concurrentReservation.status
+    );
+    const concurrentPayload = {
+      ...reservationPayload,
+      status: preserveConcurrentProgress
+        ? concurrentReservation.status!
+        : reservationPayload.status,
+      memo: preserveConcurrentProgress
+        ? concurrentReservation.memo || reservationPayload.memo
+        : reservationPayload.memo,
+    };
+    const { data: updated, error: updateError } = await context.supabase
+      .from("reservations")
+      .update(concurrentPayload)
+      .eq("id", concurrentReservation.id)
+      .eq("salon_id", context.salonId)
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) throw new Error(updateError.message);
+    if (updated?.id !== concurrentReservation.id) {
+      throw new Error(
+        "予約の更新結果を確認できません。予約一覧を確認してから再試行してください。"
+      );
+    }
+
+    return {
+      mode: "updated",
+      reservationId: concurrentReservation.id,
+      customerMatch,
+    };
+  }
+
   if (error) throw new Error(error.message);
+  if (data?.id !== deterministicId) {
+    throw new Error(
+      "予約の保存結果を確認できません。予約一覧を確認してから再試行してください。"
+    );
+  }
 
   return {
     mode: "inserted",
@@ -857,26 +932,10 @@ async function cancelReservation(
       .single();
 
     if (error?.code === "23505") {
-      const { data: concurrentReservation, error: concurrentReadError } =
-        await context.supabase
-          .from("reservations")
-          .select("id, salon_id, staff_id, memo, status")
-          .eq("id", deterministicId)
-          .maybeSingle();
-
-      if (concurrentReadError) throw new Error(concurrentReadError.message);
-      if (!concurrentReservation?.id) {
-        throw new Error(
-          "同時に保存された予約を確認できません。予約一覧を確認してから再試行してください。"
-        );
-      }
-      if (concurrentReservation.salon_id !== context.salonId) {
-        throw new Error(
-          "同じ外部予約番号が別サロンにあります。誤更新を避けるため同期を停止しました。"
-        );
-      }
-
-      existing = concurrentReservation as ExistingReservation;
+      existing = await readReservationAfterInsertConflict(
+        deterministicId,
+        context
+      );
     } else {
       if (error) throw new Error(error.message);
       if (data?.id !== deterministicId) {

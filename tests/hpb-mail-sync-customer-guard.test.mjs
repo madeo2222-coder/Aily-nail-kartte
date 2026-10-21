@@ -348,6 +348,82 @@ test("concurrent cancellation does not update a deterministic row from another s
   assert.equal(runtime.writes[0].operation, "insert");
 });
 
+test("concurrent cancellation tombstone is not revived by a delayed booking insert", async () => {
+  const cancellationBody = `ご予約のキャンセル\n${mail}`;
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-1",
+      memo: `HPB予約番号：A123456\n\n【HPBキャンセルメール本文】\n${cancellationBody}`,
+      status: "キャンセル",
+    },
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.alreadyCancelled, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "insert");
+});
+
+test("concurrent progressed booking keeps its staff status after an insert race", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-1",
+      memo: "HPB予約番号：A123456\nスタッフ処理済み",
+      status: "来店",
+    },
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(runtime.writes.length, 2);
+  assert.equal(runtime.writes[0].operation, "insert");
+  assert.equal(runtime.writes[1].operation, "update");
+  assert.equal(runtime.writes[1].payload.status, "来店");
+});
+
+test("concurrent booking insert does not update a deterministic row from another salon", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-2",
+      memo: "HPB予約番号：A123456",
+      status: "confirmed",
+    },
+  });
+
+  await assert.rejects(runtime.sync(mail), /別サロン.*同期を停止/);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "insert");
+});
+
+for (const [reason, response] of [
+  ["no inserted row", { updateData: null }],
+  ["unexpected row", { updateData: { id: "other-reservation" } }],
+  ["database error", { insertError: { code: "XX000", message: "fixture booking insert rejected" } }],
+]) {
+  test(`a new booking does not report success for ${reason}`, async () => {
+    const runtime = loadSync("mail-customer", {
+      missingReservation: true,
+      ...response,
+    });
+
+    await assert.rejects(
+      runtime.sync(mail),
+      /保存結果を確認できません|fixture booking insert rejected/
+    );
+    assert.equal(runtime.writes.length, 1);
+    assert.equal(runtime.writes[0].operation, "insert");
+  });
+}
+
 for (const [reason, response] of [
   ["no inserted row", { updateData: null }],
   ["unexpected row", { updateData: { id: "other-reservation" } }],
