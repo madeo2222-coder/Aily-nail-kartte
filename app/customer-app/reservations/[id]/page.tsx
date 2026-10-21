@@ -180,6 +180,7 @@ export default function CustomerReservationDetailPage() {
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
   const [message, setMessage] = useState("");
   const [warningMessage, setWarningMessage] = useState("");
+  const [refreshErrorMessage, setRefreshErrorMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [signedOut, setSignedOut] = useState(false);
 
@@ -194,12 +195,29 @@ export default function CustomerReservationDetailPage() {
   const todayText = useMemo(() => getTodayText(), []);
   const maxDateText = useMemo(() => addDaysText(todayText, 30), [todayText]);
 
-  const fetchReservation = useCallback(async () => {
-    setLoading(true);
+  const fetchReservation = useCallback(async (
+    { preserveCurrent = false }: { preserveCurrent?: boolean } = {}
+  ) => {
+    if (!preserveCurrent) {
+      setLoading(true);
+      setReservation(null);
+      setStaffs([]);
+    }
+
     setErrorMessage("");
+    setRefreshErrorMessage("");
     setSignedOut(false);
-    setReservation(null);
-    setStaffs([]);
+
+    const showReadFailure = (fallbackMessage: string) => {
+      if (preserveCurrent) {
+        setRefreshErrorMessage(
+          "予約操作は完了しましたが、最新の予約情報を再取得できませんでした。画面を再読み込みしてください。"
+        );
+        return;
+      }
+
+      setErrorMessage(fallbackMessage);
+    };
 
     try {
       const [reservationResponse, sessionResponse] = await Promise.all([
@@ -216,18 +234,22 @@ export default function CustomerReservationDetailPage() {
       const sessionJson = (await sessionResponse.json()) as SessionResponse;
 
       if (!sessionResponse.ok) {
+        setReservation(null);
+        setStaffs([]);
         setErrorMessage("ログイン状態の確認に失敗しました");
         return;
       }
 
       if (!sessionJson.authenticated) {
+        setReservation(null);
+        setStaffs([]);
         setErrorMessage("予約内容を確認するにはLINEログインが必要です");
         setSignedOut(true);
         return;
       }
 
       if (!reservationResponse.ok || !reservationJson.ok) {
-        setErrorMessage(
+        showReadFailure(
           reservationJson.error || "予約情報の取得に失敗しました"
         );
         return;
@@ -236,7 +258,7 @@ export default function CustomerReservationDetailPage() {
       const nextReservation = reservationJson.reservation || null;
 
       if (!nextReservation) {
-        setErrorMessage("予約情報が見つかりません");
+        showReadFailure("予約情報が見つかりません");
         return;
       }
 
@@ -246,7 +268,7 @@ export default function CustomerReservationDetailPage() {
       const staffJson = (await staffResult.json()) as StaffResponse;
 
       if (!staffResult.ok || !staffJson.ok) {
-        setErrorMessage(
+        showReadFailure(
           staffJson.error || "担当スタッフ情報の取得に失敗しました"
         );
         return;
@@ -267,23 +289,27 @@ export default function CustomerReservationDetailPage() {
       );
       setStaffs(staffJson.staffs || []);
       setReservation(nextReservation);
+      setRefreshErrorMessage("");
     } catch (error) {
       console.error(error);
-      setErrorMessage("予約情報の読み込みに失敗しました");
+      showReadFailure("予約情報の読み込みに失敗しました");
     } finally {
-      setLoading(false);
+      if (!preserveCurrent) {
+        setLoading(false);
+      }
     }
   }, [reservationId]);
 
   useEffect(() => {
     if (!reservationId) return;
-    void Promise.resolve().then(fetchReservation);
+    void Promise.resolve().then(() => fetchReservation());
   }, [reservationId, fetchReservation]);
 
   async function runAction(body: Record<string, unknown>) {
     setSaving(true);
     setMessage("");
     setWarningMessage("");
+    setRefreshErrorMessage("");
     setErrorMessage("");
 
     try {
@@ -312,7 +338,7 @@ export default function CustomerReservationDetailPage() {
 
       setMessage(json.message || "更新しました");
       setWarningMessage(json.notificationWarning || "");
-      await fetchReservation();
+      await fetchReservation({ preserveCurrent: true });
     } catch (error) {
       console.error(error);
       setErrorMessage("通信エラーが発生しました");
@@ -450,6 +476,20 @@ export default function CustomerReservationDetailPage() {
         {warningMessage ? (
           <section className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
             {warningMessage}
+          </section>
+        ) : null}
+
+        {refreshErrorMessage ? (
+          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold text-amber-800">
+            <p>{refreshErrorMessage}</p>
+            <button
+              type="button"
+              onClick={() => void fetchReservation({ preserveCurrent: true })}
+              disabled={saving}
+              className="mt-3 w-full rounded-2xl border border-amber-300 bg-white px-4 py-3 text-sm font-bold text-amber-900 disabled:opacity-50"
+            >
+              最新情報を再読み込み
+            </button>
           </section>
         ) : null}
 
@@ -615,7 +655,7 @@ export default function CustomerReservationDetailPage() {
               <button
                 type="button"
                 onClick={handleUpdate}
-                disabled={saving}
+                disabled={saving || Boolean(refreshErrorMessage)}
                 className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
                 {saving ? "変更中..." : "この内容に変更する"}
@@ -637,7 +677,7 @@ export default function CustomerReservationDetailPage() {
             <button
               type="button"
               onClick={handleCancel}
-              disabled={saving}
+              disabled={saving || Boolean(refreshErrorMessage)}
               className="mt-4 w-full rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 disabled:opacity-50"
             >
               予約希望を取り消す
@@ -669,7 +709,7 @@ export default function CustomerReservationDetailPage() {
                 <button
                   type="button"
                   onClick={handleRequestChange}
-                  disabled={saving}
+                  disabled={saving || Boolean(refreshErrorMessage)}
                   className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                 >
                   変更希望を店舗へ送る
@@ -680,7 +720,7 @@ export default function CustomerReservationDetailPage() {
                 <button
                   type="button"
                   onClick={handleRequestCancel}
-                  disabled={saving}
+                  disabled={saving || Boolean(refreshErrorMessage)}
                   className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 disabled:opacity-50"
                 >
                   キャンセル希望を店舗へ送る

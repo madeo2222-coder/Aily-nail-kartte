@@ -38,6 +38,8 @@ function response({ ok = true, body = {} } = {}) {
 async function loadPage({
   reservationId = "reservation-1",
   reservationResponse,
+  reservationRefreshError,
+  patchResponse,
   sessionResponse,
   staffResponse,
   rejectUrl,
@@ -45,6 +47,7 @@ async function loadPage({
   const states = [];
   const effects = [];
   const requests = [];
+  let reservationReadCount = 0;
   let cursor = 0;
 
   const hooks = {
@@ -63,7 +66,22 @@ async function loadPage({
 
     if (url === rejectUrl) throw new Error(`Failed request: ${url}`);
 
+    if (
+      url === `/api/customer-reservations/${reservationId}` &&
+      options.method === "PATCH"
+    ) {
+      return patchResponse ?? response({
+        body: { ok: true, message: "予約希望を変更しました" },
+      });
+    }
+
     if (url === `/api/customer-reservations/${reservationId}`) {
+      reservationReadCount += 1;
+
+      if (reservationReadCount > 1 && reservationRefreshError) {
+        throw reservationRefreshError;
+      }
+
       return reservationResponse ?? response({
         body: {
           ok: true,
@@ -116,16 +134,43 @@ async function loadPage({
     fetch,
   }, { filename: "customer-reservation-detail-page.js" });
 
-  const render = () => {
+  const renderElement = () => {
     cursor = 0;
-    return renderToStaticMarkup(exports.default());
+    return exports.default();
   };
+  const render = () => renderToStaticMarkup(renderElement());
 
   assert.match(render(), /読み込み中/);
   for (const effect of effects.splice(0)) effect();
   await setImmediate();
 
-  return { html: render(), requests };
+  return { html: render(), render, renderElement, requests };
+}
+
+function getElementText(node) {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (!node?.props) return "";
+
+  const children = Array.isArray(node.props.children)
+    ? node.props.children
+    : [node.props.children];
+  return children.map(getElementText).join("");
+}
+
+function findElement(node, predicate) {
+  if (!node || typeof node !== "object") return null;
+  if (predicate(node)) return node;
+
+  const children = Array.isArray(node.props?.children)
+    ? node.props.children
+    : [node.props?.children];
+  for (const child of children) {
+    const match = findElement(child, predicate);
+    if (match) return match;
+  }
+  return null;
 }
 
 test("loads the reservation identified by the current route and renders it", async () => {
@@ -239,4 +284,36 @@ test("hides reservation details after a rejected authoritative request", async (
   assert.match(html, /再試行/);
   assert.doesNotMatch(html, /ワンカラー/);
   assert.doesNotMatch(html, /この内容に変更する/);
+});
+
+test("keeps the saved result and blocks stale actions when post-save refresh fails", async () => {
+  const page = await loadPage({
+    reservationRefreshError: new Error("refresh failed"),
+  });
+  const updateButton = findElement(
+    page.renderElement(),
+    (node) => node.type === "button" && /この内容に変更する/.test(getElementText(node))
+  );
+
+  assert.ok(updateButton);
+  await updateButton.props.onClick();
+  await setImmediate();
+
+  const html = page.render();
+  assert.match(html, /予約希望を変更しました/);
+  assert.match(html, /最新の予約情報を再取得できませんでした/);
+  assert.match(html, /最新情報を再読み込み/);
+  assert.match(html, /ワンカラー/);
+  assert.match(html, /disabled=""[^>]*>この内容に変更する/);
+  assert.deepEqual(
+    page.requests.map(({ url, options }) => [url, options.method ?? "GET"]),
+    [
+      ["/api/customer-reservations/reservation-1", "GET"],
+      ["/api/line-login/me", "GET"],
+      ["/api/customer-reservations/staffs", "GET"],
+      ["/api/customer-reservations/reservation-1", "PATCH"],
+      ["/api/customer-reservations/reservation-1", "GET"],
+      ["/api/line-login/me", "GET"],
+    ]
+  );
 });

@@ -349,3 +349,26 @@ test("customer page renders the notification warning separately from success", (
   );
 });
 
+test("customer page keeps a saved result visible when post-save refresh fails", () => {
+  assert.match(
+    pageSource,
+    /fetchReservation\(\{ preserveCurrent: true \}\)/
+  );
+  assert.match(
+    pageSource,
+    /if \(!preserveCurrent\) \{[\s\S]{0,180}setReservation\(null\)[\s\S]{0,120}setStaffs\(\[\]\)/
+  );
+  assert.match(
+    pageSource,
+    /予約操作は完了しましたが、最新の予約情報を再取得できませんでした。画面を再読み込みしてください。/
+  );
+  assert.match(
+    pageSource,
+    /最新情報を再読み込み/
+  );
+  assert.match(
+    pageSource,
+    /disabled=\{saving \|\| Boolean\(refreshErrorMessage\)\}/
+  );
+});
+
