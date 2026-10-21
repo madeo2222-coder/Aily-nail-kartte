@@ -40,6 +40,7 @@ async function loadPage({
   reservationResponse,
   reservationRefreshError,
   patchResponse,
+  patchError,
   sessionResponse,
   staffResponse,
   rejectUrl,
@@ -77,6 +78,7 @@ async function loadPage({
       url === `/api/customer-reservations/${reservationId}` &&
       options.method === "PATCH"
     ) {
+      if (patchError) throw patchError;
       return patchResponse ?? response({
         body: { ok: true, message: "予約希望を変更しました" },
       });
@@ -357,4 +359,28 @@ test("submits a reservation action only once during a fast double click", async 
     1
   );
   assert.match(page.render(), /予約希望を変更しました/);
+});
+
+test("blocks another action when the PATCH result is unknown", async () => {
+  const page = await loadPage({
+    patchError: new Error("response lost after request"),
+  });
+  const updateButton = findElement(
+    page.renderElement(),
+    (node) => node.type === "button" && /この内容に変更する/.test(getElementText(node))
+  );
+
+  assert.ok(updateButton);
+  await updateButton.props.onClick();
+  await setImmediate();
+
+  const html = page.render();
+  assert.match(html, /予約操作の結果を確認できませんでした/);
+  assert.match(html, /同じ操作を繰り返さず/);
+  assert.match(html, /最新情報を再読み込み/);
+  assert.match(html, /disabled=""[^>]*>この内容に変更する/);
+  assert.equal(
+    page.requests.filter(({ options }) => options.method === "PATCH").length,
+    1
+  );
 });

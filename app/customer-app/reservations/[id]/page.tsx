@@ -344,7 +344,9 @@ export default function CustomerReservationDetailPage() {
       await fetchReservation({ preserveCurrent: true });
     } catch (error) {
       console.error(error);
-      setErrorMessage("通信エラーが発生しました");
+      setRefreshErrorMessage(
+        "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
+      );
     } finally {
       actionPendingRef.current = false;
       setSaving(false);
