@@ -43,6 +43,7 @@ function loadRoute({
   let maxGmailGetConcurrency = 0;
   const gmailListCalls = [];
   const syncedTexts = [];
+  const syncedSubjects = [];
   const exports = {};
 
   class MockOAuth2 {
@@ -155,8 +156,9 @@ function loadRoute({
       }
       if (name === "@/lib/hpb-mail-sync") {
         return {
-          syncHpbMailText: async (text) => {
+          syncHpbMailText: async (text, subject) => {
             syncedTexts.push(text);
+            syncedSubjects.push(subject);
             if (syncFailures.includes(text)) {
               throw new Error(`sync failed: ${text}`);
             }
@@ -198,6 +200,9 @@ function loadRoute({
     },
     get syncedTexts() {
       return syncedTexts;
+    },
+    get syncedSubjects() {
+      return syncedSubjects;
     },
     get oauthClientCount() {
       return oauthClientCount;
@@ -282,6 +287,10 @@ test("Gmail sync follows every result page and processes oldest mail first", asy
   assert.equal(runtime.gmailListCalls[0].pageToken, undefined);
   assert.equal(runtime.gmailListCalls[1].pageToken, "page-2");
   assert.deepEqual(runtime.syncedTexts, ["older-message", "newer-message"]);
+  assert.deepEqual(runtime.syncedSubjects, [
+    "HOT PEPPER Beauty 予約番号",
+    "HOT PEPPER Beauty 予約番号",
+  ]);
 });
 
 test("Gmail sync bounds concurrent message fetches while preserving sync order", async () => {

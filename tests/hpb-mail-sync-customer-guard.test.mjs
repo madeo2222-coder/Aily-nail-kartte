@@ -107,6 +107,43 @@ test("cancellation reports success only for the returned target reservation", as
   assert.deepEqual(runtime.writes[0].filters, [["id", "manual-reservation"], ["salon_id", "salon-1"]]);
 });
 
+test("HPB cancellation in the Gmail subject is not replayed as a booking", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    mail,
+    "【SALON BOARD】予約キャンセルのお知らせ"
+  );
+
+  assert.equal(result.parsed.action, "cancel");
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /SALON BOARD/);
+});
+
+test("minimo cancellation in the Gmail subject is not replayed as a booking", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "ミニモ予約ID：MINIMO-123",
+  });
+  const result = await runtime.sync(
+    `予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+担当者：指名なし
+施術時間：90分`,
+    "【ミニモ】予約キャンセルのお知らせ"
+  );
+
+  assert.equal(result.parsed.source, "minimo");
+  assert.equal(result.parsed.action, "cancel");
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /予約キャンセルのお知らせ/);
+});
+
 const mail = `予約番号：A123456
 氏名：テスト顧客
 電話番号：09000000000

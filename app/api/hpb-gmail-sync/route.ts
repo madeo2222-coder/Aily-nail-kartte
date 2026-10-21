@@ -274,7 +274,7 @@ async function runHpbGmailSync() {
     }
 
     try {
-      const synced = await syncHpbMailText(bodyText);
+      const synced = await syncHpbMailText(bodyText, subject);
 
       results.push({
         messageId,

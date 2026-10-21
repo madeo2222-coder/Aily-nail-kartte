@@ -198,10 +198,19 @@ function parseMinimoDateTime(value: string) {
   return parseJapaneseDateTime(value);
 }
 
-function parseHpbMail(rawText: string): ParsedHpbMail {
+function isCancellationSubject(subject: string) {
+  const normalized = subject.normalize("NFKC").toLowerCase();
+  return normalized.includes("キャンセル") || normalized.includes("cancel");
+}
+
+function parseHpbMail(
+  rawText: string,
+  mailSubject = ""
+): ParsedHpbMail {
   const text = normalizeText(rawText);
 
   const action: ParsedHpbMail["action"] =
+    isCancellationSubject(mailSubject) ||
     text.includes("キャンセル連絡") ||
     text.includes("キャンセルがありました") ||
     text.includes("ご予約のキャンセル")
@@ -279,10 +288,14 @@ function parseHpbMail(rawText: string): ParsedHpbMail {
   };
 }
 
-function parseMinimoMail(rawText: string): ParsedHpbMail {
+function parseMinimoMail(
+  rawText: string,
+  mailSubject = ""
+): ParsedHpbMail {
   const text = normalizeText(rawText);
 
   const action: ParsedHpbMail["action"] =
+    isCancellationSubject(mailSubject) ||
     text.includes("下記の予約がキャンセルされました") ||
     text.includes("キャンセル理由") ||
     text.includes("キャンセルされました") ||
@@ -356,19 +369,23 @@ function parseMinimoMail(rawText: string): ParsedHpbMail {
   };
 }
 
-function parseReservationMail(rawText: string): ParsedHpbMail {
+function parseReservationMail(
+  rawText: string,
+  mailSubject = ""
+): ParsedHpbMail {
   const text = normalizeText(rawText);
+  const sourceText = `${normalizeText(mailSubject)}\n${text}`;
 
   if (
-    text.includes("ミニモ") ||
-    text.includes("minimo") ||
-    text.includes("ミニモサロンツール") ||
-    text.includes("予約ID")
+    sourceText.includes("ミニモ") ||
+    sourceText.includes("minimo") ||
+    sourceText.includes("ミニモサロンツール") ||
+    sourceText.includes("予約ID")
   ) {
-    return parseMinimoMail(text);
+    return parseMinimoMail(text, mailSubject);
   }
 
-  return parseHpbMail(text);
+  return parseHpbMail(text, mailSubject);
 }
 
 async function resolveSyncContext(parsed: ParsedHpbMail): Promise<SyncContext> {
@@ -825,8 +842,8 @@ async function cancelReservation(
   };
 }
 
-export async function syncHpbMailText(rawText: string) {
-  const parsed = parseReservationMail(rawText);
+export async function syncHpbMailText(rawText: string, mailSubject = "") {
+  const parsed = parseReservationMail(rawText, mailSubject);
   const context = await resolveSyncContext(parsed);
 
   const result =
