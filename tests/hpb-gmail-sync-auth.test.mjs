@@ -35,6 +35,7 @@ function loadRoute({
   listPages = [{ messages: [] }],
   syncFailures = [],
   messageGetFailures = [],
+  messageInternalDates = {},
   messageGetDelayMs = 0,
 } = {}) {
   const authOptions = [];
@@ -112,6 +113,9 @@ function loadRoute({
                         }
                         return {
                           data: {
+                            internalDate: Object.hasOwn(messageInternalDates, id)
+                              ? messageInternalDates[id]
+                              : "0",
                             payload: {
                               mimeType: "text/plain",
                               headers: [
@@ -291,6 +295,41 @@ test("Gmail sync follows every result page and processes oldest mail first", asy
     "HOT PEPPER Beauty 予約番号",
     "HOT PEPPER Beauty 予約番号",
   ]);
+});
+
+test("Gmail sync uses each message timestamp when search order is misleading", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [{ id: "older-message" }, { id: "newer-message" }],
+      },
+    ],
+    messageInternalDates: {
+      "older-message": "1000",
+      "newer-message": "2000",
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedTexts, ["older-message", "newer-message"]);
+});
+
+test("Gmail sync fails closed when a message timestamp is unavailable", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "missing-timestamp" }] }],
+    messageInternalDates: { "missing-timestamp": null },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.failedCount, 1);
+  assert.match(body.results[0].error, /Gmail受信日時を取得できませんでした/);
+  assert.deepEqual(runtime.syncedTexts, []);
 });
 
 test("Gmail sync bounds concurrent message fetches while preserving sync order", async () => {

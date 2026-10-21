@@ -121,6 +121,7 @@ type FetchedGmailMessage =
   | {
       ok: true;
       messageId: string;
+      internalDate: number;
       subject: string;
       bodyText: string;
     }
@@ -138,6 +139,7 @@ async function fetchReservationMessages(
     format: "full";
   }) => Promise<{
     data: {
+      internalDate?: string | null;
       payload?: (GmailMessagePart & {
         headers?: Array<{
           name?: string | null;
@@ -175,6 +177,16 @@ async function fetchReservationMessages(
             id: messageId,
             format: "full",
           });
+          const rawInternalDate = messageResponse.data.internalDate;
+          const internalDate = Number(rawInternalDate);
+          if (
+            typeof rawInternalDate !== "string" ||
+            !/^\d+$/.test(rawInternalDate) ||
+            !Number.isFinite(internalDate) ||
+            internalDate < 0
+          ) {
+            throw new Error("Gmail受信日時を取得できませんでした");
+          }
           const subject =
             messageResponse.data.payload?.headers?.find(
               (header) => header.name?.toLowerCase() === "subject"
@@ -186,6 +198,7 @@ async function fetchReservationMessages(
           return {
             ok: true,
             messageId,
+            internalDate,
             subject,
             bodyText,
           };
@@ -205,7 +218,17 @@ async function fetchReservationMessages(
     fetchedMessages.push(...batchResults);
   }
 
-  return fetchedMessages;
+  // Gmail search results are usually newest-first, but the API response order
+  // is not a safe event sequence. Apply booking/cancellation messages by the
+  // timestamp returned on each full message so later events win reliably.
+  return fetchedMessages.sort((left, right) => {
+    if (left.ok && right.ok) {
+      return left.internalDate - right.internalDate;
+    }
+    if (left.ok) return -1;
+    if (right.ok) return 1;
+    return 0;
+  });
 }
 
 async function runHpbGmailSync() {
