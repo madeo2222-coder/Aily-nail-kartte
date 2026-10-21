@@ -44,15 +44,24 @@ function loadSync(manualCustomerId, options = {}) {
         then(resolve, reject) {
           if (operation !== "read") {
             writes.push({ table, operation, payload, selected, filters });
+            const writeTargetId = filters.find(([key]) => key === "id")?.[1];
             const data = Object.hasOwn(options, "updateData")
-              ? options.updateData : { id: payload?.id ?? manual.id };
-            return Promise.resolve({ data, error: options.updateError ?? null }).then(resolve, reject);
+              ? options.updateData
+              : { id: payload?.id ?? writeTargetId ?? manual.id };
+            const error = operation === "insert" && Object.hasOwn(options, "insertError")
+              ? options.insertError
+              : options.updateError ?? null;
+            return Promise.resolve({ data, error }).then(resolve, reject);
           }
+          const deterministicId = filters.find(([key]) => key === "id")?.[1];
           const data = table === "salons" ? [{ id: "salon-1" }]
             : table === "customers" ? [customer]
-              : table === "reservations" ? (options.missingReservation
-                  ? []
-                  : externalLookup && !options.existing ? [] : [manual])
+              : table === "reservations" ? (deterministicId && options.concurrentReservation &&
+                    writes.some((write) => write.operation === "insert")
+                  ? { ...manual, ...options.concurrentReservation, id: deterministicId }
+                  : options.missingReservation
+                    ? []
+                    : externalLookup && !options.existing ? [] : [manual])
                 : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
         },
@@ -275,6 +284,68 @@ test("a cancellation received before its booking creates a persistent tombstone"
   assert.equal(replayResult.result.mode, "cancelled");
   assert.equal(replayResult.result.alreadyCancelled, true);
   assert.equal(replay.writes.length, 0);
+});
+
+test("concurrent duplicate cancellation converges after the deterministic insert loses the race", async () => {
+  const cancellationBody = `ご予約のキャンセル\n${mail}`;
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    rejectCustomerLookup: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-1",
+      memo: `HPB予約番号：A123456\n\n【HPBキャンセルメール本文】\n${cancellationBody}`,
+      status: "キャンセル",
+    },
+  });
+
+  const result = await runtime.sync(cancellationBody);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.alreadyCancelled, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "insert");
+});
+
+test("concurrent booking insert is cancelled after the cancellation tombstone loses the race", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    rejectCustomerLookup: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-1",
+      memo: "HPB予約番号：A123456\n【HPBメール本文】\n予約受付",
+      status: "confirmed",
+    },
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${mail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(runtime.writes.length, 2);
+  assert.equal(runtime.writes[0].operation, "insert");
+  assert.equal(runtime.writes[1].operation, "update");
+  assert.equal(runtime.writes[1].payload.status, "キャンセル");
+});
+
+test("concurrent cancellation does not update a deterministic row from another salon", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    rejectCustomerLookup: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-2",
+      memo: "HPB予約番号：A123456",
+      status: "confirmed",
+    },
+  });
+
+  await assert.rejects(
+    runtime.sync(`ご予約のキャンセル\n${mail}`),
+    /別サロン.*同期を停止/
+  );
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "insert");
 });
 
 for (const [reason, response] of [

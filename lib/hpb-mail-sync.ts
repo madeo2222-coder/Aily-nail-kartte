@@ -856,18 +856,41 @@ async function cancelReservation(
       .select("id")
       .single();
 
-    if (error) throw new Error(error.message);
-    if (data?.id !== deterministicId) {
-      throw new Error(
-        "キャンセル予約の保存結果を確認できません。予約一覧を確認してから再試行してください。"
-      );
-    }
+    if (error?.code === "23505") {
+      const { data: concurrentReservation, error: concurrentReadError } =
+        await context.supabase
+          .from("reservations")
+          .select("id, salon_id, staff_id, memo, status")
+          .eq("id", deterministicId)
+          .maybeSingle();
 
-    return {
-      mode: "cancelled",
-      reservationId: deterministicId,
-      createdCancellation: true,
-    };
+      if (concurrentReadError) throw new Error(concurrentReadError.message);
+      if (!concurrentReservation?.id) {
+        throw new Error(
+          "同時に保存された予約を確認できません。予約一覧を確認してから再試行してください。"
+        );
+      }
+      if (concurrentReservation.salon_id !== context.salonId) {
+        throw new Error(
+          "同じ外部予約番号が別サロンにあります。誤更新を避けるため同期を停止しました。"
+        );
+      }
+
+      existing = concurrentReservation as ExistingReservation;
+    } else {
+      if (error) throw new Error(error.message);
+      if (data?.id !== deterministicId) {
+        throw new Error(
+          "キャンセル予約の保存結果を確認できません。予約一覧を確認してから再試行してください。"
+        );
+      }
+
+      return {
+        mode: "cancelled",
+        reservationId: deterministicId,
+        createdCancellation: true,
+      };
+    }
   }
 
   const nextMemo = appendExternalCancellationMemo({
