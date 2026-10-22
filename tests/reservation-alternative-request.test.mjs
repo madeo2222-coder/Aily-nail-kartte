@@ -65,6 +65,7 @@ function loadRoute({
   ],
   lineResponses = [new MockResponse({}, 200)],
   completionResult = { data: true, error: null },
+  claimError = null,
   reservation,
   customer,
 } = {}) {
@@ -104,6 +105,7 @@ function loadRoute({
     },
     async rpc(name, args) {
       if (name === "claim_reservation_alternative_request") {
+        if (claimError) return { data: null, error: claimError };
         const claim = claimQueue.shift();
         if (!claim) throw new Error("No claim response configured");
         return { data: [claim], error: null };
@@ -267,6 +269,56 @@ test("does not call LINE again after the request is already sent", async () => {
 
   assert.equal(response.status, 200);
   assert.equal(response.body.alreadySent, true);
+  assert.equal(runtime.lineCalls.length, 0);
+  assert.equal(runtime.completionCalls.length, 0);
+});
+
+test("maps known alternative-request claim failures without exposing database details", async () => {
+  const cases = [
+    {
+      message: "ALTERNATIVE_REQUEST_INVALID_STAFF",
+      status: 403,
+      expected: /権限/,
+    },
+    {
+      message: "ALTERNATIVE_REQUEST_SCOPE_MISMATCH",
+      status: 403,
+      expected: /権限/,
+    },
+    {
+      message: "ALTERNATIVE_REQUEST_INVALID_RESERVATION",
+      status: 409,
+      expected: /読み込み直して/,
+    },
+  ];
+
+  for (const claimFailure of cases) {
+    const runtime = loadRoute({
+      claimError: { message: `private detail: ${claimFailure.message}` },
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, claimFailure.status);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.sent, false);
+    assert.match(response.body.error, claimFailure.expected);
+    assert.doesNotMatch(response.body.error, /private|ALTERNATIVE_REQUEST_/);
+    assert.equal(runtime.lineCalls.length, 0);
+    assert.equal(runtime.completionCalls.length, 0);
+  }
+});
+
+test("keeps unexpected alternative-request claim failures private", async () => {
+  const runtime = loadRoute({
+    claimError: { message: "private database function detail" },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 500);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.sent, false);
+  assert.match(response.body.error, /通知状態を確認/);
+  assert.doesNotMatch(response.body.error, /private|database/);
   assert.equal(runtime.lineCalls.length, 0);
   assert.equal(runtime.completionCalls.length, 0);
 });

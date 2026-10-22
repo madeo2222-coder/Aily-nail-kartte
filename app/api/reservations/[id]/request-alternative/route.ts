@@ -33,6 +33,11 @@ type ClaimRow = {
   line_message: string;
 };
 
+type ClaimFailure = {
+  status: 403 | 409;
+  error: string;
+};
+
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
 
 function getSupabaseAdmin() {
@@ -161,6 +166,27 @@ function getClaimRow(value: unknown): ClaimRow | null {
   }
 
   return candidate as ClaimRow;
+}
+
+function getClaimFailure(message: string): ClaimFailure | null {
+  if (
+    message.includes("ALTERNATIVE_REQUEST_INVALID_STAFF") ||
+    message.includes("ALTERNATIVE_REQUEST_SCOPE_MISMATCH")
+  ) {
+    return {
+      status: 403,
+      error: "この予約を操作する権限がありません。",
+    };
+  }
+
+  if (message.includes("ALTERNATIVE_REQUEST_INVALID_RESERVATION")) {
+    return {
+      status: 409,
+      error: "予約状態が更新されています。最新の内容を読み込み直してください。",
+    };
+  }
+
+  return null;
 }
 
 export async function POST(
@@ -320,6 +346,15 @@ export async function POST(
     );
 
     if (claimError) {
+      const claimFailure = getClaimFailure(claimError.message);
+
+      if (claimFailure) {
+        return NextResponse.json(
+          { ok: false, sent: false, error: claimFailure.error },
+          { status: claimFailure.status }
+        );
+      }
+
       throw new Error(claimError.message);
     }
 
@@ -491,11 +526,14 @@ export async function POST(
     });
   } catch (error) {
     console.error("request-alternative error:", error);
-    const message =
-      error instanceof Error ? error.message : "別日時入力のLINE送信に失敗しました。";
 
     return NextResponse.json(
-      { ok: false, sent: false, error: message },
+      {
+        ok: false,
+        sent: false,
+        error:
+          "別日時入力のLINE通知処理に失敗しました。予約と通知状態を確認してから再試行してください。",
+      },
       { status: 500 }
     );
   }
