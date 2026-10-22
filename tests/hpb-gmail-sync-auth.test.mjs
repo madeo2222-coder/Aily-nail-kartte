@@ -35,6 +35,8 @@ function loadRoute({
   listPages = [{ messages: [] }],
   syncFailures = [],
   messageGetFailures = [],
+  attachmentGetFailures = [],
+  attachmentPayloads = {},
   messageInternalDates = {},
   messagePayloads = {},
   messageGetDelayMs = 0,
@@ -44,6 +46,7 @@ function loadRoute({
   let activeGmailGetCount = 0;
   let maxGmailGetConcurrency = 0;
   const gmailListCalls = [];
+  const gmailAttachmentCalls = [];
   const syncedTexts = [];
   const syncedSubjects = [];
   const exports = {};
@@ -135,6 +138,19 @@ function loadRoute({
                         activeGmailGetCount -= 1;
                       }
                     },
+                    attachments: {
+                      async get({ messageId, id }) {
+                        gmailAttachmentCalls.push({ messageId, id });
+                        if (attachmentGetFailures.includes(id)) {
+                          throw new Error(`attachment get failed: ${id}`);
+                        }
+                        return {
+                          data: {
+                            data: attachmentPayloads[id] ?? null,
+                          },
+                        };
+                      },
+                    },
                   },
                 },
               };
@@ -202,6 +218,9 @@ function loadRoute({
     },
     get gmailListCalls() {
       return gmailListCalls;
+    },
+    get gmailAttachmentCalls() {
+      return gmailAttachmentCalls;
     },
     get syncedTexts() {
       return syncedTexts;
@@ -366,6 +385,83 @@ test("Gmail sync prefers the plain part instead of duplicating multipart content
 
   assert.equal(response.status, 200);
   assert.deepEqual(runtime.syncedTexts, [plain]);
+});
+
+test("Gmail sync retrieves a text body stored behind a Gmail attachment ID", async () => {
+  const plain = `予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00`;
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "external-body" }] }],
+    messagePayloads: {
+      "external-body": {
+        mimeType: "text/plain",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { attachmentId: "body-attachment" },
+      },
+    },
+    attachmentPayloads: {
+      "body-attachment": Buffer.from(plain).toString("base64url"),
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedTexts, [plain]);
+  assert.deepEqual(runtime.gmailAttachmentCalls, [
+    { messageId: "external-body", id: "body-attachment" },
+  ]);
+});
+
+test("Gmail sync does not fetch an HTML attachment when a plain body is available", async () => {
+  const plain = `予約番号：A123456\n氏名：テスト顧客`;
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "multipart-external-html" }] }],
+    messagePayloads: {
+      "multipart-external-html": {
+        mimeType: "multipart/alternative",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: Buffer.from(plain).toString("base64url") },
+          },
+          {
+            mimeType: "text/html",
+            body: { attachmentId: "unused-html-attachment" },
+          },
+        ],
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedTexts, [plain]);
+  assert.deepEqual(runtime.gmailAttachmentCalls, []);
+});
+
+test("Gmail sync reports a retryable failure when an external body cannot be fetched", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "external-body-failed" }] }],
+    messagePayloads: {
+      "external-body-failed": {
+        mimeType: "text/plain",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { attachmentId: "failed-body-attachment" },
+      },
+    },
+    attachmentGetFailures: ["failed-body-attachment"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.failedCount, 1);
+  assert.match(body.results[0].error, /Gmail本文の取得に失敗しました/);
+  assert.deepEqual(runtime.syncedTexts, []);
 });
 
 test("Gmail sync fails closed when a message timestamp is unavailable", async () => {

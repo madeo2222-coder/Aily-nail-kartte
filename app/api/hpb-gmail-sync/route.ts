@@ -12,7 +12,10 @@ function decodeBase64Url(value: string) {
 type GmailMessagePart = {
   mimeType?: string | null;
   filename?: string | null;
-  body?: { data?: string | null } | null;
+  body?: {
+    data?: string | null;
+    attachmentId?: string | null;
+  } | null;
   parts?: GmailMessagePart[] | null;
 };
 
@@ -61,34 +64,54 @@ function htmlToPlainText(value: string) {
     .replace(/\n{3,}/g, "\n\n");
 }
 
-function collectMimeText(
+async function collectMimeText(
   payload: GmailMessagePart | null | undefined,
-  mimeType: "text/plain" | "text/html"
-): string[] {
+  mimeType: "text/plain" | "text/html",
+  getAttachmentData: (attachmentId: string) => Promise<string | null>
+): Promise<string[]> {
   if (!payload) return [];
 
   if (payload.filename?.trim()) return [];
 
-  if (payload.mimeType === mimeType && payload.body?.data) {
-    const decoded = decodeBase64Url(payload.body.data);
+  if (payload.mimeType === mimeType) {
+    const encoded =
+      payload.body?.data ||
+      (payload.body?.attachmentId
+        ? await getAttachmentData(payload.body.attachmentId)
+        : null);
+
+    if (!encoded) return [];
+
+    const decoded = decodeBase64Url(encoded);
     return [mimeType === "text/html" ? htmlToPlainText(decoded) : decoded];
   }
 
   if (Array.isArray(payload.parts)) {
-    return payload.parts.flatMap((part) => collectMimeText(part, mimeType));
+    const values: string[] = [];
+    for (const part of payload.parts) {
+      values.push(...(await collectMimeText(part, mimeType, getAttachmentData)));
+    }
+    return values;
   }
 
   return [];
 }
 
-function extractPlainText(payload: GmailMessagePart | null | undefined): string {
-  const plainText = collectMimeText(payload, "text/plain")
+async function extractPlainText(
+  payload: GmailMessagePart | null | undefined,
+  getAttachmentData: (attachmentId: string) => Promise<string | null>
+): Promise<string> {
+  const plainText = (await collectMimeText(
+    payload,
+    "text/plain",
+    getAttachmentData
+  ))
     .filter((value) => value.trim())
     .join("\n");
 
   if (plainText) return plainText;
 
-  return collectMimeText(payload, "text/html")
+  return (await collectMimeText(payload, "text/html", getAttachmentData))
     .filter((value) => value.trim())
     .join("\n");
 }
@@ -190,6 +213,15 @@ async function fetchReservationMessages(
         }> | null;
       }) | null;
     };
+  }>,
+  getAttachment: (parameters: {
+    userId: string;
+    messageId: string;
+    id: string;
+  }) => Promise<{
+    data: {
+      data?: string | null;
+    };
   }>
 ) {
   const fetchedMessages: FetchedGmailMessage[] = [];
@@ -236,8 +268,23 @@ async function fetchReservationMessages(
             messageResponse.data.payload?.headers?.find(
               (header) => header.name?.toLowerCase() === "subject"
             )?.value || "";
-          const bodyText = extractPlainText(
-            messageResponse.data.payload
+          const attachmentData = new Map<string, Promise<string | null>>();
+          const bodyText = (
+            await extractPlainText(
+              messageResponse.data.payload,
+              (attachmentId) => {
+                let pending = attachmentData.get(attachmentId);
+                if (!pending) {
+                  pending = getAttachment({
+                    userId: "me",
+                    messageId,
+                    id: attachmentId,
+                  }).then((response) => response.data.data || null);
+                  attachmentData.set(attachmentId, pending);
+                }
+                return pending;
+              }
+            )
           ).trim();
 
           return {
@@ -315,7 +362,8 @@ async function runHpbGmailSync() {
   );
   const fetchedMessages = await fetchReservationMessages(
     messages,
-    (parameters) => gmail.users.messages.get(parameters)
+    (parameters) => gmail.users.messages.get(parameters),
+    (parameters) => gmail.users.messages.attachments.get(parameters)
   );
   const results = [];
   const failedThreadIds = new Set(
