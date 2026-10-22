@@ -71,7 +71,7 @@ type CancellationResult = {
   alreadyCancelled?: boolean;
   error?: string;
   line?: {
-    status?: "sent" | "skipped" | "not_linked" | "failed";
+    status?: "sent" | "skipped" | "not_linked" | "failed" | "unknown";
     message?: string;
   };
 };
@@ -337,6 +337,7 @@ export default function EditReservationPage() {
   const [deleting, setDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [cancellationLineWarning, setCancellationLineWarning] = useState("");
   const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
   const [confirmationLineRetryLock, setConfirmationLineRetryLock] =
     useState<ConfirmationLineRetryLock | null>(null);
@@ -380,6 +381,7 @@ export default function EditReservationPage() {
     setPageDataLoaded(false);
     setErrorMessage("");
     setSuccessMessage("");
+    setCancellationLineWarning("");
 
     let response: Response;
 
@@ -747,6 +749,7 @@ export default function EditReservationPage() {
     setSaving(true);
     setErrorMessage("");
     setSuccessMessage("");
+    setCancellationLineWarning("");
 
     try {
       const response = await fetch(`/api/reservations/${reservationId}/cancel`, {
@@ -775,11 +778,22 @@ export default function EditReservationPage() {
 
       setStatus("キャンセル");
       setWasInitiallyCancelled(true);
+      const lineStatus = result.line?.status;
+      const lineNeedsAttention =
+        lineStatus === "failed" ||
+        lineStatus === "not_linked" ||
+        lineStatus === "unknown";
+
       setSuccessMessage(
-        result.line?.message ||
-          (result.alreadyCancelled
-            ? "予約は既にキャンセル済みです。LINEは再送していません。"
-            : "予約をキャンセルしました。")
+        result.alreadyCancelled
+          ? "予約は既にキャンセル済みです。LINEは再送していません。"
+          : "予約をキャンセルしました。"
+      );
+      setCancellationLineWarning(
+        lineNeedsAttention
+          ? result.line?.message ||
+              "LINE通知を確認できませんでした。顧客へ直接ご連絡ください。"
+          : ""
       );
     } catch (error) {
       console.error("予約キャンセル結果の確認エラー:", error);
@@ -977,6 +991,12 @@ export default function EditReservationPage() {
             {successMessage ? (
               <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-bold text-blue-700">
                 {successMessage}
+              </div>
+            ) : null}
+
+            {cancellationLineWarning ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+                {cancellationLineWarning}
               </div>
             ) : null}
 

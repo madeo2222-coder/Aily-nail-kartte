@@ -10,6 +10,10 @@ const source = readFileSync(
   new URL("../app/api/reservations/[id]/cancel/route.ts", import.meta.url),
   "utf8",
 );
+const editPageSource = readFileSync(
+  new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+  "utf8",
+);
 const compiled = ts.transpileModule(source, {
   compilerOptions: {
     module: ts.ModuleKind.CommonJS,
@@ -371,4 +375,182 @@ test("a reservation removed during cancellation is not reported as cancelled", a
   assert.equal(response.body.cancelled, false);
   assert.match(response.body.error, /見つかりません/);
   assert.equal(runtime.fetchCalled, false);
+});
+
+function loadCancellationLineRuntime(fetchImplementation) {
+  let reservationQueryCount = 0;
+
+  const chain = (maybeSingle) => ({
+    select() {
+      return this;
+    },
+    eq() {
+      return this;
+    },
+    is() {
+      return this;
+    },
+    maybeSingle,
+  });
+
+  const reservationRead = chain(async () => ({
+    data: {
+      id: "reservation-1",
+      salon_id: "salon-1",
+      customer_id: "customer-1",
+      start_at: "2099-10-02T01:30:00.000Z",
+      status: "予約",
+    },
+    error: null,
+  }));
+  const reservationUpdate = {
+    update() {
+      return chain(async () => ({
+        data: { id: "reservation-1" },
+        error: null,
+      }));
+    },
+  };
+  const customerRead = chain(async () => ({
+    data: {
+      id: "customer-1",
+      name: "予約 花子",
+      salon_id: "salon-1",
+      line_user_id: "line-user-1",
+    },
+    error: null,
+  }));
+  const salonRead = chain(async () => ({
+    data: { id: "salon-1", name: "Aily Nail Studio" },
+    error: null,
+  }));
+
+  const exports = {};
+  vm.runInNewContext(compiled, {
+    exports,
+    AbortController,
+    Array,
+    Date,
+    Error,
+    Intl,
+    Object,
+    Promise,
+    Set,
+    String,
+    clearTimeout,
+    fetch: fetchImplementation,
+    process: {
+      env: {
+        NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role",
+        LINE_CHANNEL_ACCESS_TOKEN: "line-token",
+      },
+    },
+    require(name) {
+      if (name === "next/server") {
+        return {
+          NextRequest: class {},
+          NextResponse: {
+            json(body, options = {}) {
+              return new MockResponse(body, options.status ?? 200);
+            },
+          },
+        };
+      }
+      if (name === "@supabase/supabase-js") {
+        return {
+          createClient() {
+            return {
+              from(table) {
+                if (table === "reservations") {
+                  reservationQueryCount += 1;
+                  return reservationQueryCount === 1
+                    ? reservationRead
+                    : reservationUpdate;
+                }
+                if (table === "customers") return customerRead;
+                if (table === "salons") return salonRead;
+                throw new Error(`Unexpected table: ${table}`);
+              },
+            };
+          },
+        };
+      }
+      if (name === "@/lib/server/staffApiAuthentication") {
+        return {
+          authenticateStaffApi: async () => ({
+            ok: true,
+            principal: {
+              authenticationMode: "supabase",
+              staffId: "staff-1",
+              salonId: "salon-1",
+              role: "staff",
+            },
+          }),
+        };
+      }
+      if (name === "@/lib/reservation-status") {
+        return reservationStatusExports;
+      }
+      return require(name);
+    },
+    setTimeout,
+  });
+
+  return async () => {
+    const response = await exports.POST(
+      {
+        async json() {
+          return { sendLine: true, reason: "customer_request" };
+        },
+      },
+      { params: Promise.resolve({ id: "reservation-1" }) },
+    );
+    return { body: await response.json(), status: response.status };
+  };
+}
+
+test("a lost LINE response is reported as unknown without inviting a resend", async () => {
+  const post = loadCancellationLineRuntime(async () => {
+    throw new Error("response lost");
+  });
+  const response = await post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.cancelled, true);
+  assert.equal(response.body.line.status, "unknown");
+  assert.match(response.body.line.message, /送信結果を確認できません/);
+  assert.match(response.body.line.message, /再送せず/);
+  assert.doesNotMatch(response.body.line.message, /送信に失敗/);
+});
+
+test("an explicit LINE rejection remains a known notification failure", async () => {
+  const post = loadCancellationLineRuntime(async () => ({ ok: false }));
+  const response = await post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.cancelled, true);
+  assert.equal(response.body.line.status, "failed");
+  assert.match(response.body.line.message, /送信に失敗/);
+});
+
+test("staff UI separates cancellation success from LINE warnings", () => {
+  assert.match(
+    editPageSource,
+    /status\?: "sent" \| "skipped" \| "not_linked" \| "failed" \| "unknown"/,
+  );
+  assert.match(
+    editPageSource,
+    /lineStatus === "failed"[\s\S]{0,160}lineStatus === "not_linked"[\s\S]{0,160}lineStatus === "unknown"/,
+  );
+  assert.match(
+    editPageSource,
+    /setSuccessMessage\([\s\S]{0,220}"予約をキャンセルしました。"[\s\S]{0,220}setCancellationLineWarning/,
+  );
+  assert.match(
+    editPageSource,
+    /cancellationLineWarning \?[\s\S]{0,180}border-amber-200[\s\S]{0,180}\{cancellationLineWarning\}/,
+  );
 });

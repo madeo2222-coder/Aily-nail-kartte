@@ -449,8 +449,9 @@ export async function POST(
         ok: true,
         cancelled: true,
         line: {
-          status: "failed",
-          message: "予約はキャンセルしましたが、LINE通知の送信に失敗しました。",
+          status: "unknown",
+          message:
+            "予約はキャンセルしましたが、LINE通知の送信結果を確認できません。重複送信を避けるため再送せず、LINEの送信履歴を確認してください。",
         },
       });
     } finally {
