@@ -300,6 +300,26 @@ test("a cancellation committed during an existing booking update wins the race",
     ["id", "manual-reservation"],
     ["salon_id", "salon-1"],
     ["status", "confirmed"],
+    ["memo", "HPB予約番号：A123456"],
+  ]);
+});
+
+test("booking sync stops instead of overwriting a concurrently edited staff memo", async () => {
+  const latestMemo = "HPB予約番号：A123456\nスタッフが直前に追記";
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    latestMemoOnUpdate: latestMemo,
+    updateData: null,
+  });
+
+  await assert.rejects(runtime.sync(mail), /スタッフの追記を保護/);
+
+  assert.equal(runtime.writes.length, 1);
+  assert.deepEqual(runtime.writes[0].filters, [
+    ["id", "manual-reservation"],
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+    ["memo", "HPB予約番号：A123456"],
   ]);
 });
 
@@ -469,6 +489,11 @@ test("concurrent progressed booking keeps its staff status after an insert race"
   assert.equal(runtime.writes[0].operation, "insert");
   assert.equal(runtime.writes[1].operation, "update");
   assert.equal(runtime.writes[1].payload.status, "来店");
+  assert.deepEqual(runtime.writes[1].filters.slice(-3), [
+    ["salon_id", "salon-1"],
+    ["status", "来店"],
+    ["memo", "HPB予約番号：A123456\nスタッフ処理済み"],
+  ]);
 });
 
 test("concurrent booking insert does not update a deterministic row from another salon", async () => {

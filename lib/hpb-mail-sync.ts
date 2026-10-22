@@ -772,6 +772,9 @@ async function upsertReservation(
     updateQuery = reservationToUpdate.status == null
       ? updateQuery.is("status", null)
       : updateQuery.eq("status", reservationToUpdate.status);
+    updateQuery = reservationToUpdate.memo == null
+      ? updateQuery.is("memo", null)
+      : updateQuery.eq("memo", reservationToUpdate.memo);
     const { data, error } = await updateQuery
       .select("id")
       .maybeSingle();
@@ -792,6 +795,11 @@ async function upsertReservation(
       if (latest.status !== reservationToUpdate.status) {
         throw new Error(
           "同期中に予約状態が変更されました。最新状態を確認して再試行してください。"
+        );
+      }
+      if (latest.memo !== reservationToUpdate.memo) {
+        throw new Error(
+          "同期中に予約メモが変更されました。スタッフの追記を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       throw new Error(
@@ -854,6 +862,9 @@ async function upsertReservation(
     concurrentUpdateQuery = concurrentReservation.status == null
       ? concurrentUpdateQuery.is("status", null)
       : concurrentUpdateQuery.eq("status", concurrentReservation.status);
+    concurrentUpdateQuery = concurrentReservation.memo == null
+      ? concurrentUpdateQuery.is("memo", null)
+      : concurrentUpdateQuery.eq("memo", concurrentReservation.memo);
     const { data: updated, error: updateError } = await concurrentUpdateQuery
       .select("id")
       .maybeSingle();
@@ -874,6 +885,11 @@ async function upsertReservation(
       if (latest.status !== concurrentReservation.status) {
         throw new Error(
           "同期中に予約状態が変更されました。最新状態を確認して再試行してください。"
+        );
+      }
+      if (latest.memo !== concurrentReservation.memo) {
+        throw new Error(
+          "同期中に予約メモが変更されました。スタッフの追記を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       throw new Error(
