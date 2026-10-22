@@ -250,6 +250,9 @@ function patchRequest(overrides = {}) {
         endAt: "2099-10-19T02:30:00.000Z",
         status: "来店",
         memo: "更新メモ",
+        expectedCustomerId: reservation.customer_id,
+        expectedStaffId: reservation.staff_id,
+        expectedMenu: reservation.menu,
         expectedStatus: reservation.status,
         expectedMemo: reservation.memo,
         expectedStartAt: reservation.start_at,
@@ -328,8 +331,11 @@ test("individual staff cannot move a reservation to another salon", async () => 
   assert.equal(runtime.clientCreated, false);
 });
 
-test("staff edit requires the original status, memo, and time snapshot", async () => {
+test("staff edit requires the original booking detail snapshot", async () => {
   for (const overrides of [
+    { expectedCustomerId: undefined },
+    { expectedStaffId: undefined },
+    { expectedMenu: undefined },
     { expectedStatus: undefined },
     { expectedMemo: undefined },
     { expectedStartAt: undefined },
@@ -424,7 +430,46 @@ test("staff edit validates membership, checks both calendars, and updates server
         filter.column === "end_at" && filter.value === reservation.end_at,
     ),
   );
+  for (const [column, value] of [
+    ["customer_id", reservation.customer_id],
+    ["staff_id", reservation.staff_id],
+    ["menu", reservation.menu],
+  ]) {
+    assert.ok(
+      update.filters.some(
+        (filter) => filter.column === column && filter.value === value,
+      ),
+      `${column} snapshot was guarded`,
+    );
+  }
 });
+
+for (const [field, value] of [
+  ["customer_id", "7fffd6d9-9388-4eb6-9334-eaba7c45d100"],
+  ["staff_id", "3a0a80ec-9a09-42f7-8cc4-1673fd4c5e55"],
+  ["menu", "同期後の最新メニュー"],
+]) {
+  test(`staff edit refuses a stale screen after booking sync changed ${field}`, async () => {
+    const runtime = executeRoute({
+      authentication: principal(),
+      rows: {
+        reservationSingle: {
+          data: { ...reservation, [field]: value },
+          error: null,
+        },
+      },
+    });
+    const response = await runtime.exports.PATCH(patchRequest(), context());
+    const body = await response.json();
+
+    assert.equal(response.status, 409);
+    assert.match(body.error, /最新の内容を読み込み直して/);
+    assert.equal(
+      runtime.calls.some((call) => call.operation === "update"),
+      false,
+    );
+  });
+}
 
 test("staff edit refuses a stale screen after booking sync changed the memo", async () => {
   const runtime = executeRoute({
@@ -507,6 +552,43 @@ test("staff edit compares an originally empty memo with IS NULL", async () => {
         filter.value === null,
     ),
   );
+});
+
+test("staff edit guards originally unassigned booking details with IS NULL", async () => {
+  const unassignedReservation = {
+    ...reservation,
+    customer_id: null,
+    staff_id: null,
+    menu: null,
+  };
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: { data: unassignedReservation, error: null },
+    },
+  });
+  const response = await runtime.exports.PATCH(
+    patchRequest({
+      expectedCustomerId: null,
+      expectedStaffId: null,
+      expectedMenu: null,
+    }),
+    context(),
+  );
+
+  assert.equal(response.status, 200);
+  const update = runtime.calls.find((call) => call.operation === "update");
+  for (const column of ["customer_id", "staff_id", "menu"]) {
+    assert.ok(
+      update.filters.some(
+        (filter) =>
+          filter.method === "is" &&
+          filter.column === column &&
+          filter.value === null,
+      ),
+      `${column} null snapshot was guarded`,
+    );
+  }
 });
 
 test("staff edit refuses a matching external-calendar block", async () => {
@@ -637,6 +719,13 @@ test("reservation edit page uses the guarded API and synchronous request locks",
   assert.match(pageSource, /method:\s*"PATCH"/);
   assert.match(pageSource, /method:\s*"DELETE"/);
   assert.match(pageSource, /mutationRequestPendingRef\.current/);
+  for (const expectedField of [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+  ]) {
+    assert.match(pageSource, new RegExp(expectedField));
+  }
   assert.doesNotMatch(pageSource, /(?:save|delete|confirm)RequestPendingRef/);
   assert.match(pageSource, /status === "confirmed" && !wasInitiallyConfirmed/);
   assert.match(pageSource, /!pageDataLoaded/);

@@ -35,6 +35,9 @@ type EditReservationBody = {
   endAt?: unknown;
   status?: unknown;
   memo?: unknown;
+  expectedCustomerId?: unknown;
+  expectedStaffId?: unknown;
+  expectedMenu?: unknown;
   expectedStatus?: unknown;
   expectedMemo?: unknown;
   expectedStartAt?: unknown;
@@ -241,6 +244,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const endAt = cleanString(body.endAt);
   const status = cleanString(body.status);
   const memo = optionalString(body.memo);
+  const hasExpectedCustomerId = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedCustomerId",
+  );
+  const hasExpectedStaffId = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedStaffId",
+  );
+  const hasExpectedMenu = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedMenu",
+  );
+  const expectedCustomerId = body.expectedCustomerId;
+  const expectedStaffId = body.expectedStaffId;
+  const expectedMenu = body.expectedMenu;
   const hasExpectedMemo = Object.prototype.hasOwnProperty.call(
     body,
     "expectedMemo",
@@ -272,6 +290,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 
   if (
+    !hasExpectedCustomerId ||
+    (expectedCustomerId !== null && typeof expectedCustomerId !== "string") ||
+    !hasExpectedStaffId ||
+    (expectedStaffId !== null && typeof expectedStaffId !== "string") ||
+    !hasExpectedMenu ||
+    (expectedMenu !== null && typeof expectedMenu !== "string") ||
     !hasExpectedMemo ||
     (expectedMemo !== null && typeof expectedMemo !== "string") ||
     typeof expectedStatus !== "string" ||
@@ -319,6 +343,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     if (
+      reservationResult.data.customer_id !== expectedCustomerId ||
+      reservationResult.data.staff_id !== expectedStaffId ||
+      reservationResult.data.menu !== expectedMenu ||
       reservationResult.data.status !== expectedStatus ||
       reservationResult.data.memo !== expectedMemo ||
       !sameStoredDateTime(
@@ -459,6 +486,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       .eq("salon_id", reservationResult.data.salon_id)
       .eq("status", expectedStatus);
 
+    updateQuery =
+      expectedCustomerId === null
+        ? updateQuery.is("customer_id", null)
+        : updateQuery.eq("customer_id", expectedCustomerId);
+    updateQuery =
+      expectedStaffId === null
+        ? updateQuery.is("staff_id", null)
+        : updateQuery.eq("staff_id", expectedStaffId);
+    updateQuery =
+      expectedMenu === null
+        ? updateQuery.is("menu", null)
+        : updateQuery.eq("menu", expectedMenu);
     updateQuery =
       expectedMemo === null
         ? updateQuery.is("memo", null)

@@ -368,6 +368,10 @@ export default function EditReservationPage() {
   const [status, setStatus] = useState<ReservationStatus>("予約");
   const [wasInitiallyConfirmed, setWasInitiallyConfirmed] = useState(false);
   const [wasInitiallyCancelled, setWasInitiallyCancelled] = useState(false);
+  const [initialCustomerId, setInitialCustomerId] =
+    useState<string | null>(null);
+  const [initialStaffId, setInitialStaffId] = useState<string | null>(null);
+  const [initialMenu, setInitialMenu] = useState<string | null>(null);
   const [initialStatus, setInitialStatus] = useState("");
   const [initialMemo, setInitialMemo] = useState<string | null>(null);
   const [initialStartAt, setInitialStartAt] = useState<string | null>(null);
@@ -452,6 +456,9 @@ export default function EditReservationPage() {
     setWasInitiallyCancelled(
       isCancelledReservationStatus(reservation.status)
     );
+    setInitialCustomerId(reservation.customer_id);
+    setInitialStaffId(reservation.staff_id);
+    setInitialMenu(reservation.menu);
     setInitialStatus(reservation.status ?? "");
     setInitialMemo(reservation.memo);
     setInitialStartAt(reservation.start_at);
@@ -875,6 +882,9 @@ export default function EditReservationPage() {
             endAt: dateTime.endAt,
             status,
             memo: memoForSave || null,
+            expectedCustomerId: initialCustomerId,
+            expectedStaffId: initialStaffId,
+            expectedMenu: initialMenu,
             expectedStatus: initialStatus,
             expectedMemo: initialMemo,
             expectedStartAt: initialStartAt,
