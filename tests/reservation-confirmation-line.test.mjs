@@ -50,6 +50,9 @@ function createReadQuery(row, error = null) {
 }
 
 function loadRoute({
+  requestBody = { reservationId: "reservation-1" },
+  requestJsonError = null,
+  claimError = null,
   claims = [
     {
       claim_status: "claimed",
@@ -99,6 +102,7 @@ function loadRoute({
     },
     async rpc(name, args) {
       if (name === "claim_reservation_confirmation_delivery") {
+        if (claimError) return { data: null, error: claimError };
         const claim = claimQueue.shift();
         if (!claim) throw new Error("No claim response configured");
         return { data: [claim], error: null };
@@ -170,7 +174,8 @@ function loadRoute({
   async function post() {
     const response = await exports.POST({
       async json() {
-        return { reservationId: "reservation-1" };
+        if (requestJsonError) throw requestJsonError;
+        return requestBody;
       },
     });
     return { body: await response.json(), status: response.status };
@@ -178,6 +183,42 @@ function loadRoute({
 
   return { completionCalls, lineCalls, post };
 }
+
+test("rejects malformed confirmation LINE requests before privileged reads or sends", async () => {
+  for (const options of [
+    { requestJsonError: new SyntaxError("private parser detail") },
+    { requestBody: null },
+    { requestBody: [] },
+    { requestBody: { reservationId: 123 } },
+    { requestBody: { reservationId: "   " } },
+  ]) {
+    const runtime = loadRoute(options);
+    const response = await runtime.post();
+
+    assert.equal(response.status, 400);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.sent, false);
+    assert.match(response.body.error, /予約ID|予約内容/);
+    assert.doesNotMatch(response.body.error, /private/);
+    assert.equal(runtime.lineCalls.length, 0);
+    assert.equal(runtime.completionCalls.length, 0);
+  }
+});
+
+test("does not expose internal confirmation delivery errors", async () => {
+  const runtime = loadRoute({
+    claimError: { message: "private database function detail" },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 500);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.sent, false);
+  assert.match(response.body.error, /通知状態を確認/);
+  assert.doesNotMatch(response.body.error, /private|database function/);
+  assert.equal(runtime.lineCalls.length, 0);
+  assert.equal(runtime.completionCalls.length, 0);
+});
 
 test("sends a confirmed reservation with the claimed LINE retry key", async () => {
   const runtime = loadRoute();

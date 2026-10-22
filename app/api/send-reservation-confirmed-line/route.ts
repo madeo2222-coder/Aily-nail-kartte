@@ -137,15 +137,45 @@ export async function POST(request: Request) {
     );
   }
 
+  let rawBody: unknown;
   try {
-    const body = (await request.json()) as SendReservationConfirmedLineBody;
-    const reservationId = body.reservationId?.trim();
-    if (!reservationId) {
-      return NextResponse.json(
-        { ok: false, sent: false, error: "予約IDがありません。" },
-        { status: 400 }
-      );
-    }
+    rawBody = await request.json();
+  } catch {
+    return NextResponse.json(
+      {
+        ok: false,
+        sent: false,
+        error:
+          "予約内容を読み取れませんでした。画面を再読み込みしてから再試行してください。",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!rawBody || typeof rawBody !== "object" || Array.isArray(rawBody)) {
+    return NextResponse.json(
+      { ok: false, sent: false, error: "予約内容が正しくありません。" },
+      { status: 400 }
+    );
+  }
+
+  const body = rawBody as SendReservationConfirmedLineBody;
+  if (typeof body.reservationId !== "string") {
+    return NextResponse.json(
+      { ok: false, sent: false, error: "予約IDがありません。" },
+      { status: 400 }
+    );
+  }
+
+  const reservationId = body.reservationId.trim();
+  if (!reservationId) {
+    return NextResponse.json(
+      { ok: false, sent: false, error: "予約IDがありません。" },
+      { status: 400 }
+    );
+  }
+
+  try {
     const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
     if (!channelAccessToken) {
       return NextResponse.json(
@@ -394,9 +424,13 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("send-reservation-confirmed-line error:", error);
-    const message = error instanceof Error ? error.message : "予約確定LINE通知処理に失敗しました。";
     return NextResponse.json(
-      { ok: false, sent: false, error: message },
+      {
+        ok: false,
+        sent: false,
+        error:
+          "予約確定LINE通知処理に失敗しました。通知状態を確認してから再試行してください。",
+      },
       { status: 500 }
     );
   }
