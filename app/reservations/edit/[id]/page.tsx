@@ -14,6 +14,10 @@ import type {
   ConfirmationLineApiResult,
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
+import {
+  readEditableReservationMemo,
+  writeEditableReservationMemo,
+} from "@/lib/reservation-sync-memo";
 
 type Salon = {
   id: string;
@@ -245,7 +249,15 @@ function removeGalleryReferenceLines(memo: string) {
     .trim();
 }
 
-function buildMemoForSave(galleryReference: GalleryReference, displayMemo: string) {
+function buildMemoForSave(
+  galleryReference: GalleryReference,
+  displayMemo: string,
+  syncedMemo: string | null,
+) {
+  if (syncedMemo) {
+    return writeEditableReservationMemo(syncedMemo, displayMemo);
+  }
+
   const galleryLines = galleryReference.hasGallery
     ? [
         "Aily Gallery参考デザインあり",
@@ -361,6 +373,7 @@ export default function EditReservationPage() {
     useState<CancellationReason>("overlap");
   const [cancellationReasonText, setCancellationReasonText] = useState("");
   const [memo, setMemo] = useState("");
+  const [syncedMemo, setSyncedMemo] = useState<string | null>(null);
   const [galleryReference, setGalleryReference] = useState<GalleryReference>({
     hasGallery: false,
     designId: "",
@@ -413,6 +426,10 @@ export default function EditReservationPage() {
     const reservation = result.reservation;
     const rawMemo = reservation.memo ?? "";
     const nextGalleryReference = extractGalleryReference(rawMemo);
+    const syncedEditableMemo = readEditableReservationMemo(rawMemo);
+    const editableMemo = syncedEditableMemo.syncedMemo
+      ? syncedEditableMemo
+      : readEditableReservationMemo(removeGalleryReferenceLines(rawMemo));
 
     setSalons(result.salons ?? []);
     setAllCustomers(result.customers ?? []);
@@ -432,7 +449,8 @@ export default function EditReservationPage() {
       isCancelledReservationStatus(reservation.status)
     );
     setGalleryReference(nextGalleryReference);
-    setMemo(removeGalleryReferenceLines(rawMemo));
+    setMemo(editableMemo.displayMemo);
+    setSyncedMemo(editableMemo.syncedMemo);
 
     setMutationResultUnknown(false);
     setPageDataLoaded(true);
@@ -458,8 +476,8 @@ export default function EditReservationPage() {
   }, [allStaffs, salonId]);
 
   const externalBlockLabel = useMemo(() => {
-    return getExternalBlockLabel(menu, memo);
-  }, [menu, memo]);
+    return getExternalBlockLabel(menu, syncedMemo || memo);
+  }, [menu, memo, syncedMemo]);
 
   const isExternalBlock = Boolean(externalBlockLabel) && !customerId;
 
@@ -519,7 +537,7 @@ export default function EditReservationPage() {
           menu: menu || null,
           startAt: dateTime.startAt,
           endAt: dateTime.endAt,
-          memo: buildMemoForSave(galleryReference, memo) || null,
+          memo: buildMemoForSave(galleryReference, memo, syncedMemo) || null,
         }),
       }
     );
@@ -827,7 +845,7 @@ export default function EditReservationPage() {
     const dateTime = validateRequiredFields();
     if (!dateTime) return;
 
-    const memoForSave = buildMemoForSave(galleryReference, memo);
+    const memoForSave = buildMemoForSave(galleryReference, memo, syncedMemo);
 
     mutationRequestPendingRef.current = true;
     setSaving(true);
@@ -1348,6 +1366,11 @@ export default function EditReservationPage() {
                   placeholder="スタッフ用メモ"
                   className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-4 py-3 text-sm"
                 />
+                {syncedMemo ? (
+                  <p className="mt-2 text-xs leading-5 text-slate-500">
+                    外部予約の同期情報とメール本文は自動で保持されます。ここにはスタッフ用メモだけを入力してください。
+                  </p>
+                ) : null}
                 {galleryReference.hasGallery ? (
                   <p className="mt-2 text-xs leading-5 text-slate-500">
                     参考写真URLは上に画像表示しています。保存時には内部メモとして残ります。
