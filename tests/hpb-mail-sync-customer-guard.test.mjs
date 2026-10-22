@@ -45,13 +45,29 @@ function loadSync(manualCustomerId, options = {}) {
         then(resolve, reject) {
           if (operation !== "read") {
             writes.push({ table, operation, payload, selected, filters });
-            if (operation === "update" && Object.hasOwn(options, "latestStatusOnUpdate")) {
+            const updateWriteCount = writes.filter(
+              (write) => write.operation === "update"
+            ).length;
+            if (
+              operation === "update" &&
+              updateWriteCount === 1 &&
+              Object.hasOwn(options, "latestStatusOnUpdate")
+            ) {
               manual.status = options.latestStatusOnUpdate;
             }
+            if (
+              operation === "update" &&
+              updateWriteCount === 1 &&
+              Object.hasOwn(options, "latestMemoOnUpdate")
+            ) {
+              manual.memo = options.latestMemoOnUpdate;
+            }
             const writeTargetId = filters.find(([key]) => key === "id")?.[1];
-            const data = Object.hasOwn(options, "updateData")
-              ? options.updateData
-              : { id: payload?.id ?? writeTargetId ?? manual.id };
+            const data = Array.isArray(options.updateDataSequence)
+              ? options.updateDataSequence[updateWriteCount - 1]
+              : Object.hasOwn(options, "updateData")
+                ? options.updateData
+                : { id: payload?.id ?? writeTargetId ?? manual.id };
             const error = operation === "insert" && Object.hasOwn(options, "insertError")
               ? options.insertError
               : options.updateError ?? null;
@@ -67,7 +83,7 @@ function loadSync(manualCustomerId, options = {}) {
                     ? []
                     : deterministicId
                       ? { ...manual, id: deterministicId }
-                    : externalLookup && !options.existing ? [] : [manual])
+                    : externalLookup && !options.existing ? [] : [{ ...manual }])
                 : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
         },
@@ -122,7 +138,12 @@ test("cancellation reports success only for the returned target reservation", as
   const result = await runtime.sync(`ご予約のキャンセル\n${mail}`);
   assert.equal(result.result.mode, "cancelled");
   assert.equal(runtime.writes[0].selected, "id");
-  assert.deepEqual(runtime.writes[0].filters, [["id", "manual-reservation"], ["salon_id", "salon-1"]]);
+  assert.deepEqual(runtime.writes[0].filters, [
+    ["id", "manual-reservation"],
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+    ["memo", "HPB予約番号：A123456"],
+  ]);
 });
 
 test("HPB cancellation in the Gmail subject is not replayed as a booking", async () => {
@@ -280,6 +301,42 @@ test("a cancellation committed during an existing booking update wins the race",
     ["salon_id", "salon-1"],
     ["status", "confirmed"],
   ]);
+});
+
+test("a cancellation retry preserves staff notes saved during the first update", async () => {
+  const latestMemo = "HPB予約番号：A123456\nスタッフが直前に追記";
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    latestMemoOnUpdate: latestMemo,
+    updateDataSequence: [null, { id: "manual-reservation" }],
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${mail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(runtime.writes.length, 2);
+  assert.match(runtime.writes[1].payload.memo, /スタッフが直前に追記/);
+  assert.match(runtime.writes[1].payload.memo, /【HPBキャンセルメール本文】/);
+  assert.deepEqual(runtime.writes[1].filters, [
+    ["id", "manual-reservation"],
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+    ["memo", latestMemo],
+  ]);
+});
+
+test("a cancellation retry stops after a second concurrent reservation change", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    latestMemoOnUpdate: "HPB予約番号：A123456\nスタッフが直前に追記",
+    updateDataSequence: [null, null],
+  });
+
+  await assert.rejects(
+    runtime.sync(`ご予約のキャンセル\n${mail}`),
+    /続けて変更されました/
+  );
+  assert.equal(runtime.writes.length, 2);
 });
 
 test("a cancellation received before its booking creates a persistent tombstone", async () => {

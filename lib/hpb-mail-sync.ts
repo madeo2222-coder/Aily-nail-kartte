@@ -1009,22 +1009,73 @@ async function cancelReservation(
     };
   }
 
-  const { data, error } = await context.supabase
+  let cancellationUpdateQuery = context.supabase
     .from("reservations")
     .update({
       status: "キャンセル",
       memo: nextMemo,
     })
     .eq("id", existing.id)
-    .eq("salon_id", context.salonId)
+    .eq("salon_id", context.salonId);
+  cancellationUpdateQuery = existing.status == null
+    ? cancellationUpdateQuery.is("status", null)
+    : cancellationUpdateQuery.eq("status", existing.status);
+  cancellationUpdateQuery = existing.memo == null
+    ? cancellationUpdateQuery.is("memo", null)
+    : cancellationUpdateQuery.eq("memo", existing.memo);
+  const { data, error } = await cancellationUpdateQuery
     .select("id")
     .maybeSingle();
 
   if (error) throw new Error(error.message);
   if (data?.id !== existing.id) {
-    throw new Error(
-      "キャンセルの更新結果を確認できません。予約一覧を確認してから再試行してください。"
-    );
+    const latest = await readReservationById(existing.id, context);
+    if (latest.status === existing.status && latest.memo === existing.memo) {
+      throw new Error(
+        "キャンセルの更新結果を確認できません。予約一覧を確認してから再試行してください。"
+      );
+    }
+
+    const retryMemo = appendExternalCancellationMemo({
+      existingMemo: latest.memo,
+      sourceLabel,
+      rawText,
+    });
+    if (
+      isCancelledReservationStatus(latest.status) &&
+      retryMemo === latest.memo
+    ) {
+      return {
+        mode: "cancelled",
+        reservationId: latest.id,
+        alreadyCancelled: true,
+      };
+    }
+
+    let retryQuery = context.supabase
+      .from("reservations")
+      .update({
+        status: "キャンセル",
+        memo: retryMemo,
+      })
+      .eq("id", latest.id)
+      .eq("salon_id", context.salonId);
+    retryQuery = latest.status == null
+      ? retryQuery.is("status", null)
+      : retryQuery.eq("status", latest.status);
+    retryQuery = latest.memo == null
+      ? retryQuery.is("memo", null)
+      : retryQuery.eq("memo", latest.memo);
+    const { data: retried, error: retryError } = await retryQuery
+      .select("id")
+      .maybeSingle();
+
+    if (retryError) throw new Error(retryError.message);
+    if (retried?.id !== latest.id) {
+      throw new Error(
+        "同期中に予約が続けて変更されました。最新状態を確認して再試行してください。"
+      );
+    }
   }
 
   return {
