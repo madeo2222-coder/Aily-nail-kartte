@@ -85,6 +85,20 @@ function loadSync(manualCustomerId, options = {}) {
             ) {
               manual.customer_id = options.latestCustomerIdOnUpdate;
             }
+            if (
+              operation === "update" &&
+              updateWriteCount === 1 &&
+              Object.hasOwn(options, "latestStaffIdOnUpdate")
+            ) {
+              manual.staff_id = options.latestStaffIdOnUpdate;
+            }
+            if (
+              operation === "update" &&
+              updateWriteCount === 1 &&
+              Object.hasOwn(options, "latestMenuOnUpdate")
+            ) {
+              manual.menu = options.latestMenuOnUpdate;
+            }
             const writeTargetId = filters.find(([key]) => key === "id")?.[1];
             const data = Array.isArray(options.updateDataSequence)
               ? options.updateDataSequence[updateWriteCount - 1]
@@ -327,6 +341,8 @@ test("a cancellation committed during an existing booking update wins the race",
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
     ["customer_id", "mail-customer"],
+    ["staff_id", null],
+    ["menu", "HPB予約"],
   ]);
 });
 
@@ -349,6 +365,8 @@ test("booking sync stops instead of overwriting a concurrently edited staff memo
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
     ["customer_id", "mail-customer"],
+    ["staff_id", null],
+    ["menu", "HPB予約"],
   ]);
 });
 
@@ -371,6 +389,8 @@ test("booking sync stops instead of overwriting a concurrently moved reservation
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
     ["customer_id", "mail-customer"],
+    ["staff_id", null],
+    ["menu", "HPB予約"],
   ]);
 });
 
@@ -392,7 +412,33 @@ test("booking sync stops instead of overwriting a concurrently corrected custome
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
     ["customer_id", "mail-customer"],
+    ["staff_id", null],
+    ["menu", "HPB予約"],
   ]);
+});
+
+test("booking sync stops instead of overwriting a concurrently corrected staff assignment", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    latestStaffIdOnUpdate: "staff-corrected-assignment",
+    updateData: null,
+  });
+
+  await assert.rejects(runtime.sync(mail), /担当スタッフが変更されました/);
+
+  assert.equal(runtime.writes.length, 1);
+});
+
+test("booking sync stops instead of overwriting a concurrently corrected menu", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    latestMenuOnUpdate: "スタッフ修正メニュー",
+    updateData: null,
+  });
+
+  await assert.rejects(runtime.sync(mail), /メニューが変更されました/);
+
+  assert.equal(runtime.writes.length, 1);
 });
 
 test("a cancellation retry preserves staff notes saved during the first update", async () => {
@@ -561,13 +607,15 @@ test("concurrent progressed booking keeps its staff status after an insert race"
   assert.equal(runtime.writes[0].operation, "insert");
   assert.equal(runtime.writes[1].operation, "update");
   assert.equal(runtime.writes[1].payload.status, "来店");
-  assert.deepEqual(runtime.writes[1].filters.slice(-6), [
+  assert.deepEqual(runtime.writes[1].filters.slice(-8), [
     ["salon_id", "salon-1"],
     ["status", "来店"],
     ["memo", "HPB予約番号：A123456\nスタッフ処理済み"],
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
     ["customer_id", "mail-customer"],
+    ["staff_id", null],
+    ["menu", "HPB予約"],
   ]);
 });
 
@@ -590,13 +638,15 @@ test("concurrent booking insert stops before overwriting a moved deterministic r
   assert.equal(runtime.writes.length, 2);
   assert.equal(runtime.writes[0].operation, "insert");
   assert.equal(runtime.writes[1].operation, "update");
-  assert.deepEqual(runtime.writes[1].filters.slice(-6), [
+  assert.deepEqual(runtime.writes[1].filters.slice(-8), [
     ["salon_id", "salon-1"],
     ["status", "confirmed"],
     ["memo", "HPB予約番号：A123456"],
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
     ["customer_id", "mail-customer"],
+    ["staff_id", null],
+    ["menu", "HPB予約"],
   ]);
 });
 

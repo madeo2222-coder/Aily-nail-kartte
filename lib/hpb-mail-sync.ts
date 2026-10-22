@@ -57,6 +57,7 @@ type ExistingReservation = {
   salon_id: string | null;
   customer_id: string | null;
   staff_id: string | null;
+  menu: string | null;
   memo: string | null;
   status: string | null;
   start_at: string | null;
@@ -612,7 +613,7 @@ async function findExistingExternalReservation(
   const reservationKey = getReservationNumberMemoKey(parsed.source);
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, salon_id, customer_id, staff_id, memo, status, start_at, end_at")
+    .select("id, salon_id, customer_id, staff_id, menu, memo, status, start_at, end_at")
     .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`);
 
   if (error) throw new Error(error.message);
@@ -637,7 +638,7 @@ async function readReservationById(
 ) {
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, salon_id, customer_id, staff_id, memo, status, start_at, end_at")
+    .select("id, salon_id, customer_id, staff_id, menu, memo, status, start_at, end_at")
     .eq("id", reservationId)
     .maybeSingle();
 
@@ -811,6 +812,12 @@ async function upsertReservation(
     updateQuery = reservationToUpdate.customer_id == null
       ? updateQuery.is("customer_id", null)
       : updateQuery.eq("customer_id", reservationToUpdate.customer_id);
+    updateQuery = reservationToUpdate.staff_id == null
+      ? updateQuery.is("staff_id", null)
+      : updateQuery.eq("staff_id", reservationToUpdate.staff_id);
+    updateQuery = reservationToUpdate.menu == null
+      ? updateQuery.is("menu", null)
+      : updateQuery.eq("menu", reservationToUpdate.menu);
     const { data, error } = await updateQuery
       .select("id")
       .maybeSingle();
@@ -841,6 +848,16 @@ async function upsertReservation(
       if (latest.customer_id !== reservationToUpdate.customer_id) {
         throw new Error(
           "同期中に顧客紐付けが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.staff_id !== reservationToUpdate.staff_id) {
+        throw new Error(
+          "同期中に担当スタッフが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.menu !== reservationToUpdate.menu) {
+        throw new Error(
+          "同期中にメニューが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       if (
@@ -938,6 +955,12 @@ async function upsertReservation(
     concurrentUpdateQuery = concurrentReservation.customer_id == null
       ? concurrentUpdateQuery.is("customer_id", null)
       : concurrentUpdateQuery.eq("customer_id", concurrentReservation.customer_id);
+    concurrentUpdateQuery = concurrentReservation.staff_id == null
+      ? concurrentUpdateQuery.is("staff_id", null)
+      : concurrentUpdateQuery.eq("staff_id", concurrentReservation.staff_id);
+    concurrentUpdateQuery = concurrentReservation.menu == null
+      ? concurrentUpdateQuery.is("menu", null)
+      : concurrentUpdateQuery.eq("menu", concurrentReservation.menu);
     const { data: updated, error: updateError } = await concurrentUpdateQuery
       .select("id")
       .maybeSingle();
@@ -968,6 +991,16 @@ async function upsertReservation(
       if (latest.customer_id !== concurrentReservation.customer_id) {
         throw new Error(
           "同期中に顧客紐付けが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.staff_id !== concurrentReservation.staff_id) {
+        throw new Error(
+          "同期中に担当スタッフが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.menu !== concurrentReservation.menu) {
+        throw new Error(
+          "同期中にメニューが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       if (
