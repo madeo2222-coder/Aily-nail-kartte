@@ -136,6 +136,10 @@ function executeRoute({ authentication, rows = {} }) {
         call.filters.push({ method: "eq", column, value });
         return query;
       },
+      is(column, value) {
+        call.filters.push({ method: "is", column, value });
+        return query;
+      },
       neq(column, value) {
         call.filters.push({ method: "neq", column, value });
         return query;
@@ -246,6 +250,8 @@ function patchRequest(overrides = {}) {
         endAt: "2099-10-19T02:30:00.000Z",
         status: "来店",
         memo: "更新メモ",
+        expectedStatus: reservation.status,
+        expectedMemo: reservation.memo,
         ...overrides,
       };
     },
@@ -320,6 +326,22 @@ test("individual staff cannot move a reservation to another salon", async () => 
   assert.equal(runtime.clientCreated, false);
 });
 
+test("staff edit requires the original status and memo snapshot", async () => {
+  for (const overrides of [
+    { expectedStatus: undefined },
+    { expectedMemo: undefined },
+  ]) {
+    const runtime = executeRoute({ authentication: principal() });
+    const response = await runtime.exports.PATCH(
+      patchRequest(overrides),
+      context(),
+    );
+
+    assert.equal(response.status, 400);
+    assert.equal(runtime.clientCreated, false);
+  }
+});
+
 test("staff edit validates membership, checks both calendars, and updates server-side", async () => {
   const runtime = executeRoute({ authentication: principal() });
   const response = await runtime.exports.PATCH(patchRequest(), context());
@@ -371,6 +393,76 @@ test("staff edit validates membership, checks both calendars, and updates server
   assert.ok(
     update.filters.some(
       (filter) => filter.column === "salon_id" && filter.value === SALON_ID,
+    ),
+  );
+  assert.ok(
+    update.filters.some(
+      (filter) =>
+        filter.column === "status" && filter.value === reservation.status,
+    ),
+  );
+  assert.ok(
+    update.filters.some(
+      (filter) =>
+        filter.column === "memo" && filter.value === reservation.memo,
+    ),
+  );
+});
+
+test("staff edit refuses a stale screen after booking sync changed the memo", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: {
+        data: { ...reservation, memo: "同期後の最新メモ" },
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.PATCH(patchRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /最新の内容を読み込み直して/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
+test("staff edit reports a write-time sync race as a conflict", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: { update: { data: null, error: null } },
+  });
+  const response = await runtime.exports.PATCH(patchRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /最新の内容を読み込み直して/);
+});
+
+test("staff edit compares an originally empty memo with IS NULL", async () => {
+  const emptyMemoReservation = { ...reservation, memo: null };
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: { data: emptyMemoReservation, error: null },
+    },
+  });
+  const response = await runtime.exports.PATCH(
+    patchRequest({ expectedMemo: null }),
+    context(),
+  );
+
+  assert.equal(response.status, 200);
+  const update = runtime.calls.find((call) => call.operation === "update");
+  assert.ok(
+    update.filters.some(
+      (filter) =>
+        filter.method === "is" &&
+        filter.column === "memo" &&
+        filter.value === null,
     ),
   );
 });

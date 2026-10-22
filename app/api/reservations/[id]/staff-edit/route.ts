@@ -35,6 +35,8 @@ type EditReservationBody = {
   endAt?: unknown;
   status?: unknown;
   memo?: unknown;
+  expectedStatus?: unknown;
+  expectedMemo?: unknown;
 };
 
 function getSupabaseAdmin() {
@@ -219,6 +221,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   const endAt = cleanString(body.endAt);
   const status = cleanString(body.status);
   const memo = optionalString(body.memo);
+  const hasExpectedMemo = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedMemo",
+  );
+  const expectedMemo = body.expectedMemo;
+  const expectedStatus = body.expectedStatus;
   const salonId =
     authentication.principal.authenticationMode === "supabase"
       ? authentication.principal.salonId
@@ -231,6 +239,17 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     (customerId !== null && !validUuid(customerId))
   ) {
     return errorResponse("予約・サロン・顧客・担当スタッフを確認してください。", 400);
+  }
+
+  if (
+    !hasExpectedMemo ||
+    (expectedMemo !== null && typeof expectedMemo !== "string") ||
+    typeof expectedStatus !== "string"
+  ) {
+    return errorResponse(
+      "予約内容を読み直してから更新してください。",
+      400,
+    );
   }
 
   if (
@@ -263,6 +282,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (reservationResult.error) return internalErrorResponse();
     if (!reservationResult.data) {
       return errorResponse("予約が見つかりません。", 404);
+    }
+
+    if (
+      reservationResult.data.status !== expectedStatus ||
+      reservationResult.data.memo !== expectedMemo
+    ) {
+      return errorResponse(
+        "予約内容が更新されています。最新の内容を読み込み直してください。",
+        409,
+      );
     }
 
     const nextStartTime = new Date(startAt).getTime();
@@ -375,7 +404,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
-    const updateResult = await supabase
+    let updateQuery = supabase
       .from("reservations")
       .update({
         salon_id: salonId,
@@ -389,11 +418,23 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       })
       .eq("id", reservationId)
       .eq("salon_id", reservationResult.data.salon_id)
+      .eq("status", expectedStatus);
+
+    updateQuery =
+      expectedMemo === null
+        ? updateQuery.is("memo", null)
+        : updateQuery.eq("memo", expectedMemo);
+
+    const updateResult = await updateQuery
       .select("id")
       .maybeSingle();
 
-    if (updateResult.error || !updateResult.data) {
-      return internalErrorResponse();
+    if (updateResult.error) return internalErrorResponse();
+    if (!updateResult.data) {
+      return errorResponse(
+        "予約内容が更新されています。最新の内容を読み込み直してください。",
+        409,
+      );
     }
 
     return NextResponse.json({ ok: true, id: updateResult.data.id });
