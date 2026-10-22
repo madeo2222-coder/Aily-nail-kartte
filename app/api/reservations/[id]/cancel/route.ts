@@ -271,6 +271,45 @@ export async function POST(
     }
 
     if (!updatedReservation) {
+      const { data: latestReservation, error: latestReservationError } =
+        await supabaseAdmin
+          .from("reservations")
+          .select("id, status")
+          .eq("id", reservation.id)
+          .eq("salon_id", reservation.salon_id)
+          .maybeSingle();
+
+      if (latestReservationError) {
+        return NextResponse.json(
+          {
+            ok: false,
+            cancelled: false,
+            error: "最新の予約状態を確認できませんでした。画面を再読み込みしてください。",
+          },
+          { status: 500 }
+        );
+      }
+
+      if (!latestReservation) {
+        return NextResponse.json(
+          { ok: false, cancelled: false, error: "予約が見つかりません。" },
+          { status: 404 }
+        );
+      }
+
+      if (!isCancelledReservationStatus(latestReservation.status)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            cancelled: false,
+            status: "reservation_changed",
+            error:
+              "別の操作で予約状態が更新されています。画面を再読み込みしてください。",
+          },
+          { status: 409 }
+        );
+      }
+
       return NextResponse.json({
         ok: true,
         cancelled: false,
