@@ -192,6 +192,19 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
   return {
     html,
     requests,
+    async syncTwiceBeforeRerender() {
+      const button = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          node.props.children === "予約今すぐ同期",
+      );
+      assert.ok(button, "Gmail sync button exists");
+
+      const first = button.props.onClick();
+      const second = button.props.onClick();
+      await Promise.all([first, second]);
+    },
     async retry() {
       const button = findNode(
         tree(),
@@ -249,4 +262,16 @@ test("reservation calendar renders complete successful data", async () => {
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /黒木/);
   assert.match(page.html(), /ワンカラー/);
+});
+
+test("reservation calendar ignores a second Gmail sync click before rerender", async () => {
+  const page = await mount();
+
+  await page.syncTwiceBeforeRerender();
+
+  assert.equal(
+    page.requests.filter(request => request.url === "/api/hpb-gmail-sync")
+      .length,
+    1,
+  );
 });

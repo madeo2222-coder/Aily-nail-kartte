@@ -520,6 +520,7 @@ function buildMonthDays(monthText: string) {
 
 export default function ReservationsCalendarPage() {
   const loadRequestIdRef = useRef(0);
+  const hpbSyncInFlightRef = useRef(false);
   const [selectedDate, setSelectedDate] = useState(getTodayText());
   const [selectedMonth, setSelectedMonth] = useState(
     getMonthText(getTodayText()),
@@ -581,6 +582,10 @@ export default function ReservationsCalendarPage() {
   }
 
   async function syncHpbNow() {
+    if (hpbSyncInFlightRef.current) return;
+
+    hpbSyncInFlightRef.current = true;
+
     try {
       setSyncingHpb(true);
 
@@ -621,6 +626,7 @@ export default function ReservationsCalendarPage() {
 
       alert(error instanceof Error ? error.message : "同期に失敗しました");
     } finally {
+      hpbSyncInFlightRef.current = false;
       setSyncingHpb(false);
     }
   }
