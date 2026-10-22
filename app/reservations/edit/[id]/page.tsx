@@ -370,6 +370,8 @@ export default function EditReservationPage() {
   const [wasInitiallyCancelled, setWasInitiallyCancelled] = useState(false);
   const [initialStatus, setInitialStatus] = useState("");
   const [initialMemo, setInitialMemo] = useState<string | null>(null);
+  const [initialStartAt, setInitialStartAt] = useState<string | null>(null);
+  const [initialEndAt, setInitialEndAt] = useState<string | null>(null);
   const [sendCancellationLine, setSendCancellationLine] = useState(false);
   const [cancellationReason, setCancellationReason] =
     useState<CancellationReason>("overlap");
@@ -452,6 +454,8 @@ export default function EditReservationPage() {
     );
     setInitialStatus(reservation.status ?? "");
     setInitialMemo(reservation.memo);
+    setInitialStartAt(reservation.start_at);
+    setInitialEndAt(reservation.end_at);
     setGalleryReference(nextGalleryReference);
     setMemo(editableMemo.displayMemo);
     setSyncedMemo(editableMemo.syncedMemo);
@@ -873,6 +877,8 @@ export default function EditReservationPage() {
             memo: memoForSave || null,
             expectedStatus: initialStatus,
             expectedMemo: initialMemo,
+            expectedStartAt: initialStartAt,
+            expectedEndAt: initialEndAt,
           }),
         }
       );

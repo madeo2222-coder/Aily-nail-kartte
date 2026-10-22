@@ -252,6 +252,8 @@ function patchRequest(overrides = {}) {
         memo: "更新メモ",
         expectedStatus: reservation.status,
         expectedMemo: reservation.memo,
+        expectedStartAt: reservation.start_at,
+        expectedEndAt: reservation.end_at,
         ...overrides,
       };
     },
@@ -326,10 +328,12 @@ test("individual staff cannot move a reservation to another salon", async () => 
   assert.equal(runtime.clientCreated, false);
 });
 
-test("staff edit requires the original status and memo snapshot", async () => {
+test("staff edit requires the original status, memo, and time snapshot", async () => {
   for (const overrides of [
     { expectedStatus: undefined },
     { expectedMemo: undefined },
+    { expectedStartAt: undefined },
+    { expectedEndAt: undefined },
   ]) {
     const runtime = executeRoute({ authentication: principal() });
     const response = await runtime.exports.PATCH(
@@ -407,6 +411,19 @@ test("staff edit validates membership, checks both calendars, and updates server
         filter.column === "memo" && filter.value === reservation.memo,
     ),
   );
+  assert.ok(
+    update.filters.some(
+      (filter) =>
+        filter.column === "start_at" &&
+        filter.value === reservation.start_at,
+    ),
+  );
+  assert.ok(
+    update.filters.some(
+      (filter) =>
+        filter.column === "end_at" && filter.value === reservation.end_at,
+    ),
+  );
 });
 
 test("staff edit refuses a stale screen after booking sync changed the memo", async () => {
@@ -415,6 +432,31 @@ test("staff edit refuses a stale screen after booking sync changed the memo", as
     rows: {
       reservationSingle: {
         data: { ...reservation, memo: "同期後の最新メモ" },
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.PATCH(patchRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /最新の内容を読み込み直して/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
+test("staff edit refuses a stale screen after booking sync moved the time", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: {
+        data: {
+          ...reservation,
+          start_at: "2099-10-20T01:00:00.000Z",
+          end_at: "2099-10-20T02:30:00.000Z",
+        },
         error: null,
       },
     },
@@ -539,6 +581,8 @@ test("staff edit preserves non-time corrections on an existing elapsed reservati
     patchRequest({
       startAt: elapsedReservation.start_at,
       endAt: elapsedReservation.end_at,
+      expectedStartAt: elapsedReservation.start_at,
+      expectedEndAt: elapsedReservation.end_at,
       status: "予約",
       memo: "過去予約のメモ補正",
     }),

@@ -37,6 +37,8 @@ type EditReservationBody = {
   memo?: unknown;
   expectedStatus?: unknown;
   expectedMemo?: unknown;
+  expectedStartAt?: unknown;
+  expectedEndAt?: unknown;
 };
 
 function getSupabaseAdmin() {
@@ -85,6 +87,24 @@ function validDateRange(startAt: string, endAt: string) {
     Number.isFinite(end.getTime()) &&
     durationMinutes >= 30 &&
     durationMinutes <= 24 * 60
+  );
+}
+
+function sameStoredDateTime(
+  currentValue: string | null,
+  expectedValue: string | null,
+) {
+  if (currentValue === null || expectedValue === null) {
+    return currentValue === expectedValue;
+  }
+
+  const currentTime = new Date(currentValue).getTime();
+  const expectedTime = new Date(expectedValue).getTime();
+
+  return (
+    Number.isFinite(currentTime) &&
+    Number.isFinite(expectedTime) &&
+    currentTime === expectedTime
   );
 }
 
@@ -227,6 +247,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   );
   const expectedMemo = body.expectedMemo;
   const expectedStatus = body.expectedStatus;
+  const hasExpectedStartAt = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedStartAt",
+  );
+  const hasExpectedEndAt = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedEndAt",
+  );
+  const expectedStartAt = body.expectedStartAt;
+  const expectedEndAt = body.expectedEndAt;
   const salonId =
     authentication.principal.authenticationMode === "supabase"
       ? authentication.principal.salonId
@@ -244,7 +274,11 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   if (
     !hasExpectedMemo ||
     (expectedMemo !== null && typeof expectedMemo !== "string") ||
-    typeof expectedStatus !== "string"
+    typeof expectedStatus !== "string" ||
+    !hasExpectedStartAt ||
+    (expectedStartAt !== null && typeof expectedStartAt !== "string") ||
+    !hasExpectedEndAt ||
+    (expectedEndAt !== null && typeof expectedEndAt !== "string")
   ) {
     return errorResponse(
       "予約内容を読み直してから更新してください。",
@@ -286,7 +320,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (
       reservationResult.data.status !== expectedStatus ||
-      reservationResult.data.memo !== expectedMemo
+      reservationResult.data.memo !== expectedMemo ||
+      !sameStoredDateTime(
+        reservationResult.data.start_at,
+        expectedStartAt,
+      ) ||
+      !sameStoredDateTime(reservationResult.data.end_at, expectedEndAt)
     ) {
       return errorResponse(
         "予約内容が更新されています。最新の内容を読み込み直してください。",
@@ -424,6 +463,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       expectedMemo === null
         ? updateQuery.is("memo", null)
         : updateQuery.eq("memo", expectedMemo);
+    updateQuery =
+      expectedStartAt === null
+        ? updateQuery.is("start_at", null)
+        : updateQuery.eq("start_at", expectedStartAt);
+    updateQuery =
+      expectedEndAt === null
+        ? updateQuery.is("end_at", null)
+        : updateQuery.eq("end_at", expectedEndAt);
 
     const updateResult = await updateQuery
       .select("id")
