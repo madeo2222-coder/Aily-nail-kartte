@@ -55,6 +55,7 @@ type SyncContext = {
 type ExistingReservation = {
   id: string;
   salon_id: string | null;
+  customer_id: string | null;
   staff_id: string | null;
   memo: string | null;
   status: string | null;
@@ -611,7 +612,7 @@ async function findExistingExternalReservation(
   const reservationKey = getReservationNumberMemoKey(parsed.source);
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, salon_id, staff_id, memo, status, start_at, end_at")
+    .select("id, salon_id, customer_id, staff_id, memo, status, start_at, end_at")
     .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`);
 
   if (error) throw new Error(error.message);
@@ -636,7 +637,7 @@ async function readReservationById(
 ) {
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, salon_id, staff_id, memo, status, start_at, end_at")
+    .select("id, salon_id, customer_id, staff_id, memo, status, start_at, end_at")
     .eq("id", reservationId)
     .maybeSingle();
 
@@ -699,6 +700,15 @@ async function upsertReservation(
     ? null
     : await findDelayedManualEntry(parsed, context);
   const customerMatch = await findOrCreateCustomer(parsed, context);
+  if (
+    existing?.customer_id &&
+    customerMatch.customerId &&
+    existing.customer_id !== customerMatch.customerId
+  ) {
+    throw new Error(
+      "既存予約の顧客紐付けとメールの顧客照合結果が一致しません。誤更新を避けるため同期を停止しました。"
+    );
+  }
   if (
     sourceMarkedManualEntry?.customer_id &&
     customerMatch.customerId &&
@@ -798,6 +808,9 @@ async function upsertReservation(
     updateQuery = reservationToUpdate.end_at == null
       ? updateQuery.is("end_at", null)
       : updateQuery.eq("end_at", reservationToUpdate.end_at);
+    updateQuery = reservationToUpdate.customer_id == null
+      ? updateQuery.is("customer_id", null)
+      : updateQuery.eq("customer_id", reservationToUpdate.customer_id);
     const { data, error } = await updateQuery
       .select("id")
       .maybeSingle();
@@ -823,6 +836,11 @@ async function upsertReservation(
       if (latest.memo !== reservationToUpdate.memo) {
         throw new Error(
           "同期中に予約メモが変更されました。スタッフの追記を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.customer_id !== reservationToUpdate.customer_id) {
+        throw new Error(
+          "同期中に顧客紐付けが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       if (
@@ -878,6 +896,15 @@ async function upsertReservation(
         alreadyCancelled: true,
       };
     }
+    if (
+      concurrentReservation.customer_id &&
+      customerMatch.customerId &&
+      concurrentReservation.customer_id !== customerMatch.customerId
+    ) {
+      throw new Error(
+        "既存予約の顧客紐付けとメールの顧客照合結果が一致しません。誤更新を避けるため同期を停止しました。"
+      );
+    }
 
     const preserveConcurrentProgress = isProgressedReservationStatus(
       concurrentReservation.status
@@ -908,6 +935,9 @@ async function upsertReservation(
     concurrentUpdateQuery = concurrentReservation.end_at == null
       ? concurrentUpdateQuery.is("end_at", null)
       : concurrentUpdateQuery.eq("end_at", concurrentReservation.end_at);
+    concurrentUpdateQuery = concurrentReservation.customer_id == null
+      ? concurrentUpdateQuery.is("customer_id", null)
+      : concurrentUpdateQuery.eq("customer_id", concurrentReservation.customer_id);
     const { data: updated, error: updateError } = await concurrentUpdateQuery
       .select("id")
       .maybeSingle();
@@ -933,6 +963,11 @@ async function upsertReservation(
       if (latest.memo !== concurrentReservation.memo) {
         throw new Error(
           "同期中に予約メモが変更されました。スタッフの追記を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.customer_id !== concurrentReservation.customer_id) {
+        throw new Error(
+          "同期中に顧客紐付けが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       if (

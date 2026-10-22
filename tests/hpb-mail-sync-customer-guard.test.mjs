@@ -78,6 +78,13 @@ function loadSync(manualCustomerId, options = {}) {
             ) {
               manual.end_at = options.latestEndAtOnUpdate;
             }
+            if (
+              operation === "update" &&
+              updateWriteCount === 1 &&
+              Object.hasOwn(options, "latestCustomerIdOnUpdate")
+            ) {
+              manual.customer_id = options.latestCustomerIdOnUpdate;
+            }
             const writeTargetId = filters.find(([key]) => key === "id")?.[1];
             const data = Array.isArray(options.updateDataSequence)
               ? options.updateDataSequence[updateWriteCount - 1]
@@ -319,6 +326,7 @@ test("a cancellation committed during an existing booking update wins the race",
     ["memo", "HPB予約番号：A123456"],
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
+    ["customer_id", "mail-customer"],
   ]);
 });
 
@@ -340,6 +348,7 @@ test("booking sync stops instead of overwriting a concurrently edited staff memo
     ["memo", "HPB予約番号：A123456"],
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
+    ["customer_id", "mail-customer"],
   ]);
 });
 
@@ -361,6 +370,28 @@ test("booking sync stops instead of overwriting a concurrently moved reservation
     ["memo", "HPB予約番号：A123456"],
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
+    ["customer_id", "mail-customer"],
+  ]);
+});
+
+test("booking sync stops instead of overwriting a concurrently corrected customer link", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    latestCustomerIdOnUpdate: "staff-corrected-customer",
+    updateData: null,
+  });
+
+  await assert.rejects(runtime.sync(mail), /顧客紐付けが変更されました/);
+
+  assert.equal(runtime.writes.length, 1);
+  assert.deepEqual(runtime.writes[0].filters, [
+    ["id", "manual-reservation"],
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+    ["memo", "HPB予約番号：A123456"],
+    ["start_at", "2099-10-20T01:00:00.000Z"],
+    ["end_at", "2099-10-20T02:30:00.000Z"],
+    ["customer_id", "mail-customer"],
   ]);
 });
 
@@ -530,12 +561,13 @@ test("concurrent progressed booking keeps its staff status after an insert race"
   assert.equal(runtime.writes[0].operation, "insert");
   assert.equal(runtime.writes[1].operation, "update");
   assert.equal(runtime.writes[1].payload.status, "来店");
-  assert.deepEqual(runtime.writes[1].filters.slice(-5), [
+  assert.deepEqual(runtime.writes[1].filters.slice(-6), [
     ["salon_id", "salon-1"],
     ["status", "来店"],
     ["memo", "HPB予約番号：A123456\nスタッフ処理済み"],
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
+    ["customer_id", "mail-customer"],
   ]);
 });
 
@@ -558,13 +590,32 @@ test("concurrent booking insert stops before overwriting a moved deterministic r
   assert.equal(runtime.writes.length, 2);
   assert.equal(runtime.writes[0].operation, "insert");
   assert.equal(runtime.writes[1].operation, "update");
-  assert.deepEqual(runtime.writes[1].filters.slice(-5), [
+  assert.deepEqual(runtime.writes[1].filters.slice(-6), [
     ["salon_id", "salon-1"],
     ["status", "confirmed"],
     ["memo", "HPB予約番号：A123456"],
     ["start_at", "2099-10-20T01:00:00.000Z"],
     ["end_at", "2099-10-20T02:30:00.000Z"],
+    ["customer_id", "mail-customer"],
   ]);
+});
+
+test("concurrent booking insert refuses to reassign a staff-corrected customer", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-1",
+      customer_id: "staff-corrected-customer",
+      memo: "HPB予約番号：A123456",
+      status: "confirmed",
+    },
+  });
+
+  await assert.rejects(runtime.sync(mail), /顧客.*一致.*同期を停止/);
+
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "insert");
 });
 
 test("concurrent booking insert does not update a deterministic row from another salon", async () => {
@@ -686,6 +737,14 @@ test("a manual-memo marker inside the mail body is not treated as saved staff no
 test("delayed mail refuses to reassign another customer's source-marked reservation", async () => {
   const runtime = loadSync("different-customer");
   await assert.rejects(runtime.sync(mail), /顧客.*一致.*同期を停止/);
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("replayed external mail refuses to reassign a staff-corrected customer", async () => {
+  const runtime = loadSync("staff-corrected-customer", { existing: true });
+
+  await assert.rejects(runtime.sync(mail), /顧客.*一致.*同期を停止/);
+
   assert.equal(runtime.writes.length, 0);
 });
 
