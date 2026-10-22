@@ -613,20 +613,20 @@ async function findExistingExternalReservation(
   return existing;
 }
 
-async function readReservationAfterInsertConflict(
-  deterministicId: string,
+async function readReservationById(
+  reservationId: string,
   context: SyncContext
 ) {
   const { data, error } = await context.supabase
     .from("reservations")
     .select("id, salon_id, staff_id, memo, status")
-    .eq("id", deterministicId)
+    .eq("id", reservationId)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
   if (!data?.id) {
     throw new Error(
-      "同時に保存された予約を確認できません。予約一覧を確認してから再試行してください。"
+      "同時に変更された予約を確認できません。予約一覧を確認してから再試行してください。"
     );
   }
   if (data.salon_id !== context.salonId) {
@@ -764,16 +764,36 @@ async function upsertReservation(
   }
 
   if (reservationToUpdate?.id) {
-    const { data, error } = await context.supabase
+    let updateQuery = context.supabase
       .from("reservations")
       .update(reservationPayload)
       .eq("id", reservationToUpdate.id)
-      .eq("salon_id", context.salonId)
+      .eq("salon_id", context.salonId);
+    updateQuery = reservationToUpdate.status == null
+      ? updateQuery.is("status", null)
+      : updateQuery.eq("status", reservationToUpdate.status);
+    const { data, error } = await updateQuery
       .select("id")
       .maybeSingle();
 
     if (error) throw new Error(error.message);
     if (data?.id !== reservationToUpdate.id) {
+      const latest = await readReservationById(
+        reservationToUpdate.id,
+        context
+      );
+      if (isCancelledReservationStatus(latest.status)) {
+        return {
+          mode: "cancelled",
+          reservationId: latest.id,
+          alreadyCancelled: true,
+        };
+      }
+      if (latest.status !== reservationToUpdate.status) {
+        throw new Error(
+          "同期中に予約状態が変更されました。最新状態を確認して再試行してください。"
+        );
+      }
       throw new Error(
         "予約の更新結果を確認できません。予約一覧を確認してから再試行してください。"
       );
@@ -801,7 +821,7 @@ async function upsertReservation(
     .single();
 
   if (error?.code === "23505") {
-    const concurrentReservation = await readReservationAfterInsertConflict(
+    const concurrentReservation = await readReservationById(
       deterministicId,
       context
     );
@@ -826,16 +846,36 @@ async function upsertReservation(
         ? concurrentReservation.memo || reservationPayload.memo
         : reservationPayload.memo,
     };
-    const { data: updated, error: updateError } = await context.supabase
+    let concurrentUpdateQuery = context.supabase
       .from("reservations")
       .update(concurrentPayload)
       .eq("id", concurrentReservation.id)
-      .eq("salon_id", context.salonId)
+      .eq("salon_id", context.salonId);
+    concurrentUpdateQuery = concurrentReservation.status == null
+      ? concurrentUpdateQuery.is("status", null)
+      : concurrentUpdateQuery.eq("status", concurrentReservation.status);
+    const { data: updated, error: updateError } = await concurrentUpdateQuery
       .select("id")
       .maybeSingle();
 
     if (updateError) throw new Error(updateError.message);
     if (updated?.id !== concurrentReservation.id) {
+      const latest = await readReservationById(
+        concurrentReservation.id,
+        context
+      );
+      if (isCancelledReservationStatus(latest.status)) {
+        return {
+          mode: "cancelled",
+          reservationId: latest.id,
+          alreadyCancelled: true,
+        };
+      }
+      if (latest.status !== concurrentReservation.status) {
+        throw new Error(
+          "同期中に予約状態が変更されました。最新状態を確認して再試行してください。"
+        );
+      }
       throw new Error(
         "予約の更新結果を確認できません。予約一覧を確認してから再試行してください。"
       );
@@ -932,7 +972,7 @@ async function cancelReservation(
       .single();
 
     if (error?.code === "23505") {
-      existing = await readReservationAfterInsertConflict(
+      existing = await readReservationById(
         deterministicId,
         context
       );

@@ -35,3 +35,14 @@ DB schema、migration、Supabase設定、認証、環境変数、実Gmail・LINE
 - Aily実DB上の同時実行、実Gmail同期、実スタッフ認証は未検証。
 - 開発統合ブランチとPreviewへの反映は、Vercelの6時間間隔を守る次回バッチで行う。
 - 本番反映は未承認・未実施。
+
+## 既存予約UPDATE競合の追加保護
+
+上記は新規INSERTが同時になった場合を保護する。既存予約では、予約受付メール側が`confirmed`を読んだ直後に別実行がキャンセルを保存すると、遅いUPDATEがキャンセルを上書きする余地が残っていた。
+
+- 既存予約UPDATEに読取時点の`status`を条件として追加する。
+- 条件不一致時は最新行を読み直し、キャンセル済みなら追加UPDATEせず`cancelled / alreadyCancelled`へ収束する。
+- キャンセル以外へ同時変更された場合も古い状態で上書きせず、最新状態を確認して再試行するよう失敗を返す。
+- INSERT競合後のUPDATEにも同じ状態条件を適用する。
+- 模擬DBで`confirmed`読取後にキャンセルが確定する順序を再現し、予約受付メール側の追加UPDATEが行われないことを確認する。
+- 追加後の対象74件、全回帰746件中744件成功・失敗0・任意PGlite 2件skip。型検査、lint、fixture環境のNext.js production build（93画面）も成功した。

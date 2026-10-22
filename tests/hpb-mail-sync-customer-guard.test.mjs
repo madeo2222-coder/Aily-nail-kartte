@@ -31,6 +31,7 @@ function loadSync(manualCustomerId, options = {}) {
       const query = {
         select(columns) { selected = columns; return query; },
         eq(key, value) { filters.push([key, value]); return query; },
+        is(key, value) { filters.push([key, value]); return query; },
         not() { return query; },
         gte() { return query; },
         lte() { return query; },
@@ -44,6 +45,9 @@ function loadSync(manualCustomerId, options = {}) {
         then(resolve, reject) {
           if (operation !== "read") {
             writes.push({ table, operation, payload, selected, filters });
+            if (operation === "update" && Object.hasOwn(options, "latestStatusOnUpdate")) {
+              manual.status = options.latestStatusOnUpdate;
+            }
             const writeTargetId = filters.find(([key]) => key === "id")?.[1];
             const data = Object.hasOwn(options, "updateData")
               ? options.updateData
@@ -61,6 +65,8 @@ function loadSync(manualCustomerId, options = {}) {
                   ? { ...manual, ...options.concurrentReservation, id: deterministicId }
                   : options.missingReservation
                     ? []
+                    : deterministicId
+                      ? { ...manual, id: deterministicId }
                     : externalLookup && !options.existing ? [] : [manual])
                 : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
@@ -254,6 +260,26 @@ test("replaying the original booking after cancellation does not reactivate it",
   assert.equal(result.result.mode, "cancelled");
   assert.equal(result.result.reservationId, "manual-reservation");
   assert.equal(result.result.alreadyCancelled, true);
+});
+
+test("a cancellation committed during an existing booking update wins the race", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    updateData: null,
+    latestStatusOnUpdate: "キャンセル",
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.alreadyCancelled, true);
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.deepEqual(runtime.writes[0].filters, [
+    ["id", "manual-reservation"],
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+  ]);
 });
 
 test("a cancellation received before its booking creates a persistent tombstone", async () => {
