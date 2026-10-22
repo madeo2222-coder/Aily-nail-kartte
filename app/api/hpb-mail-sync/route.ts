@@ -19,6 +19,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const rawText = String(body.text || body.body || "").trim();
+    const subject = String(body.subject || "").trim();
 
     if (!rawText) {
       return NextResponse.json(
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const synced = await syncHpbMailText(rawText);
+    const synced = await syncHpbMailText(rawText, subject);
 
     return NextResponse.json({
       ok: true,

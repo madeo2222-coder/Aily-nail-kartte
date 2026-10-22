@@ -24,7 +24,7 @@ function mount() {
   const exports = {};
   vm.runInNewContext(compiled, {
     exports, console: { error() {} }, alert: text => alerts.push(text), window: { confirm: () => confirm },
-    fetch(url) { return new Promise((resolve, reject) => requests.push({ url, resolve, reject })); },
+    fetch(url, options) { return new Promise((resolve, reject) => requests.push({ url, options, resolve, reject })); },
     require(name) {
       if (name === "react") return {
         useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; },
@@ -40,10 +40,31 @@ function mount() {
   return {
     requests, alerts,
     buttons: () => nodes(render(), "button"),
+    subject(text) { nodes(render(), "input")[0].props.onChange({ target: { value: text } }); },
     input(text) { nodes(render(), "textarea")[0].props.onChange({ target: { value: text } }); },
     confirm(value) { confirm = value; },
   };
 }
+
+test("manual sync sends the mail subject with the body", async () => {
+  const page = mount();
+  page.subject("【キャンセル】ご予約内容のお知らせ");
+  page.input("架空の予約メール本文");
+
+  const pending = page.buttons()[1].props.onClick();
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, "/api/hpb-mail-sync");
+  assert.deepEqual(JSON.parse(page.requests[0].options.body), {
+    subject: "【キャンセル】ご予約内容のお知らせ",
+    text: "架空の予約メール本文",
+  });
+
+  page.requests[0].resolve({
+    ok: true,
+    json: async () => ({ ok: true }),
+  });
+  await pending;
+});
 
 for (const first of [0, 1]) {
   test(`sync mode ${first} blocks both modes before rerender and releases after success`, async () => {

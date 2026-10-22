@@ -32,6 +32,7 @@ async function runRoute({ authenticated = true, requestBody = {}, syncResult } =
   let authOptions = null;
   let requestRead = false;
   const syncedTexts = [];
+  const syncedSubjects = [];
   const exports = {};
 
   vm.runInNewContext(compiled, {
@@ -65,8 +66,9 @@ async function runRoute({ authenticated = true, requestBody = {}, syncResult } =
       }
       if (name === "@/lib/hpb-mail-sync") {
         return {
-          syncHpbMailText: async (text) => {
+          syncHpbMailText: async (text, subject) => {
             syncedTexts.push(text);
+            syncedSubjects.push(subject);
             return syncResult ?? {
               parsed: { source: "hpb" },
               result: { mode: "updated", reservationId: "reservation-1" },
@@ -90,6 +92,7 @@ async function runRoute({ authenticated = true, requestBody = {}, syncResult } =
     body: await response.json(),
     requestRead,
     status: response.status,
+    syncedSubjects,
     syncedTexts,
   };
 }
@@ -104,6 +107,7 @@ test("manual HPB sync rejects unauthenticated access before reading the request"
   assert.equal(result.body.ok, false);
   assert.equal(result.requestRead, false);
   assert.deepEqual(result.syncedTexts, []);
+  assert.deepEqual(result.syncedSubjects, []);
   assert.deepEqual(JSON.parse(JSON.stringify(result.authOptions)), {
     allowedRoles: ["owner", "staff"],
     legacyAllowed: true,
@@ -117,6 +121,21 @@ test("manual HPB sync forwards trimmed authenticated input exactly once", async 
   assert.equal(result.status, 200);
   assert.equal(result.body.ok, true);
   assert.deepEqual(result.syncedTexts, ["reservation mail"]);
+  assert.deepEqual(result.syncedSubjects, [""]);
+});
+
+test("manual HPB sync forwards the trimmed subject for cancellation detection", async () => {
+  const result = await runRoute({
+    requestBody: {
+      subject: "  【キャンセル】ご予約内容のお知らせ  ",
+      text: "  reservation mail  ",
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.ok, true);
+  assert.deepEqual(result.syncedTexts, ["reservation mail"]);
+  assert.deepEqual(result.syncedSubjects, ["【キャンセル】ご予約内容のお知らせ"]);
 });
 
 test("manual HPB sync rejects empty authenticated input before syncing", async () => {
@@ -125,4 +144,5 @@ test("manual HPB sync rejects empty authenticated input before syncing", async (
   assert.equal(result.status, 400);
   assert.equal(result.body.ok, false);
   assert.deepEqual(result.syncedTexts, []);
+  assert.deepEqual(result.syncedSubjects, []);
 });

@@ -50,6 +50,7 @@ function getModeLabel(mode?: string) {
 }
 
 export default function HpbMailSyncTestPage() {
+  const [mailSubject, setMailSubject] = useState("");
   const [mailText, setMailText] = useState("");
   const [result, setResult] = useState<SyncResult | null>(null);
   const [sending, setSending] = useState(false);
@@ -89,7 +90,7 @@ export default function HpbMailSyncTestPage() {
       const response = await fetch("/api/hpb-mail-sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: mailText }),
+        body: JSON.stringify({ subject: mailSubject, text: mailText }),
       });
 
       const json = (await response.json()) as SyncResult;
@@ -354,12 +355,35 @@ export default function HpbMailSyncTestPage() {
             予約メール本文を手動同期
           </label>
 
+          <label
+            htmlFor="manual-mail-subject"
+            className="mt-4 block text-xs font-bold text-slate-600"
+          >
+            メール件名（キャンセル通知は入力推奨）
+          </label>
+          <input
+            id="manual-mail-subject"
+            type="text"
+            value={mailSubject}
+            onChange={(event) => setMailSubject(event.target.value)}
+            placeholder="例：【キャンセル】ご予約内容のお知らせ"
+            className="mt-2 w-full rounded-2xl border border-rose-100 bg-rose-50/30 px-4 py-3 text-sm outline-none focus:border-rose-300"
+          />
+
+          <label
+            htmlFor="manual-mail-body"
+            className="mt-4 block text-xs font-bold text-slate-600"
+          >
+            メール本文
+          </label>
+
           <textarea
+            id="manual-mail-body"
             value={mailText}
             onChange={(event) => setMailText(event.target.value)}
             rows={18}
             placeholder="ここにHPBまたはミニモの予約/キャンセルメール本文を貼り付けてください。"
-            className="mt-3 w-full rounded-2xl border border-rose-100 bg-rose-50/30 px-4 py-3 text-sm leading-6 outline-none focus:border-rose-300"
+            className="mt-2 w-full rounded-2xl border border-rose-100 bg-rose-50/30 px-4 py-3 text-sm leading-6 outline-none focus:border-rose-300"
           />
 
           <button
