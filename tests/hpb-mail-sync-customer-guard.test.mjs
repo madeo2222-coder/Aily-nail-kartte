@@ -14,6 +14,8 @@ function loadSync(manualCustomerId, options = {}) {
     id: "manual-reservation", customer_id: manualCustomerId,
     staff_id: null, salon_id: "salon-1", menu: "HPB予約",
     memo: options.memo ?? (options.existing ? "HPB予約番号：A123456" : "電話で先に登録"), status: options.status ?? "confirmed",
+    start_at: options.startAt ?? "2099-10-20T01:00:00.000Z",
+    end_at: options.endAt ?? "2099-10-20T02:30:00.000Z",
   };
   const db = {
     from(table) {
@@ -61,6 +63,20 @@ function loadSync(manualCustomerId, options = {}) {
               Object.hasOwn(options, "latestMemoOnUpdate")
             ) {
               manual.memo = options.latestMemoOnUpdate;
+            }
+            if (
+              operation === "update" &&
+              updateWriteCount === 1 &&
+              Object.hasOwn(options, "latestStartAtOnUpdate")
+            ) {
+              manual.start_at = options.latestStartAtOnUpdate;
+            }
+            if (
+              operation === "update" &&
+              updateWriteCount === 1 &&
+              Object.hasOwn(options, "latestEndAtOnUpdate")
+            ) {
+              manual.end_at = options.latestEndAtOnUpdate;
             }
             const writeTargetId = filters.find(([key]) => key === "id")?.[1];
             const data = Array.isArray(options.updateDataSequence)
@@ -301,6 +317,8 @@ test("a cancellation committed during an existing booking update wins the race",
     ["salon_id", "salon-1"],
     ["status", "confirmed"],
     ["memo", "HPB予約番号：A123456"],
+    ["start_at", "2099-10-20T01:00:00.000Z"],
+    ["end_at", "2099-10-20T02:30:00.000Z"],
   ]);
 });
 
@@ -320,6 +338,29 @@ test("booking sync stops instead of overwriting a concurrently edited staff memo
     ["salon_id", "salon-1"],
     ["status", "confirmed"],
     ["memo", "HPB予約番号：A123456"],
+    ["start_at", "2099-10-20T01:00:00.000Z"],
+    ["end_at", "2099-10-20T02:30:00.000Z"],
+  ]);
+});
+
+test("booking sync stops instead of overwriting a concurrently moved reservation", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    latestStartAtOnUpdate: "2099-10-20T01:30:00.000Z",
+    latestEndAtOnUpdate: "2099-10-20T03:00:00.000Z",
+    updateData: null,
+  });
+
+  await assert.rejects(runtime.sync(mail), /予約日時が変更されました/);
+
+  assert.equal(runtime.writes.length, 1);
+  assert.deepEqual(runtime.writes[0].filters, [
+    ["id", "manual-reservation"],
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+    ["memo", "HPB予約番号：A123456"],
+    ["start_at", "2099-10-20T01:00:00.000Z"],
+    ["end_at", "2099-10-20T02:30:00.000Z"],
   ]);
 });
 
@@ -489,10 +530,40 @@ test("concurrent progressed booking keeps its staff status after an insert race"
   assert.equal(runtime.writes[0].operation, "insert");
   assert.equal(runtime.writes[1].operation, "update");
   assert.equal(runtime.writes[1].payload.status, "来店");
-  assert.deepEqual(runtime.writes[1].filters.slice(-3), [
+  assert.deepEqual(runtime.writes[1].filters.slice(-5), [
     ["salon_id", "salon-1"],
     ["status", "来店"],
     ["memo", "HPB予約番号：A123456\nスタッフ処理済み"],
+    ["start_at", "2099-10-20T01:00:00.000Z"],
+    ["end_at", "2099-10-20T02:30:00.000Z"],
+  ]);
+});
+
+test("concurrent booking insert stops before overwriting a moved deterministic row", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-1",
+      memo: "HPB予約番号：A123456",
+      status: "confirmed",
+    },
+    latestStartAtOnUpdate: "2099-10-20T01:30:00.000Z",
+    latestEndAtOnUpdate: "2099-10-20T03:00:00.000Z",
+    updateData: null,
+  });
+
+  await assert.rejects(runtime.sync(mail), /予約日時が変更されました/);
+
+  assert.equal(runtime.writes.length, 2);
+  assert.equal(runtime.writes[0].operation, "insert");
+  assert.equal(runtime.writes[1].operation, "update");
+  assert.deepEqual(runtime.writes[1].filters.slice(-5), [
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+    ["memo", "HPB予約番号：A123456"],
+    ["start_at", "2099-10-20T01:00:00.000Z"],
+    ["end_at", "2099-10-20T02:30:00.000Z"],
   ]);
 });
 

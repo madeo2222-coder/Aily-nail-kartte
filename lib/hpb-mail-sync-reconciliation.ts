@@ -14,6 +14,8 @@ export type ManualReservationCandidate = {
   menu: string | null;
   memo: string | null;
   status: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
 };
 
 type ExternalReservationCandidate = {

@@ -58,6 +58,8 @@ type ExistingReservation = {
   staff_id: string | null;
   memo: string | null;
   status: string | null;
+  start_at: string | null;
+  end_at: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -101,6 +103,21 @@ function normalizeForCompare(value: string) {
 
 function normalizePhone(value: string) {
   return value.replace(/[^\d]/g, "");
+}
+
+function isSameReservationDateTime(
+  previous: string | null | undefined,
+  current: string | null | undefined
+) {
+  if (previous == null || current == null) return previous == current;
+
+  const previousTime = Date.parse(previous);
+  const currentTime = Date.parse(current);
+  if (Number.isFinite(previousTime) && Number.isFinite(currentTime)) {
+    return previousTime === currentTime;
+  }
+
+  return previous === current;
 }
 
 function extractFirstMatch(text: string, patterns: RegExp[]) {
@@ -594,7 +611,7 @@ async function findExistingExternalReservation(
   const reservationKey = getReservationNumberMemoKey(parsed.source);
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, salon_id, staff_id, memo, status")
+    .select("id, salon_id, staff_id, memo, status, start_at, end_at")
     .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`);
 
   if (error) throw new Error(error.message);
@@ -619,7 +636,7 @@ async function readReservationById(
 ) {
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, salon_id, staff_id, memo, status")
+    .select("id, salon_id, staff_id, memo, status, start_at, end_at")
     .eq("id", reservationId)
     .maybeSingle();
 
@@ -646,7 +663,7 @@ async function findDelayedManualEntry(
   const lookupWindow = buildManualReservationLookupWindow(parsed.startAt);
   const { data, error } = await context.supabase
     .from("reservations")
-    .select("id, customer_id, staff_id, menu, memo, status")
+    .select("id, customer_id, staff_id, menu, memo, status, start_at, end_at")
     .eq("salon_id", context.salonId)
     .gte("start_at", lookupWindow.from)
     .lte("start_at", lookupWindow.to);
@@ -775,6 +792,12 @@ async function upsertReservation(
     updateQuery = reservationToUpdate.memo == null
       ? updateQuery.is("memo", null)
       : updateQuery.eq("memo", reservationToUpdate.memo);
+    updateQuery = reservationToUpdate.start_at == null
+      ? updateQuery.is("start_at", null)
+      : updateQuery.eq("start_at", reservationToUpdate.start_at);
+    updateQuery = reservationToUpdate.end_at == null
+      ? updateQuery.is("end_at", null)
+      : updateQuery.eq("end_at", reservationToUpdate.end_at);
     const { data, error } = await updateQuery
       .select("id")
       .maybeSingle();
@@ -800,6 +823,20 @@ async function upsertReservation(
       if (latest.memo !== reservationToUpdate.memo) {
         throw new Error(
           "同期中に予約メモが変更されました。スタッフの追記を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (
+        !isSameReservationDateTime(
+          reservationToUpdate.start_at,
+          latest.start_at
+        ) ||
+        !isSameReservationDateTime(
+          reservationToUpdate.end_at,
+          latest.end_at
+        )
+      ) {
+        throw new Error(
+          "同期中に予約日時が変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       throw new Error(
@@ -865,6 +902,12 @@ async function upsertReservation(
     concurrentUpdateQuery = concurrentReservation.memo == null
       ? concurrentUpdateQuery.is("memo", null)
       : concurrentUpdateQuery.eq("memo", concurrentReservation.memo);
+    concurrentUpdateQuery = concurrentReservation.start_at == null
+      ? concurrentUpdateQuery.is("start_at", null)
+      : concurrentUpdateQuery.eq("start_at", concurrentReservation.start_at);
+    concurrentUpdateQuery = concurrentReservation.end_at == null
+      ? concurrentUpdateQuery.is("end_at", null)
+      : concurrentUpdateQuery.eq("end_at", concurrentReservation.end_at);
     const { data: updated, error: updateError } = await concurrentUpdateQuery
       .select("id")
       .maybeSingle();
@@ -890,6 +933,20 @@ async function upsertReservation(
       if (latest.memo !== concurrentReservation.memo) {
         throw new Error(
           "同期中に予約メモが変更されました。スタッフの追記を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (
+        !isSameReservationDateTime(
+          concurrentReservation.start_at,
+          latest.start_at
+        ) ||
+        !isSameReservationDateTime(
+          concurrentReservation.end_at,
+          latest.end_at
+        )
+      ) {
+        throw new Error(
+          "同期中に予約日時が変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
         );
       }
       throw new Error(
