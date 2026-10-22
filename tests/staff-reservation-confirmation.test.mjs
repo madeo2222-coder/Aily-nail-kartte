@@ -30,6 +30,37 @@ class MockResponse {
   }
 }
 
+const defaultReservation = {
+  id: "reservation-1",
+  salon_id: "salon-1",
+  customer_id: "customer-1",
+  staff_id: "staff-1",
+  menu: "ジェル",
+  start_at: "2099-10-02T01:30:00.000Z",
+  end_at: "2099-10-02T03:00:00.000Z",
+  status: "requested",
+  memo: "",
+};
+
+function editedConfirmationBody(overrides = {}) {
+  return {
+    customerId: "customer-2",
+    staffId: "staff-2",
+    menu: "フットジェル",
+    startAt: "2099-10-02T04:00:00.000Z",
+    endAt: "2099-10-02T05:30:00.000Z",
+    memo: "変更後",
+    expectedCustomerId: defaultReservation.customer_id,
+    expectedStaffId: defaultReservation.staff_id,
+    expectedMenu: defaultReservation.menu,
+    expectedStartAt: defaultReservation.start_at,
+    expectedEndAt: defaultReservation.end_at,
+    expectedStatus: defaultReservation.status,
+    expectedMemo: defaultReservation.memo,
+    ...overrides,
+  };
+}
+
 function createReadQuery(row, calls, error = null) {
   return {
     select(columns) {
@@ -58,17 +89,6 @@ function loadRoute({
   const readCalls = { filters: [], select: "" };
   const rpcCalls = [];
   let clientCreated = false;
-  const defaultReservation = {
-    id: "reservation-1",
-    salon_id: "salon-1",
-    customer_id: "customer-1",
-    staff_id: "staff-1",
-    menu: "ジェル",
-    start_at: "2099-10-02T01:30:00.000Z",
-    end_at: "2099-10-02T03:00:00.000Z",
-    status: "requested",
-    memo: "",
-  };
   const supabaseAdmin = {
     from(table) {
       assert.equal(table, "reservations");
@@ -203,14 +223,7 @@ test("preserves the reservation list's explicit empty JSON confirmation", async 
 
 test("scopes the reservation read and atomic confirmation to the staff salon", async () => {
   const runtime = loadRoute({
-    body: {
-      customerId: "customer-2",
-      staffId: "staff-2",
-      menu: "フットジェル",
-      startAt: "2099-10-02T04:00:00.000Z",
-      endAt: "2099-10-02T05:30:00.000Z",
-      memo: "変更後",
-    },
+    body: editedConfirmationBody(),
   });
   const response = await runtime.post();
 
@@ -238,6 +251,48 @@ test("scopes the reservation read and atomic confirmation to the staff salon", a
     }
   );
 });
+
+test("edited confirmation requires the original reservation snapshot", async () => {
+  for (const field of [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ]) {
+    const body = editedConfirmationBody();
+    delete body[field];
+    const runtime = loadRoute({ body });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 400, `${field} is required`);
+    assert.equal(runtime.rpcCalls.length, 0);
+  }
+});
+
+for (const [field, value] of [
+  ["customer_id", "customer-synced"],
+  ["staff_id", "staff-synced"],
+  ["menu", "同期後メニュー"],
+  ["start_at", "2099-10-02T02:00:00.000Z"],
+  ["end_at", "2099-10-02T03:30:00.000Z"],
+  ["status", "confirmed"],
+  ["memo", "同期または別端末で更新"],
+]) {
+  test(`edited confirmation rejects a stale ${field} snapshot`, async () => {
+    const runtime = loadRoute({
+      body: editedConfirmationBody(),
+      reservation: { ...defaultReservation, [field]: value },
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 409);
+    assert.match(response.body.error, /最新の内容を読み込み直して/);
+    assert.equal(runtime.rpcCalls.length, 0);
+  });
+}
 
 test("returns a conflict when the final database check finds an overlap", async () => {
   const runtime = loadRoute({
@@ -301,6 +356,17 @@ test("staff screens confirm through the guarded API instead of direct Supabase w
     editSource,
     /\/api\/reservations\/\$\{reservationId\}\/confirm/
   );
+  for (const field of [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ]) {
+    assert.match(editSource, new RegExp(field));
+  }
   assert.doesNotMatch(
     editSource,
     /\.from\("reservations"\)[\s\S]{0,500}\.update\(\{[\s\S]{0,500}status:\s*"confirmed"/

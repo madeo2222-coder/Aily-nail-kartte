@@ -23,6 +23,13 @@ type ConfirmReservationBody = {
   startAt?: string | null;
   endAt?: string | null;
   memo?: string | null;
+  expectedCustomerId?: string | null;
+  expectedStaffId?: string | null;
+  expectedMenu?: string | null;
+  expectedStartAt?: string | null;
+  expectedEndAt?: string | null;
+  expectedStatus?: string | null;
+  expectedMemo?: string | null;
 };
 
 type ConfirmReservationRow = {
@@ -56,6 +63,35 @@ function parseOptionalString(
     provided: true as const,
     value: typeof value === "string" ? value.trim() || null : null,
   };
+}
+
+function parseSnapshotString(
+  body: Record<string, unknown>,
+  key: keyof ConfirmReservationBody
+) {
+  if (!(key in body)) return { provided: false as const, value: null };
+
+  const value = body[key];
+  if (value !== null && typeof value !== "string") return null;
+
+  return {
+    provided: true as const,
+    value: value as string | null,
+  };
+}
+
+function sameStoredDateTime(current: string | null, expected: string | null) {
+  if (current === expected) return true;
+  if (!current || !expected) return false;
+
+  const currentTime = new Date(current).getTime();
+  const expectedTime = new Date(expected).getTime();
+
+  return (
+    Number.isFinite(currentTime) &&
+    Number.isFinite(expectedTime) &&
+    currentTime === expectedTime
+  );
 }
 
 function getConfirmReservationRow(value: unknown) {
@@ -137,6 +173,35 @@ export async function POST(
     );
   }
 
+  const hasEditedValues = Object.values(parsedFields).some(
+    (field) => field?.provided
+  );
+  const expectedFields = {
+    customerId: parseSnapshotString(body, "expectedCustomerId"),
+    staffId: parseSnapshotString(body, "expectedStaffId"),
+    menu: parseSnapshotString(body, "expectedMenu"),
+    startAt: parseSnapshotString(body, "expectedStartAt"),
+    endAt: parseSnapshotString(body, "expectedEndAt"),
+    status: parseSnapshotString(body, "expectedStatus"),
+    memo: parseSnapshotString(body, "expectedMemo"),
+  };
+
+  if (
+    hasEditedValues &&
+    Object.values(expectedFields).some(
+      (field) => field === null || !field.provided
+    )
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        confirmed: false,
+        error: "予約内容を読み直してから確定してください。",
+      },
+      { status: 400 }
+    );
+  }
+
   try {
     const { id: reservationId } = await context.params;
     const salonId = authentication.principal.salonId;
@@ -163,6 +228,29 @@ export async function POST(
     }
 
     const reservation = reservationData as ReservationRow;
+    if (
+      hasEditedValues &&
+      (reservation.customer_id !== expectedFields.customerId!.value ||
+        reservation.staff_id !== expectedFields.staffId!.value ||
+        reservation.menu !== expectedFields.menu!.value ||
+        !sameStoredDateTime(
+          reservation.start_at,
+          expectedFields.startAt!.value
+        ) ||
+        !sameStoredDateTime(reservation.end_at, expectedFields.endAt!.value) ||
+        reservation.status !== expectedFields.status!.value ||
+        reservation.memo !== expectedFields.memo!.value)
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          confirmed: false,
+          error: "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 }
+      );
+    }
+
     const customerId = parsedFields.customerId!.provided
       ? parsedFields.customerId!.value
       : reservation.customer_id;

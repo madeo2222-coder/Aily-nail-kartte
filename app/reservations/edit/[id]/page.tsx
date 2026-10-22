@@ -553,6 +553,13 @@ export default function EditReservationPage() {
           startAt: dateTime.startAt,
           endAt: dateTime.endAt,
           memo: buildMemoForSave(galleryReference, memo, syncedMemo) || null,
+          expectedCustomerId: initialCustomerId,
+          expectedStaffId: initialStaffId,
+          expectedMenu: initialMenu,
+          expectedStartAt: initialStartAt,
+          expectedEndAt: initialEndAt,
+          expectedStatus: initialStatus,
+          expectedMemo: initialMemo,
         }),
       }
     );
