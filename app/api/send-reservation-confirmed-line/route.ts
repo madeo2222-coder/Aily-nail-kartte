@@ -28,6 +28,11 @@ type ClaimRow = {
   line_retry_key: string;
   line_message: string;
 };
+type ClaimFailure = {
+  httpStatus: 403 | 409;
+  deliveryStatus?: "message_changed" | "reservation_changed";
+  error: string;
+};
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -116,6 +121,37 @@ function getClaimRow(value: unknown): ClaimRow | null {
     candidate.claim_status !== "retry_expired"
   ) return null;
   return candidate as ClaimRow;
+}
+
+function getClaimFailure(message: string): ClaimFailure | null {
+  if (
+    message.includes("CONFIRMATION_DELIVERY_INVALID_STAFF") ||
+    message.includes("CONFIRMATION_DELIVERY_SCOPE_MISMATCH")
+  ) {
+    return {
+      httpStatus: 403,
+      error: "この予約を操作する権限がありません。",
+    };
+  }
+
+  if (message.includes("CONFIRMATION_DELIVERY_INVALID_RESERVATION")) {
+    return {
+      httpStatus: 409,
+      deliveryStatus: "reservation_changed",
+      error: "予約状態が更新されています。最新の内容を読み込み直してください。",
+    };
+  }
+
+  if (message.includes("CONFIRMATION_DELIVERY_MESSAGE_CHANGED")) {
+    return {
+      httpStatus: 409,
+      deliveryStatus: "message_changed",
+      error:
+        "前回の送信試行後に予約内容が変わっています。LINE送信履歴を確認してください。",
+    };
+  }
+
+  return null;
 }
 
 export async function POST(request: Request) {
@@ -283,10 +319,17 @@ export async function POST(request: Request) {
       }
     );
     if (claimError) {
-      if (claimError.message?.includes("CONFIRMATION_DELIVERY_MESSAGE_CHANGED")) {
+      const claimFailure = getClaimFailure(claimError.message);
+
+      if (claimFailure) {
         return NextResponse.json(
-          { ok: false, sent: false, status: "message_changed", error: "前回の送信試行後に予約内容が変わっています。LINE送信履歴を確認してください。" },
-          { status: 409 }
+          {
+            ok: false,
+            sent: false,
+            status: claimFailure.deliveryStatus,
+            error: claimFailure.error,
+          },
+          { status: claimFailure.httpStatus }
         );
       }
       throw new Error(claimError.message);

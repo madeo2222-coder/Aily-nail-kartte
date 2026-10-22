@@ -220,6 +220,51 @@ test("does not expose internal confirmation delivery errors", async () => {
   assert.equal(runtime.completionCalls.length, 0);
 });
 
+test("maps known confirmation delivery claim failures to staff actions", async () => {
+  const cases = [
+    {
+      message: "CONFIRMATION_DELIVERY_INVALID_STAFF",
+      status: 403,
+      expected: /権限/,
+      responseStatus: undefined,
+    },
+    {
+      message: "CONFIRMATION_DELIVERY_SCOPE_MISMATCH",
+      status: 403,
+      expected: /権限/,
+      responseStatus: undefined,
+    },
+    {
+      message: "CONFIRMATION_DELIVERY_INVALID_RESERVATION",
+      status: 409,
+      expected: /読み込み直して/,
+      responseStatus: "reservation_changed",
+    },
+    {
+      message: "CONFIRMATION_DELIVERY_MESSAGE_CHANGED",
+      status: 409,
+      expected: /送信履歴/,
+      responseStatus: "message_changed",
+    },
+  ];
+
+  for (const claimFailure of cases) {
+    const runtime = loadRoute({
+      claimError: { message: `private detail: ${claimFailure.message}` },
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, claimFailure.status);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.sent, false);
+    assert.equal(response.body.status, claimFailure.responseStatus);
+    assert.match(response.body.error, claimFailure.expected);
+    assert.doesNotMatch(response.body.error, /private|CONFIRMATION_DELIVERY_/);
+    assert.equal(runtime.lineCalls.length, 0);
+    assert.equal(runtime.completionCalls.length, 0);
+  }
+});
+
 test("sends a confirmed reservation with the claimed LINE retry key", async () => {
   const runtime = loadRoute();
   const response = await runtime.post();
