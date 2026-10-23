@@ -529,7 +529,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   }
 }
 
-export async function DELETE(_request: NextRequest, context: RouteContext) {
+export async function DELETE(request: NextRequest, context: RouteContext) {
   const authentication = await authenticate();
 
   if (!authentication.ok) {
@@ -540,6 +540,64 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
 
   if (!validUuid(reservationId)) {
     return errorResponse("予約IDを確認してください。", 400);
+  }
+
+  let body: EditReservationBody;
+
+  try {
+    body = (await request.json()) as EditReservationBody;
+  } catch {
+    return errorResponse("予約内容を読み直してから削除してください。", 400);
+  }
+
+  const hasExpectedCustomerId = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedCustomerId",
+  );
+  const hasExpectedStaffId = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedStaffId",
+  );
+  const hasExpectedMenu = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedMenu",
+  );
+  const hasExpectedMemo = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedMemo",
+  );
+  const hasExpectedStartAt = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedStartAt",
+  );
+  const hasExpectedEndAt = Object.prototype.hasOwnProperty.call(
+    body,
+    "expectedEndAt",
+  );
+  const expectedCustomerId = body.expectedCustomerId;
+  const expectedStaffId = body.expectedStaffId;
+  const expectedMenu = body.expectedMenu;
+  const expectedStatus = body.expectedStatus;
+  const expectedMemo = body.expectedMemo;
+  const expectedStartAt = body.expectedStartAt;
+  const expectedEndAt = body.expectedEndAt;
+
+  if (
+    !hasExpectedCustomerId ||
+    (expectedCustomerId !== null && typeof expectedCustomerId !== "string") ||
+    !hasExpectedStaffId ||
+    (expectedStaffId !== null && typeof expectedStaffId !== "string") ||
+    !hasExpectedMenu ||
+    (expectedMenu !== null && typeof expectedMenu !== "string") ||
+    (expectedStatus !== null && typeof expectedStatus !== "string") ||
+    !hasExpectedMemo ||
+    (expectedMemo !== null && typeof expectedMemo !== "string") ||
+    !hasExpectedStartAt ||
+    (expectedStartAt !== null && typeof expectedStartAt !== "string") ||
+    !hasExpectedEndAt ||
+    (expectedEndAt !== null && typeof expectedEndAt !== "string")
+  ) {
+    return errorResponse("予約内容を読み直してから削除してください。", 400);
   }
 
   try {
@@ -559,16 +617,69 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       return errorResponse("予約が見つかりません。", 404);
     }
 
-    const deleteResult = await supabase
+    if (
+      reservationResult.data.customer_id !== expectedCustomerId ||
+      reservationResult.data.staff_id !== expectedStaffId ||
+      reservationResult.data.menu !== expectedMenu ||
+      reservationResult.data.status !== expectedStatus ||
+      reservationResult.data.memo !== expectedMemo ||
+      !sameStoredDateTime(
+        reservationResult.data.start_at,
+        expectedStartAt,
+      ) ||
+      !sameStoredDateTime(reservationResult.data.end_at, expectedEndAt)
+    ) {
+      return errorResponse(
+        "予約内容が更新されています。最新の内容を読み込み直してください。",
+        409,
+      );
+    }
+
+    let deleteQuery = supabase
       .from("reservations")
       .delete()
       .eq("id", reservationId)
-      .eq("salon_id", reservationResult.data.salon_id)
+      .eq("salon_id", reservationResult.data.salon_id);
+
+    deleteQuery =
+      expectedStatus === null
+        ? deleteQuery.is("status", null)
+        : deleteQuery.eq("status", expectedStatus);
+    deleteQuery =
+      expectedCustomerId === null
+        ? deleteQuery.is("customer_id", null)
+        : deleteQuery.eq("customer_id", expectedCustomerId);
+    deleteQuery =
+      expectedStaffId === null
+        ? deleteQuery.is("staff_id", null)
+        : deleteQuery.eq("staff_id", expectedStaffId);
+    deleteQuery =
+      expectedMenu === null
+        ? deleteQuery.is("menu", null)
+        : deleteQuery.eq("menu", expectedMenu);
+    deleteQuery =
+      expectedMemo === null
+        ? deleteQuery.is("memo", null)
+        : deleteQuery.eq("memo", expectedMemo);
+    deleteQuery =
+      expectedStartAt === null
+        ? deleteQuery.is("start_at", null)
+        : deleteQuery.eq("start_at", expectedStartAt);
+    deleteQuery =
+      expectedEndAt === null
+        ? deleteQuery.is("end_at", null)
+        : deleteQuery.eq("end_at", expectedEndAt);
+
+    const deleteResult = await deleteQuery
       .select("id")
       .maybeSingle();
 
-    if (deleteResult.error || !deleteResult.data) {
-      return internalErrorResponse();
+    if (deleteResult.error) return internalErrorResponse();
+    if (!deleteResult.data) {
+      return errorResponse(
+        "予約内容が更新されています。最新の内容を読み込み直してください。",
+        409,
+      );
     }
 
     return NextResponse.json({ ok: true, id: deleteResult.data.id });

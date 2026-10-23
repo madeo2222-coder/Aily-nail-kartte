@@ -373,6 +373,9 @@ export default function EditReservationPage() {
   const [initialStaffId, setInitialStaffId] = useState<string | null>(null);
   const [initialMenu, setInitialMenu] = useState<string | null>(null);
   const [initialStatus, setInitialStatus] = useState("");
+  const [initialStoredStatus, setInitialStoredStatus] = useState<string | null>(
+    null
+  );
   const [initialMemo, setInitialMemo] = useState<string | null>(null);
   const [initialStartAt, setInitialStartAt] = useState<string | null>(null);
   const [initialEndAt, setInitialEndAt] = useState<string | null>(null);
@@ -460,6 +463,7 @@ export default function EditReservationPage() {
     setInitialStaffId(reservation.staff_id);
     setInitialMenu(reservation.menu);
     setInitialStatus(reservation.status ?? "");
+    setInitialStoredStatus(reservation.status);
     setInitialMemo(reservation.memo);
     setInitialStartAt(reservation.start_at);
     setInitialEndAt(reservation.end_at);
@@ -940,7 +944,19 @@ export default function EditReservationPage() {
     try {
       const response = await fetch(
         `/api/reservations/${reservationId}/staff-edit`,
-        { method: "DELETE" }
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expectedCustomerId: initialCustomerId,
+            expectedStaffId: initialStaffId,
+            expectedMenu: initialMenu,
+            expectedStatus: initialStoredStatus,
+            expectedMemo: initialMemo,
+            expectedStartAt: initialStartAt,
+            expectedEndAt: initialEndAt,
+          }),
+        }
       );
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;

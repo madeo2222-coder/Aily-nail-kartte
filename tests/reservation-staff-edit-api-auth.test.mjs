@@ -263,6 +263,23 @@ function patchRequest(overrides = {}) {
   };
 }
 
+function deleteRequest(overrides = {}) {
+  return {
+    async json() {
+      return {
+        expectedCustomerId: reservation.customer_id,
+        expectedStaffId: reservation.staff_id,
+        expectedMenu: reservation.menu,
+        expectedStatus: reservation.status,
+        expectedMemo: reservation.memo,
+        expectedStartAt: reservation.start_at,
+        expectedEndAt: reservation.end_at,
+        ...overrides,
+      };
+    },
+  };
+}
+
 test("staff edit API rejects unauthenticated reads and writes before service-role access", async () => {
   const authentication = {
     ok: false,
@@ -678,7 +695,7 @@ test("staff edit preserves non-time corrections on an existing elapsed reservati
 
 test("staff delete scopes the lookup and delete to the authenticated salon", async () => {
   const runtime = executeRoute({ authentication: principal() });
-  const response = await runtime.exports.DELETE({}, context());
+  const response = await runtime.exports.DELETE(deleteRequest(), context());
 
   assert.equal(response.status, 200);
   const remove = runtime.calls.find((call) => call.operation === "delete");
@@ -686,6 +703,101 @@ test("staff delete scopes the lookup and delete to the authenticated salon", asy
   assert.ok(
     remove.filters.some(
       (filter) => filter.column === "salon_id" && filter.value === SALON_ID,
+    ),
+  );
+  for (const [column, value] of [
+    ["customer_id", reservation.customer_id],
+    ["staff_id", reservation.staff_id],
+    ["menu", reservation.menu],
+    ["status", reservation.status],
+    ["memo", reservation.memo],
+    ["start_at", reservation.start_at],
+    ["end_at", reservation.end_at],
+  ]) {
+    assert.ok(
+      remove.filters.some(
+        (filter) => filter.column === column && filter.value === value,
+      ),
+      `${column} snapshot was guarded before delete`,
+    );
+  }
+});
+
+test("staff delete requires the original booking detail snapshot", async () => {
+  for (const overrides of [
+    { expectedCustomerId: undefined },
+    { expectedStaffId: undefined },
+    { expectedMenu: undefined },
+    { expectedStatus: undefined },
+    { expectedMemo: undefined },
+    { expectedStartAt: undefined },
+    { expectedEndAt: undefined },
+  ]) {
+    const runtime = executeRoute({ authentication: principal() });
+    const response = await runtime.exports.DELETE(
+      deleteRequest(overrides),
+      context(),
+    );
+
+    assert.equal(response.status, 400);
+    assert.equal(runtime.clientCreated, false);
+  }
+});
+
+test("staff delete refuses a stale screen after booking sync changed details", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: {
+        data: { ...reservation, menu: "同期後の最新メニュー" },
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.DELETE(deleteRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /最新の内容を読み込み直して/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "delete"),
+    false,
+  );
+});
+
+test("staff delete reports a write-time sync race as a conflict", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: { delete: { data: null, error: null } },
+  });
+  const response = await runtime.exports.DELETE(deleteRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /最新の内容を読み込み直して/);
+});
+
+test("staff delete guards an originally empty status with IS NULL", async () => {
+  const emptyStatusReservation = { ...reservation, status: null };
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: { data: emptyStatusReservation, error: null },
+    },
+  });
+  const response = await runtime.exports.DELETE(
+    deleteRequest({ expectedStatus: null }),
+    context(),
+  );
+
+  assert.equal(response.status, 200);
+  const remove = runtime.calls.find((call) => call.operation === "delete");
+  assert.ok(
+    remove.filters.some(
+      (filter) =>
+        filter.method === "is" &&
+        filter.column === "status" &&
+        filter.value === null,
     ),
   );
 });
@@ -718,6 +830,14 @@ test("reservation edit page uses the guarded API and synchronous request locks",
   assert.match(pageSource, /\/api\/reservations\/\$\{reservationId\}\/staff-edit/);
   assert.match(pageSource, /method:\s*"PATCH"/);
   assert.match(pageSource, /method:\s*"DELETE"/);
+  assert.match(
+    pageSource,
+    /method:\s*"DELETE"[\s\S]*?expectedCustomerId:\s*initialCustomerId/,
+  );
+  assert.match(
+    pageSource,
+    /method:\s*"DELETE"[\s\S]*?expectedStatus:\s*initialStoredStatus/,
+  );
   assert.match(pageSource, /mutationRequestPendingRef\.current/);
   for (const expectedField of [
     "expectedCustomerId",
