@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
@@ -7,6 +8,8 @@ export const dynamic = "force-dynamic";
 type AnyRow = Record<string, unknown>;
 
 const NOTIFICATION_TYPE = "reservation_reminder";
+const LINE_REQUEST_TIMEOUT_MS = 10_000;
+const CONFIRMED_STATUSES = ["confirmed", "予約確定"];
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -23,53 +26,47 @@ function getSupabaseAdmin() {
 
 function getString(row: AnyRow | null, keys: string[]) {
   if (!row) return "";
-
   for (const key of keys) {
     const value = row[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
-
   return "";
 }
 
 function toUtcRangeFromJstDate(dateText: string) {
   const start = new Date(`${dateText}T00:00:00+09:00`);
   const end = new Date(`${dateText}T23:59:59.999+09:00`);
-
-  return {
-    startIso: start.toISOString(),
-    endIso: end.toISOString(),
-  };
+  return { startIso: start.toISOString(), endIso: end.toISOString() };
 }
 
 function getTomorrowJstDate() {
   const now = new Date();
   const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
   jst.setUTCDate(jst.getUTCDate() + 1);
-
   const year = jst.getUTCFullYear();
   const month = String(jst.getUTCMonth() + 1).padStart(2, "0");
   const day = String(jst.getUTCDate()).padStart(2, "0");
-
   return `${year}-${month}-${day}`;
+}
+
+function isValidTargetDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return candidate.getUTCFullYear() === year &&
+    candidate.getUTCMonth() === month - 1 &&
+    candidate.getUTCDate() === day;
 }
 
 function getTargetDateFromRequest(request: Request) {
   const url = new URL(request.url);
-  const fromQuery = url.searchParams.get("targetDate");
-
-  if (fromQuery) return fromQuery;
-
-  return getTomorrowJstDate();
+  return url.searchParams.get("targetDate")?.trim() || getTomorrowJstDate();
 }
 
 function formatDateTime(value: string | null) {
   if (!value) return "未設定";
-
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) return "未設定";
-
   return new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",
     year: "numeric",
@@ -102,28 +99,71 @@ function buildReminderMessage(params: {
 ご来店を心よりお待ちしております。`;
 }
 
-async function pushLineMessage(lineUserId: string, text: string) {
-  const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+function createLineRetryKey(parts: string[]) {
+  const hex = createHash("sha256").update(parts.join("\u001f")).digest("hex");
+  const variant = ["8", "9", "a", "b"][Number.parseInt(hex[16], 16) % 4];
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
+}
 
+function getReservationSnapshot(row: AnyRow) {
+  return JSON.stringify({
+    id: getString(row, ["id"]),
+    salonId: getString(row, ["salon_id"]),
+    customerId: getString(row, ["customer_id"]),
+    staffId: getString(row, ["staff_id"]),
+    status: getString(row, ["status"]),
+    menu: getString(row, ["menu", "menu_name"]),
+    startAt: getString(row, ["start_at"]),
+    endAt: getString(row, ["end_at"]),
+  });
+}
+
+async function pushLineMessage(params: {
+  lineUserId: string;
+  text: string;
+  retryKey: string;
+}) {
+  const channelAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!channelAccessToken) {
     throw new Error("LINE_CHANNEL_ACCESS_TOKEN が未設定です");
   }
 
-  const res = await fetch("https://api.line.me/v2/bot/message/push", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${channelAccessToken}`,
-    },
-    body: JSON.stringify({
-      to: lineUserId,
-      messages: [{ type: "text", text }],
-    }),
-  });
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${channelAccessToken}`,
+        "X-Line-Retry-Key": params.retryKey,
+      },
+      body: JSON.stringify({
+        to: params.lineUserId,
+        messages: [{ type: "text", text: params.text }],
+      }),
+      signal: AbortSignal.timeout(LINE_REQUEST_TIMEOUT_MS),
+    });
+    const alreadyAccepted = response.status === 409 &&
+      Boolean(response.headers.get("x-line-accepted-request-id")?.trim());
+    if (response.ok || alreadyAccepted) {
+      return { accepted: true, alreadyAccepted, status: "sent" as const };
+    }
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(errorText);
+    const errorText = (await response.text().catch(() => "")).slice(0, 500);
+    console.error("LINEリマインド送信エラー:", response.status, errorText);
+    return {
+      accepted: false,
+      alreadyAccepted: false,
+      status: response.status >= 500 ? ("failed_retryable" as const) : ("failed" as const),
+    };
+  } catch (error) {
+    console.error("LINEリマインド送信結果不明:", error);
+    return { accepted: false, alreadyAccepted: false, status: "unknown" as const };
   }
 }
 
@@ -139,13 +179,11 @@ async function hasAlreadySent(params: {
     .eq("notification_type", NOTIFICATION_TYPE)
     .eq("target_date", params.targetDate)
     .maybeSingle();
-
   if (error) {
     console.error("LINE通知ログ確認エラー:", error);
-    return false;
+    return { alreadySent: false, checkFailed: true };
   }
-
-  return Boolean(data);
+  return { alreadySent: Boolean(data), checkFailed: false };
 }
 
 async function saveNotificationLog(params: {
@@ -158,37 +196,36 @@ async function saveNotificationLog(params: {
 }) {
   const { error } = await params.supabaseAdmin
     .from("line_notification_logs")
-    .insert([
-      {
-        customer_id: params.customerId,
-        reservation_id: params.reservationId,
-        notification_type: NOTIFICATION_TYPE,
-        target_date: params.targetDate,
-        line_user_id: params.lineUserId,
-        message: params.message,
-      },
-    ]);
-
+    .insert([{
+      customer_id: params.customerId,
+      reservation_id: params.reservationId,
+      notification_type: NOTIFICATION_TYPE,
+      target_date: params.targetDate,
+      line_user_id: params.lineUserId,
+      message: params.message,
+    }]);
   if (error) {
     console.error("LINE通知ログ保存エラー:", error);
+    return false;
   }
+  return true;
 }
 
-async function runReminder(targetDate: string) {
+async function runReminder(targetDate: string, salonId: string) {
   const { startIso, endIso } = toUtcRangeFromJstDate(targetDate);
   const supabaseAdmin = getSupabaseAdmin();
-
   const { data: reservations, error } = await supabaseAdmin
     .from("reservations")
-    .select("*")
-    .eq("status", "confirmed")
+    .select("id, salon_id, customer_id, staff_id, status, menu, menu_name, start_at, end_at")
+    .eq("salon_id", salonId)
+    .in("status", CONFIRMED_STATUSES)
     .gte("start_at", startIso)
     .lte("start_at", endIso)
     .order("start_at", { ascending: true });
 
   if (error) {
     return NextResponse.json(
-      { ok: false, message: error.message },
+      { ok: false, message: "予約情報の取得に失敗しました。" },
       { status: 500 }
     );
   }
@@ -196,33 +233,34 @@ async function runReminder(targetDate: string) {
   let sentCount = 0;
   let skippedCount = 0;
   let duplicateCount = 0;
+  let failedCount = 0;
+  let unrecordedCount = 0;
+  let recoveredCount = 0;
   const results: string[] = [];
 
   for (const reservation of (reservations || []) as AnyRow[]) {
     const reservationId = getString(reservation, ["id"]);
     const customerId = getString(reservation, ["customer_id"]);
     const staffId = getString(reservation, ["staff_id"]);
-    const salonId = getString(reservation, ["salon_id"]);
 
     if (!reservationId) {
       skippedCount += 1;
       results.push("予約ID不明：スキップ");
       continue;
     }
-
-    if (!customerId) {
+    if (!customerId || getString(reservation, ["salon_id"]) !== salonId) {
       skippedCount += 1;
-      results.push(`${reservationId}：customer_idなし`);
+      results.push(`${reservationId}：顧客またはサロン紐付け不備`);
       continue;
     }
 
-    const alreadySent = await hasAlreadySent({
-      supabaseAdmin,
-      reservationId,
-      targetDate,
-    });
-
-    if (alreadySent) {
+    const deliveryState = await hasAlreadySent({ supabaseAdmin, reservationId, targetDate });
+    if (deliveryState.checkFailed) {
+      skippedCount += 1;
+      results.push(`${reservationId}：送信履歴を確認できないためスキップ`);
+      continue;
+    }
+    if (deliveryState.alreadySent) {
       duplicateCount += 1;
       results.push(`${reservationId}：送信済みのためスキップ`);
       continue;
@@ -232,8 +270,8 @@ async function runReminder(targetDate: string) {
       .from("customers")
       .select("id, name, line_user_id")
       .eq("id", customerId)
+      .eq("salon_id", salonId)
       .maybeSingle();
-
     if (customerError || !customer) {
       skippedCount += 1;
       results.push(`${reservationId}：顧客取得失敗`);
@@ -243,44 +281,56 @@ async function runReminder(targetDate: string) {
     const customerRow = customer as AnyRow;
     const lineUserId = getString(customerRow, ["line_user_id"]);
     const customerName = getString(customerRow, ["name"]) || "お客様";
-
     if (!lineUserId) {
       skippedCount += 1;
       results.push(`${customerName}：LINE未連携`);
       continue;
     }
 
-    const { data: staff } = staffId
-      ? await supabaseAdmin
-          .from("staffs")
-          .select("id, name")
-          .eq("id", staffId)
-          .maybeSingle()
-      : { data: null };
+    const { data: staff, error: staffError } = staffId
+      ? await supabaseAdmin.from("staffs").select("id, name")
+          .eq("id", staffId).eq("salon_id", salonId).maybeSingle()
+      : { data: null, error: null };
+    const { data: salon, error: salonError } = await supabaseAdmin
+      .from("salons").select("id, name").eq("id", salonId).maybeSingle();
+    if (staffError || salonError || !salon || (staffId && !staff)) {
+      skippedCount += 1;
+      results.push(`${reservationId}：店舗または担当者情報の取得失敗`);
+      continue;
+    }
 
-    const { data: salon } = salonId
-      ? await supabaseAdmin
-          .from("salons")
-          .select("id, name")
-          .eq("id", salonId)
-          .maybeSingle()
-      : { data: null };
+    const { data: latestReservation, error: latestError } = await supabaseAdmin
+      .from("reservations")
+      .select("id, salon_id, customer_id, staff_id, status, menu, menu_name, start_at, end_at")
+      .eq("id", reservationId)
+      .eq("salon_id", salonId)
+      .maybeSingle();
+    if (latestError || !latestReservation ||
+      getReservationSnapshot(latestReservation as AnyRow) !== getReservationSnapshot(reservation)) {
+      skippedCount += 1;
+      results.push(`${reservationId}：予約内容が変更されたためスキップ`);
+      continue;
+    }
 
-    const staffRow = (staff || null) as AnyRow | null;
-    const salonRow = (salon || null) as AnyRow | null;
-
+    const latestRow = latestReservation as AnyRow;
     const text = buildReminderMessage({
       customerName,
-      salonName: getString(salonRow, ["name"]) || "Aily Nail Studio",
-      menuName:
-        getString(reservation, ["menu", "menu_name"]) || "メニュー未設定",
-      staffName: getString(staffRow, ["name"]) || "指名なし",
-      startAt: formatDateTime(getString(reservation, ["start_at"])),
+      salonName: getString(salon as AnyRow, ["name"]) || "Aily Nail Studio",
+      menuName: getString(latestRow, ["menu", "menu_name"]) || "メニュー未設定",
+      staffName: getString((staff || null) as AnyRow | null, ["name"]) || "指名なし",
+      startAt: formatDateTime(getString(latestRow, ["start_at"])),
     });
+    const retryKey = createLineRetryKey([NOTIFICATION_TYPE, reservationId, targetDate]);
+    const delivery = await pushLineMessage({ lineUserId, text, retryKey });
+    if (!delivery.accepted) {
+      failedCount += 1;
+      results.push(delivery.status === "unknown"
+        ? `${customerName}：送信結果不明（再実行時も同じ重複防止キーを使用）`
+        : `${customerName}：LINE送信失敗`);
+      continue;
+    }
 
-    await pushLineMessage(lineUserId, text);
-
-    await saveNotificationLog({
+    const recorded = await saveNotificationLog({
       supabaseAdmin,
       customerId,
       reservationId,
@@ -288,70 +338,107 @@ async function runReminder(targetDate: string) {
       lineUserId,
       message: text,
     });
-
     sentCount += 1;
-    results.push(`${customerName}：送信済み`);
+    if (delivery.alreadyAccepted) recoveredCount += 1;
+    if (!recorded) {
+      unrecordedCount += 1;
+      results.push(`${customerName}：LINE受付済み・送信記録保存失敗`);
+      continue;
+    }
+    results.push(delivery.alreadyAccepted
+      ? `${customerName}：既受付の送信を重複させず記録`
+      : `${customerName}：送信済み`);
   }
 
   return NextResponse.json({
-    ok: true,
+    ok: failedCount === 0 && unrecordedCount === 0,
     targetDate,
     total: reservations?.length || 0,
     sentCount,
     skippedCount,
     duplicateCount,
+    failedCount,
+    unrecordedCount,
+    recoveredCount,
     results,
   });
 }
 
-export async function POST(request: Request) {
-  const authentication = await authenticateStaffApi({
+async function authenticateReminderRequest() {
+  return authenticateStaffApi({
     allowedRoles: ["owner", "staff"],
     legacyAllowed: true,
-    salonContextRequired: false,
+    salonContextRequired: true,
   });
+}
 
+export async function POST(request: Request) {
+  const authentication = await authenticateReminderRequest();
   if (!authentication.ok) {
     return NextResponse.json(
       { ok: false, message: authentication.error },
       { status: authentication.status }
     );
   }
+  const salonId = authentication.principal.salonId;
+  if (!salonId) {
+    return NextResponse.json(
+      { ok: false, message: "スタッフの所属サロンを確認できません。" },
+      { status: 403 }
+    );
+  }
 
   try {
-    const body = (await request.json().catch(() => ({}))) as {
-      targetDate?: string;
-    };
-
-    return await runReminder(body.targetDate || getTomorrowJstDate());
+    const body = (await request.json().catch(() => ({}))) as { targetDate?: unknown };
+    const targetDate = body.targetDate === undefined
+      ? getTomorrowJstDate()
+      : typeof body.targetDate === "string" ? body.targetDate.trim() : "";
+    if (!isValidTargetDate(targetDate)) {
+      return NextResponse.json(
+        { ok: false, message: "対象日はYYYY-MM-DD形式で指定してください。" },
+        { status: 400 }
+      );
+    }
+    return await runReminder(targetDate, salonId);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "前日リマインドLINE送信エラー";
-
-    return NextResponse.json({ ok: false, message }, { status: 500 });
+    console.error("予約リマインド処理エラー:", error);
+    return NextResponse.json(
+      { ok: false, message: "前日リマインドLINE処理に失敗しました。" },
+      { status: 500 }
+    );
   }
 }
 
 export async function GET(request: Request) {
-  const authentication = await authenticateStaffApi({
-    allowedRoles: ["owner", "staff"],
-    legacyAllowed: true,
-    salonContextRequired: false,
-  });
-
+  const authentication = await authenticateReminderRequest();
   if (!authentication.ok) {
     return NextResponse.json(
       { ok: false, message: authentication.error },
       { status: authentication.status }
     );
   }
+  const salonId = authentication.principal.salonId;
+  if (!salonId) {
+    return NextResponse.json(
+      { ok: false, message: "スタッフの所属サロンを確認できません。" },
+      { status: 403 }
+    );
+  }
 
   try {
-    return await runReminder(getTargetDateFromRequest(request));
+    const targetDate = getTargetDateFromRequest(request);
+    if (!isValidTargetDate(targetDate)) {
+      return NextResponse.json(
+        { ok: false, message: "対象日はYYYY-MM-DD形式で指定してください。" },
+        { status: 400 }
+      );
+    }
+    return await runReminder(targetDate, salonId);
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "前日リマインドLINE送信エラー";
-
-    return NextResponse.json({ ok: false, message }, { status: 500 });
+    console.error("予約リマインド処理エラー:", error);
+    return NextResponse.json(
+      { ok: false, message: "前日リマインドLINE処理に失敗しました。" },
+      { status: 500 }
+    );
   }
 }

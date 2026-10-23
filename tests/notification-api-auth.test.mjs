@@ -31,6 +31,11 @@ const routes = [
     name: "reservation reminder LINE",
     path: "send-reservation-reminder-line",
     methods: ["POST", "GET"],
+    authOptions: {
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: true,
+      salonContextRequired: true,
+    },
   },
   {
     name: "visit review request LINE",
