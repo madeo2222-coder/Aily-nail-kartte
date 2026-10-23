@@ -65,6 +65,8 @@ type ExistingReservation = {
   end_at: string | null;
 };
 
+const CUSTOMER_LOOKUP_PAGE_SIZE = 1000;
+
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -628,15 +630,22 @@ async function findOrCreateCustomer(
     };
   }
 
-  const { data, error } = await context.supabase
-    .from("customers")
-    .select("id, name, phone")
-    .eq("salon_id", context.salonId)
-    .not("name", "is", null);
+  const customers: MatchedCustomer[] = [];
+  for (let offset = 0; ; offset += CUSTOMER_LOOKUP_PAGE_SIZE) {
+    const { data, error } = await context.supabase
+      .from("customers")
+      .select("id, name, phone")
+      .eq("salon_id", context.salonId)
+      .not("name", "is", null)
+      .order("id", { ascending: true })
+      .range(offset, offset + CUSTOMER_LOOKUP_PAGE_SIZE - 1);
 
-  if (error) throw new Error(error.message);
+    if (error) throw new Error(error.message);
 
-  const customers = (data || []) as MatchedCustomer[];
+    const page = (data || []) as MatchedCustomer[];
+    customers.push(...page);
+    if (page.length < CUSTOMER_LOOKUP_PAGE_SIZE) break;
+  }
 
   const phoneCompare = normalizePhone(parsed.phone || "");
 

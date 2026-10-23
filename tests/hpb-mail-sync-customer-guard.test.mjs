@@ -23,6 +23,7 @@ const autoCustomerId = buildExternalCustomerId("hpb", "A123456");
 
 function loadSync(manualCustomerId, options = {}) {
   const writes = [];
+  const customerReadRanges = [];
   const customer = { id: "mail-customer", name: "テスト顧客", phone: "09000000000" };
   const manual = {
     id: "manual-reservation", customer_id: manualCustomerId,
@@ -47,6 +48,7 @@ function loadSync(manualCustomerId, options = {}) {
       let externalLookup = false;
       let payload;
       let selected;
+      let rangeBounds = null;
       const filters = [];
       const query = {
         select(columns) { selected = columns; return query; },
@@ -56,6 +58,12 @@ function loadSync(manualCustomerId, options = {}) {
         gte() { return query; },
         lte() { return query; },
         limit() { return query; },
+        order() { return query; },
+        range(from, to) {
+          rangeBounds = [from, to];
+          if (table === "customers") customerReadRanges.push(rangeBounds);
+          return query;
+        },
         ilike() { externalLookup = true; return query; },
         update(value) { operation = "update"; payload = value; return query; },
         insert(value) { operation = "insert"; payload = value; return query; },
@@ -150,13 +158,28 @@ function loadSync(manualCustomerId, options = {}) {
                     : "スタッフ修正顧客",
                 }
               : null);
+          if (
+            table === "customers" &&
+            rangeBounds &&
+            options.customerReadErrorAtOffset === rangeBounds[0]
+          ) {
+            return Promise.resolve({
+              data: null,
+              error: { message: "fixture customer page rejected" },
+            }).then(resolve, reject);
+          }
           const data = table === "salons" ? [{ id: "salon-1" }]
             : table === "staffs" ? options.staffRows ?? []
             : table === "customers" ? (deterministicId
                 ? deterministicId === manualCustomerId && options.existing
                   ? existingReservationCustomer
                   : externalCustomer
-                : options.customerRows ?? [customer])
+                : (() => {
+                    const rows = options.customerRows ?? [customer];
+                    return rangeBounds
+                      ? rows.slice(rangeBounds[0], rangeBounds[1] + 1)
+                      : rows;
+                  })())
               : table === "reservations" ? (deterministicId && options.concurrentReservation &&
                     writes.some((write) => write.operation === "insert")
                   ? { ...manual, ...options.concurrentReservation, id: deterministicId }
@@ -193,7 +216,11 @@ function loadSync(manualCustomerId, options = {}) {
     });
     return exports;
   }
-  return { sync: load("../lib/hpb-mail-sync.ts").syncHpbMailText, writes };
+  return {
+    sync: load("../lib/hpb-mail-sync.ts").syncHpbMailText,
+    writes,
+    customerReadRanges,
+  };
 }
 
 for (const cancelling of [false, true]) {
@@ -990,6 +1017,57 @@ test("a new external booking inserts a deterministic customer instead of upserti
   assert.equal(runtime.writes[0].payload.id, autoCustomerId);
   assert.equal(runtime.writes[1].table, "reservations");
   assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
+});
+
+test("customer matching reads beyond the Supabase 1000-row response limit", async () => {
+  const customerRows = Array.from({ length: 1001 }, (_, index) => ({
+    id: `customer-${String(index).padStart(4, "0")}`,
+    name: `別顧客${index}`,
+    phone: `080${String(index).padStart(8, "0")}`,
+  }));
+  customerRows[1000] = {
+    id: "customer-target",
+    name: "テスト顧客",
+    phone: "09000000000",
+  };
+
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows,
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "inserted");
+  assert.equal(result.result.customerMatch.matchStatus, "matched_by_phone");
+  assert.equal(result.result.customerMatch.customerId, "customer-target");
+  assert.deepEqual(runtime.customerReadRanges, [
+    [0, 999],
+    [1000, 1999],
+  ]);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].table, "reservations");
+  assert.equal(runtime.writes[0].payload.customer_id, "customer-target");
+});
+
+test("customer matching fails closed when a later page cannot be read", async () => {
+  const customerRows = Array.from({ length: 1001 }, (_, index) => ({
+    id: `customer-${String(index).padStart(4, "0")}`,
+    name: `別顧客${index}`,
+    phone: `080${String(index).padStart(8, "0")}`,
+  }));
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows,
+    customerReadErrorAtOffset: 1000,
+  });
+
+  await assert.rejects(runtime.sync(mail), /fixture customer page rejected/);
+  assert.deepEqual(runtime.customerReadRanges, [
+    [0, 999],
+    [1000, 1999],
+  ]);
+  assert.equal(runtime.writes.length, 0);
 });
 
 test("concurrent deterministic customer creation converges without overwriting the winner", async () => {
