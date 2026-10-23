@@ -419,7 +419,7 @@ function parseReservationMail(
   return parseHpbMail(text, mailSubject);
 }
 
-async function resolveSyncContext(parsed: ParsedHpbMail): Promise<SyncContext> {
+async function resolveSyncContext(): Promise<SyncContext> {
   const supabase = getSupabaseAdmin();
   const { data: salons, error: salonError } = await supabase
     .from("salons")
@@ -434,13 +434,21 @@ async function resolveSyncContext(parsed: ParsedHpbMail): Promise<SyncContext> {
   }
 
   const salonId = salons[0].id;
+
+  return { supabase, salonId, staffId: null };
+}
+
+async function resolveStaffId(
+  parsed: ParsedHpbMail,
+  context: SyncContext
+): Promise<string | null> {
   let staffId: string | null = null;
 
   if (normalizeForCompare(parsed.staffName) !== normalizeForCompare("指名なし")) {
-    const { data: staffs, error: staffError } = await supabase
+    const { data: staffs, error: staffError } = await context.supabase
       .from("staffs")
       .select("id, name")
-      .eq("salon_id", salonId)
+      .eq("salon_id", context.salonId)
       .eq("is_active", true);
 
     if (staffError) throw new Error(staffError.message);
@@ -466,7 +474,7 @@ async function resolveSyncContext(parsed: ParsedHpbMail): Promise<SyncContext> {
     staffId = matches[0]?.id || null;
   }
 
-  return { supabase, salonId, staffId };
+  return staffId;
 }
 
 async function createCustomerFromReservation(
@@ -815,6 +823,7 @@ async function upsertReservation(
       alreadySynced: true,
     };
   }
+  context.staffId = await resolveStaffId(parsed, context);
   const sourceMarkedManualEntry = existing
     ? null
     : await findDelayedManualEntry(parsed, context);
@@ -1195,6 +1204,7 @@ async function cancelReservation(
         "外部予約番号に一致する予約がなく、キャンセル予約の保存に必要な氏名と来店日時が不足しています。"
       );
     }
+    context.staffId = await resolveStaffId(parsed, context);
 
     const cancellationMemo = appendExternalCancellationMemo({
       existingMemo: [
@@ -1349,7 +1359,7 @@ async function cancelReservation(
 
 export async function syncHpbMailText(rawText: string, mailSubject = "") {
   const parsed = parseReservationMail(rawText, mailSubject);
-  const context = await resolveSyncContext(parsed);
+  const context = await resolveSyncContext();
 
   const result =
     parsed.action === "cancel"

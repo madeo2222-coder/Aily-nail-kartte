@@ -40,6 +40,9 @@ function loadSync(manualCustomerId, options = {}) {
       if (table === "customers" && options.rejectCustomerLookup) {
         throw new Error("cancelled replay must not resolve or create customers");
       }
+      if (table === "staffs" && options.rejectStaffLookup) {
+        throw new Error("staff lookup must be deferred for completed replays");
+      }
       let operation = "read";
       let externalLookup = false;
       let payload;
@@ -148,6 +151,7 @@ function loadSync(manualCustomerId, options = {}) {
                 }
               : null);
           const data = table === "salons" ? [{ id: "salon-1" }]
+            : table === "staffs" ? options.staffRows ?? []
             : table === "customers" ? (deterministicId
                 ? deterministicId === manualCustomerId && options.existing
                   ? existingReservationCustomer
@@ -310,6 +314,11 @@ const mail = `予約番号：A123456
 来店日時：2099年10月20日 10:00
 指名スタッフ：指名なし
 所要時間目安：90分`;
+
+const namedStaffMail = mail.replace(
+  "指名スタッフ：指名なし",
+  "指名スタッフ：退職スタッフ"
+);
 
 for (const [label, invalidDateTime] of [
   ["an impossible calendar date", "2099年2月30日 10:00"],
@@ -833,6 +842,63 @@ test("replaying the same Gmail booking preserves staff corrections without a wri
   assert.equal(result.result.alreadySynced, true);
   assert.equal(result.result.reservationId, "manual-reservation");
   assert.equal(replay.writes.length, 0);
+});
+
+test("an unchanged replay does not fail after its former staff becomes inactive", async () => {
+  const replay = loadSync("mail-customer", {
+    existing: true,
+    memo: `HPB予約番号：A123456\n【HPBメール本文】\n${namedStaffMail}`,
+    rejectStaffLookup: true,
+  });
+
+  const result = await replay.sync(namedStaffMail);
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.alreadySynced, true);
+  assert.equal(replay.writes.length, 0);
+});
+
+test("an existing cancellation does not require its former staff to remain active", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    rejectStaffLookup: true,
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+});
+
+test("a changed booking still requires its named staff to be active", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: `HPB予約番号：A123456\n【HPBメール本文】\n${namedStaffMail}`,
+    rejectStaffLookup: true,
+  });
+
+  await assert.rejects(
+    runtime.sync(
+      namedStaffMail.replace("2099年10月20日 10:00", "2099年10月20日 11:00")
+    ),
+    /staff lookup must be deferred/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("a new booking still resolves and saves its active named staff", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [],
+    staffRows: [{ id: "active-staff", name: "退職スタッフ" }],
+  });
+
+  const result = await runtime.sync(namedStaffMail);
+
+  assert.equal(result.result.mode, "inserted");
+  assert.equal(runtime.writes.at(-1).table, "reservations");
+  assert.equal(runtime.writes.at(-1).payload.staff_id, "active-staff");
 });
 
 test("a changed Gmail booking still follows normal reconciliation", async () => {
