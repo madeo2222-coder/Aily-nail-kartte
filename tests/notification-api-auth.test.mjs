@@ -46,6 +46,11 @@ const routes = [
     name: "visit review request LINE",
     path: "send-review-request-line",
     methods: ["POST", "GET"],
+    authOptions: {
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: true,
+      salonContextRequired: true,
+    },
   },
 ];
 
