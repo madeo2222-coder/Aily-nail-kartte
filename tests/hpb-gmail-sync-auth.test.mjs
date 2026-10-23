@@ -34,6 +34,7 @@ function loadRoute({
   nodeEnv = "production",
   listPages = [{ messages: [] }],
   syncFailures = [],
+  parseFailures = [],
   messageGetFailures = [],
   attachmentGetFailures = [],
   attachmentPayloads = {},
@@ -50,6 +51,7 @@ function loadRoute({
   const gmailAttachmentCalls = [];
   const syncedTexts = [];
   const syncedSubjects = [];
+  const parsedTexts = [];
   const exports = {};
 
   class MockOAuth2 {
@@ -181,6 +183,13 @@ function loadRoute({
       }
       if (name === "@/lib/hpb-mail-sync") {
         return {
+          parseHpbMailText: (text) => {
+            parsedTexts.push(text);
+            if (parseFailures.includes(text)) {
+              throw new Error(`parse failed: ${text}`);
+            }
+            return { source: "hpb" };
+          },
           syncHpbMailText: async (text, subject) => {
             syncedTexts.push(text);
             syncedSubjects.push(subject);
@@ -231,6 +240,9 @@ function loadRoute({
     },
     get syncedSubjects() {
       return syncedSubjects;
+    },
+    get parsedTexts() {
+      return parsedTexts;
     },
     get oauthClientCount() {
       return oauthClientCount;
@@ -635,6 +647,91 @@ test("Gmail sync recovers a successful message thread ID from the full response 
   assert.match(
     body.results[0].error,
     /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
+  );
+  assert.deepEqual(runtime.syncedTexts, []);
+});
+
+test("Gmail sync parses every target message before writing and defers a thread with an unparseable newer mail", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "newer-parse-failed", threadId: "reservation-thread" },
+          { id: "older-succeeded", threadId: "reservation-thread" },
+        ],
+      },
+    ],
+    parseFailures: ["newer-parse-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, false);
+  assert.equal(body.syncedCount, 0);
+  assert.equal(body.failedCount, 2);
+  assert.deepEqual(runtime.parsedTexts, [
+    "older-succeeded",
+    "newer-parse-failed",
+  ]);
+  assert.match(
+    body.results[0].error,
+    /同じGmailスレッドの予約メールを解析できないため同期を保留しました/
+  );
+  assert.match(body.results[1].error, /parse failed: newer-parse-failed/);
+  assert.deepEqual(runtime.syncedTexts, []);
+});
+
+test("Gmail sync continues an unrelated thread when another known thread cannot be parsed", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "newer-parse-failed", threadId: "failed-thread" },
+          { id: "independent-succeeded", threadId: "independent-thread" },
+        ],
+      },
+    ],
+    parseFailures: ["newer-parse-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 207);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, true);
+  assert.equal(body.syncedCount, 1);
+  assert.equal(body.failedCount, 1);
+  assert.deepEqual(runtime.syncedTexts, ["independent-succeeded"]);
+});
+
+test("Gmail sync defers every target thread when an unparseable mail has no thread ID", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "newer-parse-failed" },
+          { id: "older-succeeded", threadId: "known-thread" },
+        ],
+      },
+    ],
+    parseFailures: ["newer-parse-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, false);
+  assert.equal(body.syncedCount, 0);
+  assert.equal(body.failedCount, 2);
+  assert.match(
+    body.results[0].error,
+    /スレッドIDを取得できない予約メールの解析に失敗したため/
   );
   assert.deepEqual(runtime.syncedTexts, []);
 });

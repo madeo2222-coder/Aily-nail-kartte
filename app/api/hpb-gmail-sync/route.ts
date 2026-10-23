@@ -1,6 +1,9 @@
 import { google } from "googleapis";
 import { NextResponse } from "next/server";
-import { syncHpbMailText } from "@/lib/hpb-mail-sync";
+import {
+  parseHpbMailText,
+  syncHpbMailText,
+} from "@/lib/hpb-mail-sync";
 import { summarizeGmailSyncResults } from "@/lib/hpb-gmail-sync-summary";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
@@ -377,6 +380,38 @@ async function runHpbGmailSync() {
   const hasUnscopedFetchFailure = fetchedMessages.some(
     (message) => !message.ok && !message.threadId
   );
+  const parseFailures = new Map<string, string>();
+  const failedParseThreadIds = new Set<string>();
+  let hasUnscopedParseFailure = false;
+
+  // Parse every readable target mail before the first database write. If a
+  // newer change/cancellation mail cannot be parsed, applying an older mail
+  // from the same Gmail thread could temporarily roll the reservation back.
+  // Pure parsing is safe to run up front and lets the thread fail closed.
+  for (const message of fetchedMessages) {
+    if (
+      !message.ok ||
+      !isTargetReservationMail(message.subject, message.bodyText)
+    ) {
+      continue;
+    }
+
+    try {
+      parseHpbMailText(message.bodyText, message.subject);
+    } catch (error) {
+      parseFailures.set(
+        message.messageId,
+        error instanceof Error
+          ? error.message
+          : "予約メールの解析に失敗しました"
+      );
+      if (message.threadId) {
+        failedParseThreadIds.add(message.threadId);
+      } else {
+        hasUnscopedParseFailure = true;
+      }
+    }
+  }
 
   for (const message of fetchedMessages) {
     if (!message.ok) {
@@ -431,6 +466,42 @@ async function runHpbGmailSync() {
         ok: false,
         error:
           "スレッドIDを取得できないGmailメールの本文取得に失敗したため、予約メール全体の同期を保留しました。再試行してください。",
+      });
+      continue;
+    }
+
+    const parseFailure = parseFailures.get(messageId);
+    if (parseFailure) {
+      results.push({
+        messageId,
+        subject,
+        skipped: false,
+        ok: false,
+        error: parseFailure,
+      });
+      continue;
+    }
+
+    if (threadId && failedParseThreadIds.has(threadId)) {
+      results.push({
+        messageId,
+        subject,
+        skipped: false,
+        ok: false,
+        error:
+          "同じGmailスレッドの予約メールを解析できないため同期を保留しました。メール書式を確認して再試行してください。",
+      });
+      continue;
+    }
+
+    if (hasUnscopedParseFailure) {
+      results.push({
+        messageId,
+        subject,
+        skipped: false,
+        ok: false,
+        error:
+          "スレッドIDを取得できない予約メールの解析に失敗したため、予約メール全体の同期を保留しました。メール書式を確認して再試行してください。",
       });
       continue;
     }

@@ -421,6 +421,10 @@ function parseReservationMail(
   return parseHpbMail(text, mailSubject);
 }
 
+export function parseHpbMailText(rawText: string, mailSubject = "") {
+  return parseReservationMail(rawText, mailSubject);
+}
+
 async function resolveSyncContext(): Promise<SyncContext> {
   const supabase = getSupabaseAdmin();
   const { data: salons, error: salonError } = await supabase
@@ -1384,7 +1388,7 @@ async function cancelReservation(
 }
 
 export async function syncHpbMailText(rawText: string, mailSubject = "") {
-  const parsed = parseReservationMail(rawText, mailSubject);
+  const parsed = parseHpbMailText(rawText, mailSubject);
   const context = await resolveSyncContext();
 
   const result =
