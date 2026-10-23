@@ -8,10 +8,23 @@ type ReservationRow = {
   id: string;
   salon_id: string | null;
   customer_id: string | null;
+  staff_id: string | null;
+  menu: string | null;
   status: string | null;
   start_at: string | null;
+  end_at: string | null;
   source: string | null;
   memo: string | null;
+};
+
+type AlternativeRequestBody = {
+  expectedCustomerId: string | null;
+  expectedStaffId: string | null;
+  expectedMenu: string | null;
+  expectedStartAt: string | null;
+  expectedEndAt: string | null;
+  expectedStatus: string | null;
+  expectedMemo: string | null;
 };
 
 type CustomerRow = {
@@ -39,6 +52,51 @@ type ClaimFailure = {
 };
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
+
+function parseAlternativeRequestBody(
+  value: unknown
+): AlternativeRequestBody | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+
+  const body = value as Record<string, unknown>;
+  const keys = [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ] as const;
+
+  if (
+    keys.some(
+      (key) =>
+        !Object.prototype.hasOwnProperty.call(body, key) ||
+        (body[key] !== null && typeof body[key] !== "string")
+    )
+  ) {
+    return null;
+  }
+
+  return Object.fromEntries(
+    keys.map((key) => [key, body[key]])
+  ) as AlternativeRequestBody;
+}
+
+function sameStoredDateTime(current: string | null, expected: string | null) {
+  if (current === expected) return true;
+  if (!current || !expected) return false;
+
+  const currentTime = new Date(current).getTime();
+  const expectedTime = new Date(expected).getTime();
+
+  return (
+    Number.isFinite(currentTime) &&
+    Number.isFinite(expectedTime) &&
+    currentTime === expectedTime
+  );
+}
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -190,7 +248,7 @@ function getClaimFailure(message: string): ClaimFailure | null {
 }
 
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   const authentication = await authenticateStaffApi({
@@ -210,6 +268,24 @@ export async function POST(
     return NextResponse.json(
       { ok: false, sent: false, error: "この予約を操作する権限がありません。" },
       { status: 403 }
+    );
+  }
+
+  let requestBody: AlternativeRequestBody | null = null;
+  try {
+    requestBody = parseAlternativeRequestBody(await request.json());
+  } catch {
+    // The request must include the exact reservation snapshot shown to staff.
+  }
+
+  if (!requestBody) {
+    return NextResponse.json(
+      {
+        ok: false,
+        sent: false,
+        error: "予約内容を読み直してから別日時を依頼してください。",
+      },
+      { status: 400 }
     );
   }
 
@@ -235,7 +311,9 @@ export async function POST(
     const supabaseAdmin = getSupabaseAdmin();
     const { data: reservationData, error: reservationError } = await supabaseAdmin
       .from("reservations")
-      .select("id, salon_id, customer_id, status, start_at, source, memo")
+      .select(
+        "id, salon_id, customer_id, staff_id, menu, status, start_at, end_at, source, memo"
+      )
       .eq("id", reservationId)
       .maybeSingle();
 
@@ -256,6 +334,28 @@ export async function POST(
       return NextResponse.json(
         { ok: false, sent: false, error: "この予約を操作する権限がありません。" },
         { status: 403 }
+      );
+    }
+
+    if (
+      reservation.customer_id !== requestBody.expectedCustomerId ||
+      reservation.staff_id !== requestBody.expectedStaffId ||
+      reservation.menu !== requestBody.expectedMenu ||
+      !sameStoredDateTime(
+        reservation.start_at,
+        requestBody.expectedStartAt
+      ) ||
+      !sameStoredDateTime(reservation.end_at, requestBody.expectedEndAt) ||
+      reservation.status !== requestBody.expectedStatus ||
+      reservation.memo !== requestBody.expectedMemo
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: false,
+          error: "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 }
       );
     }
 

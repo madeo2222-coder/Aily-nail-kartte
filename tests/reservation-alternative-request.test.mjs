@@ -70,6 +70,7 @@ function loadRoute({
   customer,
 } = {}) {
   const authOptions = [];
+  const claimCalls = [];
   const completionCalls = [];
   const lineCalls = [];
   let clientCreated = false;
@@ -79,10 +80,22 @@ function loadRoute({
     id: "reservation-1",
     salon_id: "salon-1",
     customer_id: "customer-1",
+    staff_id: "staff-1",
+    menu: "ワンカラー",
     status: "requested",
     start_at: "2099-10-02T01:30:00.000Z",
+    end_at: "2099-10-02T02:30:00.000Z",
     source: "customer-app",
     memo: "",
+  };
+  const defaultSnapshot = {
+    expectedCustomerId: defaultReservation.customer_id,
+    expectedStaffId: defaultReservation.staff_id,
+    expectedMenu: defaultReservation.menu,
+    expectedStartAt: defaultReservation.start_at,
+    expectedEndAt: defaultReservation.end_at,
+    expectedStatus: defaultReservation.status,
+    expectedMemo: defaultReservation.memo,
   };
   const defaultCustomer = {
     id: "customer-1",
@@ -105,6 +118,7 @@ function loadRoute({
     },
     async rpc(name, args) {
       if (name === "claim_reservation_alternative_request") {
+        claimCalls.push(args);
         if (claimError) return { data: null, error: claimError };
         const claim = claimQueue.shift();
         if (!claim) throw new Error("No claim response configured");
@@ -192,9 +206,14 @@ function loadRoute({
     },
   });
 
-  async function post() {
+  async function post(body = defaultSnapshot) {
     const response = await exports.POST(
-      {},
+      {
+        async json() {
+          if (body instanceof Error) throw body;
+          return body;
+        },
+      },
       { params: Promise.resolve({ id: "reservation-1" }) }
     );
     return { body: await response.json(), status: response.status };
@@ -202,6 +221,7 @@ function loadRoute({
 
   return {
     authOptions,
+    claimCalls,
     completionCalls,
     get clientCreated() {
       return clientCreated;
@@ -224,6 +244,63 @@ test("rejects unauthenticated alternative-time requests before privileged work",
     legacyAllowed: false,
     salonContextRequired: true,
   });
+});
+
+test("requires the complete reservation snapshot before privileged work", async () => {
+  for (const body of [
+    new Error("missing body"),
+    {},
+    { expectedCustomerId: "customer-1" },
+    {
+      expectedCustomerId: "customer-1",
+      expectedStaffId: "staff-1",
+      expectedMenu: "ワンカラー",
+      expectedStartAt: "2099-10-02T01:30:00.000Z",
+      expectedEndAt: "2099-10-02T02:30:00.000Z",
+      expectedStatus: "requested",
+      expectedMemo: 123,
+    },
+  ]) {
+    const runtime = loadRoute();
+    const response = await runtime.post(body);
+
+    assert.equal(response.status, 400);
+    assert.match(response.body.error, /読み直して/);
+    assert.equal(runtime.clientCreated, false);
+    assert.equal(runtime.claimCalls.length, 0);
+    assert.equal(runtime.lineCalls.length, 0);
+  }
+});
+
+test("rejects a stale reservation snapshot before claiming or sending", async () => {
+  const staleCases = [
+    ["expectedCustomerId", "other-customer"],
+    ["expectedStaffId", "other-staff"],
+    ["expectedMenu", "別メニュー"],
+    ["expectedStartAt", "2099-10-02T03:30:00.000Z"],
+    ["expectedEndAt", "2099-10-02T04:30:00.000Z"],
+    ["expectedStatus", "confirmed"],
+    ["expectedMemo", "変更前メモ"],
+  ];
+
+  for (const [key, value] of staleCases) {
+    const runtime = loadRoute();
+    const response = await runtime.post({
+      expectedCustomerId: "customer-1",
+      expectedStaffId: "staff-1",
+      expectedMenu: "ワンカラー",
+      expectedStartAt: "2099-10-02T01:30:00.000Z",
+      expectedEndAt: "2099-10-02T02:30:00.000Z",
+      expectedStatus: "requested",
+      expectedMemo: "",
+      [key]: value,
+    });
+
+    assert.equal(response.status, 409, key);
+    assert.match(response.body.error, /最新の内容を読み込み直して/);
+    assert.equal(runtime.claimCalls.length, 0, key);
+    assert.equal(runtime.lineCalls.length, 0, key);
+  }
 });
 
 test("sends the owned requested reservation with its stable LINE retry key", async () => {
@@ -612,6 +689,34 @@ test("staff UI synchronously locks every competing reservation mutation", () => 
       functionSource,
       /finally \{[\s\S]*mutationRequestPendingRef\.current = false;/
     );
+  }
+});
+
+test("staff UI sends the displayed reservation snapshot with an alternative-time request", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+  const functionStart = pageSource.indexOf(
+    "async function requestAlternativeTime()"
+  );
+  const nextFunction = pageSource.indexOf(
+    "\n  async function ",
+    functionStart + 1
+  );
+  const functionSource = pageSource.slice(functionStart, nextFunction);
+
+  assert.match(functionSource, /headers: \{ "Content-Type": "application\/json" \}/);
+  for (const [field, state] of [
+    ["expectedCustomerId", "initialCustomerId"],
+    ["expectedStaffId", "initialStaffId"],
+    ["expectedMenu", "initialMenu"],
+    ["expectedStartAt", "initialStartAt"],
+    ["expectedEndAt", "initialEndAt"],
+    ["expectedStatus", "initialStoredStatus"],
+    ["expectedMemo", "initialMemo"],
+  ]) {
+    assert.match(functionSource, new RegExp(`${field}: ${state}`));
   }
 });
 

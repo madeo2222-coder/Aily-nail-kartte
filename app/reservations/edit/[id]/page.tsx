@@ -737,7 +737,19 @@ export default function EditReservationPage() {
     try {
       const response = await fetch(
         `/api/reservations/${reservationId}/request-alternative`,
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expectedCustomerId: initialCustomerId,
+            expectedStaffId: initialStaffId,
+            expectedMenu: initialMenu,
+            expectedStartAt: initialStartAt,
+            expectedEndAt: initialEndAt,
+            expectedStatus: initialStoredStatus,
+            expectedMemo: initialMemo,
+          }),
+        }
       );
       const result = (await response.json().catch(() => null)) as
         | AlternativeRequestResult
