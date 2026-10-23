@@ -21,6 +21,11 @@ const routes = [
     name: "reservation confirmation email",
     path: "send-reservation-confirmed-email",
     methods: ["POST"],
+    authOptions: {
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: true,
+      salonContextRequired: true,
+    },
   },
   {
     name: "reservation confirmation LINE",
