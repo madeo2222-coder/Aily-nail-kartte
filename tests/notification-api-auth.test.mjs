@@ -11,6 +11,11 @@ const routes = [
     name: "Google review LINE",
     path: "send-google-review-line",
     methods: ["POST", "GET"],
+    authOptions: {
+      allowedRoles: ["owner", "staff"],
+      legacyAllowed: true,
+      salonContextRequired: true,
+    },
   },
   {
     name: "reservation confirmation email",
