@@ -68,6 +68,7 @@ function loadRoute({
     Error,
     Promise,
     String,
+    TextDecoder,
     process: {
       env: {
         CRON_SECRET: "cron-secret",
@@ -372,6 +373,64 @@ test("Gmail sync preserves field boundaries in an HTML-only reservation mail", a
     runtime.syncedTexts[0],
     "予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00"
   );
+});
+
+test("Gmail sync decodes an ISO-2022-JP reservation body from its MIME charset", async () => {
+  const encodedIso2022Jp =
+    "GyRCTT1Mc0hWOWYhJxsoQkExMjM0NTYKGyRCO2FMPiEnJUYlOSVIOFw1UhsoQgobJEJNaEU5Rnw7fiEnGyhCMjA5ORskQkcvGyhCMTAbJEI3bhsoQjIwGyRCRnwbKEIgMTA6MDAK";
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "iso-2022-jp" }] }],
+    messagePayloads: {
+      "iso-2022-jp": {
+        mimeType: "text/plain",
+        headers: [
+          { name: "Subject", value: "SALON BOARD予約" },
+          {
+            name: "Content-Type",
+            value: 'text/plain; charset="ISO-2022-JP"',
+          },
+        ],
+        body: {
+          data: Buffer.from(encodedIso2022Jp, "base64").toString("base64url"),
+        },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedTexts, [
+    "予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00",
+  ]);
+});
+
+test("Gmail sync fails closed instead of parsing a body with an unsupported charset", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "unsupported-charset" }] }],
+    messagePayloads: {
+      "unsupported-charset": {
+        mimeType: "text/plain",
+        headers: [
+          { name: "Subject", value: "SALON BOARD予約" },
+          { name: "Content-Type", value: "text/plain; charset=x-private-mail" },
+        ],
+        body: {
+          data: Buffer.from("予約番号：A123456").toString("base64url"),
+        },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.failedCount, 1);
+  assert.match(body.results[0].error, /メール本文の文字コードを読み取れませんでした/);
+  assert.doesNotMatch(body.results[0].error, /x-private-mail/);
+  assert.deepEqual(runtime.syncedTexts, []);
 });
 
 test("Gmail sync prefers the plain part instead of duplicating multipart content", async () => {

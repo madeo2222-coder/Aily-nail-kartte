@@ -7,20 +7,42 @@ import {
 import { summarizeGmailSyncResults } from "@/lib/hpb-gmail-sync-summary";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
-function decodeBase64Url(value: string) {
+function decodeBase64Url(value: string, charset = "utf-8") {
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-  return Buffer.from(base64, "base64").toString("utf-8");
+  const bytes = Buffer.from(base64, "base64");
+
+  try {
+    return new TextDecoder(charset, { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("メール本文の文字コードを読み取れませんでした");
+  }
 }
 
 type GmailMessagePart = {
   mimeType?: string | null;
   filename?: string | null;
+  headers?: Array<{
+    name?: string | null;
+    value?: string | null;
+  }> | null;
   body?: {
     data?: string | null;
     attachmentId?: string | null;
   } | null;
   parts?: GmailMessagePart[] | null;
 };
+
+function getMimeCharset(part: GmailMessagePart) {
+  const contentType =
+    part.headers?.find(
+      (header) => header.name?.toLowerCase() === "content-type"
+    )?.value || "";
+  const match = contentType.match(
+    /charset\s*=\s*(?:"([^"]+)"|'([^']+)'|([^;\s]+))/i
+  );
+
+  return (match?.[1] || match?.[2] || match?.[3] || "utf-8").trim();
+}
 
 type GmailMessageReference = {
   id?: string | null;
@@ -85,7 +107,7 @@ async function collectMimeText(
 
     if (!encoded) return [];
 
-    const decoded = decodeBase64Url(encoded);
+    const decoded = decodeBase64Url(encoded, getMimeCharset(payload));
     return [mimeType === "text/html" ? htmlToPlainText(decoded) : decoded];
   }
 
