@@ -15,14 +15,25 @@ type CancelReservationBody = {
   sendLine: boolean;
   reason: CancellationReason;
   reasonText?: string;
+  expectedCustomerId: string | null;
+  expectedStaffId: string | null;
+  expectedMenu: string | null;
+  expectedStartAt: string | null;
+  expectedEndAt: string | null;
+  expectedStatus: string | null;
+  expectedMemo: string | null;
 };
 
 type ReservationRow = {
   id: string;
   salon_id: string | null;
   customer_id: string | null;
+  staff_id: string | null;
+  menu: string | null;
   start_at: string | null;
+  end_at: string | null;
   status: string | null;
+  memo: string | null;
 };
 
 const CANCELLATION_REASONS: Record<CancellationReason, string> = {
@@ -36,6 +47,20 @@ const LINE_REQUEST_TIMEOUT_MS = 10_000;
 
 function isCancellationReason(value: string): value is CancellationReason {
   return Object.prototype.hasOwnProperty.call(CANCELLATION_REASONS, value);
+}
+
+function sameStoredDateTime(current: string | null, expected: string | null) {
+  if (current === expected) return true;
+  if (!current || !expected) return false;
+
+  const currentTime = new Date(current).getTime();
+  const expectedTime = new Date(expected).getTime();
+
+  return (
+    Number.isFinite(currentTime) &&
+    Number.isFinite(expectedTime) &&
+    currentTime === expectedTime
+  );
 }
 
 function parseCancelReservationBody(
@@ -61,6 +86,36 @@ function parseCancelReservationBody(
     return { ok: false, error: "キャンセル内容が正しくありません。" };
   }
 
+  const expectedFieldKeys = [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ] as const;
+
+  if (expectedFieldKeys.some((key) => {
+    if (!Object.prototype.hasOwnProperty.call(body, key)) return true;
+    return body[key] !== null && typeof body[key] !== "string";
+  })) {
+    return {
+      ok: false,
+      error: "予約内容を読み直してからキャンセルしてください。",
+    };
+  }
+
+  const expectedFields = {
+    expectedCustomerId: body.expectedCustomerId as string | null,
+    expectedStaffId: body.expectedStaffId as string | null,
+    expectedMenu: body.expectedMenu as string | null,
+    expectedStartAt: body.expectedStartAt as string | null,
+    expectedEndAt: body.expectedEndAt as string | null,
+    expectedStatus: body.expectedStatus as string | null,
+    expectedMemo: body.expectedMemo as string | null,
+  };
+
   const reasonText = body.reasonText?.trim() ?? "";
 
   if (reasonText.length > 200) {
@@ -80,6 +135,7 @@ function parseCancelReservationBody(
       sendLine: body.sendLine ?? false,
       reason: body.reason,
       reasonText,
+      ...expectedFields,
     },
   };
 }
@@ -191,7 +247,18 @@ export async function POST(
 
   try {
     const { id: reservationId } = await context.params;
-    const { sendLine, reason, reasonText = "" } = parsedBody.body;
+    const {
+      sendLine,
+      reason,
+      reasonText = "",
+      expectedCustomerId,
+      expectedStaffId,
+      expectedMenu,
+      expectedStartAt,
+      expectedEndAt,
+      expectedStatus,
+      expectedMemo,
+    } = parsedBody.body;
 
     if (!reservationId) {
       return NextResponse.json(
@@ -203,7 +270,9 @@ export async function POST(
     const supabaseAdmin = getSupabaseAdmin();
     const { data: reservationData, error: reservationError } = await supabaseAdmin
       .from("reservations")
-      .select("id, salon_id, customer_id, start_at, status")
+      .select(
+        "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo"
+      )
       .eq("id", reservationId)
       .maybeSingle();
 
@@ -249,15 +318,46 @@ export async function POST(
       });
     }
 
+    if (
+      reservation.customer_id !== expectedCustomerId ||
+      reservation.staff_id !== expectedStaffId ||
+      reservation.menu !== expectedMenu ||
+      !sameStoredDateTime(reservation.start_at, expectedStartAt) ||
+      !sameStoredDateTime(reservation.end_at, expectedEndAt) ||
+      reservation.status !== expectedStatus ||
+      reservation.memo !== expectedMemo
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          cancelled: false,
+          status: "reservation_changed",
+          error:
+            "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 }
+      );
+    }
+
     let updateQuery = supabaseAdmin
       .from("reservations")
       .update({ status: "キャンセル" })
       .eq("id", reservation.id)
       .eq("salon_id", reservation.salon_id);
 
-    updateQuery = reservation.status
-      ? updateQuery.eq("status", reservation.status)
-      : updateQuery.is("status", null);
+    for (const [column, value] of [
+      ["customer_id", reservation.customer_id],
+      ["staff_id", reservation.staff_id],
+      ["menu", reservation.menu],
+      ["start_at", reservation.start_at],
+      ["end_at", reservation.end_at],
+      ["status", reservation.status],
+      ["memo", reservation.memo],
+    ] as const) {
+      updateQuery = value === null
+        ? updateQuery.is(column, null)
+        : updateQuery.eq(column, value);
+    }
 
     const { data: updatedReservation, error: updateError } = await updateQuery
       .select("id")

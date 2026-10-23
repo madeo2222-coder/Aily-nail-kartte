@@ -48,7 +48,22 @@ class MockResponse {
   }
 }
 
-function loadRoute(status) {
+function cancellationBody(expectedStatus = "予約", overrides = {}) {
+  return {
+    sendLine: true,
+    reason: "customer_request",
+    expectedCustomerId: "customer-1",
+    expectedStaffId: "staff-1",
+    expectedMenu: "ジェル",
+    expectedStartAt: "2099-10-02T01:30:00.000Z",
+    expectedEndAt: "2099-10-02T03:00:00.000Z",
+    expectedStatus,
+    expectedMemo: "",
+    ...overrides,
+  };
+}
+
+function loadRoute(status, reservationOverrides = {}) {
   const calls = [];
   let updateCalled = false;
   let fetchCalled = false;
@@ -68,8 +83,13 @@ function loadRoute(status) {
           id: "reservation-1",
           salon_id: "salon-1",
           customer_id: "customer-1",
+          staff_id: "staff-1",
+          menu: "ジェル",
           start_at: "2099-10-02T01:30:00.000Z",
+          end_at: "2099-10-02T03:00:00.000Z",
           status,
+          memo: "",
+          ...reservationOverrides,
         },
         error: null,
       };
@@ -144,11 +164,11 @@ function loadRoute(status) {
   });
 
   return {
-    async post() {
+    async post(body = cancellationBody(status)) {
       const response = await exports.POST(
         {
           async json() {
-            return { sendLine: true, reason: "customer_request" };
+            return body;
           },
         },
         { params: Promise.resolve({ id: "reservation-1" }) },
@@ -188,6 +208,50 @@ test("every supported cancelled status is idempotent and does not resend LINE", 
   }
 });
 
+test("a stale edit page cannot cancel a reservation changed by sync", async () => {
+  for (const [field, currentValue, expectedOverrides] of [
+    ["staff_id", "staff-synced", {}],
+    ["start_at", "2099-10-02T02:00:00.000Z", {}],
+    ["status", "confirmed", { expectedStatus: "予約" }],
+    ["memo", "同期で更新", {}],
+  ]) {
+    const runtime = loadRoute("予約", { [field]: currentValue });
+    const response = await runtime.post(
+      cancellationBody("予約", expectedOverrides),
+    );
+
+    assert.equal(response.status, 409, field);
+    assert.equal(response.body.ok, false, field);
+    assert.equal(response.body.cancelled, false, field);
+    assert.equal(response.body.status, "reservation_changed", field);
+    assert.match(response.body.error, /最新の内容を読み込み直して/, field);
+    assert.equal(runtime.updateCalled, false, field);
+    assert.equal(runtime.fetchCalled, false, field);
+  }
+});
+
+test("cancellation requires the edit page reservation snapshot", async () => {
+  for (const field of [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ]) {
+    const body = cancellationBody();
+    delete body[field];
+    const runtime = loadRoute("予約");
+    const response = await runtime.post(body);
+
+    assert.equal(response.status, 400, field);
+    assert.match(response.body.error, /読み直してからキャンセル/);
+    assert.equal(runtime.updateCalled, false, field);
+    assert.equal(runtime.fetchCalled, false, field);
+  }
+});
+
 function loadConcurrentCancellationRuntime({
   latestStatus = "来店",
   latestError = null,
@@ -214,8 +278,12 @@ function loadConcurrentCancellationRuntime({
       id: "reservation-1",
       salon_id: "salon-1",
       customer_id: "customer-1",
+      staff_id: "staff-1",
+      menu: "ジェル",
       start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
       status: "予約",
+      memo: "",
     },
     error: null,
   }));
@@ -308,7 +376,7 @@ function loadConcurrentCancellationRuntime({
       const response = await exports.POST(
         {
           async json() {
-            return { sendLine: true, reason: "customer_request" };
+            return cancellationBody();
           },
         },
         { params: Promise.resolve({ id: "reservation-1" }) },
@@ -398,8 +466,12 @@ function loadCancellationLineRuntime(fetchImplementation) {
       id: "reservation-1",
       salon_id: "salon-1",
       customer_id: "customer-1",
+      staff_id: "staff-1",
+      menu: "ジェル",
       start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
       status: "予約",
+      memo: "",
     },
     error: null,
   }));
@@ -501,7 +573,7 @@ function loadCancellationLineRuntime(fetchImplementation) {
     const response = await exports.POST(
       {
         async json() {
-          return { sendLine: true, reason: "customer_request" };
+          return cancellationBody();
         },
       },
       { params: Promise.resolve({ id: "reservation-1" }) },
@@ -553,4 +625,20 @@ test("staff UI separates cancellation success from LINE warnings", () => {
     editPageSource,
     /cancellationLineWarning \?[\s\S]{0,180}border-amber-200[\s\S]{0,180}\{cancellationLineWarning\}/,
   );
+
+  for (const field of [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ]) {
+    assert.match(
+      editPageSource,
+      new RegExp(`cancelReservation[\\s\\S]{0,2200}${field}`),
+      `${field} must be sent with cancellation`,
+    );
+  }
 });

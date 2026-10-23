@@ -803,6 +803,13 @@ export default function EditReservationPage() {
           sendLine: sendCancellationLine,
           reason: cancellationReason,
           reasonText: cancellationReasonText,
+          expectedCustomerId: initialCustomerId,
+          expectedStaffId: initialStaffId,
+          expectedMenu: initialMenu,
+          expectedStartAt: initialStartAt,
+          expectedEndAt: initialEndAt,
+          expectedStatus: initialStoredStatus,
+          expectedMemo: initialMemo,
         }),
       });
       const result = (await response.json().catch(() => null)) as
