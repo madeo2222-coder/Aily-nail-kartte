@@ -66,6 +66,7 @@ type NormalizedReservation = {
   customerName: string;
   staffId: string | null;
   staffName: string;
+  rawStatus: string | null;
   status: string;
   reservationDate: string | null;
   reservationTime: string | null;
@@ -598,6 +599,8 @@ export default function ReservationsPageClient() {
         customerName,
         staffId,
         staffName,
+        rawStatus:
+          typeof reservation.status === "string" ? reservation.status : null,
         status: normalizeStatus(reservation),
         reservationDate: buildReservationDate(reservation),
         reservationTime: buildReservationTime(reservation),
@@ -783,15 +786,24 @@ export default function ReservationsPageClient() {
     setUpdatingId(null);
   }
 
-  async function updateStatus(id: string, status: string) {
-    setUpdatingId(id);
+  async function updateStatus(
+    reservation: NormalizedReservation,
+    status: string
+  ) {
+    setUpdatingId(reservation.id);
 
     try {
-      const response = await fetch(`/api/reservations/${id}/status`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
+      const response = await fetch(
+        `/api/reservations/${reservation.id}/status`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status,
+            expectedStatus: reservation.rawStatus,
+          }),
+        }
+      );
       const result = (await response.json()) as {
         ok?: boolean;
         error?: string;
@@ -853,16 +865,16 @@ export default function ReservationsPageClient() {
     }
   }
 
-  async function handleMarkVisited(id: string) {
+  async function handleMarkVisited(reservation: NormalizedReservation) {
     const ok = window.confirm("この予約を『来店』に変更しますか？");
     if (!ok) return;
-    await updateStatus(id, "来店");
+    await updateStatus(reservation, "来店");
   }
 
-  async function handleMarkCompleted(id: string) {
+  async function handleMarkCompleted(reservation: NormalizedReservation) {
     const ok = window.confirm("この予約を『完了』に変更しますか？");
     if (!ok) return;
-    await updateStatus(id, "完了");
+    await updateStatus(reservation, "完了");
   }
 
   if (loading) {
@@ -1327,7 +1339,7 @@ export default function ReservationsPageClient() {
                       {canMarkVisited(item.status) ? (
                         <button
                           type="button"
-                          onClick={() => handleMarkVisited(item.id)}
+                          onClick={() => handleMarkVisited(item)}
                           disabled={isUpdating}
                           className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600 disabled:opacity-50"
                           suppressHydrationWarning
@@ -1339,7 +1351,7 @@ export default function ReservationsPageClient() {
                       {(item.status === "来店予定" || item.status === "来店") && (
                         <button
                           type="button"
-                          onClick={() => handleMarkCompleted(item.id)}
+                          onClick={() => handleMarkCompleted(item)}
                           disabled={isUpdating}
                           className="rounded-2xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-600 disabled:opacity-50"
                           suppressHydrationWarning

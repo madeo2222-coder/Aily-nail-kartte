@@ -43,14 +43,32 @@ export async function POST(
     body = null;
   }
 
-  const status =
+  const bodyRecord =
     body && typeof body === "object" && !Array.isArray(body)
-      ? (body as Record<string, unknown>).status
+      ? (body as Record<string, unknown>)
       : null;
+  const status = bodyRecord?.status;
+  const expectedStatus = bodyRecord?.expectedStatus;
+  const hasExpectedStatus = bodyRecord
+    ? Object.prototype.hasOwnProperty.call(bodyRecord, "expectedStatus")
+    : false;
 
-  if (typeof status !== "string" || !ALLOWED_STATUSES.has(status)) {
+  if (
+    typeof status !== "string" ||
+    !ALLOWED_STATUSES.has(status)
+  ) {
     return NextResponse.json(
       { ok: false, error: "予約ステータスが正しくありません。" },
+      { status: 400 },
+    );
+  }
+
+  if (
+    !hasExpectedStatus ||
+    (expectedStatus !== null && typeof expectedStatus !== "string")
+  ) {
+    return NextResponse.json(
+      { ok: false, error: "予約内容を読み直してから更新してください。" },
       { status: 400 },
     );
   }
@@ -58,6 +76,39 @@ export async function POST(
   try {
     const { id } = await context.params;
     const supabase = getSupabaseAdmin();
+    let reservationQuery = supabase
+      .from("reservations")
+      .select("id, status")
+      .eq("id", id);
+
+    if (authentication.principal.authenticationMode === "supabase") {
+      reservationQuery = reservationQuery.eq(
+        "salon_id",
+        authentication.principal.salonId,
+      );
+    }
+
+    const reservationResult = await reservationQuery.maybeSingle();
+
+    if (reservationResult.error) throw reservationResult.error;
+
+    if (!reservationResult.data) {
+      return NextResponse.json(
+        { ok: false, error: "予約が見つかりません。" },
+        { status: 404 },
+      );
+    }
+
+    if (reservationResult.data.status !== expectedStatus) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 },
+      );
+    }
+
     let updateQuery = supabase
       .from("reservations")
       .update({ status })
@@ -70,6 +121,11 @@ export async function POST(
       );
     }
 
+    updateQuery =
+      expectedStatus === null
+        ? updateQuery.is("status", null)
+        : updateQuery.eq("status", expectedStatus);
+
     const { data, error } = await updateQuery
       .select("id, status")
       .maybeSingle();
@@ -78,8 +134,11 @@ export async function POST(
 
     if (!data) {
       return NextResponse.json(
-        { ok: false, error: "予約が見つかりません。" },
-        { status: 404 },
+        {
+          ok: false,
+          error: "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 },
       );
     }
 

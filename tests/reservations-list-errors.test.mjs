@@ -254,7 +254,10 @@ test("reservation list updates visit status through the authenticated API", asyn
   );
   assert.ok(statusRequest);
   assert.equal(statusRequest.options.method, "POST");
-  assert.deepEqual(JSON.parse(statusRequest.options.body), { status: "来店" });
+  assert.deepEqual(JSON.parse(statusRequest.options.body), {
+    status: "来店",
+    expectedStatus: "confirmed",
+  });
 });
 
 test("reservation list preserves a successful empty result", async () => {
