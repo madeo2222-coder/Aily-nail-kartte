@@ -1044,6 +1044,23 @@ async function upsertReservation(
         alreadyCancelled: true,
       };
     }
+    // Another sync may have inserted this exact mail while this request was
+    // resolving the customer. Treat that winner as the completed write. A
+    // follow-up UPDATE would be unnecessary and could overwrite staff edits
+    // made immediately after the winning INSERT.
+    if (
+      hasSyncedMailBody({
+        memo: concurrentReservation.memo,
+        sourceLabel,
+        rawText,
+      })
+    ) {
+      return {
+        mode: "updated",
+        reservationId: concurrentReservation.id,
+        alreadySynced: true,
+      };
+    }
     if (
       concurrentReservation.customer_id &&
       customerMatch.customerId &&

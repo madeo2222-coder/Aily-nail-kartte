@@ -638,6 +638,30 @@ test("concurrent cancellation tombstone is not revived by a delayed booking inse
   assert.equal(runtime.writes[0].operation, "insert");
 });
 
+test("concurrent duplicate booking keeps staff edits made after the winning insert", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    insertError: { code: "23505", message: "duplicate key" },
+    concurrentReservation: {
+      salon_id: "salon-1",
+      customer_id: "mail-customer",
+      staff_id: "staff-corrected",
+      menu: "スタッフ修正メニュー",
+      memo: `HPB予約番号：A123456\nスタッフ追記\n\n【HPBメール本文】\n${mail}`,
+      status: "confirmed",
+      start_at: "2099-10-20T01:30:00.000Z",
+      end_at: "2099-10-20T03:00:00.000Z",
+    },
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.alreadySynced, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "insert");
+});
+
 test("concurrent progressed booking keeps its staff status after an insert race", async () => {
   const runtime = loadSync("mail-customer", {
     missingReservation: true,
