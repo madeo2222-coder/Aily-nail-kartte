@@ -136,9 +136,22 @@ function loadSync(manualCustomerId, options = {}) {
               writes.some((write) => write.table === "customers" && write.operation === "insert")
             ? options.concurrentExternalCustomer
             : options.existingExternalCustomer ?? null;
+          const existingReservationCustomer = options.existingReservationCustomer === null
+            ? null
+            : options.existingReservationCustomer ?? (manualCustomerId
+              ? {
+                  id: manualCustomerId,
+                  salon_id: "salon-1",
+                  name: manualCustomerId === "mail-customer"
+                    ? "テスト顧客"
+                    : "スタッフ修正顧客",
+                }
+              : null);
           const data = table === "salons" ? [{ id: "salon-1" }]
             : table === "customers" ? (deterministicId
-                ? externalCustomer
+                ? deterministicId === manualCustomerId && options.existing
+                  ? existingReservationCustomer
+                  : externalCustomer
                 : options.customerRows ?? [customer])
               : table === "reservations" ? (deterministicId && options.concurrentReservation &&
                     writes.some((write) => write.operation === "insert")
@@ -850,6 +863,11 @@ test("a changed booking reuses its auto-created customer without overwriting sta
       salon_id: "salon-1",
       name: "スタッフ修正名",
     },
+    existingReservationCustomer: {
+      id: autoCustomerId,
+      salon_id: "salon-1",
+      name: "スタッフ修正名",
+    },
   });
 
   const result = await runtime.sync(
@@ -857,7 +875,10 @@ test("a changed booking reuses its auto-created customer without overwriting sta
   );
 
   assert.equal(result.result.mode, "updated");
-  assert.equal(result.result.customerMatch.matchStatus, "matched_by_external_id");
+  assert.equal(
+    result.result.customerMatch.matchStatus,
+    "preserved_existing_reservation_customer"
+  );
   assert.equal(result.result.customerMatch.matchedName, "スタッフ修正名");
   assert.equal(runtime.writes.length, 1);
   assert.equal(runtime.writes[0].table, "reservations");
@@ -934,11 +955,53 @@ test("delayed mail refuses to reassign another customer's source-marked reservat
   assert.equal(runtime.writes.length, 0);
 });
 
-test("replayed external mail refuses to reassign a staff-corrected customer", async () => {
-  const runtime = loadSync("staff-corrected-customer", { existing: true });
+test("a changed external booking preserves the staff-corrected customer link", async () => {
+  const runtime = loadSync("staff-corrected-customer", {
+    existing: true,
+    existingExternalCustomer: {
+      id: autoCustomerId,
+      salon_id: "salon-1",
+      name: "旧自動作成顧客",
+    },
+  });
 
-  await assert.rejects(runtime.sync(mail), /顧客.*一致.*同期を停止/);
+  const result = await runtime.sync(
+    mail.replace("2099年10月20日 10:00", "2099年10月20日 11:00")
+  );
 
+  assert.equal(result.result.mode, "updated");
+  assert.equal(
+    result.result.customerMatch.matchStatus,
+    "preserved_existing_reservation_customer"
+  );
+  assert.equal(result.result.customerMatch.customerId, "staff-corrected-customer");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].table, "reservations");
+  assert.equal(runtime.writes[0].payload.customer_id, "staff-corrected-customer");
+  assert.equal(runtime.writes[0].payload.start_at, "2099-10-20T02:00:00.000Z");
+});
+
+test("a changed external booking stops when its linked customer is missing", async () => {
+  const runtime = loadSync("missing-customer", {
+    existing: true,
+    existingReservationCustomer: null,
+  });
+
+  await assert.rejects(runtime.sync(mail), /紐づく顧客を確認できません/);
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("a changed external booking stops when its linked customer belongs to another salon", async () => {
+  const runtime = loadSync("other-salon-customer", {
+    existing: true,
+    existingReservationCustomer: {
+      id: "other-salon-customer",
+      salon_id: "salon-2",
+      name: "別サロン顧客",
+    },
+  });
+
+  await assert.rejects(runtime.sync(mail), /顧客が別サロン.*同期を停止/);
   assert.equal(runtime.writes.length, 0);
 });
 

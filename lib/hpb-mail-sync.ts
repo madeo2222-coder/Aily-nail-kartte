@@ -571,6 +571,38 @@ async function findExistingExternalCustomer(
   return data as { id: string; salon_id: string; name: string | null };
 }
 
+async function preserveExistingReservationCustomer(
+  existing: ExistingReservation,
+  context: SyncContext
+): Promise<CustomerMatchResult | null> {
+  if (!existing.customer_id) return null;
+
+  const { data, error } = await context.supabase
+    .from("customers")
+    .select("id, salon_id, name")
+    .eq("id", existing.customer_id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data?.id) {
+    throw new Error(
+      "既存予約に紐づく顧客を確認できません。顧客一覧を確認してから再試行してください。"
+    );
+  }
+  if (data.id !== existing.customer_id || data.salon_id !== context.salonId) {
+    throw new Error(
+      "既存予約の顧客が別サロンにあります。誤更新を避けるため同期を停止しました。"
+    );
+  }
+
+  return {
+    customerId: data.id,
+    matchStatus: "preserved_existing_reservation_customer",
+    matchedCount: 1,
+    matchedName: data.name || null,
+  };
+}
+
 async function findOrCreateCustomer(
   parsed: ParsedHpbMail,
   context: SyncContext
@@ -786,7 +818,11 @@ async function upsertReservation(
   const sourceMarkedManualEntry = existing
     ? null
     : await findDelayedManualEntry(parsed, context);
-  const customerMatch = await findOrCreateCustomer(parsed, context);
+  const preservedExistingCustomer = existing
+    ? await preserveExistingReservationCustomer(existing, context)
+    : null;
+  const customerMatch =
+    preservedExistingCustomer || (await findOrCreateCustomer(parsed, context));
   if (
     existing?.customer_id &&
     customerMatch.customerId &&
