@@ -539,6 +539,52 @@ test("Gmail sync reports a retryable failure when an external body cannot be fet
   assert.deepEqual(runtime.syncedTexts, []);
 });
 
+test("Gmail sync preserves a full-response thread ID when external body retrieval fails", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "failed-external-body" },
+          { id: "same-thread-older", threadId: "failed-thread" },
+          { id: "independent", threadId: "independent-thread" },
+        ],
+      },
+    ],
+    messageResponseThreadIds: {
+      "failed-external-body": "failed-thread",
+    },
+    messagePayloads: {
+      "failed-external-body": {
+        mimeType: "text/plain",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { attachmentId: "failed-thread-body" },
+      },
+    },
+    attachmentGetFailures: ["failed-thread-body"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 207);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, true);
+  assert.equal(body.syncedCount, 1);
+  assert.equal(body.failedCount, 2);
+  const deferred = body.results.find(
+    (result) => result.messageId === "same-thread-older"
+  );
+  const independent = body.results.find(
+    (result) => result.messageId === "independent"
+  );
+  assert.match(
+    deferred.error,
+    /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
+  );
+  assert.equal(independent.ok, true);
+  assert.deepEqual(runtime.syncedTexts, ["independent"]);
+});
+
 test("Gmail sync fails closed when a message timestamp is unavailable", async () => {
   const runtime = loadRoute({
     listPages: [{ messages: [{ id: "missing-timestamp" }] }],

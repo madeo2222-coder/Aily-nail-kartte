@@ -265,6 +265,7 @@ async function fetchReservationMessages(
       batch.map(async (message): Promise<FetchedGmailMessage> => {
         const messageId = message.id;
         const listedThreadId = message.threadId || null;
+        let resolvedThreadId = listedThreadId;
         if (!messageId) {
           return {
             ok: false,
@@ -290,7 +291,7 @@ async function fetchReservationMessages(
           ) {
             throw new Error("Gmail受信日時を取得できませんでした");
           }
-          const threadId =
+          resolvedThreadId =
             messageResponse.data.threadId || listedThreadId;
           const subject =
             messageResponse.data.payload?.headers?.find(
@@ -318,7 +319,7 @@ async function fetchReservationMessages(
           return {
             ok: true,
             messageId,
-            threadId,
+            threadId: resolvedThreadId,
             internalDate,
             subject,
             bodyText,
@@ -327,7 +328,11 @@ async function fetchReservationMessages(
           return {
             ok: false,
             messageId,
-            threadId: listedThreadId,
+            // Gmail's list response can omit threadId even though the full
+            // message response includes it. Preserve the resolved value when
+            // body/attachment decoding fails so only the affected thread is
+            // deferred instead of stopping every reservation thread.
+            threadId: resolvedThreadId,
             error:
               error instanceof Error
                 ? `Gmail本文の取得に失敗しました: ${error.message}`
