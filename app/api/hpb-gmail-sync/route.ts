@@ -371,6 +371,9 @@ async function runHpbGmailSync() {
       !message.ok && message.threadId ? [message.threadId] : []
     )
   );
+  const hasUnscopedFetchFailure = fetchedMessages.some(
+    (message) => !message.ok && !message.threadId
+  );
 
   for (const message of fetchedMessages) {
     if (!message.ok) {
@@ -409,6 +412,22 @@ async function runHpbGmailSync() {
         subject,
         skipped: true,
         reason: "HPB/ミニモ予約メールではありません",
+      });
+      continue;
+    }
+
+    // Without a Gmail thread ID, an unreadable message cannot be proven to be
+    // unrelated to this reservation. Continuing could apply an older booking
+    // while a newer change/cancellation remains unreadable, so defer every
+    // target reservation mail until the unknown event can be fetched.
+    if (hasUnscopedFetchFailure) {
+      results.push({
+        messageId,
+        subject,
+        skipped: false,
+        ok: false,
+        error:
+          "スレッドIDを取得できないGmailメールの本文取得に失敗したため、予約メール全体の同期を保留しました。再試行してください。",
       });
       continue;
     }

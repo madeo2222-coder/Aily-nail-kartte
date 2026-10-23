@@ -544,6 +544,36 @@ test("Gmail sync keeps successful reservations when one message body cannot be f
   assert.deepEqual(runtime.syncedTexts, ["older-succeeded"]);
 });
 
+test("Gmail sync defers every target message when an unreadable message has no thread ID", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "newer-fetch-failed" },
+          { id: "older-succeeded", threadId: "known-reservation-thread" },
+        ],
+      },
+    ],
+    messageGetFailures: ["newer-fetch-failed"],
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, false);
+  assert.equal(body.processedCount, 2);
+  assert.equal(body.syncedCount, 0);
+  assert.equal(body.failedCount, 2);
+  assert.match(
+    body.results[0].error,
+    /スレッドIDを取得できないGmailメールの本文取得に失敗したため、予約メール全体の同期を保留しました/
+  );
+  assert.equal(body.results[1].messageId, "newer-fetch-failed");
+  assert.deepEqual(runtime.syncedTexts, []);
+});
+
 test("Gmail sync defers a successful message when another message in the same thread cannot be fetched", async () => {
   const runtime = loadRoute({
     listPages: [
