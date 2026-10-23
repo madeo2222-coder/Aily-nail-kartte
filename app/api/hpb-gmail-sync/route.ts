@@ -206,6 +206,7 @@ async function fetchReservationMessages(
   }) => Promise<{
     data: {
       internalDate?: string | null;
+      threadId?: string | null;
       payload?: (GmailMessagePart & {
         headers?: Array<{
           name?: string | null;
@@ -238,12 +239,12 @@ async function fetchReservationMessages(
     const batchResults = await Promise.all(
       batch.map(async (message): Promise<FetchedGmailMessage> => {
         const messageId = message.id;
-        const threadId = message.threadId || null;
+        const listedThreadId = message.threadId || null;
         if (!messageId) {
           return {
             ok: false,
             messageId: "unknown",
-            threadId,
+            threadId: listedThreadId,
             error: "GmailメッセージIDを取得できませんでした",
           };
         }
@@ -264,6 +265,8 @@ async function fetchReservationMessages(
           ) {
             throw new Error("Gmail受信日時を取得できませんでした");
           }
+          const threadId =
+            messageResponse.data.threadId || listedThreadId;
           const subject =
             messageResponse.data.payload?.headers?.find(
               (header) => header.name?.toLowerCase() === "subject"
@@ -299,7 +302,7 @@ async function fetchReservationMessages(
           return {
             ok: false,
             messageId,
-            threadId,
+            threadId: listedThreadId,
             error:
               error instanceof Error
                 ? `Gmail本文の取得に失敗しました: ${error.message}`

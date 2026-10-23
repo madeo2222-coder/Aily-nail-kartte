@@ -38,6 +38,7 @@ function loadRoute({
   attachmentGetFailures = [],
   attachmentPayloads = {},
   messageInternalDates = {},
+  messageResponseThreadIds = {},
   messagePayloads = {},
   messageGetDelayMs = 0,
 } = {}) {
@@ -117,6 +118,9 @@ function loadRoute({
                         }
                         return {
                           data: {
+                            threadId: Object.hasOwn(messageResponseThreadIds, id)
+                              ? messageResponseThreadIds[id]
+                              : undefined,
                             internalDate: Object.hasOwn(messageInternalDates, id)
                               ? messageInternalDates[id]
                               : "0",
@@ -601,6 +605,37 @@ test("Gmail sync defers a successful message when another message in the same th
     /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
   );
   assert.equal(body.results[1].messageId, "newer-fetch-failed");
+  assert.deepEqual(runtime.syncedTexts, []);
+});
+
+test("Gmail sync recovers a successful message thread ID from the full response before deferring it", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "newer-fetch-failed", threadId: "reservation-thread" },
+          { id: "older-succeeded" },
+        ],
+      },
+    ],
+    messageGetFailures: ["newer-fetch-failed"],
+    messageResponseThreadIds: {
+      "older-succeeded": "reservation-thread",
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, false);
+  assert.equal(body.syncedCount, 0);
+  assert.equal(body.failedCount, 2);
+  assert.match(
+    body.results[0].error,
+    /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
+  );
   assert.deepEqual(runtime.syncedTexts, []);
 });
 
