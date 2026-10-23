@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -6,6 +7,19 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+
+function buildExternalCustomerId(source, reservationNumber) {
+  const bytes = createHash("sha256")
+    .update(`aily:external-customer:${source}:${reservationNumber.trim()}`)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+const autoCustomerId = buildExternalCustomerId("hpb", "A123456");
 
 function loadSync(manualCustomerId, options = {}) {
   const writes = [];
@@ -101,19 +115,31 @@ function loadSync(manualCustomerId, options = {}) {
               manual.menu = options.latestMenuOnUpdate;
             }
             const writeTargetId = filters.find(([key]) => key === "id")?.[1];
-            const data = Array.isArray(options.updateDataSequence)
-              ? options.updateDataSequence[updateWriteCount - 1]
-              : Object.hasOwn(options, "updateData")
-                ? options.updateData
-                : { id: payload?.id ?? writeTargetId ?? manual.id };
-            const error = operation === "insert" && Object.hasOwn(options, "insertError")
-              ? options.insertError
-              : options.updateError ?? null;
+            const data = table === "customers" && operation === "insert"
+              ? Object.hasOwn(options, "customerInsertData")
+                ? options.customerInsertData
+                : { id: payload.id, name: payload.name, salon_id: payload.salon_id }
+              : Array.isArray(options.updateDataSequence)
+                ? options.updateDataSequence[updateWriteCount - 1]
+                : Object.hasOwn(options, "updateData")
+                  ? options.updateData
+                  : { id: payload?.id ?? writeTargetId ?? manual.id };
+            const error = table === "customers" && operation === "insert" && Object.hasOwn(options, "customerInsertError")
+              ? options.customerInsertError
+              : operation === "insert" && Object.hasOwn(options, "insertError")
+                ? options.insertError
+                : options.updateError ?? null;
             return Promise.resolve({ data, error }).then(resolve, reject);
           }
           const deterministicId = filters.find(([key]) => key === "id")?.[1];
+          const externalCustomer = options.concurrentExternalCustomer &&
+              writes.some((write) => write.table === "customers" && write.operation === "insert")
+            ? options.concurrentExternalCustomer
+            : options.existingExternalCustomer ?? null;
           const data = table === "salons" ? [{ id: "salon-1" }]
-            : table === "customers" ? [customer]
+            : table === "customers" ? (deterministicId
+                ? externalCustomer
+                : options.customerRows ?? [customer])
               : table === "reservations" ? (deterministicId && options.concurrentReservation &&
                     writes.some((write) => write.operation === "insert")
                   ? { ...manual, ...options.concurrentReservation, id: deterministicId }
@@ -813,6 +839,84 @@ test("a changed Gmail booking still follows normal reconciliation", async () => 
   assert.equal(replay.writes.length, 1);
   assert.equal(replay.writes[0].operation, "update");
   assert.equal(replay.writes[0].payload.start_at, "2099-10-20T02:00:00.000Z");
+});
+
+test("a changed booking reuses its auto-created customer without overwriting staff corrections", async () => {
+  const runtime = loadSync(autoCustomerId, {
+    existing: true,
+    customerRows: [],
+    existingExternalCustomer: {
+      id: autoCustomerId,
+      salon_id: "salon-1",
+      name: "スタッフ修正名",
+    },
+  });
+
+  const result = await runtime.sync(
+    mail.replace("2099年10月20日 10:00", "2099年10月20日 11:00")
+  );
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.customerMatch.matchStatus, "matched_by_external_id");
+  assert.equal(result.result.customerMatch.matchedName, "スタッフ修正名");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].table, "reservations");
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
+test("a new external booking inserts a deterministic customer instead of upserting", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "inserted");
+  assert.equal(runtime.writes.length, 2);
+  assert.equal(runtime.writes[0].table, "customers");
+  assert.equal(runtime.writes[0].operation, "insert");
+  assert.equal(runtime.writes[0].payload.id, autoCustomerId);
+  assert.equal(runtime.writes[1].table, "reservations");
+  assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
+});
+
+test("concurrent deterministic customer creation converges without overwriting the winner", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [],
+    customerInsertError: { code: "23505", message: "duplicate key" },
+    concurrentExternalCustomer: {
+      id: autoCustomerId,
+      salon_id: "salon-1",
+      name: "同時作成済み顧客",
+    },
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "inserted");
+  assert.equal(result.result.customerMatch.matchStatus, "matched_by_external_id");
+  assert.equal(runtime.writes.length, 2);
+  assert.equal(runtime.writes[0].table, "customers");
+  assert.equal(runtime.writes[0].operation, "insert");
+  assert.equal(runtime.writes[1].table, "reservations");
+  assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
+});
+
+test("a deterministic external customer in another salon stops before any write", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [],
+    existingExternalCustomer: {
+      id: autoCustomerId,
+      salon_id: "salon-2",
+      name: "別サロン顧客",
+    },
+  });
+
+  await assert.rejects(runtime.sync(mail), /顧客が別サロン.*同期を停止/);
+  assert.equal(runtime.writes.length, 0);
 });
 
 test("a manual-memo marker inside the mail body is not treated as saved staff notes", async () => {

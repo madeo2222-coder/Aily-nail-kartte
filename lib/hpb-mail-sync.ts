@@ -502,11 +502,35 @@ async function createCustomerFromReservation(
 
   const { data, error } = await context.supabase
     .from("customers")
-    .upsert(payload, { onConflict: "id" })
-    .select("id, name")
+    .insert(payload)
+    .select("id, name, salon_id")
     .single();
 
+  if (error?.code === "23505") {
+    const concurrentCustomer = await findExistingExternalCustomer(
+      parsed,
+      context
+    );
+    if (!concurrentCustomer) {
+      throw new Error(
+        "同時作成された顧客を確認できません。顧客一覧を確認してから再試行してください。"
+      );
+    }
+
+    return {
+      customerId: concurrentCustomer.id,
+      matchStatus: "matched_by_external_id",
+      matchedCount: 1,
+      matchedName: concurrentCustomer.name || null,
+    };
+  }
+
   if (error) throw new Error(error.message);
+  if (data?.id !== payload.id || data.salon_id !== context.salonId) {
+    throw new Error(
+      "顧客の保存結果を確認できません。顧客一覧を確認してから再試行してください。"
+    );
+  }
 
   return {
     customerId: data.id,
@@ -517,10 +541,53 @@ async function createCustomerFromReservation(
   };
 }
 
+async function findExistingExternalCustomer(
+  parsed: ParsedHpbMail,
+  context: SyncContext
+) {
+  const customerId = buildExternalCustomerId(
+    parsed.source,
+    parsed.reservationNumber
+  );
+  const { data, error } = await context.supabase
+    .from("customers")
+    .select("id, salon_id, name")
+    .eq("id", customerId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data?.id) return null;
+  if (data.id !== customerId) {
+    throw new Error(
+      "外部予約顧客の確認結果が一致しません。誤更新を避けるため同期を停止しました。"
+    );
+  }
+  if (data.salon_id !== context.salonId) {
+    throw new Error(
+      "同じ外部予約番号の顧客が別サロンにあります。誤更新を避けるため同期を停止しました。"
+    );
+  }
+
+  return data as { id: string; salon_id: string; name: string | null };
+}
+
 async function findOrCreateCustomer(
   parsed: ParsedHpbMail,
   context: SyncContext
 ) {
+  const existingExternalCustomer = await findExistingExternalCustomer(
+    parsed,
+    context
+  );
+  if (existingExternalCustomer) {
+    return {
+      customerId: existingExternalCustomer.id,
+      matchStatus: "matched_by_external_id",
+      matchedCount: 1,
+      matchedName: existingExternalCustomer.name || null,
+    };
+  }
+
   const { data, error } = await context.supabase
     .from("customers")
     .select("id, name, phone")
