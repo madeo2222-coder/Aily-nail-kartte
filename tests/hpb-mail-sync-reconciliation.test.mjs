@@ -90,6 +90,28 @@ test("mail sync uses the bounded lookup window instead of exact timestamp equali
   assert.doesNotMatch(source, /\.eq\("start_at", parsed\.startAt\)/);
 });
 
+test("an exact previously synced mail body is recognized across line endings", () => {
+  assert.equal(
+    reconciliation.hasSyncedMailBody({
+      memo: "HPB予約番号：A123456\r\n【HPBメール本文】\r\n予約番号：A123456\r\n氏名：テスト顧客",
+      sourceLabel: "HPB",
+      rawText: "予約番号：A123456\n氏名：テスト顧客",
+    }),
+    true
+  );
+});
+
+test("a changed provider mail is not mistaken for an already synced replay", () => {
+  assert.equal(
+    reconciliation.hasSyncedMailBody({
+      memo: "ミニモ予約ID：M123\n【ミニモメール本文】\n来店日時：2099年10月20日 10:00",
+      sourceLabel: "ミニモ",
+      rawText: "来店日時：2099年10月20日 11:00",
+    }),
+    false
+  );
+});
+
 test("external reservation lookup requires an exact memo line", () => {
   const result = reconciliation.findExternalReservationCandidate({
     source: "hpb",

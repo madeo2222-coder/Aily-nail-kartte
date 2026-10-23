@@ -122,6 +122,23 @@ export function readSyncedManualMemo(memo: string | null | undefined, sourceLabe
   return start < 0 ? "" : header.slice(start + marker.length).trim();
 }
 
+export function hasSyncedMailBody({
+  memo,
+  sourceLabel,
+  rawText,
+}: {
+  memo: string | null | undefined;
+  sourceLabel: string;
+  rawText: string;
+}) {
+  const text = String(memo || "").replace(/\r\n?/g, "\n");
+  const normalizedRawText = rawText.replace(/\r\n?/g, "\n");
+  const marker = `\n【${sourceLabel}メール本文】\n`;
+  const start = text.indexOf(marker);
+
+  return start >= 0 && text.slice(start + marker.length) === normalizedRawText;
+}
+
 export function buildExternalCustomerId(
   source: MailSyncSource,
   reservationNumber: string

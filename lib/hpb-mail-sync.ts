@@ -7,6 +7,7 @@ import {
   buildExternalReservationId,
   findExternalReservationCandidate,
   findManualReservationCandidate,
+  hasSyncedMailBody,
   isCancelledReservationStatus,
   readSyncedManualMemo,
   type MailSyncSource,
@@ -695,6 +696,24 @@ async function upsertReservation(
       mode: "cancelled",
       reservationId: existing.id,
       alreadyCancelled: true,
+    };
+  }
+  // Gmail searches the last 30 days on every run. Replaying the exact mail
+  // must not rewrite staff corrections made after its first successful sync.
+  // A changed booking mail has a different body and continues through the
+  // normal reconciliation path; cancellation mail uses the separate path.
+  if (
+    existing &&
+    hasSyncedMailBody({
+      memo: existing.memo,
+      sourceLabel,
+      rawText,
+    })
+  ) {
+    return {
+      mode: "updated",
+      reservationId: existing.id,
+      alreadySynced: true,
     };
   }
   const sourceMarkedManualEntry = existing

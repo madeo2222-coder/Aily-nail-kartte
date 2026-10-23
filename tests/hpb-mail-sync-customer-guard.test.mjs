@@ -12,7 +12,8 @@ function loadSync(manualCustomerId, options = {}) {
   const customer = { id: "mail-customer", name: "テスト顧客", phone: "09000000000" };
   const manual = {
     id: "manual-reservation", customer_id: manualCustomerId,
-    staff_id: null, salon_id: "salon-1", menu: "HPB予約",
+    staff_id: options.staffId ?? null, salon_id: "salon-1",
+    menu: options.menu ?? "HPB予約",
     memo: options.memo ?? (options.existing ? "HPB予約番号：A123456" : "電話で先に登録"), status: options.status ?? "confirmed",
     start_at: options.startAt ?? "2099-10-20T01:00:00.000Z",
     end_at: options.endAt ?? "2099-10-20T02:30:00.000Z",
@@ -768,11 +769,50 @@ test("replaying a reconciled mail retains the original manual memo without nesti
     const retry = loadSync("mail-customer", { existing: true, memo });
     const result = await retry.sync(mail);
     assert.equal(result.result.reservationId, "manual-reservation");
-    assert.equal(retry.writes.length, 1);
-    assert.equal(retry.writes[0].operation, "update");
-    memo = retry.writes[0].payload.memo;
+    assert.equal(result.result.alreadySynced, true);
+    assert.equal(retry.writes.length, 0);
     assert.equal(memo, firstMemo);
   }
+});
+
+test("replaying the same Gmail booking preserves staff corrections without a write", async () => {
+  const initial = loadSync("mail-customer");
+  await initial.sync(mail);
+  const syncedMemo = initial.writes[0].payload.memo;
+  const replay = loadSync("staff-corrected-customer", {
+    existing: true,
+    memo: syncedMemo,
+    staffId: "staff-corrected",
+    menu: "スタッフ修正メニュー",
+    startAt: "2099-10-20T03:00:00.000Z",
+    endAt: "2099-10-20T04:30:00.000Z",
+  });
+
+  const result = await replay.sync(mail);
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.alreadySynced, true);
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(replay.writes.length, 0);
+});
+
+test("a changed Gmail booking still follows normal reconciliation", async () => {
+  const initial = loadSync("mail-customer");
+  await initial.sync(mail);
+  const replay = loadSync("mail-customer", {
+    existing: true,
+    memo: initial.writes[0].payload.memo,
+  });
+
+  const result = await replay.sync(
+    mail.replace("2099年10月20日 10:00", "2099年10月20日 11:00")
+  );
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.alreadySynced, undefined);
+  assert.equal(replay.writes.length, 1);
+  assert.equal(replay.writes[0].operation, "update");
+  assert.equal(replay.writes[0].payload.start_at, "2099-10-20T02:00:00.000Z");
 });
 
 test("a manual-memo marker inside the mail body is not treated as saved staff notes", async () => {
