@@ -452,7 +452,7 @@ test("migration and staff screens preserve idempotent retry controls", () => {
   assert.match(editPage, /確定LINEを再試行/);
   assert.match(
     listPage,
-    /if \(result\.confirmed \|\| result\.alreadyConfirmed\) \{[\s\S]{0,120}await sendReservationConfirmedLine\(id\)/
+    /if \(result\.confirmed \|\| result\.alreadyConfirmed\) \{[\s\S]{0,160}await sendReservationConfirmedLine\(reservation\.id\)/
   );
   assert.match(
     editPage,

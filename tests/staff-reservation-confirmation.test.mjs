@@ -61,6 +61,19 @@ function editedConfirmationBody(overrides = {}) {
   };
 }
 
+function confirmationSnapshotBody(overrides = {}) {
+  return {
+    expectedCustomerId: defaultReservation.customer_id,
+    expectedStaffId: defaultReservation.staff_id,
+    expectedMenu: defaultReservation.menu,
+    expectedStartAt: defaultReservation.start_at,
+    expectedEndAt: defaultReservation.end_at,
+    expectedStatus: defaultReservation.status,
+    expectedMemo: defaultReservation.memo,
+    ...overrides,
+  };
+}
+
 function createReadQuery(row, calls, error = null) {
   return {
     select(columns) {
@@ -272,6 +285,48 @@ test("edited confirmation requires the original reservation snapshot", async () 
   }
 });
 
+test("list confirmation requires a complete snapshot when one is supplied", async () => {
+  for (const field of [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ]) {
+    const body = confirmationSnapshotBody();
+    delete body[field];
+    const runtime = loadRoute({ body });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 400, `${field} is required`);
+    assert.equal(runtime.rpcCalls.length, 0);
+  }
+});
+
+for (const [field, value] of [
+  ["customer_id", "customer-synced"],
+  ["staff_id", "staff-synced"],
+  ["menu", "同期後メニュー"],
+  ["start_at", "2099-10-02T02:00:00.000Z"],
+  ["end_at", "2099-10-02T03:30:00.000Z"],
+  ["status", "confirmed"],
+  ["memo", "同期または別端末で更新"],
+]) {
+  test(`list confirmation rejects a stale ${field} snapshot`, async () => {
+    const runtime = loadRoute({
+      body: confirmationSnapshotBody(),
+      reservation: { ...defaultReservation, [field]: value },
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 409);
+    assert.match(response.body.error, /最新の内容を読み込み直して/);
+    assert.equal(runtime.rpcCalls.length, 0);
+  });
+}
+
 for (const [field, value] of [
   ["customer_id", "customer-synced"],
   ["staff_id", "staff-synced"],
@@ -351,7 +406,10 @@ test("staff screens confirm through the guarded API instead of direct Supabase w
     "utf8"
   );
 
-  assert.match(listSource, /\/api\/reservations\/\$\{id\}\/confirm/);
+  assert.match(
+    listSource,
+    /\/api\/reservations\/\$\{reservation\.id\}\/confirm/
+  );
   assert.match(
     editSource,
     /\/api\/reservations\/\$\{reservationId\}\/confirm/
@@ -366,6 +424,7 @@ test("staff screens confirm through the guarded API instead of direct Supabase w
     "expectedMemo",
   ]) {
     assert.match(editSource, new RegExp(field));
+    assert.match(listSource, new RegExp(field));
   }
   assert.doesNotMatch(
     editSource,

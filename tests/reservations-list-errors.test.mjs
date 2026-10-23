@@ -67,7 +67,11 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failureMode = "", empty = false } = {}) {
+async function mount({
+  failureMode = "",
+  empty = false,
+  reservationStatus = "confirmed",
+} = {}) {
   const states = [];
   const effects = [];
   const requests = [];
@@ -108,9 +112,11 @@ async function mount({ failureMode = "", empty = false } = {}) {
           customer_id: "customer-1",
           staff_id: "staff-1",
           menu: "ワンカラー",
+          start_at: "2026-09-29T01:00:00.000Z",
+          end_at: "2026-09-29T02:30:00.000Z",
           reservation_date: "2026-09-29",
           reservation_time: "10:00",
-          status: "confirmed",
+          status: reservationStatus,
           memo: null,
       }],
       customers: [{ id: "customer-1", name: "顧客A" }],
@@ -155,6 +161,15 @@ async function mount({ failureMode = "", empty = false } = {}) {
           ok: true,
           async json() {
             return { ok: true, reservation: { id: "reservation-1", status: "来店" } };
+          },
+        };
+      }
+
+      if (url === "/api/reservations/reservation-1/confirm") {
+        return {
+          ok: false,
+          async json() {
+            return { ok: false, error: "予約内容が更新されています。" };
           },
         };
       }
@@ -221,6 +236,17 @@ async function mount({ failureMode = "", empty = false } = {}) {
       await button.props.onClick();
       await setImmediate();
     },
+    async confirmReservation() {
+      const button = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          node.props.children === "予約確定・LINE送信"
+      );
+      assert.ok(button, "confirm reservation button exists");
+      await button.props.onClick();
+      await setImmediate();
+    },
   };
 }
 
@@ -257,6 +283,26 @@ test("reservation list updates visit status through the authenticated API", asyn
   assert.deepEqual(JSON.parse(statusRequest.options.body), {
     status: "来店",
     expectedStatus: "confirmed",
+  });
+});
+
+test("reservation list confirms against the displayed reservation snapshot", async () => {
+  const page = await mount({ reservationStatus: "requested" });
+  await page.confirmReservation();
+
+  const confirmRequest = page.requests.find(
+    request => request.url === "/api/reservations/reservation-1/confirm"
+  );
+  assert.ok(confirmRequest);
+  assert.equal(confirmRequest.options.method, "POST");
+  assert.deepEqual(JSON.parse(confirmRequest.options.body), {
+    expectedCustomerId: "customer-1",
+    expectedStaffId: "staff-1",
+    expectedMenu: "ワンカラー",
+    expectedStartAt: "2026-09-29T01:00:00.000Z",
+    expectedEndAt: "2026-09-29T02:30:00.000Z",
+    expectedStatus: "requested",
+    expectedMemo: null,
   });
 });
 

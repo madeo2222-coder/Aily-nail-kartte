@@ -67,6 +67,10 @@ type NormalizedReservation = {
   staffId: string | null;
   staffName: string;
   rawStatus: string | null;
+  rawMenu: string | null;
+  rawStartAt: string | null;
+  rawEndAt: string | null;
+  rawMemo: string | null;
   status: string;
   reservationDate: string | null;
   reservationTime: string | null;
@@ -601,6 +605,16 @@ export default function ReservationsPageClient() {
         staffName,
         rawStatus:
           typeof reservation.status === "string" ? reservation.status : null,
+        rawMenu:
+          typeof reservation.menu === "string" ? reservation.menu : null,
+        rawStartAt:
+          typeof reservation.start_at === "string"
+            ? reservation.start_at
+            : null,
+        rawEndAt:
+          typeof reservation.end_at === "string" ? reservation.end_at : null,
+        rawMemo:
+          typeof reservation.memo === "string" ? reservation.memo : null,
         status: normalizeStatus(reservation),
         reservationDate: buildReservationDate(reservation),
         reservationTime: buildReservationTime(reservation),
@@ -823,20 +837,33 @@ export default function ReservationsPageClient() {
     }
   }
 
-  async function handleConfirmReservation(id: string) {
+  async function handleConfirmReservation(
+    reservation: NormalizedReservation,
+  ) {
     const ok = window.confirm(
       "この予約を『予約確定』に変更し、LINE通知を送信しますか？"
     );
     if (!ok) return;
 
-    setUpdatingId(id);
+    setUpdatingId(reservation.id);
 
     try {
-      const response = await fetch(`/api/reservations/${id}/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
+      const response = await fetch(
+        `/api/reservations/${reservation.id}/confirm`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            expectedCustomerId: reservation.customerId,
+            expectedStaffId: reservation.staffId,
+            expectedMenu: reservation.rawMenu,
+            expectedStartAt: reservation.rawStartAt,
+            expectedEndAt: reservation.rawEndAt,
+            expectedStatus: reservation.rawStatus,
+            expectedMemo: reservation.rawMemo,
+          }),
+        },
+      );
       const result = (await response.json()) as {
         ok?: boolean;
         confirmed?: boolean;
@@ -851,7 +878,7 @@ export default function ReservationsPageClient() {
       }
 
       if (result.confirmed || result.alreadyConfirmed) {
-        await sendReservationConfirmedLine(id);
+        await sendReservationConfirmedLine(reservation.id);
       } else {
         alert(result.message || "予約確定の結果を確認できませんでした。");
       }
@@ -1301,7 +1328,7 @@ export default function ReservationsPageClient() {
                       {canConfirmReservation(item.status) ? (
                         <button
                           type="button"
-                          onClick={() => handleConfirmReservation(item.id)}
+                          onClick={() => handleConfirmReservation(item)}
                           disabled={isUpdating}
                           className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                           suppressHydrationWarning

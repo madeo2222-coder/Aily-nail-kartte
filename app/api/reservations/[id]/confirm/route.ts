@@ -185,9 +185,18 @@ export async function POST(
     status: parseSnapshotString(body, "expectedStatus"),
     memo: parseSnapshotString(body, "expectedMemo"),
   };
+  const hasExpectedSnapshot = [
+    "expectedCustomerId",
+    "expectedStaffId",
+    "expectedMenu",
+    "expectedStartAt",
+    "expectedEndAt",
+    "expectedStatus",
+    "expectedMemo",
+  ].some((field) => field in body);
 
   if (
-    hasEditedValues &&
+    (hasEditedValues || hasExpectedSnapshot) &&
     Object.values(expectedFields).some(
       (field) => field === null || !field.provided
     )
@@ -229,7 +238,7 @@ export async function POST(
 
     const reservation = reservationData as ReservationRow;
     if (
-      hasEditedValues &&
+      hasExpectedSnapshot &&
       (reservation.customer_id !== expectedFields.customerId!.value ||
         reservation.staff_id !== expectedFields.staffId!.value ||
         reservation.menu !== expectedFields.menu!.value ||
