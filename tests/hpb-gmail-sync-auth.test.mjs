@@ -740,6 +740,47 @@ test("Gmail sync retrieves a text body stored behind a Gmail attachment ID", asy
   ]);
 });
 
+test("Gmail sync ignores a text attachment without a filename", async () => {
+  const plain = `予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00`;
+  const attachment = "別紙の案内文";
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "mixed-text-attachment" }] }],
+    messagePayloads: {
+      "mixed-text-attachment": {
+        mimeType: "multipart/mixed",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: Buffer.from(plain).toString("base64url") },
+          },
+          {
+            mimeType: "text/plain",
+            filename: "",
+            headers: [
+              {
+                name: "Content-Disposition",
+                value: "attachment",
+              },
+            ],
+            body: { attachmentId: "detached-text-file" },
+          },
+        ],
+      },
+    },
+    attachmentPayloads: {
+      "detached-text-file": Buffer.from(attachment).toString("base64url"),
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.parsedTexts, [plain]);
+  assert.deepEqual(runtime.syncedTexts, [plain]);
+  assert.deepEqual(runtime.gmailAttachmentCalls, []);
+});
+
 test("Gmail sync does not fetch an HTML attachment when a plain body is available", async () => {
   const plain = `予約番号：A123456\n氏名：テスト顧客`;
   const runtime = loadRoute({

@@ -168,6 +168,17 @@ function getMimeCharset(part: GmailMessagePart) {
   return (match?.[1] || match?.[2] || match?.[3] || "utf-8").trim();
 }
 
+function isMimeAttachment(part: GmailMessagePart) {
+  if (part.filename?.trim()) return true;
+
+  const contentDisposition =
+    part.headers?.find(
+      (header) => header.name?.toLowerCase() === "content-disposition"
+    )?.value || "";
+
+  return /^\s*attachment(?:\s*;|\s*$)/i.test(contentDisposition);
+}
+
 type GmailMessageReference = {
   id?: string | null;
   threadId?: string | null;
@@ -220,7 +231,7 @@ async function collectMimeText(
 ): Promise<string[]> {
   if (!payload) return [];
 
-  if (payload.filename?.trim()) return [];
+  if (isMimeAttachment(payload)) return [];
 
   if (payload.mimeType === mimeType) {
     const encoded =
@@ -477,21 +488,21 @@ async function fetchReservationMessages(
           );
           const attachmentData = new Map<string, Promise<string | null>>();
           const extractedBody = await extractReservationBody(
-              messageResponse.data.payload,
-              (attachmentId) => {
-                let pending = attachmentData.get(attachmentId);
-                if (!pending) {
-                  pending = getAttachment({
-                    userId: "me",
-                    messageId,
-                    id: attachmentId,
-                  }).then((response) => response.data.data || null);
-                  attachmentData.set(attachmentId, pending);
-                }
-                return pending;
-              },
-              subject
-            );
+            messageResponse.data.payload,
+            (attachmentId) => {
+              let pending = attachmentData.get(attachmentId);
+              if (!pending) {
+                pending = getAttachment({
+                  userId: "me",
+                  messageId,
+                  id: attachmentId,
+                }).then((response) => response.data.data || null);
+                attachmentData.set(attachmentId, pending);
+              }
+              return pending;
+            },
+            subject
+          );
           const bodyText = extractedBody.bodyText.trim();
 
           return {
@@ -608,10 +619,7 @@ async function runHpbGmailSync() {
         : message.bodyParseError;
 
     if (parseError) {
-      parseFailures.set(
-        message.messageId,
-        parseError
-      );
+      parseFailures.set(message.messageId, parseError);
       if (message.threadId) {
         failedParseThreadIds.add(message.threadId);
       } else {
