@@ -532,6 +532,27 @@ test("Gmail sync preserves field boundaries in an HTML-only reservation mail", a
   );
 });
 
+test("Gmail sync accepts case-insensitive MIME media types", async () => {
+  const plain =
+    "予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00";
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "mixed-case-mime" }] }],
+    messagePayloads: {
+      "mixed-case-mime": {
+        mimeType: " Text/Plain ",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { data: Buffer.from(plain).toString("base64url") },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.parsedTexts, [plain]);
+  assert.deepEqual(runtime.syncedTexts, [plain]);
+});
+
 test("Gmail sync decodes an ISO-2022-JP reservation body from its MIME charset", async () => {
   const encodedIso2022Jp =
     "GyRCTT1Mc0hWOWYhJxsoQkExMjM0NTYKGyRCO2FMPiEnJUYlOSVIOFw1UhsoQgobJEJNaEU5Rnw7fiEnGyhCMjA5ORskQkcvGyhCMTAbJEI3bhsoQjIwGyRCRnwbKEIgMTA6MDAK";

@@ -172,7 +172,7 @@ function isMimeAttachment(part: GmailMessagePart) {
   // Gmail can expose an attached or forwarded email as a nested MIME tree
   // without a filename or Content-Disposition header. Its text belongs to a
   // separate message and must not be merged into the current reservation.
-  if (part.mimeType?.toLowerCase() === "message/rfc822") return true;
+  if (part.mimeType?.trim().toLowerCase() === "message/rfc822") return true;
 
   if (part.filename?.trim()) return true;
 
@@ -238,7 +238,11 @@ async function collectMimeText(
 
   if (isMimeAttachment(payload)) return [];
 
-  if (payload.mimeType === mimeType) {
+  // MIME media types are case-insensitive. Gmail normally returns lowercase
+  // values, but imported or relayed messages can retain a different casing.
+  // Normalize before matching so a valid Text/Plain or TEXT/HTML body is not
+  // mistaken for a missing reservation body.
+  if (payload.mimeType?.trim().toLowerCase() === mimeType) {
     const encoded =
       payload.body?.data ||
       (payload.body?.attachmentId
