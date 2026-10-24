@@ -67,6 +67,7 @@ type ExistingReservation = {
 };
 
 const CUSTOMER_LOOKUP_PAGE_SIZE = 1000;
+const EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE = 1000;
 const MAX_RESERVATION_DURATION_MINUTES = 24 * 60;
 
 function getSupabaseAdmin() {
@@ -824,18 +825,38 @@ async function findExistingExternalReservation(
   context: SyncContext
 ) {
   const reservationKey = getReservationNumberMemoKey(parsed.source);
-  const { data, error } = await context.supabase
-    .from("reservations")
-    .select("id, salon_id, customer_id, staff_id, menu, memo, status, start_at, end_at")
-    // Older parser versions could save a lowercase or full-width minimo ID.
-    // Fetch source-keyed rows and compare the exact normalized marker locally
-    // so a replay updates the existing reservation instead of inserting a
-    // second deterministic row under the newly canonicalized ID.
-    .ilike("memo", `%${reservationKey}：%`);
+  const candidates: ExistingReservation[] = [];
 
-  if (error) throw new Error(error.message);
+  // Older parser versions could save a lowercase or full-width minimo ID.
+  // Fetch source-keyed rows and compare the exact normalized marker locally
+  // so a replay updates the existing reservation instead of inserting a
+  // second deterministic row under the newly canonicalized ID. Page through
+  // every match because PostgREST commonly limits one response to 1,000 rows;
+  // silently checking only the first page could create a duplicate later.
+  for (
+    let offset = 0;
+    ;
+    offset += EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE
+  ) {
+    const { data, error } = await context.supabase
+      .from("reservations")
+      .select("id, salon_id, customer_id, staff_id, menu, memo, status, start_at, end_at")
+      .ilike("memo", `%${reservationKey}：%`)
+      .order("id", { ascending: true })
+      .range(
+        offset,
+        offset + EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE - 1
+      );
+
+    if (error) throw new Error(error.message);
+
+    const page = (data || []) as ExistingReservation[];
+    candidates.push(...page);
+    if (page.length < EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE) break;
+  }
+
   const existing = findExternalReservationCandidate({
-    candidates: (data || []) as ExistingReservation[],
+    candidates,
     source: parsed.source,
     reservationNumber: parsed.reservationNumber,
   });

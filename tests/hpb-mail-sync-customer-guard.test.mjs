@@ -24,6 +24,7 @@ const autoCustomerId = buildExternalCustomerId("hpb", "A123456");
 function loadSync(manualCustomerId, options = {}) {
   const writes = [];
   const customerReadRanges = [];
+  const reservationReadRanges = [];
   const customer = { id: "mail-customer", name: "テスト顧客", phone: "09000000000" };
   const manual = {
     id: "manual-reservation", customer_id: manualCustomerId,
@@ -65,6 +66,9 @@ function loadSync(manualCustomerId, options = {}) {
         range(from, to) {
           rangeBounds = [from, to];
           if (table === "customers") customerReadRanges.push(rangeBounds);
+          if (table === "reservations" && externalLookup) {
+            reservationReadRanges.push(rangeBounds);
+          }
           return query;
         },
         ilike() { externalLookup = true; return query; },
@@ -171,6 +175,17 @@ function loadSync(manualCustomerId, options = {}) {
               error: { message: "fixture customer page rejected" },
             }).then(resolve, reject);
           }
+          if (
+            table === "reservations" &&
+            externalLookup &&
+            rangeBounds &&
+            options.reservationReadErrorAtOffset === rangeBounds[0]
+          ) {
+            return Promise.resolve({
+              data: null,
+              error: { message: "fixture reservation page rejected" },
+            }).then(resolve, reject);
+          }
           const data = table === "salons" ? [{ id: "salon-1" }]
             : table === "staffs" ? options.staffRows ?? []
             : table === "customers" ? (deterministicId
@@ -183,7 +198,12 @@ function loadSync(manualCustomerId, options = {}) {
                       ? rows.slice(rangeBounds[0], rangeBounds[1] + 1)
                       : rows;
                   })())
-              : table === "reservations" ? (deterministicId && options.concurrentReservation &&
+              : table === "reservations" ? (externalLookup && Array.isArray(options.externalReservationRows)
+                  ? options.externalReservationRows.slice(
+                      rangeBounds?.[0] ?? 0,
+                      (rangeBounds?.[1] ?? options.externalReservationRows.length - 1) + 1
+                    )
+                  : deterministicId && options.concurrentReservation &&
                     writes.some((write) => write.operation === "insert")
                   ? { ...manual, ...options.concurrentReservation, id: deterministicId }
                   : options.missingReservation || (externalLookup && options.externalLookupMissing)
@@ -223,6 +243,7 @@ function loadSync(manualCustomerId, options = {}) {
     sync: load("../lib/hpb-mail-sync.ts").syncHpbMailText,
     writes,
     customerReadRanges,
+    reservationReadRanges,
   };
 }
 
@@ -452,6 +473,74 @@ test("minimo replay adopts a legacy full-width lowercase reservation marker", as
   assert.equal(result.result.reservationId, "manual-reservation");
   assert.equal(runtime.writes.length, 1);
   assert.equal(runtime.writes[0].operation, "update");
+});
+
+test("external reservation lookup reads beyond the Supabase 1000-row response limit", async () => {
+  const unrelated = Array.from({ length: 1000 }, (_, index) => ({
+    id: `unrelated-${String(index).padStart(4, "0")}`,
+    customer_id: "mail-customer",
+    staff_id: null,
+    salon_id: "salon-1",
+    menu: "ミニモ予約",
+    memo: `ミニモ予約ID：OTHER-${index}`,
+    status: "confirmed",
+    start_at: "2099-10-20T01:00:00.000Z",
+    end_at: "2099-10-20T02:30:00.000Z",
+  }));
+  const target = {
+    id: "legacy-page-two",
+    customer_id: "mail-customer",
+    staff_id: null,
+    salon_id: "salon-1",
+    menu: "ミニモ予約",
+    memo: "ミニモ予約ＩＤ：ｍｉｎｉｍｏ－１２３",
+    status: "confirmed",
+    start_at: "2099-10-20T01:00:00.000Z",
+    end_at: "2099-10-20T02:30:00.000Z",
+  };
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    externalReservationRows: [...unrelated, target],
+  });
+
+  const result = await runtime.sync(`ミニモ予約受付
+予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+担当者：指名なし
+施術時間：90分`);
+
+  assert.equal(result.result.reservationId, "legacy-page-two");
+  assert.deepEqual(runtime.reservationReadRanges, [
+    [0, 999],
+    [1000, 1999],
+  ]);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
+test("external reservation lookup fails closed when a later page cannot be read", async () => {
+  const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+    id: `unrelated-${String(index).padStart(4, "0")}`,
+    memo: `ミニモ予約ID：OTHER-${index}`,
+  }));
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    externalReservationRows: firstPage,
+    reservationReadErrorAtOffset: 1000,
+  });
+
+  await assert.rejects(
+    runtime.sync(`ミニモ予約受付
+予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+担当者：指名なし
+施術時間：90分`),
+    /fixture reservation page rejected/
+  );
+  assert.equal(runtime.writes.length, 0);
 });
 
 for (const [label, invalidDateTime] of [
