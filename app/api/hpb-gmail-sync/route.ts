@@ -481,6 +481,12 @@ async function fetchReservationMessages(
             id: messageId,
             format: "full",
           });
+          // Gmail's list response can omit threadId even though the full
+          // message response contains it. Capture it before validating other
+          // fields so a malformed timestamp or subject only defers its known
+          // reservation thread instead of stopping every target thread.
+          resolvedThreadId =
+            messageResponse.data.threadId || listedThreadId;
           const rawInternalDate = messageResponse.data.internalDate;
           const internalDate = Number(rawInternalDate);
           if (
@@ -491,8 +497,6 @@ async function fetchReservationMessages(
           ) {
             throw new Error("Gmail受信日時を取得できませんでした");
           }
-          resolvedThreadId =
-            messageResponse.data.threadId || listedThreadId;
           const subject = decodeMimeHeader(
             messageResponse.data.payload?.headers?.find(
               (header) => header.name?.toLowerCase() === "subject"

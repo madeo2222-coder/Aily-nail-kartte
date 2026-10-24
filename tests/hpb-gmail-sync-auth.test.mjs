@@ -1040,6 +1040,46 @@ test("Gmail sync fails closed when a message timestamp is unavailable", async ()
   assert.deepEqual(runtime.syncedTexts, []);
 });
 
+test("Gmail sync scopes an invalid timestamp by the full-response thread ID", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "invalid-timestamp" },
+          { id: "same-thread-older", threadId: "failed-thread" },
+          { id: "independent", threadId: "independent-thread" },
+        ],
+      },
+    ],
+    messageInternalDates: { "invalid-timestamp": null },
+    messageResponseThreadIds: { "invalid-timestamp": "failed-thread" },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 207);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, true);
+  assert.equal(body.syncedCount, 1);
+  assert.equal(body.failedCount, 2);
+  assert.match(
+    body.results.find((result) => result.messageId === "invalid-timestamp")
+      .error,
+    /Gmail受信日時を取得できませんでした/
+  );
+  assert.match(
+    body.results.find((result) => result.messageId === "same-thread-older")
+      .error,
+    /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
+  );
+  assert.equal(
+    body.results.find((result) => result.messageId === "independent").ok,
+    true
+  );
+  assert.deepEqual(runtime.syncedTexts, ["independent"]);
+});
+
 test("Gmail sync bounds concurrent message fetches while preserving sync order", async () => {
   const listedIds = Array.from({ length: 12 }, (_, index) => `message-${index}`);
   const runtime = loadRoute({
