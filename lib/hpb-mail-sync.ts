@@ -784,7 +784,7 @@ async function findExistingExternalReservation(
     reservationNumber: parsed.reservationNumber,
   });
 
-  if (existing?.salon_id && existing.salon_id !== context.salonId) {
+  if (existing?.id && existing.salon_id !== context.salonId) {
     throw new Error(
       "同じ外部予約番号が別サロンにあります。誤更新を避けるため同期を停止しました。"
     );
@@ -1271,6 +1271,12 @@ async function cancelReservation(
 
     if (error) throw new Error(error.message);
     existing = (data || null) as ExistingReservation | null;
+  }
+
+  if (existing?.id && existing.salon_id !== context.salonId) {
+    throw new Error(
+      "同じ外部予約番号が別サロンにあります。誤更新を避けるため同期を停止しました。"
+    );
   }
 
   if (!existing?.id) {

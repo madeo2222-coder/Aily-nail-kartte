@@ -27,7 +27,10 @@ function loadSync(manualCustomerId, options = {}) {
   const customer = { id: "mail-customer", name: "テスト顧客", phone: "09000000000" };
   const manual = {
     id: "manual-reservation", customer_id: manualCustomerId,
-    staff_id: options.staffId ?? null, salon_id: "salon-1",
+    staff_id: options.staffId ?? null,
+    salon_id: Object.hasOwn(options, "reservationSalonId")
+      ? options.reservationSalonId
+      : "salon-1",
     menu: options.menu ?? "HPB予約",
     memo: options.memo ?? (options.existing ? "HPB予約番号：A123456" : "電話で先に登録"), status: options.status ?? "confirmed",
     start_at: options.startAt ?? "2099-10-20T01:00:00.000Z",
@@ -183,7 +186,7 @@ function loadSync(manualCustomerId, options = {}) {
               : table === "reservations" ? (deterministicId && options.concurrentReservation &&
                     writes.some((write) => write.operation === "insert")
                   ? { ...manual, ...options.concurrentReservation, id: deterministicId }
-                  : options.missingReservation
+                  : options.missingReservation || (externalLookup && options.externalLookupMissing)
                     ? []
                     : deterministicId
                       ? { ...manual, id: deterministicId }
@@ -643,6 +646,35 @@ test("concurrent cancellation does not update a deterministic row from another s
   );
   assert.equal(runtime.writes.length, 1);
   assert.equal(runtime.writes[0].operation, "insert");
+});
+
+test("an already-cancelled deterministic row from another salon is not reported as synced", async () => {
+  const cancellationBody = `ご予約のキャンセル\n${mail}`;
+  const runtime = loadSync("mail-customer", {
+    externalLookupMissing: true,
+    reservationSalonId: "salon-2",
+    status: "キャンセル",
+    memo: `HPB予約番号：A123456\n\n【HPBキャンセルメール本文】\n${cancellationBody}`,
+    rejectCustomerLookup: true,
+  });
+
+  await assert.rejects(
+    runtime.sync(cancellationBody),
+    /別サロン.*同期を停止/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("an exact booking replay with a missing salon does not report success", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    reservationSalonId: null,
+    memo: `HPB予約番号：A123456\n【HPBメール本文】\n${mail}`,
+    rejectCustomerLookup: true,
+  });
+
+  await assert.rejects(runtime.sync(mail), /別サロン.*同期を停止/);
+  assert.equal(runtime.writes.length, 0);
 });
 
 test("concurrent cancellation tombstone is not revived by a delayed booking insert", async () => {
