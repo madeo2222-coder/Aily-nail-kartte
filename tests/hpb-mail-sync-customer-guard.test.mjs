@@ -395,6 +395,46 @@ const namedStaffMail = mail.replace(
   "指名スタッフ：退職スタッフ"
 );
 
+test("HPB mail normalizes full-width and lowercase booking identifiers before matching", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    mail
+      .replace("A123456", "ａ１２３４５６")
+      .replace("2099年10月20日 10:00", "２０９９年１０月２０日 １０：００")
+      .replace("90分", "９０分")
+  );
+
+  assert.equal(result.parsed.reservationNumber, "A123456");
+  assert.equal(result.parsed.startAt, "2099-10-20T01:00:00.000Z");
+  assert.equal(result.parsed.endAt, "2099-10-20T02:30:00.000Z");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.match(runtime.writes[0].payload.memo, /予約番号：ａ１２３４５６/);
+});
+
+test("minimo mail normalizes full-width source markers, IDs and date fields", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "ミニモ予約ID：MINIMO-123",
+  });
+  const result = await runtime.sync(`ＭＩＮＩＭＯ予約受付
+予約ＩＤ：ＭＩＮＩＭＯ－１２３
+氏名：テスト顧客
+電話番号：０９０００００００００
+来店日時：２０９９年１０月２０日 １０：００
+担当者：指名なし
+施術時間：９０分`);
+
+  assert.equal(result.parsed.source, "minimo");
+  assert.equal(result.parsed.reservationNumber, "MINIMO-123");
+  assert.equal(result.parsed.startAt, "2099-10-20T01:00:00.000Z");
+  assert.equal(result.parsed.endAt, "2099-10-20T02:30:00.000Z");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
 for (const [label, invalidDateTime] of [
   ["an impossible calendar date", "2099年2月30日 10:00"],
   ["an out-of-range month", "2099年13月20日 10:00"],

@@ -85,6 +85,13 @@ function normalizeText(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
+function normalizeProviderText(value: string) {
+  // Forwarding and copy/paste can turn provider identifiers and numeric
+  // fields into full-width characters. Normalize only the text used for
+  // structured parsing; callers still keep the original mail body in memo.
+  return normalizeText(value).normalize("NFKC");
+}
+
 function extractKanaFromName(value: string) {
   const match = value.match(/（([^）]+)）/) || value.match(/\(([^)]+)\)/);
   return match?.[1]?.trim() || "";
@@ -283,7 +290,7 @@ function parseHpbMail(
   rawText: string,
   mailSubject = ""
 ): ParsedHpbMail {
-  const text = normalizeText(rawText);
+  const text = normalizeProviderText(rawText);
 
   const action: ParsedHpbMail["action"] =
     isCancellationSubject(mailSubject) ||
@@ -294,9 +301,9 @@ function parseHpbMail(
       : "reservation";
 
   const reservationNumber = extractFirstMatch(text, [
-    /予約番号\s*\n\s*([A-Z]{1,4}\d{6,})/,
-    /予約番号\s*[:：]?\s*([A-Z]{1,4}\d{6,})/,
-  ]);
+    /予約番号\s*\n\s*([A-Z]{1,4}\d{6,})/i,
+    /予約番号\s*[:：]?\s*([A-Z]{1,4}\d{6,})/i,
+  ]).toUpperCase();
 
   const customerName = extractFirstMatch(text, [
     /■氏名\s*\n\s*([^\n]+)/,
@@ -372,7 +379,7 @@ function parseMinimoMail(
   rawText: string,
   mailSubject = ""
 ): ParsedHpbMail {
-  const text = normalizeText(rawText);
+  const text = normalizeProviderText(rawText);
 
   const action: ParsedHpbMail["action"] =
     isCancellationSubject(mailSubject) ||
@@ -455,12 +462,13 @@ function parseReservationMail(
   rawText: string,
   mailSubject = ""
 ): ParsedHpbMail {
-  const text = normalizeText(rawText);
-  const sourceText = `${normalizeText(mailSubject)}\n${text}`;
+  const text = normalizeProviderText(rawText);
+  const sourceText = `${normalizeProviderText(mailSubject)}\n${text}`;
+  const normalizedSourceText = sourceText.toLowerCase();
 
   if (
     sourceText.includes("ミニモ") ||
-    sourceText.includes("minimo") ||
+    normalizedSourceText.includes("minimo") ||
     sourceText.includes("ミニモサロンツール") ||
     sourceText.includes("予約ID")
   ) {
