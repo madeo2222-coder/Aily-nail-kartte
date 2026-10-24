@@ -353,6 +353,88 @@ test("Gmail sync uses each message timestamp when search order is misleading", a
   assert.deepEqual(runtime.syncedTexts, ["older-message", "newer-message"]);
 });
 
+test("Gmail sync decodes an RFC 2047 base64 subject before cancellation parsing", async () => {
+  const subject = "ご予約のキャンセル SALON BOARD";
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "encoded-subject", threadId: "thread-1" }] }],
+    messagePayloads: {
+      "encoded-subject": {
+        mimeType: "text/plain",
+        headers: [
+          {
+            name: "Subject",
+            value: `=?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`,
+          },
+        ],
+        body: {
+          data: Buffer.from("予約番号：A123456").toString("base64url"),
+        },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedSubjects, [subject]);
+});
+
+test("Gmail sync joins adjacent RFC 2047 quoted-printable subject words", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "q-subject", threadId: "thread-1" }] }],
+    messagePayloads: {
+      "q-subject": {
+        mimeType: "text/plain",
+        headers: [
+          {
+            name: "Subject",
+            value:
+              "=?UTF-8?Q?=E3=81=94=E4=BA=88=E7=B4=84=E3=81=AE?= =?UTF-8?Q?=E3=82=AD=E3=83=A3=E3=83=B3=E3=82=BB=E3=83=AB?= SALON BOARD",
+          },
+        ],
+        body: {
+          data: Buffer.from("予約番号：A123456").toString("base64url"),
+        },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedSubjects, ["ご予約のキャンセル SALON BOARD"]);
+});
+
+test("Gmail sync fails closed when an encoded subject charset is unsupported", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "bad-subject", threadId: "thread-1" }] }],
+    messagePayloads: {
+      "bad-subject": {
+        mimeType: "text/plain",
+        headers: [
+          {
+            name: "Subject",
+            value: "=?x-private-mail?B?U0FMT04gQk9BUkQ=?=",
+          },
+        ],
+        body: {
+          data: Buffer.from("予約番号：A123456").toString("base64url"),
+        },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.failedCount, 1);
+  assert.match(body.results[0].error, /メール件名の文字コードを読み取れませんでした/);
+  assert.doesNotMatch(body.results[0].error, /x-private-mail/);
+  assert.deepEqual(runtime.syncedTexts, []);
+});
+
 test("Gmail sync preserves field boundaries in an HTML-only reservation mail", async () => {
   const html = `<div>予約番号：A123456</div><div>氏名：テスト顧客</div><div>来店日時：2099年10月20日 10:00</div>`;
   const runtime = loadRoute({

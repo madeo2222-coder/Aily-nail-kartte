@@ -18,6 +18,81 @@ function decodeBase64Url(value: string, charset = "utf-8") {
   }
 }
 
+function decodeMimeHeaderBytes(bytes: Uint8Array, charset: string) {
+  try {
+    return new TextDecoder(charset, { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error("メール件名の文字コードを読み取れませんでした");
+  }
+}
+
+function decodeQuotedPrintableHeader(value: string) {
+  const bytes: number[] = [];
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+
+    if (character === "_") {
+      bytes.push(0x20);
+      continue;
+    }
+
+    if (character === "=") {
+      const hex = value.slice(index + 1, index + 3);
+      if (!/^[0-9a-f]{2}$/i.test(hex)) {
+        throw new Error("メール件名の符号化を読み取れませんでした");
+      }
+      bytes.push(Number.parseInt(hex, 16));
+      index += 2;
+      continue;
+    }
+
+    const codePoint = character.codePointAt(0);
+    if (codePoint == null || codePoint > 0x7f) {
+      throw new Error("メール件名の符号化を読み取れませんでした");
+    }
+    bytes.push(codePoint);
+  }
+
+  return Uint8Array.from(bytes);
+}
+
+function decodeMimeHeader(value: string) {
+  const encodedWord = /=\?([^?\s]+)\?([bq])\?([^?]*)\?=/gi;
+  let decoded = "";
+  let lastIndex = 0;
+  let previousWasEncodedWord = false;
+  let match: RegExpExecArray | null;
+
+  while ((match = encodedWord.exec(value))) {
+    const separator = value.slice(lastIndex, match.index);
+    if (!(previousWasEncodedWord && /^\s*$/.test(separator))) {
+      decoded += separator;
+    }
+
+    const [, charset, encoding, encodedText] = match;
+    let bytes: Uint8Array;
+
+    if (encoding.toLowerCase() === "b") {
+      if (
+        !/^[a-z0-9+/]*={0,2}$/i.test(encodedText) ||
+        encodedText.length % 4 === 1
+      ) {
+        throw new Error("メール件名の符号化を読み取れませんでした");
+      }
+      bytes = Buffer.from(encodedText, "base64");
+    } else {
+      bytes = decodeQuotedPrintableHeader(encodedText);
+    }
+
+    decoded += decodeMimeHeaderBytes(bytes, charset);
+    lastIndex = encodedWord.lastIndex;
+    previousWasEncodedWord = true;
+  }
+
+  return decoded + value.slice(lastIndex);
+}
+
 type GmailMessagePart = {
   mimeType?: string | null;
   filename?: string | null;
@@ -293,10 +368,11 @@ async function fetchReservationMessages(
           }
           resolvedThreadId =
             messageResponse.data.threadId || listedThreadId;
-          const subject =
+          const subject = decodeMimeHeader(
             messageResponse.data.payload?.headers?.find(
               (header) => header.name?.toLowerCase() === "subject"
-            )?.value || "";
+            )?.value || ""
+          );
           const attachmentData = new Map<string, Promise<string | null>>();
           const bodyText = (
             await extractPlainText(
