@@ -781,6 +781,43 @@ test("Gmail sync ignores a text attachment without a filename", async () => {
   assert.deepEqual(runtime.gmailAttachmentCalls, []);
 });
 
+test("Gmail sync does not merge a forwarded email into the current reservation", async () => {
+  const current = `予約番号：A123456\n氏名：現在の顧客\n来店日時：2099年10月20日 10:00`;
+  const forwarded = `予約番号：B654321\n氏名：転送元の顧客\n来店日時：2099年10月21日 11:00`;
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "forwarded-message" }] }],
+    messagePayloads: {
+      "forwarded-message": {
+        mimeType: "multipart/mixed",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: Buffer.from(current).toString("base64url") },
+          },
+          {
+            mimeType: "message/rfc822",
+            filename: "",
+            parts: [
+              {
+                mimeType: "text/plain",
+                body: { data: Buffer.from(forwarded).toString("base64url") },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.parsedTexts, [current]);
+  assert.deepEqual(runtime.syncedTexts, [current]);
+  assert.deepEqual(runtime.gmailAttachmentCalls, []);
+});
+
 test("Gmail sync does not fetch an HTML attachment when a plain body is available", async () => {
   const plain = `予約番号：A123456\n氏名：テスト顧客`;
   const runtime = loadRoute({

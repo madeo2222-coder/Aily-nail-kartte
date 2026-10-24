@@ -169,6 +169,11 @@ function getMimeCharset(part: GmailMessagePart) {
 }
 
 function isMimeAttachment(part: GmailMessagePart) {
+  // Gmail can expose an attached or forwarded email as a nested MIME tree
+  // without a filename or Content-Disposition header. Its text belongs to a
+  // separate message and must not be merged into the current reservation.
+  if (part.mimeType?.toLowerCase() === "message/rfc822") return true;
+
   if (part.filename?.trim()) return true;
 
   const contentDisposition =
