@@ -381,6 +381,61 @@ test("minimo mail rejects an impossible calendar date before database access", a
   assert.equal(runtime.writes.length, 0);
 });
 
+for (const [label, invalidDuration] of [
+  ["zero minutes", "0分"],
+  ["more than one day", "1441分"],
+  ["an out-of-range minute component", "1時間60分"],
+  ["an unparseable explicit value", "未定"],
+]) {
+  test(`HPB mail rejects ${label} before database access`, async () => {
+    const runtime = loadSync("mail-customer", { rejectDatabaseAccess: true });
+    await assert.rejects(
+      runtime.sync(mail.replace("90分", invalidDuration)),
+      /予約所要時間を解析できませんでした/
+    );
+    assert.equal(runtime.writes.length, 0);
+  });
+}
+
+test("minimo mail rejects an invalid explicit duration before database access", async () => {
+  const runtime = loadSync("mail-customer", { rejectDatabaseAccess: true });
+  await assert.rejects(
+    runtime.sync(`ミニモ予約受付
+予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+担当者：指名なし
+施術時間：0分`),
+    /予約所要時間を解析できませんでした/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("minimo mail accepts an hours-and-minutes duration", async () => {
+  const runtime = loadSync("mail-customer");
+  const result = await runtime.sync(`ミニモ予約受付
+予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+担当者：指名なし
+施術時間：1時間30分`);
+
+  assert.equal(result.parsed.startAt, "2099-10-20T01:00:00.000Z");
+  assert.equal(result.parsed.endAt, "2099-10-20T02:30:00.000Z");
+});
+
+test("booking mail without a duration keeps the compatibility default", async () => {
+  const runtime = loadSync("mail-customer");
+  const result = await runtime.sync(
+    mail.replace("\n所要時間目安：90分", "")
+  );
+
+  assert.equal(result.parsed.startAt, "2099-10-20T01:00:00.000Z");
+  assert.equal(result.parsed.endAt, "2099-10-20T02:30:00.000Z");
+});
+
 test("replaying the original booking after cancellation does not reactivate it", async () => {
   const initial = loadSync("mail-customer");
   await initial.sync(mail);

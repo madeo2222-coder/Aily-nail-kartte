@@ -66,6 +66,7 @@ type ExistingReservation = {
 };
 
 const CUSTOMER_LOOKUP_PAGE_SIZE = 1000;
+const MAX_RESERVATION_DURATION_MINUTES = 24 * 60;
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -218,25 +219,37 @@ function parseJapaneseDateTime(value: string) {
 }
 
 function parseDurationMinutes(text: string) {
-  const hpbMatch = text.match(/所要時間目安\s*[:：]\s*(\d+)時間(?:(\d+)分)?/);
+  const hourMatch = text.match(
+    /(?:所要時間目安|施術時間)\s*[:：]\s*(\d+)時間(?:(\d+)分)?/
+  );
 
-  if (hpbMatch) {
-    const hours = Number(hpbMatch[1] || 0);
-    const minutes = Number(hpbMatch[2] || 0);
+  if (hourMatch) {
+    const hours = Number(hourMatch[1] || 0);
+    const minutes = Number(hourMatch[2] || 0);
     const total = hours * 60 + minutes;
-    if (total > 0) return total;
+    if (
+      minutes < 60 &&
+      total > 0 &&
+      total <= MAX_RESERVATION_DURATION_MINUTES
+    ) {
+      return total;
+    }
+
+    throw new Error("予約所要時間を解析できませんでした");
   }
 
-  const hpbMinuteMatch = text.match(/所要時間目安\s*[:：]\s*(\d+)分/);
-  if (hpbMinuteMatch) {
-    const total = Number(hpbMinuteMatch[1]);
-    if (total > 0) return total;
+  const minuteMatch = text.match(
+    /(?:所要時間目安|施術時間)\s*[:：]\s*(\d+)分/
+  );
+  if (minuteMatch) {
+    const total = Number(minuteMatch[1]);
+    if (total > 0 && total <= MAX_RESERVATION_DURATION_MINUTES) return total;
+
+    throw new Error("予約所要時間を解析できませんでした");
   }
 
-  const minimoMatch = text.match(/施術時間\s*[:：]\s*(\d+)分/);
-  if (minimoMatch) {
-    const total = Number(minimoMatch[1]);
-    if (total > 0) return total;
+  if (/(?:所要時間目安|施術時間)\s*[:：]/.test(text)) {
+    throw new Error("予約所要時間を解析できませんでした");
   }
 
   return 90;
