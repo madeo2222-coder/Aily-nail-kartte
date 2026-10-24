@@ -487,6 +487,30 @@ test("Gmail sync decodes an ISO-2022-JP reservation body from its MIME charset",
   ]);
 });
 
+test("Gmail sync accepts canonical padded base64url", async () => {
+  const plain =
+    "予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00";
+  const unpadded = Buffer.from(plain).toString("base64url");
+  const padded = unpadded.padEnd(Math.ceil(unpadded.length / 4) * 4, "=");
+  assert.notEqual(padded, unpadded);
+
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "padded-base64url" }] }],
+    messagePayloads: {
+      "padded-base64url": {
+        mimeType: "text/plain",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { data: padded },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.syncedTexts, [plain]);
+});
+
 test("Gmail sync fails closed instead of parsing a body with an unsupported charset", async () => {
   const runtime = loadRoute({
     listPages: [{ messages: [{ id: "unsupported-charset" }] }],
@@ -512,6 +536,78 @@ test("Gmail sync fails closed instead of parsing a body with an unsupported char
   assert.equal(body.failedCount, 1);
   assert.match(body.results[0].error, /メール本文の文字コードを読み取れませんでした/);
   assert.doesNotMatch(body.results[0].error, /x-private-mail/);
+  assert.deepEqual(runtime.syncedTexts, []);
+});
+
+test("Gmail sync rejects malformed inline base64url before reservation writes", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "malformed-body", threadId: "failed-thread" },
+          { id: "same-thread-older", threadId: "failed-thread" },
+          { id: "independent", threadId: "independent-thread" },
+        ],
+      },
+    ],
+    messagePayloads: {
+      "malformed-body": {
+        mimeType: "text/plain",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { data: "5LqI57SE55Wq77yQQTEyMzQ1Nio*" },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 207);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, true);
+  assert.equal(body.syncedCount, 1);
+  assert.equal(body.failedCount, 2);
+  assert.match(
+    body.results.find((result) => result.messageId === "malformed-body").error,
+    /メール本文の符号化を読み取れませんでした/
+  );
+  assert.match(
+    body.results.find((result) => result.messageId === "same-thread-older").error,
+    /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
+  );
+  assert.deepEqual(runtime.syncedTexts, ["independent"]);
+});
+
+test("Gmail sync rejects non-canonical padded base64url from an external body", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [{ id: "malformed-external", threadId: "failed-thread" }],
+      },
+    ],
+    messagePayloads: {
+      "malformed-external": {
+        mimeType: "text/plain",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        body: { attachmentId: "malformed-attachment" },
+      },
+    },
+    attachmentPayloads: {
+      "malformed-attachment": "QQ==AA",
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.syncedCount, 0);
+  assert.equal(body.failedCount, 1);
+  assert.match(
+    body.results[0].error,
+    /メール本文の符号化を読み取れませんでした/
+  );
   assert.deepEqual(runtime.syncedTexts, []);
 });
 

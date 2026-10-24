@@ -8,8 +8,30 @@ import { summarizeGmailSyncResults } from "@/lib/hpb-gmail-sync-summary";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 function decodeBase64Url(value: string, charset = "utf-8") {
-  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  const paddingStart = value.indexOf("=");
+  const encoded = paddingStart === -1 ? value : value.slice(0, paddingStart);
+  const padding = paddingStart === -1 ? "" : value.slice(paddingStart);
+  const remainder = encoded.length % 4;
+  const expectedPadding = remainder === 0 ? 0 : 4 - remainder;
+
+  if (
+    !/^[a-z0-9_-]*={0,2}$/i.test(value) ||
+    remainder === 1 ||
+    (padding &&
+      (value.length % 4 !== 0 || padding.length !== expectedPadding))
+  ) {
+    throw new Error("メール本文の符号化を読み取れませんでした");
+  }
+
+  const base64 = encoded.replace(/-/g, "+").replace(/_/g, "/");
   const bytes = Buffer.from(base64, "base64");
+
+  // Buffer's base64 decoder silently ignores invalid input and can return a
+  // truncated body. Require the canonical Gmail base64url representation so
+  // a damaged reservation mail never reaches the database parser.
+  if (bytes.toString("base64url") !== encoded) {
+    throw new Error("メール本文の符号化を読み取れませんでした");
+  }
 
   try {
     return new TextDecoder(charset, { fatal: true }).decode(bytes);
