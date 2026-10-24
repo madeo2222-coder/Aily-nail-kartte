@@ -79,6 +79,36 @@ function decodeQuotedPrintableHeader(value: string) {
   return Uint8Array.from(bytes);
 }
 
+function decodeBase64MimeHeader(value: string) {
+  const paddingStart = value.indexOf("=");
+  const encoded = paddingStart === -1 ? value : value.slice(0, paddingStart);
+  const padding = paddingStart === -1 ? "" : value.slice(paddingStart);
+  const remainder = encoded.length % 4;
+  const expectedPadding = remainder === 0 ? 0 : 4 - remainder;
+
+  if (
+    !/^[a-z0-9+/]*={0,2}$/i.test(value) ||
+    remainder === 1 ||
+    (padding &&
+      (value.length % 4 !== 0 || padding.length !== expectedPadding))
+  ) {
+    throw new Error("メール件名の符号化を読み取れませんでした");
+  }
+
+  const bytes = Buffer.from(encoded, "base64");
+  if (bytes.toString("base64").replace(/=+$/, "") !== encoded) {
+    throw new Error("メール件名の符号化を読み取れませんでした");
+  }
+
+  return bytes;
+}
+
+function assertNoBrokenMimeHeaderMarker(value: string) {
+  if (value.includes("=?") || value.includes("?=")) {
+    throw new Error("メール件名の符号化を読み取れませんでした");
+  }
+}
+
 function decodeMimeHeader(value: string) {
   const encodedWord = /=\?([^?\s]+)\?([bq])\?([^?]*)\?=/gi;
   let decoded = "";
@@ -88,6 +118,7 @@ function decodeMimeHeader(value: string) {
 
   while ((match = encodedWord.exec(value))) {
     const separator = value.slice(lastIndex, match.index);
+    assertNoBrokenMimeHeaderMarker(separator);
     if (!(previousWasEncodedWord && /^\s*$/.test(separator))) {
       decoded += separator;
     }
@@ -96,13 +127,7 @@ function decodeMimeHeader(value: string) {
     let bytes: Uint8Array;
 
     if (encoding.toLowerCase() === "b") {
-      if (
-        !/^[a-z0-9+/]*={0,2}$/i.test(encodedText) ||
-        encodedText.length % 4 === 1
-      ) {
-        throw new Error("メール件名の符号化を読み取れませんでした");
-      }
-      bytes = Buffer.from(encodedText, "base64");
+      bytes = decodeBase64MimeHeader(encodedText);
     } else {
       bytes = decodeQuotedPrintableHeader(encodedText);
     }
@@ -112,7 +137,9 @@ function decodeMimeHeader(value: string) {
     previousWasEncodedWord = true;
   }
 
-  return decoded + value.slice(lastIndex);
+  const tail = value.slice(lastIndex);
+  assertNoBrokenMimeHeaderMarker(tail);
+  return decoded + tail;
 }
 
 type GmailMessagePart = {

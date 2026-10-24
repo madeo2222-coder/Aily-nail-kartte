@@ -435,6 +435,81 @@ test("Gmail sync fails closed when an encoded subject charset is unsupported", a
   assert.deepEqual(runtime.syncedTexts, []);
 });
 
+test("Gmail sync rejects a truncated encoded subject before reservation writes", async () => {
+  const runtime = loadRoute({
+    listPages: [
+      {
+        messages: [
+          { id: "broken-subject", threadId: "failed-thread" },
+          { id: "same-thread-older", threadId: "failed-thread" },
+          { id: "independent", threadId: "independent-thread" },
+        ],
+      },
+    ],
+    messagePayloads: {
+      "broken-subject": {
+        mimeType: "text/plain",
+        headers: [
+          {
+            name: "Subject",
+            value: "SALON BOARD =?UTF-8?B?44GU5LqI57SE44Gu44Kt44Oj",
+          },
+        ],
+        body: {
+          data: Buffer.from("予約番号：A123456").toString("base64url"),
+        },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 207);
+  assert.equal(body.ok, false);
+  assert.equal(body.partial, true);
+  assert.equal(body.syncedCount, 1);
+  assert.equal(body.failedCount, 2);
+  assert.match(
+    body.results.find((result) => result.messageId === "broken-subject").error,
+    /メール件名の符号化を読み取れませんでした/
+  );
+  assert.match(
+    body.results.find((result) => result.messageId === "same-thread-older").error,
+    /同じGmailスレッドの本文取得に失敗したメールがあるため同期を保留しました/
+  );
+  assert.deepEqual(runtime.syncedTexts, ["independent"]);
+});
+
+test("Gmail sync rejects non-canonical RFC 2047 base64", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "non-canonical-subject" }] }],
+    messagePayloads: {
+      "non-canonical-subject": {
+        mimeType: "text/plain",
+        headers: [
+          {
+            name: "Subject",
+            value: "SALON BOARD =?UTF-8?B?Zh==?=",
+          },
+        ],
+        body: {
+          data: Buffer.from("予約番号：A123456").toString("base64url"),
+        },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.ok, false);
+  assert.equal(body.failedCount, 1);
+  assert.match(body.results[0].error, /メール件名の符号化を読み取れませんでした/);
+  assert.deepEqual(runtime.syncedTexts, []);
+});
+
 test("Gmail sync preserves field boundaries in an HTML-only reservation mail", async () => {
   const html = `<div>予約番号：A123456</div><div>氏名：テスト顧客</div><div>来店日時：2099年10月20日 10:00</div>`;
   const runtime = loadRoute({
