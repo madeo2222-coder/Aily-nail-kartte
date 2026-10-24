@@ -119,7 +119,7 @@ function normalizePhone(value: string) {
   return digits;
 }
 
-function extractPhone(text: string) {
+function extractPhone(text: string, allowInvalid = false) {
   const rawPhone = extractFirstMatch(text, [
     /■電話番号[^\S\r\n]*[:：]?[^\S\r\n]*\n[^\S\r\n]*([^\r\n]+)/,
     /電話番号[^\S\r\n]*[:：]?[^\S\r\n]*\n[^\S\r\n]*([^\r\n]+)/,
@@ -141,6 +141,7 @@ function extractPhone(text: string) {
     digits.length < 10 ||
     digits.length > 13
   ) {
+    if (allowInvalid) return "";
     throw new Error("電話番号を解析できませんでした");
   }
 
@@ -218,7 +219,7 @@ function parseJapaneseDateTime(value: string) {
   return new Date(utcTime).toISOString();
 }
 
-function parseDurationMinutes(text: string) {
+function parseDurationMinutes(text: string, allowInvalid = false) {
   const hourMatch = text.match(
     /(?:所要時間目安|施術時間)\s*[:：]\s*(\d+)時間(?:(\d+)分)?/
   );
@@ -235,6 +236,7 @@ function parseDurationMinutes(text: string) {
       return total;
     }
 
+    if (allowInvalid) return null;
     throw new Error("予約所要時間を解析できませんでした");
   }
 
@@ -245,10 +247,12 @@ function parseDurationMinutes(text: string) {
     const total = Number(minuteMatch[1]);
     if (total > 0 && total <= MAX_RESERVATION_DURATION_MINUTES) return total;
 
+    if (allowInvalid) return null;
     throw new Error("予約所要時間を解析できませんでした");
   }
 
   if (/(?:所要時間目安|施術時間)\s*[:：]/.test(text)) {
+    if (allowInvalid) return null;
     throw new Error("予約所要時間を解析できませんでした");
   }
 
@@ -300,7 +304,10 @@ function parseHpbMail(
     /氏名\s*[:：]?\s*([^\n]+)/,
   ]);
 
-  const phone = extractPhone(text);
+  // An existing reservation can be cancelled safely by its external ID even
+  // when optional customer details in the cancellation mail are masked or
+  // malformed. New bookings keep strict validation before any database read.
+  const phone = extractPhone(text, action === "cancel");
 
   const customerKana = extractKanaFromName(customerName);
   const normalizedCustomerName = normalizeCustomerName(customerName);
@@ -323,8 +330,8 @@ function parseHpbMail(
     throw new Error("来店日時を解析できませんでした");
   }
 
-  const durationMinutes = parseDurationMinutes(text);
-  const endAt = startAt
+  const durationMinutes = parseDurationMinutes(text, action === "cancel");
+  const endAt = startAt && durationMinutes != null
     ? new Date(
         new Date(startAt).getTime() + durationMinutes * 60 * 1000
       ).toISOString()
@@ -387,7 +394,7 @@ function parseMinimoMail(
     /氏名\s*[:：]?\s*([^\n]+)/,
   ]);
 
-  const phone = extractPhone(text);
+  const phone = extractPhone(text, action === "cancel");
 
   const dateText = extractFirstMatch(text, [
     /来店日時\s*\n\s*([^\n]+)/,
@@ -404,8 +411,8 @@ function parseMinimoMail(
     throw new Error("ミニモ来店日時を解析できませんでした");
   }
 
-  const durationMinutes = parseDurationMinutes(text);
-  const endAt = startAt
+  const durationMinutes = parseDurationMinutes(text, action === "cancel");
+  const endAt = startAt && durationMinutes != null
     ? new Date(
         new Date(startAt).getTime() + durationMinutes * 60 * 1000
       ).toISOString()

@@ -297,6 +297,51 @@ test("minimo cancellation in the Gmail subject is not replayed as a booking", as
 for (const [source, body, subject, memo] of [
   [
     "HPB",
+    `予約番号：A123456
+氏名：テスト顧客
+電話番号：非公開
+来店日時：2099年10月20日 10:00
+所要時間目安：未定`,
+    "【SALON BOARD】予約キャンセルのお知らせ",
+    "HPB予約番号：A123456",
+  ],
+  [
+    "minimo",
+    `ミニモ予約受付
+予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：非公開
+来店日時：2099年10月20日 10:00
+施術時間：未定`,
+    "【ミニモ】予約キャンセルのお知らせ",
+    "ミニモ予約ID：MINIMO-123",
+  ],
+]) {
+  test(`${source} cancellation ignores malformed optional customer details for an existing reservation`, async () => {
+    const runtime = loadSync("mail-customer", { existing: true, memo });
+
+    const result = await runtime.sync(body, subject);
+
+    assert.equal(result.parsed.action, "cancel");
+    assert.equal(result.result.mode, "cancelled");
+    assert.equal(runtime.writes.length, 1);
+    assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  });
+
+  test(`${source} cancellation with an invalid duration does not create an unmatched cancellation`, async () => {
+    const runtime = loadSync("mail-customer", { missingReservation: true });
+
+    await assert.rejects(
+      runtime.sync(body, subject),
+      /氏名と来店日時が不足しています/
+    );
+    assert.equal(runtime.writes.length, 0);
+  });
+}
+
+for (const [source, body, subject, memo] of [
+  [
+    "HPB",
     "予約番号：A123456",
     "【SALON BOARD】予約キャンセルのお知らせ",
     "HPB予約番号：A123456",
