@@ -1103,6 +1103,78 @@ test("customer matching treats Japanese international phone notation as equal", 
   );
 });
 
+for (const mailPhone of [
+  "+81 (0)90-0000-0000",
+  "０９０ ００００ ００００",
+]) {
+  test(`customer matching parses formatted mail phone ${mailPhone}`, async () => {
+    const runtime = loadSync(null, {
+      missingReservation: true,
+      customerRows: [
+        {
+          id: "existing-phone-customer",
+          name: "顧客名の別表記",
+          phone: "09000000000",
+        },
+      ],
+    });
+
+    const result = await runtime.sync(
+      mail.replace("電話番号：09000000000", `電話番号：${mailPhone}`)
+    );
+
+    assert.equal(result.result.mode, "inserted");
+    assert.equal(result.result.customerMatch.matchStatus, "matched_by_phone");
+    assert.equal(
+      result.result.customerMatch.customerId,
+      "existing-phone-customer"
+    );
+    assert.equal(runtime.writes.length, 1);
+    assert.equal(runtime.writes[0].table, "reservations");
+  });
+}
+
+test("customer matching parses a formatted phone on the line after its label", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [
+      {
+        id: "existing-phone-customer",
+        name: "顧客名の別表記",
+        phone: "09000000000",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(
+    mail.replace(
+      "電話番号：09000000000",
+      "電話番号：\n＋８１ （０）９０－００００－００００"
+    )
+  );
+
+  assert.equal(result.result.customerMatch.matchStatus, "matched_by_phone");
+  assert.equal(
+    result.result.customerMatch.customerId,
+    "existing-phone-customer"
+  );
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].table, "reservations");
+});
+
+test("a malformed labelled phone stops before database access", async () => {
+  const runtime = loadSync(null, { rejectDatabaseAccess: true });
+
+  await assert.rejects(
+    runtime.sync(
+      mail.replace("電話番号：09000000000", "電話番号：090-ABCD-0000")
+    ),
+    /電話番号を解析できませんでした/
+  );
+
+  assert.equal(runtime.writes.length, 0);
+});
+
 test("a new booking stops before writes when one phone belongs to multiple customers", async () => {
   const runtime = loadSync(null, {
     missingReservation: true,

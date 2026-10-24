@@ -118,6 +118,33 @@ function normalizePhone(value: string) {
   return digits;
 }
 
+function extractPhone(text: string) {
+  const rawPhone = extractFirstMatch(text, [
+    /■電話番号[^\S\r\n]*[:：]?[^\S\r\n]*\n[^\S\r\n]*([^\r\n]+)/,
+    /電話番号[^\S\r\n]*[:：]?[^\S\r\n]*\n[^\S\r\n]*([^\r\n]+)/,
+    /電話番号[^\S\r\n]*[:：][^\S\r\n]*([^\r\n]+)/,
+  ]);
+
+  if (!rawPhone) return "";
+
+  const phone = rawPhone.normalize("NFKC").trim();
+  const digits = phone.replace(/[^\d]/g, "");
+
+  // Accept common Japanese domestic/international formatting while rejecting
+  // labels, extensions or damaged mail content before customer matching. A
+  // partial value such as only "090" could otherwise miss the existing
+  // customer and create a duplicate external customer.
+  if (
+    !/^\+?[\d][\d\s().\-‐‑‒–—ー]*$/.test(phone) ||
+    digits.length < 10 ||
+    digits.length > 13
+  ) {
+    throw new Error("電話番号を解析できませんでした");
+  }
+
+  return phone;
+}
+
 function isSameReservationDateTime(
   previous: string | null | undefined,
   current: string | null | undefined
@@ -259,11 +286,7 @@ function parseHpbMail(
     /氏名\s*[:：]?\s*([^\n]+)/,
   ]);
 
-  const phone = extractFirstMatch(text, [
-    /■電話番号\s*\n\s*([0-9\-]+)/,
-    /電話番号\s*\n\s*([0-9\-]+)/,
-    /電話番号\s*[:：]?\s*([0-9\-]+)/,
-  ]);
+  const phone = extractPhone(text);
 
   const customerKana = extractKanaFromName(customerName);
   const normalizedCustomerName = normalizeCustomerName(customerName);
@@ -350,10 +373,7 @@ function parseMinimoMail(
     /氏名\s*[:：]?\s*([^\n]+)/,
   ]);
 
-  const phone = extractFirstMatch(text, [
-    /電話番号\s*\n\s*([0-9\-]+)/,
-    /電話番号\s*[:：]?\s*([0-9\-]+)/,
-  ]);
+  const phone = extractPhone(text);
 
   const dateText = extractFirstMatch(text, [
     /来店日時\s*\n\s*([^\n]+)/,
