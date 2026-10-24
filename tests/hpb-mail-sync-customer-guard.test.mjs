@@ -1019,6 +1019,58 @@ test("a new external booking inserts a deterministic customer instead of upserti
   assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
 });
 
+test("a new booking does not attach to a same-name customer with a different phone", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [
+      {
+        id: "same-name-other-customer",
+        name: "テスト顧客",
+        phone: "08011112222",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "inserted");
+  assert.equal(result.result.customerMatch.matchStatus, "auto_created");
+  assert.equal(result.result.customerMatch.customerId, autoCustomerId);
+  assert.equal(runtime.writes.length, 2);
+  assert.equal(runtime.writes[0].table, "customers");
+  assert.equal(runtime.writes[0].payload.id, autoCustomerId);
+  assert.equal(runtime.writes[1].table, "reservations");
+  assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
+});
+
+test("customer matching treats Japanese international phone notation as equal", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [
+      {
+        id: "international-phone-customer",
+        name: "顧客名の別表記",
+        phone: "+81 90-0000-0000",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "inserted");
+  assert.equal(result.result.customerMatch.matchStatus, "matched_by_phone");
+  assert.equal(
+    result.result.customerMatch.customerId,
+    "international-phone-customer"
+  );
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].table, "reservations");
+  assert.equal(
+    runtime.writes[0].payload.customer_id,
+    "international-phone-customer"
+  );
+});
+
 test("customer matching reads beyond the Supabase 1000-row response limit", async () => {
   const customerRows = Array.from({ length: 1001 }, (_, index) => ({
     id: `customer-${String(index).padStart(4, "0")}`,

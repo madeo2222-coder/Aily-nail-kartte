@@ -107,7 +107,15 @@ function normalizeForCompare(value: string) {
 }
 
 function normalizePhone(value: string) {
-  return value.replace(/[^\d]/g, "");
+  const digits = value.replace(/[^\d]/g, "");
+
+  // Treat Japanese numbers saved in international notation as the same
+  // number carried by domestic booking mail. Some contact books retain the
+  // trunk prefix as "+81 (0)...", while others omit it as "+81 ...".
+  if (/^810\d{9,10}$/.test(digits)) return digits.slice(2);
+  if (/^81\d{9,10}$/.test(digits)) return `0${digits.slice(2)}`;
+
+  return digits;
 }
 
 function isSameReservationDateTime(
@@ -653,6 +661,13 @@ async function findOrCreateCustomer(
 
   const phoneCompare = normalizePhone(parsed.phone || "");
 
+  const hasCompatiblePhone = (customer: MatchedCustomer) => {
+    if (!phoneCompare) return true;
+
+    const customerPhone = normalizePhone(customer.phone || "");
+    return !customerPhone || customerPhone === phoneCompare;
+  };
+
   if (phoneCompare) {
     const phoneMatches = customers.filter((customer) => {
       return normalizePhone(customer.phone || "") === phoneCompare;
@@ -670,7 +685,9 @@ async function findOrCreateCustomer(
 
   const nameMatches = customers.filter((customer) => {
     const compareName = normalizeForCompare(customer.name || "");
-    return compareName === parsed.compareCustomerName;
+    return (
+      compareName === parsed.compareCustomerName && hasCompatiblePhone(customer)
+    );
   });
 
   if (nameMatches.length === 1) {
@@ -685,7 +702,10 @@ async function findOrCreateCustomer(
   if (parsed.compareCustomerKana) {
     const kanaMatches = customers.filter((customer) => {
       const compareName = normalizeForCompare(customer.name || "");
-      return compareName.includes(parsed.compareCustomerKana);
+      return (
+        compareName.includes(parsed.compareCustomerKana) &&
+        hasCompatiblePhone(customer)
+      );
     });
 
     if (kanaMatches.length === 1) {
