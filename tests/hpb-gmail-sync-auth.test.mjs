@@ -353,6 +353,30 @@ test("Gmail sync uses each message timestamp when search order is misleading", a
   assert.deepEqual(runtime.syncedTexts, ["older-message", "newer-message"]);
 });
 
+test("Gmail sync searches for and processes full-width minimo reservation markers", async () => {
+  const bodyText = `ＭＩＮＩＭＯ予約受付
+予約ＩＤ：ＭＩＮＩＭＯ－１２３
+来店日時：２０９９年１０月２０日 １０：００`;
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "full-width-minimo" }] }],
+    messagePayloads: {
+      "full-width-minimo": {
+        mimeType: "text/plain",
+        headers: [{ name: "Subject", value: "ご予約内容のお知らせ" }],
+        body: { data: Buffer.from(bodyText).toString("base64url") },
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST();
+
+  assert.equal(response.status, 200);
+  assert.match(runtime.gmailListCalls[0].q, /"ＭＩＮＩＭＯ"/);
+  assert.match(runtime.gmailListCalls[0].q, /"予約ＩＤ"/);
+  assert.deepEqual(runtime.parsedTexts, [bodyText]);
+  assert.deepEqual(runtime.syncedTexts, [bodyText]);
+});
+
 test("Gmail sync decodes an RFC 2047 base64 subject before cancellation parsing", async () => {
   const subject = "ご予約のキャンセル SALON BOARD";
   const runtime = loadRoute({

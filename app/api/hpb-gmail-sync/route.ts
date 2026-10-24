@@ -194,7 +194,7 @@ const GMAIL_MESSAGE_LIMIT = 500;
 const GMAIL_PAGE_LIMIT = 10;
 const GMAIL_MESSAGE_FETCH_CONCURRENCY = 5;
 const RESERVATION_MAIL_QUERY =
-  'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ミニモサロンツール" OR "予約ID")';
+  'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ＭＩＮＩＭＯ" OR "ミニモサロンツール" OR "予約ID" OR "予約ＩＤ")';
 
 function decodeHtmlEntities(value: string) {
   return value
@@ -341,16 +341,19 @@ async function extractReservationBody(
 }
 
 function isTargetReservationMail(subject: string, bodyText: string) {
-  const checkText = `${subject}\n${bodyText}`;
+  // Keep this gate aligned with the parser. Forwarded/copied provider mail can
+  // contain full-width Latin letters and label characters; rejecting it here
+  // would skip the message before the parser's NFKC compatibility runs.
+  const checkText = `${subject}\n${bodyText}`.normalize("NFKC").toLowerCase();
 
   return (
     checkText.includes("予約番号") ||
-    checkText.includes("SALON BOARD") ||
-    checkText.includes("HOT PEPPER Beauty") ||
+    checkText.includes("salon board") ||
+    checkText.includes("hot pepper beauty") ||
     checkText.includes("ミニモ") ||
     checkText.includes("minimo") ||
     checkText.includes("ミニモサロンツール") ||
-    checkText.includes("予約ID")
+    checkText.includes("予約id")
   );
 }
 
