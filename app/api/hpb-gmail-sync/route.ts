@@ -288,14 +288,17 @@ async function extractReservationBody(
 
   if (plainText) {
     const plainParseError = preflightReservationBody(subject, plainText);
-    if (plainParseError == null) {
+    if (plainParseError === null) {
       return { bodyText: plainText, parseError: plainParseError };
     }
 
     // Some multipart/alternative messages contain only a short notice in the
-    // plain part while the reservation fields are present in HTML. Load HTML
-    // only after the preferred plain body fails parsing, so normal messages do
-    // not incur another Gmail attachment request or duplicate their content.
+    // plain part while the reservation fields are present in HTML. This also
+    // covers a generic subject/plain notice that has no provider marker even
+    // though Gmail matched reservation fields in the HTML alternative. Load
+    // HTML only when the preferred plain body is not a complete reservation,
+    // so normal messages do not incur another Gmail attachment request or
+    // duplicate their content.
     const htmlText = (await collectMimeText(
       payload,
       "text/html",

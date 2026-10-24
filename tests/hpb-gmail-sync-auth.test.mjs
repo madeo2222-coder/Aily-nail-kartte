@@ -854,6 +854,49 @@ test("Gmail sync falls back to HTML when the plain alternative lacks reservation
   ]);
 });
 
+test("Gmail sync checks HTML when the subject and plain alternative have no provider marker", async () => {
+  const plain = "詳しい内容はHTML版をご確認ください";
+  const html = `<div>予約番号：A123456</div><div>氏名：テスト顧客</div><div>来店日時：2099年10月20日 10:00</div>`;
+  const htmlText =
+    "予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00";
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "generic-plain-html-reservation" }] }],
+    messagePayloads: {
+      "generic-plain-html-reservation": {
+        mimeType: "multipart/alternative",
+        headers: [{ name: "Subject", value: "ご予約のお知らせ" }],
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: Buffer.from(plain).toString("base64url") },
+          },
+          {
+            mimeType: "text/html",
+            body: { attachmentId: "generic-html-reservation-body" },
+          },
+        ],
+      },
+    },
+    attachmentPayloads: {
+      "generic-html-reservation-body": Buffer.from(html).toString("base64url"),
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.deepEqual(runtime.parsedTexts, [`${htmlText}\n`]);
+  assert.deepEqual(runtime.syncedTexts, [htmlText]);
+  assert.deepEqual(runtime.gmailAttachmentCalls, [
+    {
+      messageId: "generic-plain-html-reservation",
+      id: "generic-html-reservation-body",
+    },
+  ]);
+});
+
 test("Gmail sync reports a retryable failure when an external body cannot be fetched", async () => {
   const runtime = loadRoute({
     listPages: [{ messages: [{ id: "external-body-failed" }] }],
