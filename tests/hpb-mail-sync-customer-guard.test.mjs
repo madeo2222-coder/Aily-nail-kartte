@@ -1162,6 +1162,31 @@ test("customer matching parses a formatted phone on the line after its label", a
   assert.equal(runtime.writes[0].table, "reservations");
 });
 
+test("customer matching keeps same-line phone labels without a colon compatible", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [
+      {
+        id: "existing-phone-customer",
+        name: "顧客名の別表記",
+        phone: "09000000000",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(
+    mail.replace("電話番号：09000000000", "電話番号 090-0000-0000")
+  );
+
+  assert.equal(result.result.customerMatch.matchStatus, "matched_by_phone");
+  assert.equal(
+    result.result.customerMatch.customerId,
+    "existing-phone-customer"
+  );
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].table, "reservations");
+});
+
 test("a malformed labelled phone stops before database access", async () => {
   const runtime = loadSync(null, { rejectDatabaseAccess: true });
 

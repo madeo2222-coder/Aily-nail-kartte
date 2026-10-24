@@ -123,6 +123,7 @@ function extractPhone(text: string) {
     /■電話番号[^\S\r\n]*[:：]?[^\S\r\n]*\n[^\S\r\n]*([^\r\n]+)/,
     /電話番号[^\S\r\n]*[:：]?[^\S\r\n]*\n[^\S\r\n]*([^\r\n]+)/,
     /電話番号[^\S\r\n]*[:：][^\S\r\n]*([^\r\n]+)/,
+    /電話番号[^\S\r\n]+([^\r\n]+)/,
   ]);
 
   if (!rawPhone) return "";
