@@ -668,11 +668,13 @@ async function findOrCreateCustomer(
     return !customerPhone || customerPhone === phoneCompare;
   };
 
-  if (phoneCompare) {
-    const phoneMatches = customers.filter((customer) => {
-      return normalizePhone(customer.phone || "") === phoneCompare;
-    });
+  const phoneMatches = phoneCompare
+    ? customers.filter((customer) => {
+        return normalizePhone(customer.phone || "") === phoneCompare;
+      })
+    : [];
 
+  if (phoneCompare) {
     if (phoneMatches.length === 1) {
       return {
         customerId: phoneMatches[0].id,
@@ -725,6 +727,24 @@ async function findOrCreateCustomer(
         matchedName: null,
       };
     }
+  }
+
+  if (phoneMatches.length > 1) {
+    return {
+      customerId: null,
+      matchStatus: "multiple_found_by_phone",
+      matchedCount: phoneMatches.length,
+      matchedName: null,
+    };
+  }
+
+  if (nameMatches.length > 1) {
+    return {
+      customerId: null,
+      matchStatus: "multiple_found_by_name",
+      matchedCount: nameMatches.length,
+      matchedName: null,
+    };
   }
 
   if (parsed.action === "reservation") {
@@ -865,6 +885,11 @@ async function upsertReservation(
     : null;
   const customerMatch =
     preservedExistingCustomer || (await findOrCreateCustomer(parsed, context));
+  if (parsed.action === "reservation" && !customerMatch.customerId) {
+    throw new Error(
+      `顧客候補を一意に特定できません（${customerMatch.matchStatus}: ${customerMatch.matchedCount}件）。誤紐付けを避けるため予約保存を停止しました。`
+    );
+  }
   if (
     existing?.customer_id &&
     customerMatch.customerId &&

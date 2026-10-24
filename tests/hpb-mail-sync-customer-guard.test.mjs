@@ -1071,6 +1071,30 @@ test("customer matching treats Japanese international phone notation as equal", 
   );
 });
 
+test("a new booking stops before writes when one phone belongs to multiple customers", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [
+      {
+        id: "duplicate-phone-customer-1",
+        name: "別顧客一",
+        phone: "09000000000",
+      },
+      {
+        id: "duplicate-phone-customer-2",
+        name: "別顧客二",
+        phone: "+81 90-0000-0000",
+      },
+    ],
+  });
+
+  await assert.rejects(
+    runtime.sync(mail),
+    /顧客候補を一意に特定できません（multiple_found_by_phone: 2件）/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
 test("customer matching reads beyond the Supabase 1000-row response limit", async () => {
   const customerRows = Array.from({ length: 1001 }, (_, index) => ({
     id: `customer-${String(index).padStart(4, "0")}`,
