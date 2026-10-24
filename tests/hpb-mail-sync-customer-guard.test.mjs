@@ -435,6 +435,25 @@ test("minimo mail normalizes full-width source markers, IDs and date fields", as
   assert.equal(runtime.writes[0].operation, "update");
 });
 
+test("minimo replay adopts a legacy full-width lowercase reservation marker", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "ミニモ予約ＩＤ：ｍｉｎｉｍｏ－１２３",
+  });
+  const result = await runtime.sync(`ミニモ予約受付
+予約ID：minimo-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+担当者：指名なし
+施術時間：90分`);
+
+  assert.equal(result.parsed.reservationNumber, "MINIMO-123");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
 for (const [label, invalidDateTime] of [
   ["an impossible calendar date", "2099年2月30日 10:00"],
   ["an out-of-range month", "2099年13月20日 10:00"],

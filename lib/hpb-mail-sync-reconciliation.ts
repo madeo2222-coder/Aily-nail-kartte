@@ -49,6 +49,10 @@ function normalize(value: string | null | undefined) {
     .toLowerCase();
 }
 
+export function normalizeExternalReservationNumber(value: string) {
+  return value.normalize("NFKC").trim().toUpperCase();
+}
+
 function hasSourceMarker(source: MailSyncSource, value: string) {
   if (source === "minimo") {
     return value.includes("minimo") || value.includes("ミニモ");
@@ -91,7 +95,9 @@ function buildDeterministicId(
   reservationNumber: string
 ) {
   const bytes = createHash("sha256")
-    .update(`aily:external-${kind}:${source}:${reservationNumber.trim()}`)
+    .update(
+      `aily:external-${kind}:${source}:${normalizeExternalReservationNumber(reservationNumber)}`
+    )
     .digest()
     .subarray(0, 16);
 
@@ -158,11 +164,27 @@ export function findExternalReservationCandidate<
   reservationNumber: string;
 }): Candidate | null {
   const reservationKey = source === "minimo" ? "ミニモ予約ID" : "HPB予約番号";
-  const expectedLine = `${reservationKey}：${reservationNumber.trim()}`;
+  const expectedKey = normalize(reservationKey);
+  const expectedReservationNumber =
+    normalizeExternalReservationNumber(reservationNumber);
   const matches = candidates.filter((candidate) =>
     String(candidate.memo || "")
       .split(/\r?\n/)
-      .some((line) => line.trim() === expectedLine)
+      .some((line) => {
+        const normalizedLine = line.trim().normalize("NFKC");
+        const separatorIndex = normalizedLine.indexOf(":");
+        if (separatorIndex < 0) return false;
+
+        const key = normalize(normalizedLine.slice(0, separatorIndex));
+        const candidateNumber = normalizeExternalReservationNumber(
+          normalizedLine.slice(separatorIndex + 1)
+        );
+
+        return (
+          key === expectedKey &&
+          candidateNumber === expectedReservationNumber
+        );
+      })
   );
 
   if (matches.length > 1) {

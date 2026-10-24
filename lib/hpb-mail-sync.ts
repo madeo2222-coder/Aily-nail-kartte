@@ -9,6 +9,7 @@ import {
   findManualReservationCandidate,
   hasSyncedMailBody,
   isCancelledReservationStatus,
+  normalizeExternalReservationNumber,
   readSyncedManualMemo,
   type MailSyncSource,
 } from "@/lib/hpb-mail-sync-reconciliation";
@@ -391,10 +392,12 @@ function parseMinimoMail(
       ? "cancel"
       : "reservation";
 
-  const reservationNumber = extractFirstMatch(text, [
-    /予約ID\s*\n\s*([^\n]+)/,
-    /予約ID\s*[:：]?\s*([^\n]+)/,
-  ]);
+  const reservationNumber = normalizeExternalReservationNumber(
+    extractFirstMatch(text, [
+      /予約ID\s*\n\s*([^\n]+)/,
+      /予約ID\s*[:：]?\s*([^\n]+)/,
+    ])
+  );
 
   const customerName = extractFirstMatch(text, [
     /氏名\s*\n\s*([^\n]+)/,
@@ -824,7 +827,11 @@ async function findExistingExternalReservation(
   const { data, error } = await context.supabase
     .from("reservations")
     .select("id, salon_id, customer_id, staff_id, menu, memo, status, start_at, end_at")
-    .ilike("memo", `%${reservationKey}：${parsed.reservationNumber}%`);
+    // Older parser versions could save a lowercase or full-width minimo ID.
+    // Fetch source-keyed rows and compare the exact normalized marker locally
+    // so a replay updates the existing reservation instead of inserting a
+    // second deterministic row under the newly canonicalized ID.
+    .ilike("memo", `%${reservationKey}：%`);
 
   if (error) throw new Error(error.message);
   const existing = findExternalReservationCandidate({
