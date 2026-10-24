@@ -910,6 +910,16 @@ async function upsertReservation(
       alreadySynced: true,
     };
   }
+  // A provider booking normally carries a customer phone number. Without it,
+  // a new external ID cannot be tied safely to an existing customer: a
+  // same-name match may be a different person, and creating another customer
+  // would leave no stable contact key. Existing external reservations remain
+  // compatible because their already-reviewed customer link is preserved.
+  if (!existing && parsed.action === "reservation" && !parsed.phone) {
+    throw new Error(
+      "電話番号がない新規予約メールは顧客を安全に特定できないため、予約保存を停止しました。"
+    );
+  }
   context.staffId = await resolveStaffId(parsed, context);
   const sourceMarkedManualEntry = existing
     ? null

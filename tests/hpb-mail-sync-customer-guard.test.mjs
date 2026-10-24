@@ -1130,6 +1130,41 @@ test("a new booking does not attach to a same-name customer with a different pho
   assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
 });
 
+test("a new booking without a phone does not attach to a same-name customer", async () => {
+  const runtime = loadSync(null, {
+    missingReservation: true,
+    customerRows: [
+      {
+        id: "same-name-customer",
+        name: "テスト顧客",
+        phone: "09011112222",
+      },
+    ],
+  });
+
+  await assert.rejects(
+    runtime.sync(mail.replace("\n電話番号：09000000000", "")),
+    /電話番号がない新規予約メールは顧客を安全に特定できない/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("an existing external booking without a phone preserves its customer link", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    mail.replace("\n電話番号：09000000000", "")
+  );
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(
+    result.result.customerMatch.matchStatus,
+    "preserved_existing_reservation_customer"
+  );
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].table, "reservations");
+  assert.equal(runtime.writes[0].payload.customer_id, "mail-customer");
+});
+
 test("customer matching treats Japanese international phone notation as equal", async () => {
   const runtime = loadSync(null, {
     missingReservation: true,
