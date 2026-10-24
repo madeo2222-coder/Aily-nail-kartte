@@ -246,10 +246,27 @@ async function collectMimeText(
   return [];
 }
 
-async function extractPlainText(
+function preflightReservationBody(subject: string, bodyText: string) {
+  if (!isTargetReservationMail(subject, bodyText)) return undefined;
+
+  try {
+    parseHpbMailText(bodyText, subject);
+    return null;
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "予約メールの解析に失敗しました";
+  }
+}
+
+async function extractReservationBody(
   payload: GmailMessagePart | null | undefined,
-  getAttachmentData: (attachmentId: string) => Promise<string | null>
-): Promise<string> {
+  getAttachmentData: (attachmentId: string) => Promise<string | null>,
+  subject: string
+): Promise<{
+  bodyText: string;
+  parseError: string | null | undefined;
+}> {
   const plainText = (await collectMimeText(
     payload,
     "text/plain",
@@ -258,11 +275,46 @@ async function extractPlainText(
     .filter((value) => value.trim())
     .join("\n");
 
-  if (plainText) return plainText;
+  if (plainText) {
+    const plainParseError = preflightReservationBody(subject, plainText);
+    if (plainParseError == null) {
+      return { bodyText: plainText, parseError: plainParseError };
+    }
 
-  return (await collectMimeText(payload, "text/html", getAttachmentData))
+    // Some multipart/alternative messages contain only a short notice in the
+    // plain part while the reservation fields are present in HTML. Load HTML
+    // only after the preferred plain body fails parsing, so normal messages do
+    // not incur another Gmail attachment request or duplicate their content.
+    const htmlText = (await collectMimeText(
+      payload,
+      "text/html",
+      getAttachmentData
+    ))
+      .filter((value) => value.trim())
+      .join("\n");
+
+    if (htmlText && htmlText.trim() !== plainText.trim()) {
+      const htmlParseError = preflightReservationBody(subject, htmlText);
+      if (htmlParseError === null) {
+        return { bodyText: htmlText, parseError: null };
+      }
+    }
+
+    return { bodyText: plainText, parseError: plainParseError };
+  }
+
+  const htmlText = (await collectMimeText(
+    payload,
+    "text/html",
+    getAttachmentData
+  ))
     .filter((value) => value.trim())
     .join("\n");
+
+  return {
+    bodyText: htmlText,
+    parseError: preflightReservationBody(subject, htmlText),
+  };
 }
 
 function isTargetReservationMail(subject: string, bodyText: string) {
@@ -338,6 +390,7 @@ type FetchedGmailMessage =
       internalDate: number;
       subject: string;
       bodyText: string;
+      bodyParseError: string | null | undefined;
     }
   | {
       ok: false;
@@ -423,8 +476,7 @@ async function fetchReservationMessages(
             )?.value || ""
           );
           const attachmentData = new Map<string, Promise<string | null>>();
-          const bodyText = (
-            await extractPlainText(
+          const extractedBody = await extractReservationBody(
               messageResponse.data.payload,
               (attachmentId) => {
                 let pending = attachmentData.get(attachmentId);
@@ -437,9 +489,10 @@ async function fetchReservationMessages(
                   attachmentData.set(attachmentId, pending);
                 }
                 return pending;
-              }
-            )
-          ).trim();
+              },
+              subject
+            );
+          const bodyText = extractedBody.bodyText.trim();
 
           return {
             ok: true,
@@ -448,6 +501,7 @@ async function fetchReservationMessages(
             internalDate,
             subject,
             bodyText,
+            bodyParseError: extractedBody.parseError,
           };
         } catch (error) {
           return {
@@ -548,14 +602,15 @@ async function runHpbGmailSync() {
       continue;
     }
 
-    try {
-      parseHpbMailText(message.bodyText, message.subject);
-    } catch (error) {
+    const parseError =
+      message.bodyParseError === undefined
+        ? preflightReservationBody(message.subject, message.bodyText)
+        : message.bodyParseError;
+
+    if (parseError) {
       parseFailures.set(
         message.messageId,
-        error instanceof Error
-          ? error.message
-          : "予約メールの解析に失敗しました"
+        parseError
       );
       if (message.threadId) {
         failedParseThreadIds.add(message.threadId);

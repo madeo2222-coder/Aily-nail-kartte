@@ -769,6 +769,50 @@ test("Gmail sync does not fetch an HTML attachment when a plain body is availabl
   assert.deepEqual(runtime.gmailAttachmentCalls, []);
 });
 
+test("Gmail sync falls back to HTML when the plain alternative lacks reservation fields", async () => {
+  const plain = "SALON BOARDから予約のお知らせがあります";
+  const html = `<div>予約番号：A123456</div><div>氏名：テスト顧客</div><div>来店日時：2099年10月20日 10:00</div>`;
+  const htmlText =
+    "予約番号：A123456\n氏名：テスト顧客\n来店日時：2099年10月20日 10:00";
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "multipart-html-fallback" }] }],
+    parseFailures: [plain],
+    messagePayloads: {
+      "multipart-html-fallback": {
+        mimeType: "multipart/alternative",
+        headers: [{ name: "Subject", value: "SALON BOARD予約" }],
+        parts: [
+          {
+            mimeType: "text/plain",
+            body: { data: Buffer.from(plain).toString("base64url") },
+          },
+          {
+            mimeType: "text/html",
+            body: { attachmentId: "html-reservation-body" },
+          },
+        ],
+      },
+    },
+    attachmentPayloads: {
+      "html-reservation-body": Buffer.from(html).toString("base64url"),
+    },
+  });
+
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.deepEqual(runtime.parsedTexts, [plain, `${htmlText}\n`]);
+  assert.deepEqual(runtime.syncedTexts, [htmlText]);
+  assert.deepEqual(runtime.gmailAttachmentCalls, [
+    {
+      messageId: "multipart-html-fallback",
+      id: "html-reservation-body",
+    },
+  ]);
+});
+
 test("Gmail sync reports a retryable failure when an external body cannot be fetched", async () => {
   const runtime = loadRoute({
     listPages: [{ messages: [{ id: "external-body-failed" }] }],
