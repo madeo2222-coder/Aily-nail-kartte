@@ -78,6 +78,8 @@ function loadRoute({
     menu: "ワンカラー",
     start_at: "2099-10-02T01:30:00.000Z",
     end_at: "2099-10-02T03:00:00.000Z",
+    source: null,
+    memo: null,
   };
   const supabaseAdmin = {
     from(table) {
@@ -298,6 +300,45 @@ test("does not send LINE again after a confirmation was already sent", async () 
   assert.equal(runtime.completionCalls.length, 0);
 });
 
+test("does not send Naily confirmation LINE for a legacy external reservation", async () => {
+  for (const reservation of [
+    {
+      id: "reservation-1",
+      salon_id: "salon-1",
+      customer_id: "customer-1",
+      staff_id: "staff-1",
+      status: "confirmed",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      source: "ＭＩＮＩＭＯ",
+      memo: null,
+    },
+    {
+      id: "reservation-1",
+      salon_id: "salon-1",
+      customer_id: "customer-1",
+      staff_id: "staff-1",
+      status: "confirmed",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      source: null,
+      memo: "ＨＰＢ予約番号：Ａ１２３４５６",
+    },
+  ]) {
+    const runtime = loadRoute({ reservation });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.sent, false);
+    assert.match(response.body.error, /HPB・ミニモ/);
+    assert.equal(runtime.lineCalls.length, 0);
+    assert.equal(runtime.completionCalls.length, 0);
+  }
+});
+
 test("does not invite a retry when a confirmation network failure cannot be recorded", async () => {
   for (const completionResult of [
     { data: false, error: null },
@@ -414,6 +455,8 @@ test("rejects a confirmed reservation belonging to another salon", async () => {
       menu: null,
       start_at: null,
       end_at: null,
+      source: null,
+      memo: null,
     },
   });
   const response = await runtime.post();

@@ -14,6 +14,8 @@ type ReservationRow = {
   menu: string | null;
   start_at: string | null;
   end_at: string | null;
+  source: string | null;
+  memo: string | null;
 };
 type CustomerRow = {
   id: string;
@@ -82,6 +84,23 @@ function formatTimeOnly(value: string | null) {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function isExternalReservation(reservation: ReservationRow) {
+  const source = (reservation.source || "").normalize("NFKC").toLowerCase();
+  const memo = (reservation.memo || "").normalize("NFKC").toLowerCase();
+
+  return (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
+    memo.includes("hpb予約番号") ||
+    memo.includes("ホットペッパー") ||
+    memo.includes("ミニモ予約id") ||
+    memo.includes("ミニモ")
+  );
 }
 
 function buildLineMessage(params: {
@@ -223,7 +242,7 @@ export async function POST(request: Request) {
     const supabaseAdmin = getSupabaseAdmin();
     const { data: reservationData, error: reservationError } = await supabaseAdmin
       .from("reservations")
-      .select("id, salon_id, customer_id, staff_id, status, menu, start_at, end_at")
+      .select("id, salon_id, customer_id, staff_id, status, menu, start_at, end_at, source, memo")
       .eq("id", reservationId)
       .maybeSingle();
     if (reservationError) throw new Error(reservationError.message);
@@ -244,6 +263,17 @@ export async function POST(request: Request) {
     if (reservation.status !== "confirmed" && reservation.status !== "予約確定") {
       return NextResponse.json(
         { ok: false, sent: false, error: "予約確定済みの予約ではありません。" },
+        { status: 409 }
+      );
+    }
+    if (isExternalReservation(reservation)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: false,
+          error:
+            "HPB・ミニモから登録された予約には、Nailyの予約確定LINEを送信できません。",
+        },
         { status: 409 }
       );
     }
