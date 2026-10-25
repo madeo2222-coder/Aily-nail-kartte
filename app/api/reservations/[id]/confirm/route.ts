@@ -13,6 +13,7 @@ type ReservationRow = {
   start_at: string | null;
   end_at: string | null;
   status: string | null;
+  source: string | null;
   memo: string | null;
 };
 
@@ -109,6 +110,23 @@ function getConfirmReservationRow(value: unknown) {
   }
 
   return candidate as ConfirmReservationRow;
+}
+
+function isExternalReservation(reservation: ReservationRow) {
+  const source = (reservation.source || "").normalize("NFKC").toLowerCase();
+  const memo = (reservation.memo || "").normalize("NFKC").toLowerCase();
+
+  return (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
+    memo.includes("hpb予約番号") ||
+    memo.includes("ホットペッパー") ||
+    memo.includes("ミニモ予約id") ||
+    memo.includes("ミニモ")
+  );
 }
 
 export async function POST(
@@ -219,7 +237,7 @@ export async function POST(
       await supabaseAdmin
         .from("reservations")
         .select(
-          "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo"
+          "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, source, memo"
         )
         .eq("id", reservationId)
         .eq("salon_id", salonId)
@@ -237,6 +255,18 @@ export async function POST(
     }
 
     const reservation = reservationData as ReservationRow;
+    if (isExternalReservation(reservation)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          confirmed: false,
+          error:
+            "HPB・ミニモから同期された予約です。予約元で状態を確認してください。",
+        },
+        { status: 409 }
+      );
+    }
+
     if (
       hasExpectedSnapshot &&
       (reservation.customer_id !== expectedFields.customerId!.value ||

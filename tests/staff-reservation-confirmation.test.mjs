@@ -39,6 +39,7 @@ const defaultReservation = {
   start_at: "2099-10-02T01:30:00.000Z",
   end_at: "2099-10-02T03:00:00.000Z",
   status: "requested",
+  source: null,
   memo: "",
 };
 
@@ -247,6 +248,7 @@ test("scopes the reservation read and atomic confirmation to the staff salon", a
     ["salon_id", "salon-1"],
   ]);
   assert.equal(runtime.rpcCalls.length, 1);
+  assert.match(runtime.readCalls.select, /source/);
   assert.equal(runtime.rpcCalls[0].name, "confirm_staff_reservation");
   assert.deepEqual(
     JSON.parse(JSON.stringify(runtime.rpcCalls[0].args)),
@@ -263,6 +265,21 @@ test("scopes the reservation read and atomic confirmation to the staff salon", a
       p_memo: "変更後",
     }
   );
+});
+
+test("does not confirm customer-linked HPB or minimo reservations", async () => {
+  for (const reservation of [
+    { ...defaultReservation, source: "ＨＯＴ ＰＥＰＰＥＲ" },
+    { ...defaultReservation, memo: "ミニモ予約ＩＤ：M-123" },
+  ]) {
+    const runtime = loadRoute({ reservation });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.confirmed, false);
+    assert.match(response.body.error, /予約元で状態を確認/);
+    assert.equal(runtime.rpcCalls.length, 0);
+  }
 });
 
 test("edited confirmation requires the original reservation snapshot", async () => {
