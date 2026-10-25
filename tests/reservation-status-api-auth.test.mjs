@@ -194,7 +194,7 @@ test("reservation status keeps the signed shared-login update path available", a
     },
   });
 
-  const response = await runtime.exports.POST(request("完了"), context);
+  const response = await runtime.exports.POST(request("来店"), context);
   const call = runtime.calls[1];
 
   assert.equal(response.status, 200);
@@ -256,6 +256,92 @@ test("reservation status refuses a stale list after sync changed the status", as
   );
 });
 
+test("reservation status rejects invalid direct transitions before writing", async () => {
+  const cases = [
+    { current: "confirmed", next: "完了" },
+    { current: "キャンセル", next: "来店" },
+    { current: "完了", next: "来店" },
+    { current: "予約", next: "完了" },
+  ];
+
+  for (const { current, next } of cases) {
+    const runtime = executeRoute({
+      authentication: {
+        ok: true,
+        principal: {
+          authenticationMode: "legacy",
+          staffId: null,
+          salonId: null,
+          role: "staff",
+          isActive: null,
+        },
+      },
+      reservationResult: {
+        data: { id: "reservation-1", status: current },
+        error: null,
+      },
+    });
+
+    const response = await runtime.exports.POST(
+      request(next, current),
+      context,
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 409, `${current} -> ${next}`);
+    assert.match(body.error, /現在の予約状態からは更新できません/);
+    assert.equal(
+      runtime.calls.some((call) => call.operation === "update"),
+      false,
+      `${current} -> ${next}`,
+    );
+  }
+});
+
+test("reservation status preserves the supported visit and completion transitions", async () => {
+  const cases = [
+    { current: "予約申請中", next: "来店" },
+    { current: "予約受付", next: "来店" },
+    { current: "予約", next: "来店" },
+    { current: "予約確定", next: "来店" },
+    { current: "confirmed", next: "来店" },
+    { current: "来店予定", next: "完了" },
+    { current: "来店", next: "完了" },
+  ];
+
+  for (const { current, next } of cases) {
+    const runtime = executeRoute({
+      authentication: {
+        ok: true,
+        principal: {
+          authenticationMode: "legacy",
+          staffId: null,
+          salonId: null,
+          role: "staff",
+          isActive: null,
+        },
+      },
+      reservationResult: {
+        data: { id: "reservation-1", status: current },
+        error: null,
+      },
+      updateResult: {
+        data: { id: "reservation-1", status: next },
+        error: null,
+      },
+    });
+
+    const response = await runtime.exports.POST(
+      request(next, current),
+      context,
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200, `${current} -> ${next}`);
+    assert.equal(body.ok, true);
+  }
+});
+
 test("reservation status reports a write-time status race as a conflict", async () => {
   const runtime = executeRoute({
     authentication: {
@@ -278,7 +364,7 @@ test("reservation status reports a write-time status race as a conflict", async 
   assert.match(body.error, /最新の内容を読み込み直して/);
 });
 
-test("reservation status preserves not-found and null status semantics", async () => {
+test("reservation status preserves not-found and rejects an unset current status", async () => {
   const authentication = {
     ok: true,
     principal: {
@@ -310,14 +396,10 @@ test("reservation status preserves not-found and null status semantics", async (
     request("来店", null),
     context,
   );
-  assert.equal(nullResponse.status, 200);
+  const nullBody = await nullResponse.json();
+
+  assert.equal(nullResponse.status, 409);
+  assert.match(nullBody.error, /現在の予約状態からは更新できません/);
   const update = nullRuntime.calls.find((call) => call.operation === "update");
-  assert.ok(
-    update.filters.some(
-      (filter) =>
-        filter.method === "is" &&
-        filter.column === "status" &&
-        filter.value === null,
-    ),
-  );
+  assert.equal(update, undefined);
 });

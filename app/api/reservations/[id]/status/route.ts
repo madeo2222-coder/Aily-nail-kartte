@@ -5,6 +5,29 @@ import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 export const dynamic = "force-dynamic";
 
 const ALLOWED_STATUSES = new Set(["来店", "完了"]);
+const VISITABLE_STATUSES = new Set([
+  "予約申請中",
+  "予約受付",
+  "予約",
+  "予約確定",
+  "confirmed",
+]);
+const COMPLETABLE_STATUSES = new Set(["来店予定", "来店"]);
+
+function canTransitionReservationStatus(
+  currentStatus: string | null,
+  nextStatus: string,
+) {
+  if (nextStatus === "来店") {
+    return VISITABLE_STATUSES.has(currentStatus || "");
+  }
+
+  if (nextStatus === "完了") {
+    return COMPLETABLE_STATUSES.has(currentStatus || "");
+  }
+
+  return false;
+}
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -104,6 +127,22 @@ export async function POST(
         {
           ok: false,
           error: "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 },
+      );
+    }
+
+    if (
+      !canTransitionReservationStatus(
+        reservationResult.data.status,
+        status,
+      )
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "現在の予約状態からは更新できません。最新の内容を確認してください。",
         },
         { status: 409 },
       );
