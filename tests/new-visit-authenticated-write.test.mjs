@@ -309,6 +309,15 @@ async function mount({
         )
         .join(" ");
     },
+    customerSelect() {
+      return walk(tree).find(
+        (node) =>
+          node.type === "select" &&
+          walk(node).some(
+            (child) => child.props?.children === "顧客を選択してください",
+          ),
+      );
+    },
     async submit() {
       if (withPhoto) {
         const fileInput = walk(tree).find(
@@ -404,6 +413,8 @@ test("shared-login reservation visit uses guarded status transitions around the 
     reservationId: "reservation-1",
     reservationStatus: "confirmed",
   });
+  assert.equal(page.customerSelect()?.props.disabled, true);
+  assert.match(page.html(), /予約に登録された顧客へ来店履歴を保存します/);
   await page.submit();
 
   const statusRequests = page.requests.filter(
@@ -412,8 +423,16 @@ test("shared-login reservation visit uses guarded status transitions around the 
   assert.deepEqual(
     statusRequests.map((request) => JSON.parse(request.options.body)),
     [
-      { status: "来店", expectedStatus: "confirmed" },
-      { status: "完了", expectedStatus: "来店" },
+      {
+        status: "来店",
+        expectedCustomerId: CUSTOMER_ID,
+        expectedStatus: "confirmed",
+      },
+      {
+        status: "完了",
+        expectedCustomerId: CUSTOMER_ID,
+        expectedStatus: "来店",
+      },
     ],
   );
 

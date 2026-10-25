@@ -293,6 +293,7 @@ test("reservation list updates visit status through the authenticated API", asyn
   assert.equal(statusRequest.options.method, "POST");
   assert.deepEqual(JSON.parse(statusRequest.options.body), {
     status: "来店",
+    expectedCustomerId: "customer-1",
     expectedStatus: "confirmed",
   });
 });

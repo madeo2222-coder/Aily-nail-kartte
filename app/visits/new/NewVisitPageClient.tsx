@@ -614,16 +614,18 @@ export default function NewVisitPageClient() {
   async function updateReservationStatus({
     reservationId,
     status,
+    expectedCustomerId,
     expectedStatus,
   }: {
     reservationId: string;
     status: "来店" | "完了";
+    expectedCustomerId: string;
     expectedStatus: string;
   }) {
     const response = await fetch(`/api/reservations/${reservationId}/status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, expectedStatus }),
+      body: JSON.stringify({ status, expectedCustomerId, expectedStatus }),
     });
     const responseBody: unknown = await response.json().catch(() => null);
 
@@ -821,6 +823,7 @@ export default function NewVisitPageClient() {
           reservationStatusForCompletion = await updateReservationStatus({
             reservationId: prefilledReservationId,
             status: "来店",
+            expectedCustomerId: customerId,
             expectedStatus: prefilledReservationStatus,
           });
         }
@@ -972,6 +975,7 @@ export default function NewVisitPageClient() {
         await updateReservationStatus({
           reservationId: prefilledReservationId,
           status: "完了",
+          expectedCustomerId: customerId,
           expectedStatus: reservationStatusForCompletion,
         });
       }
@@ -1066,7 +1070,8 @@ export default function NewVisitPageClient() {
             <select
               value={customerId}
               onChange={(e) => setCustomerId(e.target.value)}
-              className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm"
+              disabled={Boolean(prefilledReservationId)}
+              className="w-full rounded-2xl border border-rose-200 bg-rose-50/40 px-3 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-70"
             >
               <option value="">
                 顧客を選択してください
@@ -1079,6 +1084,12 @@ export default function NewVisitPageClient() {
                 </option>
               ))}
             </select>
+
+            {prefilledReservationId ? (
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                予約に登録された顧客へ来店履歴を保存します。顧客を変更する場合は、先に予約内容を修正してください。
+              </p>
+            ) : null}
           </section>
 
           <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">

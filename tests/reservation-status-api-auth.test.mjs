@@ -71,7 +71,11 @@ function executeRoute({
                 error: null,
               }
             : reservationResult || {
-                data: { id: "reservation-1", status: "confirmed" },
+                data: {
+                  id: "reservation-1",
+                  customer_id: "customer-1",
+                  status: "confirmed",
+                },
                 error: null,
               },
         );
@@ -132,8 +136,16 @@ function executeRoute({
   };
 }
 
-function request(status, expectedStatus = "confirmed") {
-  return { async json() { return { status, expectedStatus }; } };
+function request(
+  status,
+  expectedStatus = "confirmed",
+  expectedCustomerId = "customer-1",
+) {
+  return {
+    async json() {
+      return { status, expectedCustomerId, expectedStatus };
+    },
+  };
 }
 
 const context = { params: Promise.resolve({ id: "reservation-1" }) };
@@ -189,6 +201,7 @@ test("reservation status limits values and scopes individual staff writes", asyn
     { column: "id", value: "reservation-1" },
     { column: "salon_id", value: "salon-1" },
     { column: "status", value: "confirmed" },
+    { column: "customer_id", value: "customer-1" },
   ]);
   assert.deepEqual(JSON.parse(JSON.stringify(read.filters)), [
     { column: "id", value: "reservation-1" },
@@ -217,6 +230,7 @@ test("reservation status keeps the signed shared-login update path available", a
   assert.deepEqual(JSON.parse(JSON.stringify(call.filters)), [
     { column: "id", value: "reservation-1" },
     { column: "status", value: "confirmed" },
+    { column: "customer_id", value: "customer-1" },
   ]);
 });
 
@@ -235,12 +249,44 @@ test("reservation status requires the displayed status snapshot", async () => {
   });
 
   const response = await runtime.exports.POST(
-    { async json() { return { status: "来店" }; } },
+    {
+      async json() {
+        return { status: "来店", expectedCustomerId: "customer-1" };
+      },
+    },
     context,
   );
 
   assert.equal(response.status, 400);
   assert.equal(runtime.clientCreated, false);
+});
+
+test("reservation status refuses a different customer before writing", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+  });
+
+  const response = await runtime.exports.POST(
+    request("来店", "confirmed", "other-customer"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /最新の内容を読み込み直して/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
 });
 
 test("reservation status refuses a stale list after sync changed the status", async () => {
@@ -256,7 +302,11 @@ test("reservation status refuses a stale list after sync changed the status", as
       },
     },
     reservationResult: {
-      data: { id: "reservation-1", status: "キャンセル" },
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "キャンセル",
+      },
       error: null,
     },
   });
@@ -322,7 +372,11 @@ test("reservation status rejects invalid direct transitions before writing", asy
         },
       },
       reservationResult: {
-        data: { id: "reservation-1", status: current },
+        data: {
+          id: "reservation-1",
+          customer_id: "customer-1",
+          status: current,
+        },
         error: null,
       },
     });
@@ -377,7 +431,11 @@ test("reservation status preserves the supported visit and completion transition
         },
       },
       reservationResult: {
-        data: { id: "reservation-1", status: current },
+        data: {
+          id: "reservation-1",
+          customer_id: "customer-1",
+          status: current,
+        },
         error: null,
       },
       updateResult: {
@@ -443,7 +501,11 @@ test("reservation status preserves not-found and rejects an unset current status
   const nullRuntime = executeRoute({
     authentication,
     reservationResult: {
-      data: { id: "reservation-1", status: null },
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: null,
+      },
       error: null,
     },
   });

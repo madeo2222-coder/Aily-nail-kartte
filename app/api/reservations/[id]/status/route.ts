@@ -85,8 +85,12 @@ export async function POST(
       : null;
   const status = bodyRecord?.status;
   const expectedStatus = bodyRecord?.expectedStatus;
+  const expectedCustomerId = bodyRecord?.expectedCustomerId;
   const hasExpectedStatus = bodyRecord
     ? Object.prototype.hasOwnProperty.call(bodyRecord, "expectedStatus")
+    : false;
+  const hasExpectedCustomerId = bodyRecord
+    ? Object.prototype.hasOwnProperty.call(bodyRecord, "expectedCustomerId")
     : false;
 
   if (
@@ -101,7 +105,9 @@ export async function POST(
 
   if (
     !hasExpectedStatus ||
-    (expectedStatus !== null && typeof expectedStatus !== "string")
+    (expectedStatus !== null && typeof expectedStatus !== "string") ||
+    !hasExpectedCustomerId ||
+    (expectedCustomerId !== null && typeof expectedCustomerId !== "string")
   ) {
     return NextResponse.json(
       { ok: false, error: "予約内容を読み直してから更新してください。" },
@@ -114,7 +120,7 @@ export async function POST(
     const supabase = getSupabaseAdmin();
     let reservationQuery = supabase
       .from("reservations")
-      .select("id, status")
+      .select("id, customer_id, status")
       .eq("id", id);
 
     if (authentication.principal.authenticationMode === "supabase") {
@@ -135,7 +141,10 @@ export async function POST(
       );
     }
 
-    if (reservationResult.data.status !== expectedStatus) {
+    if (
+      reservationResult.data.status !== expectedStatus ||
+      reservationResult.data.customer_id !== expectedCustomerId
+    ) {
       return NextResponse.json(
         {
           ok: false,
@@ -203,6 +212,11 @@ export async function POST(
       expectedStatus === null
         ? updateQuery.is("status", null)
         : updateQuery.eq("status", expectedStatus);
+
+    updateQuery =
+      expectedCustomerId === null
+        ? updateQuery.is("customer_id", null)
+        : updateQuery.eq("customer_id", expectedCustomerId);
 
     const { data, error } = await updateQuery
       .select("id, status")

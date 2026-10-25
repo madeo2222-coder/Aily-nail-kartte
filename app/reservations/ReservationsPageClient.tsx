@@ -834,6 +834,7 @@ export default function ReservationsPageClient() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             status,
+            expectedCustomerId: reservation.customerId,
             expectedStatus: reservation.rawStatus,
           }),
         }
