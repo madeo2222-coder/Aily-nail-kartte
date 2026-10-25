@@ -8,6 +8,7 @@ type ReservationRow = {
   id: string;
   customer_id: string | null;
   staff_id: string | null;
+  source: string | null;
   menu: string | null;
   start_at: string | null;
   end_at: string | null;
@@ -126,11 +127,22 @@ function getDurationLabel(startAt: string | null, endAt: string | null) {
 function isExternalBlock(row: ReservationRow) {
   if (!row.customer_id) return true;
 
-  const checkText = `${row.menu || ""}\n${row.memo || ""}`;
+  const source = (row.source || "").normalize("NFKC").toLowerCase();
+  const checkText = `${row.menu || ""}\n${row.memo || ""}`
+    .normalize("NFKC")
+    .toLowerCase();
 
   return (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
     checkText.includes("ホットペッパー") ||
-    checkText.includes("HPB") ||
+    checkText.includes("hpb") ||
+    checkText.includes("hotpepper") ||
+    checkText.includes("hot pepper") ||
+    checkText.includes("minimo") ||
     checkText.includes("ミニモ") ||
     checkText.includes("休憩") ||
     checkText.includes("店休日") ||

@@ -51,7 +51,12 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failure = false, rejection = false, empty = false } = {}) {
+async function mount({
+  failure = false,
+  rejection = false,
+  empty = false,
+  reservation = {},
+} = {}) {
   const states = [];
   const requests = [];
   let cursor = 0;
@@ -110,6 +115,7 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
           end_at: "2026-09-30T02:00:00Z",
           status: "confirmed",
           memo: null,
+          ...reservation,
           }],
           customers: [{ id: "customer-1", name: "顧客A" }],
           staffs: [{ id: "staff-1", name: "黒木" }],
@@ -208,3 +214,20 @@ test("external calendar tasks preserves a successful empty result", async () => 
   assert.doesNotMatch(page.html(), /role="alert"/);
   assert.match(page.html(), /0件|外部カレンダーへ反映が必要な予約はありません/);
 });
+
+for (const reservation of [
+  { source: "ＨＰＢ", memo: null },
+  { source: null, memo: "ｈｐｂ予約番号：Ａ１２３４５６" },
+  { source: "ＭＩＮＩＭＯ", memo: null },
+]) {
+  test(`external calendar tasks excludes a normalized external reservation: ${JSON.stringify(reservation)}`, async () => {
+    const page = await mount({ reservation });
+
+    assert.doesNotMatch(page.html(), /role="alert"/);
+    assert.match(
+      page.html(),
+      /0件|外部カレンダーへ反映が必要な予約はありません/,
+    );
+    assert.doesNotMatch(page.html(), /顧客A|黒木|ワンカラー/);
+  });
+}

@@ -53,7 +53,7 @@ export async function GET() {
     let reservationsQuery = supabase
       .from("reservations")
       .select(
-        "id, customer_id, staff_id, menu, start_at, end_at, status, memo",
+        "id, customer_id, staff_id, source, menu, start_at, end_at, status, memo",
       )
       .gte("start_at", new Date().toISOString())
       .order("start_at", { ascending: true });

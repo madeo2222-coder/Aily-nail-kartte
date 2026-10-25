@@ -209,6 +209,12 @@ test("external task API scopes individual staff reads and limits customer lookup
     (item) => item.table === "reservations",
   );
   assert.ok(
+    reservationsCall.selects.some((columns) =>
+      columns.split(",").map((column) => column.trim()).includes("source"),
+    ),
+    "reservation source is returned for duplicate-block filtering",
+  );
+  assert.ok(
     reservationsCall.filters.some(
       (filter) =>
         filter.method === "gte" &&
