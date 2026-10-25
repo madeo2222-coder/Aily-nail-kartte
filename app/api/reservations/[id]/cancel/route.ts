@@ -46,8 +46,27 @@ const CANCELLATION_REASONS: Record<CancellationReason, string> = {
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
 
+const CANCELLABLE_RESERVATION_STATUSES = new Set([
+  "pending",
+  "requested",
+  "予約申請中",
+  "予約受付",
+  "予約",
+  "confirmed",
+  "予約確定",
+]);
+
 function isCancellationReason(value: string): value is CancellationReason {
   return Object.prototype.hasOwnProperty.call(CANCELLATION_REASONS, value);
+}
+
+function isCancellableReservationStatus(status: string | null) {
+  return CANCELLABLE_RESERVATION_STATUSES.has(
+    String(status ?? "")
+      .normalize("NFKC")
+      .replace(/\s+/g, "")
+      .toLowerCase()
+  );
 }
 
 function sameStoredDateTime(current: string | null, expected: string | null) {
@@ -364,6 +383,19 @@ export async function POST(
           status: "reservation_changed",
           error:
             "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (!isCancellableReservationStatus(reservation.status)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          cancelled: false,
+          status: "invalid_transition",
+          error:
+            "来店・完了後の予約はキャンセルできません。最新の状態を確認してください。",
         },
         { status: 409 }
       );

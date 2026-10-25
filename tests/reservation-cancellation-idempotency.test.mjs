@@ -248,6 +248,52 @@ test("a stale edit page cannot cancel a reservation changed by sync", async () =
   }
 });
 
+test("does not rewrite visited, completed, or unknown reservations as cancelled", async () => {
+  for (const status of [
+    "来店",
+    "来店予定",
+    "完了待ち",
+    "完了",
+    "completed",
+    "unexpected-state",
+    null,
+  ]) {
+    const runtime = loadRoute(status);
+    const response = await runtime.post(cancellationBody(status));
+
+    assert.equal(response.status, 409, String(status));
+    assert.equal(response.body.ok, false, String(status));
+    assert.equal(response.body.cancelled, false, String(status));
+    assert.equal(response.body.status, "invalid_transition", String(status));
+    assert.match(response.body.error, /来店・完了後/, String(status));
+    assert.equal(runtime.updateCalled, false, String(status));
+    assert.equal(runtime.fetchCalled, false, String(status));
+  }
+});
+
+test("keeps cancellation available for every supported active booking status", async () => {
+  for (const status of [
+    "pending",
+    "requested",
+    "予約申請中",
+    "予約受付",
+    "予約",
+    "confirmed",
+    "予約確定",
+  ]) {
+    const runtime = loadRoute(status);
+    const response = await runtime.post(
+      cancellationBody(status, { sendLine: false }),
+    );
+
+    assert.equal(response.status, 200, status);
+    assert.equal(response.body.ok, true, status);
+    assert.equal(response.body.cancelled, true, status);
+    assert.equal(runtime.updateCalled, true, status);
+    assert.equal(runtime.fetchCalled, false, status);
+  }
+});
+
 test("cancellation requires the edit page reservation snapshot", async () => {
   for (const field of [
     "expectedCustomerId",
