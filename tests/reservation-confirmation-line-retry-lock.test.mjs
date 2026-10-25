@@ -206,3 +206,31 @@ test("both staff reservation screens apply the shared retry lock", () => {
   );
   assert.match(editPage, /!confirmationLineRetryLock/);
 });
+
+test("external synced reservation edit screen is read-only before any mutation request", () => {
+  const editPage = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    editPage,
+    /async function handleSubmit[\s\S]{0,220}if \(isExternalSynced\) \{[\s\S]{0,180}予約元で変更・キャンセルしてください。[\s\S]{0,40}return;/
+  );
+  assert.match(
+    editPage,
+    /async function handleDelete[\s\S]{0,180}if \(isExternalSynced\) \{[\s\S]{0,180}予約元で変更・キャンセルしてください。[\s\S]{0,40}return;/
+  );
+  assert.match(
+    editPage,
+    /<fieldset disabled=\{isExternalSynced\} className="grid gap-4">/
+  );
+  assert.match(
+    editPage,
+    /isExternalSynced \? \([\s\S]{0,260}閲覧専用：変更・キャンセルは予約元で行ってください/
+  );
+  assert.match(
+    editPage,
+    /status === "キャンセル" &&[\s\S]{0,100}!isExternalSynced &&/
+  );
+});

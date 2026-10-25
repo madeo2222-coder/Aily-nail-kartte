@@ -811,6 +811,13 @@ export default function EditReservationPage() {
   async function cancelReservation() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
+    if (isExternalSynced) {
+      setErrorMessage(
+        "HPB・ミニモから同期された予約は、予約元で変更・キャンセルしてください。"
+      );
+      return;
+    }
+
     if (cancellationReason === "other" && !cancellationReasonText.trim()) {
       setErrorMessage("キャンセル理由を入力してください");
       return;
@@ -897,6 +904,13 @@ export default function EditReservationPage() {
 
     if (!reservationId || mutationRequestPendingRef.current) return;
 
+    if (isExternalSynced) {
+      setErrorMessage(
+        "HPB・ミニモから同期された予約は、予約元で変更・キャンセルしてください。"
+      );
+      return;
+    }
+
     if (status === "confirmed" && !wasInitiallyConfirmed) {
       await handleConfirmReservation();
       return;
@@ -976,6 +990,13 @@ export default function EditReservationPage() {
   async function handleDelete() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
+    if (isExternalSynced) {
+      setErrorMessage(
+        "HPB・ミニモから同期された予約は、予約元で変更・キャンセルしてください。"
+      );
+      return;
+    }
+
     const confirmed = window.confirm("この予約を削除しますか？");
     if (!confirmed) return;
 
@@ -1052,6 +1073,8 @@ export default function EditReservationPage() {
               <p className="mt-2 text-sm leading-6 text-white/90">
                 {isExternalBlock
                   ? "HPB・ミニモ・休憩・店休日などのブロックを変更できます。"
+                  : isExternalSynced
+                  ? "HPB・ミニモから同期された予約は、内容を確認できます。変更やキャンセルは予約元で行ってください。"
                   : "ご予約内容の変更・削除・予約確定ができるページです。"}
               </p>
             </div>
@@ -1121,6 +1144,12 @@ export default function EditReservationPage() {
               </div>
             ) : null}
 
+            {isExternalSynced ? (
+              <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900">
+                この予約は閲覧専用です。日時・内容・状態の変更やキャンセルは、HPB・ミニモの予約元で行ってください。
+              </section>
+            ) : null}
+
             <section className="rounded-[28px] border border-blue-100 bg-blue-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -1132,7 +1161,7 @@ export default function EditReservationPage() {
                   </div>
                   <div className="mt-2 text-xs leading-5 text-blue-700">
                     {isExternalSynced
-                      ? "HPB・ミニモから同期された予約です。通知と確定操作は予約元で管理してください。"
+                      ? "HPB・ミニモから同期された予約です。内容の変更、状態管理、通知は予約元で行ってください。"
                       : isExternalBlock
                       ? `${externalBlockLabel}です。所要時間：${durationLabel}`
                       : "予約確定にすると、顧客マイページにも「予約確定」と表示されます。"}
@@ -1259,7 +1288,7 @@ export default function EditReservationPage() {
               </section>
             ) : null}
 
-            <div className="grid gap-4">
+            <fieldset disabled={isExternalSynced} className="grid gap-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   サロン
@@ -1399,6 +1428,7 @@ export default function EditReservationPage() {
 
               {status === "キャンセル" &&
               !isExternalBlock &&
+              !isExternalSynced &&
               !wasInitiallyCancelled ? (
                 <div className="space-y-4 rounded-2xl border border-rose-200 bg-rose-50/60 p-4">
                   <div>
@@ -1478,31 +1508,39 @@ export default function EditReservationPage() {
                   </p>
                 ) : null}
               </div>
-            </div>
+            </fieldset>
 
             <div className="grid gap-3 sm:grid-cols-3">
-              <button
-                type="submit"
-                disabled={mutationControlsDisabled}
-                className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
-              >
-                {saving ? "更新中..." : "更新する"}
-              </button>
+              {isExternalSynced ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-center text-sm font-bold text-amber-900 sm:col-span-2">
+                  閲覧専用：変更・キャンセルは予約元で行ってください
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="submit"
+                    disabled={mutationControlsDisabled}
+                    className="rounded-2xl bg-slate-900 py-4 text-sm font-bold text-white disabled:opacity-60"
+                  >
+                    {saving ? "更新中..." : "更新する"}
+                  </button>
 
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={mutationControlsDisabled}
-                className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
-              >
-                {deleting ? "削除中..." : isExternalBlock ? "ブロックを削除する" : "削除する"}
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleDelete}
+                    disabled={mutationControlsDisabled}
+                    className="rounded-2xl border border-rose-200 bg-white py-4 text-sm font-bold text-rose-600 disabled:opacity-60"
+                  >
+                    {deleting ? "削除中..." : isExternalBlock ? "ブロックを削除する" : "削除する"}
+                  </button>
+                </>
+              )}
 
               <Link
                 href={backHref}
                 className="rounded-2xl border border-rose-200 bg-white py-4 text-center text-sm font-bold text-slate-700"
               >
-                キャンセル
+                {isExternalSynced ? "戻る" : "キャンセル"}
               </Link>
             </div>
           </form>
