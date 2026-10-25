@@ -304,8 +304,10 @@ function normalizeSourceLabel(params: {
   menuName: string;
   isExternalBlock: boolean;
 }) {
-  const source = params.source.trim().toLowerCase();
-  const checkText = `${params.source} ${params.memo} ${params.menuName}`;
+  const source = params.source.trim().normalize("NFKC").toLowerCase();
+  const checkText = `${params.source} ${params.memo} ${params.menuName}`.normalize(
+    "NFKC"
+  );
 
   if (
     source.includes("hpb") ||

@@ -199,8 +199,49 @@ function loadRoute({
     return { body: await response.json(), status: response.status };
   }
 
-  return { lineCalls, patch, rpcCalls };
+  async function get() {
+    const response = await exports.GET(
+      {
+        cookies: { get: () => ({ value: "signed-session" }) },
+      },
+      { params: Promise.resolve({ id: "reservation-1" }) }
+    );
+
+    return { body: await response.json(), status: response.status };
+  }
+
+  return { get, lineCalls, patch, rpcCalls };
 }
+
+test("legacy full-width HPB reservations keep customer edits disabled", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      staff_id: null,
+      status: "confirmed",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T02:30:00.000Z",
+      updated_at: "2099-09-01T00:00:00.000Z",
+      source: "",
+      memo: "ＨＰＢ予約番号：Ａ１２３４５６",
+    },
+  });
+
+  const detail = await runtime.get();
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.reservation.externalReservation, true);
+  assert.equal(detail.body.reservation.canDirectEdit, false);
+  assert.equal(detail.body.reservation.canRequestChange, false);
+
+  const mutation = await runtime.patch();
+  assert.equal(mutation.status, 400);
+  assert.match(mutation.body.error, /予約元サービス/);
+  assert.equal(runtime.rpcCalls.length, 0);
+  assert.equal(runtime.lineCalls.length, 0);
+});
 
 test("confirmed change request succeeds only after LINE accepts it", async () => {
   const runtime = loadRoute();

@@ -98,8 +98,12 @@ function isConfirmedStatus(status: string) {
 }
 
 function isExternalReservation(row: AnyRow) {
-  const source = getString(row, ["source"]).toLowerCase();
-  const memo = getString(row, ["memo", "note"]).toLowerCase();
+  const source = getString(row, ["source"])
+    .normalize("NFKC")
+    .toLowerCase();
+  const memo = getString(row, ["memo", "note"])
+    .normalize("NFKC")
+    .toLowerCase();
 
   return (
     source.includes("hpb") ||

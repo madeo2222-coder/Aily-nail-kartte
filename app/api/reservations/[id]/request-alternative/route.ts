@@ -121,8 +121,8 @@ function isRequestedStatus(status: string | null) {
 }
 
 function isExternalReservation(reservation: ReservationRow) {
-  const source = (reservation.source || "").toLowerCase();
-  const memo = (reservation.memo || "").toLowerCase();
+  const source = (reservation.source || "").normalize("NFKC").toLowerCase();
+  const memo = (reservation.memo || "").normalize("NFKC").toLowerCase();
 
   return (
     source.includes("hpb") ||
