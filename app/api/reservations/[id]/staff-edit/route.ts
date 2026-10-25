@@ -92,6 +92,50 @@ function isExternalSyncedReservation(reservation: {
   );
 }
 
+function normalizeWorkflowStatus(status: string | null) {
+  const normalized = String(status ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+
+  if (
+    ["pending", "requested", "予約申請中", "予約受付", "予約"].includes(
+      normalized,
+    )
+  ) {
+    return "予約";
+  }
+  if (["confirmed", "予約確定"].includes(normalized)) return "confirmed";
+  if (["来店予定", "来店", "完了待ち"].includes(normalized)) return "来店";
+  if (["完了", "completed"].includes(normalized)) return "完了";
+  if (CANCELLED_STATUSES.has(normalized)) return "キャンセル";
+
+  return "";
+}
+
+function canTransitionWorkflowStatus(
+  currentStatus: string | null,
+  nextStatus: string,
+) {
+  const current = normalizeWorkflowStatus(currentStatus);
+  const next = normalizeWorkflowStatus(nextStatus);
+
+  if (!current || !next) return false;
+  if (current === next) return true;
+  if ((current === "予約" || current === "confirmed") && next === "来店") {
+    return true;
+  }
+  if (current === "来店" && next === "完了") return true;
+  if (
+    next === "キャンセル" &&
+    (current === "予約" || current === "confirmed")
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 function optionalString(value: unknown) {
   return value === null ? null : cleanString(value);
 }
@@ -422,6 +466,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     ) {
       return errorResponse(
         "顧客予約のキャンセルはキャンセル通知の確認画面から実行してください。",
+        409,
+      );
+    }
+
+    if (!canTransitionWorkflowStatus(reservationResult.data.status, status)) {
+      return errorResponse(
+        "現在の予約状態からは更新できません。最新の内容を確認してください。",
         409,
       );
     }

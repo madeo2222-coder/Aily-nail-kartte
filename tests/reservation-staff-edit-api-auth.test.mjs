@@ -692,6 +692,75 @@ test("staff edit cannot bypass the confirmation workflow", async () => {
   );
 });
 
+test("staff edit cannot skip or reverse reservation progress", async () => {
+  const cases = [
+    { current: "予約", next: "完了" },
+    { current: "confirmed", next: "予約" },
+    { current: "来店", next: "confirmed" },
+    { current: "完了", next: "来店" },
+    { current: "completed", next: "予約" },
+    { current: "キャンセル", next: "来店" },
+    { current: "unexpected-state", next: "予約" },
+  ];
+
+  for (const { current, next } of cases) {
+    const currentReservation = { ...reservation, status: current };
+    const runtime = executeRoute({
+      authentication: principal(),
+      rows: {
+        reservationSingle: { data: currentReservation, error: null },
+      },
+    });
+    const response = await runtime.exports.PATCH(
+      patchRequest({ expectedStatus: current, status: next }),
+      context(),
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 409, `${current} -> ${next}`);
+    assert.match(
+      body.error,
+      /現在の予約状態からは更新できません|予約確定は『予約確定にする』から/,
+    );
+    assert.equal(
+      runtime.calls.some((call) => call.operation === "update"),
+      false,
+      `${current} -> ${next}`,
+    );
+  }
+});
+
+test("staff edit preserves supported status aliases and progress steps", async () => {
+  const cases = [
+    { current: "requested", next: "予約" },
+    { current: "予約受付", next: "予約" },
+    { current: "予約", next: "来店" },
+    { current: "予約確定", next: "confirmed" },
+    { current: "confirmed", next: "来店" },
+    { current: "来店予定", next: "来店" },
+    { current: "来店", next: "完了" },
+    { current: "completed", next: "完了" },
+  ];
+
+  for (const { current, next } of cases) {
+    const currentReservation = { ...reservation, status: current };
+    const runtime = executeRoute({
+      authentication: principal(),
+      rows: {
+        reservationSingle: { data: currentReservation, error: null },
+      },
+    });
+    const response = await runtime.exports.PATCH(
+      patchRequest({ expectedStatus: current, status: next }),
+      context(),
+    );
+
+    assert.equal(response.status, 200, `${current} -> ${next}`);
+    const update = runtime.calls.find((call) => call.operation === "update");
+    assert.equal(update.value.status, next, `${current} -> ${next}`);
+  }
+});
+
 test("staff edit rejects moving an active reservation into elapsed time", async () => {
   const runtime = executeRoute({ authentication: principal() });
   const response = await runtime.exports.PATCH(
