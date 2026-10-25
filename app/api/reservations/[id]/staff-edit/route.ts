@@ -72,6 +72,26 @@ function cleanString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isExternalSyncedReservation(reservation: {
+  source?: string | null;
+  memo?: string | null;
+}) {
+  const source = (reservation.source || "").normalize("NFKC").toLowerCase();
+  const memo = (reservation.memo || "").normalize("NFKC").toLowerCase();
+
+  return (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
+    memo.includes("hpb予約番号") ||
+    memo.includes("ホットペッパー") ||
+    memo.includes("ミニモ予約id") ||
+    memo.includes("ミニモ")
+  );
+}
+
 function optionalString(value: unknown) {
   return value === null ? null : cleanString(value);
 }
@@ -360,6 +380,13 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       );
     }
 
+    if (isExternalSyncedReservation(reservationResult.data)) {
+      return errorResponse(
+        "HPB・ミニモから同期された予約は、予約元で変更してください。",
+        409,
+      );
+    }
+
     const nextStartTime = new Date(startAt).getTime();
     const currentStartTime = new Date(
       reservationResult.data.start_at || "",
@@ -631,6 +658,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
     ) {
       return errorResponse(
         "予約内容が更新されています。最新の内容を読み込み直してください。",
+        409,
+      );
+    }
+
+    if (isExternalSyncedReservation(reservationResult.data)) {
+      return errorResponse(
+        "HPB・ミニモから同期された予約は、予約元で変更・キャンセルしてください。",
         409,
       );
     }

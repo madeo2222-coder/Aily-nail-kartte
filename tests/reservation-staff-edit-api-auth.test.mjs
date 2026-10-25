@@ -32,6 +32,7 @@ const reservation = {
   start_at: "2099-10-19T01:00:00.000Z",
   end_at: "2099-10-19T02:30:00.000Z",
   status: "予約",
+  source: "manual",
   memo: "確認メモ",
 };
 
@@ -532,6 +533,52 @@ test("staff edit refuses a stale screen after booking sync moved the time", asyn
     runtime.calls.some((call) => call.operation === "update"),
     false,
   );
+});
+
+test("staff edit API rejects external synced reservation changes and deletes", async () => {
+  const externalReservations = [
+    { ...reservation, source: "ＨＰＢ" },
+    { ...reservation, source: "ＭＩＮＩＭＯ" },
+    {
+      ...reservation,
+      source: "manual",
+      memo: "ＨＰＢ予約番号：AB-123",
+    },
+    {
+      ...reservation,
+      source: "manual",
+      memo: "ミニモ予約ＩＤ：MN-123",
+    },
+  ];
+
+  for (const externalReservation of externalReservations) {
+    for (const method of ["PATCH", "DELETE"]) {
+      const runtime = executeRoute({
+        authentication: principal(),
+        rows: {
+          reservationSingle: {
+            data: externalReservation,
+            error: null,
+          },
+        },
+      });
+      const request =
+        method === "PATCH"
+          ? patchRequest({ expectedMemo: externalReservation.memo })
+          : deleteRequest({ expectedMemo: externalReservation.memo });
+      const response = await runtime.exports[method](request, context());
+      const body = await response.json();
+
+      assert.equal(response.status, 409);
+      assert.match(body.error, /予約元で/);
+      assert.equal(
+        runtime.calls.some(
+          (call) => call.operation === "update" || call.operation === "delete",
+        ),
+        false,
+      );
+    }
+  }
 });
 
 test("staff edit reports a write-time sync race as a conflict", async () => {
