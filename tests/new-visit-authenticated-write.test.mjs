@@ -35,6 +35,7 @@ async function mount({
   authenticationMode = "supabase",
   reservationId = "",
   reservationStatus,
+  resumeExistingVisit = false,
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -161,6 +162,9 @@ async function mount({
           json: async () => ({
             ok: true,
             reservation: { id: reservationId, status: body.status },
+            ...(resumeExistingVisit && body.status === "来店"
+              ? { existingVisit: { id: VISIT_ID } }
+              : {}),
           }),
         });
       }
@@ -483,4 +487,47 @@ test("shared-login reservation visit fails closed when its status snapshot is mi
     false,
   );
   assert.match(page.html(), /予約一覧を読み直してから来店登録してください/);
+});
+
+test("shared-login reservation visit completes a fully saved existing visit without inserting it again", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "来店",
+    resumeExistingVisit: true,
+  });
+  await page.submit();
+
+  const statusRequests = page.requests.filter(
+    (request) => request.url === "/api/reservations/reservation-1/status",
+  );
+  assert.deepEqual(
+    statusRequests.map((request) => JSON.parse(request.options.body)),
+    [
+      {
+        status: "来店",
+        expectedCustomerId: CUSTOMER_ID,
+        expectedStatus: "来店",
+      },
+      {
+        status: "完了",
+        expectedCustomerId: CUSTOMER_ID,
+        expectedStatus: "来店",
+      },
+    ],
+  );
+  assert.equal(
+    page.dbCalls.some(
+      (call) => call.table === "visits" && call.operation === "insert",
+    ),
+    false,
+  );
+  assert.equal(
+    page.dbCalls.some(
+      (call) => call.table === "visit_payments" && call.operation === "insert",
+    ),
+    false,
+  );
+  assert.deepEqual(page.alerts, ["来店履歴を登録しました"]);
+  assert.deepEqual(page.navigations, [`/customers/${CUSTOMER_ID}`]);
 });

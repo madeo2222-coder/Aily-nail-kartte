@@ -32,6 +32,7 @@ function executeRoute({
   authentication,
   reservationResult,
   existingVisitResult,
+  existingVisitPaymentsResult,
   updateResult,
 }) {
   const calls = [];
@@ -83,6 +84,16 @@ function executeRoute({
       limit(value) {
         call.limit = value;
         return query;
+      },
+      then(resolve, reject) {
+        return Promise.resolve(
+          table === "visit_payments"
+            ? existingVisitPaymentsResult || {
+                data: [{ amount: 5000 }],
+                error: null,
+              }
+            : { data: null, error: null },
+        ).then(resolve, reject);
       },
     };
     return query;
@@ -543,6 +554,94 @@ test("reservation status does not resume when the interrupted visit already exis
   });
   const response = await runtime.exports.POST(
     request("来店", "confirmed"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error, "この予約には既に来店履歴があります。");
+});
+
+test("reservation status resumes completion only for a fully paid linked visit", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    reservationResult: {
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "来店",
+      },
+      error: null,
+    },
+    existingVisitResult: {
+      data: { id: "visit-1", customer_id: "customer-1", price: 5000 },
+      error: null,
+    },
+    existingVisitPaymentsResult: {
+      data: [{ amount: 3000 }, { amount: "2000" }],
+      error: null,
+    },
+  });
+
+  const response = await runtime.exports.POST(
+    request("来店", "来店"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(body)), {
+    ok: true,
+    reservation: { id: "reservation-1", status: "来店" },
+    existingVisit: { id: "visit-1" },
+  });
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
+test("reservation status refuses completion recovery for incomplete payments", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    reservationResult: {
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "来店",
+      },
+      error: null,
+    },
+    existingVisitResult: {
+      data: { id: "visit-1", customer_id: "customer-1", price: 5000 },
+      error: null,
+    },
+    existingVisitPaymentsResult: {
+      data: [{ amount: 3000 }],
+      error: null,
+    },
+  });
+
+  const response = await runtime.exports.POST(
+    request("来店", "来店"),
     context,
   );
   const body = await response.json();

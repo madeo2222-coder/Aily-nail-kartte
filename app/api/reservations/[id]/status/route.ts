@@ -59,6 +59,35 @@ function canResumeVisitTransition({
   );
 }
 
+function canResumeVisitCompletion({
+  currentStatus,
+  expectedStatus,
+  nextStatus,
+}: {
+  currentStatus: string | null;
+  expectedStatus: string | null;
+  nextStatus: string;
+}) {
+  return (
+    nextStatus === "来店" &&
+    normalizeWorkflowStatus(currentStatus) === "来店" &&
+    normalizeWorkflowStatus(expectedStatus) === "来店"
+  );
+}
+
+function toSafeInteger(value: unknown) {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) ? value : null;
+  }
+
+  if (typeof value !== "string" || !/^-?\d+(?:\.0+)?$/.test(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -208,7 +237,7 @@ export async function POST(
     if (status === "来店") {
       let existingVisitQuery = supabase
         .from("visits")
-        .select("id")
+        .select("id, customer_id, price")
         .eq("reservation_id", id)
         .limit(1);
 
@@ -224,6 +253,49 @@ export async function POST(
       if (existingVisitResult.error) throw existingVisitResult.error;
 
       if (existingVisitResult.data) {
+        const canRecoverCompletion =
+          canResumeVisitCompletion({
+            currentStatus: reservationResult.data.status,
+            expectedStatus,
+            nextStatus: status,
+          }) &&
+          existingVisitResult.data.customer_id === expectedCustomerId;
+
+        if (canRecoverCompletion) {
+          const paymentResult = await supabase
+            .from("visit_payments")
+            .select("amount")
+            .eq("visit_id", existingVisitResult.data.id);
+
+          if (paymentResult.error) throw paymentResult.error;
+
+          const visitPrice = toSafeInteger(existingVisitResult.data.price);
+          const paymentAmounts = Array.isArray(paymentResult.data)
+            ? paymentResult.data.map((payment) =>
+                toSafeInteger(payment?.amount),
+              )
+            : [];
+          const hasCompletePayment =
+            visitPrice !== null &&
+            paymentAmounts.length > 0 &&
+            paymentAmounts.every((amount) => amount !== null) &&
+            paymentAmounts.reduce(
+              (total, amount) => total + (amount ?? 0),
+              0,
+            ) === visitPrice;
+
+          if (hasCompletePayment) {
+            return NextResponse.json({
+              ok: true,
+              reservation: {
+                id: reservationResult.data.id,
+                status: reservationResult.data.status,
+              },
+              existingVisit: { id: existingVisitResult.data.id },
+            });
+          }
+        }
+
         return NextResponse.json(
           { ok: false, error: "この予約には既に来店履歴があります。" },
           { status: 409 },
