@@ -39,6 +39,8 @@ const defaultReservation = {
   start_at: "2099-10-02T01:30:00.000Z",
   end_at: "2099-10-02T03:00:00.000Z",
   updated_at: "2099-10-01T00:00:00.000Z",
+  source: null,
+  memo: null,
 };
 
 function loadRoute({
@@ -275,6 +277,22 @@ test("does not email an unconfirmed reservation", async () => {
   assert.match(response.body.message, /確定済み/);
   assert.equal(runtime.sendCalls.length, 0);
   assert.equal(runtime.resendCreated, 0);
+});
+
+test("does not send Naily confirmation email for a legacy external reservation", async () => {
+  for (const reservation of [
+    { ...defaultReservation, source: "ＭＩＮＩＭＯ" },
+    { ...defaultReservation, memo: "ＨＰＢ予約番号：Ａ１２３４５６" },
+  ]) {
+    const runtime = loadRoute({ reservationReads: [reservation] });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.sent, false);
+    assert.match(response.body.message, /HPB・ミニモ/);
+    assert.equal(runtime.resendCreated, 0);
+    assert.equal(runtime.sendCalls.length, 0);
+  }
 });
 
 test("skips a customer without email before creating Resend", async () => {

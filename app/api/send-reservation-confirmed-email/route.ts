@@ -17,6 +17,8 @@ type ReservationRow = {
   start_at: string | null;
   end_at: string | null;
   updated_at: string | null;
+  source: string | null;
+  memo: string | null;
 };
 type CustomerRow = {
   id: string;
@@ -45,7 +47,7 @@ type MailParams = {
 };
 
 const RESERVATION_SELECT =
-  "id, salon_id, customer_id, staff_id, status, menu, start_at, end_at, updated_at";
+  "id, salon_id, customer_id, staff_id, status, menu, start_at, end_at, updated_at, source, memo";
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -89,6 +91,23 @@ function formatDateTime(value: string | null) {
     minute: "2-digit",
     hour12: false,
   }).format(date);
+}
+
+function isExternalReservation(reservation: ReservationRow) {
+  const source = (reservation.source || "").normalize("NFKC").toLowerCase();
+  const memo = (reservation.memo || "").normalize("NFKC").toLowerCase();
+
+  return (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
+    memo.includes("hpb予約番号") ||
+    memo.includes("ホットペッパー") ||
+    memo.includes("ミニモ予約id") ||
+    memo.includes("ミニモ")
+  );
 }
 
 function escapeHtml(value: string) {
@@ -160,6 +179,8 @@ function reservationSnapshot(reservation: ReservationRow) {
     reservation.start_at,
     reservation.end_at,
     reservation.updated_at,
+    reservation.source,
+    reservation.memo,
   ]);
 }
 
@@ -255,6 +276,17 @@ export async function POST(request: Request) {
     if (reservation.status !== "confirmed" && reservation.status !== "予約確定") {
       return NextResponse.json(
         { ok: false, sent: false, message: "予約確定済みの予約ではありません。" },
+        { status: 409 }
+      );
+    }
+    if (isExternalReservation(reservation)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: false,
+          message:
+            "HPB・ミニモから登録された予約には、Nailyの予約確定メールを送信できません。",
+        },
         { status: 409 }
       );
     }
