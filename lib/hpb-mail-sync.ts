@@ -820,11 +820,18 @@ function getReservationNumberMemoKey(source: MailSource) {
   return source === "minimo" ? "ミニモ予約ID" : "HPB予約番号";
 }
 
+function getReservationMemoLookupMarker(source: MailSource) {
+  // Keep the database filter broad enough to include legacy punctuation and
+  // width variants. The exact normalized key and reservation number are still
+  // matched line-by-line after every candidate page has been read.
+  return source === "minimo" ? "ミニモ予約" : "HPB予約番号";
+}
+
 async function findExistingExternalReservation(
   parsed: ParsedHpbMail,
   context: SyncContext
 ) {
-  const reservationKey = getReservationNumberMemoKey(parsed.source);
+  const reservationLookupMarker = getReservationMemoLookupMarker(parsed.source);
   const candidates: ExistingReservation[] = [];
 
   // Older parser versions could save a lowercase or full-width minimo ID.
@@ -841,7 +848,7 @@ async function findExistingExternalReservation(
     const { data, error } = await context.supabase
       .from("reservations")
       .select("id, salon_id, customer_id, staff_id, menu, memo, status, start_at, end_at")
-      .ilike("memo", `%${reservationKey}：%`)
+      .ilike("memo", `%${reservationLookupMarker}%`)
       .order("id", { ascending: true })
       .range(
         offset,

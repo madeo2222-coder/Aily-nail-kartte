@@ -25,6 +25,7 @@ function loadSync(manualCustomerId, options = {}) {
   const writes = [];
   const customerReadRanges = [];
   const reservationReadRanges = [];
+  const reservationLookupPatterns = [];
   const customer = { id: "mail-customer", name: "テスト顧客", phone: "09000000000" };
   const manual = {
     id: "manual-reservation", customer_id: manualCustomerId,
@@ -71,7 +72,11 @@ function loadSync(manualCustomerId, options = {}) {
           }
           return query;
         },
-        ilike() { externalLookup = true; return query; },
+        ilike(_column, pattern) {
+          externalLookup = true;
+          if (table === "reservations") reservationLookupPatterns.push(pattern);
+          return query;
+        },
         update(value) { operation = "update"; payload = value; return query; },
         insert(value) { operation = "insert"; payload = value; return query; },
         upsert(value) { operation = "upsert"; payload = value; return query; },
@@ -244,6 +249,7 @@ function loadSync(manualCustomerId, options = {}) {
     writes,
     customerReadRanges,
     reservationReadRanges,
+    reservationLookupPatterns,
   };
 }
 
@@ -472,6 +478,24 @@ test("minimo replay adopts a legacy full-width lowercase reservation marker", as
   assert.equal(result.parsed.reservationNumber, "MINIMO-123");
   assert.equal(result.result.reservationId, "manual-reservation");
   assert.equal(runtime.writes.length, 1);
+  assert.deepEqual(runtime.reservationLookupPatterns, ["%ミニモ予約%"]);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
+test("HPB lookup does not require one historical colon spelling", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "HPB予約番号:A123456",
+  });
+
+  const result = await runtime.sync(`予約番号：A123456
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+施術時間：90分`);
+
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.deepEqual(runtime.reservationLookupPatterns, ["%HPB予約番号%"]);
   assert.equal(runtime.writes[0].operation, "update");
 });
 
