@@ -45,6 +45,7 @@ type ReservationDetail = {
   start_at: string | null;
   end_at: string | null;
   status: string | null;
+  source: string | null;
   memo: string | null;
 };
 
@@ -314,6 +315,23 @@ function getExternalBlockLabel(menu: string, memo: string) {
   return "";
 }
 
+function isExternalSyncedReservation(source: string | null, memo: string | null) {
+  const normalizedSource = (source || "").normalize("NFKC").toLowerCase();
+  const normalizedMemo = (memo || "").normalize("NFKC").toLowerCase();
+
+  return (
+    normalizedSource.includes("hpb") ||
+    normalizedSource.includes("hotpepper") ||
+    normalizedSource.includes("hot pepper") ||
+    normalizedSource.includes("minimo") ||
+    normalizedSource.includes("ミニモ") ||
+    normalizedMemo.includes("hpb予約番号") ||
+    normalizedMemo.includes("ホットペッパー") ||
+    normalizedMemo.includes("ミニモ予約id") ||
+    normalizedMemo.includes("ミニモ")
+  );
+}
+
 function getDurationLabel(date: string, startTime: string, endTime: string) {
   const startAt = buildDateTime(date, startTime);
   const endAt = buildDateTime(date, endTime);
@@ -376,6 +394,7 @@ export default function EditReservationPage() {
   const [initialStoredStatus, setInitialStoredStatus] = useState<string | null>(
     null
   );
+  const [initialSource, setInitialSource] = useState<string | null>(null);
   const [initialMemo, setInitialMemo] = useState<string | null>(null);
   const [initialStartAt, setInitialStartAt] = useState<string | null>(null);
   const [initialEndAt, setInitialEndAt] = useState<string | null>(null);
@@ -464,6 +483,7 @@ export default function EditReservationPage() {
     setInitialMenu(reservation.menu);
     setInitialStatus(reservation.status ?? "");
     setInitialStoredStatus(reservation.status);
+    setInitialSource(reservation.source);
     setInitialMemo(reservation.memo);
     setInitialStartAt(reservation.start_at);
     setInitialEndAt(reservation.end_at);
@@ -499,6 +519,10 @@ export default function EditReservationPage() {
   }, [menu, memo, syncedMemo]);
 
   const isExternalBlock = Boolean(externalBlockLabel) && !customerId;
+  const isExternalSynced = useMemo(
+    () => isExternalSyncedReservation(initialSource, initialMemo),
+    [initialMemo, initialSource]
+  );
 
   const durationLabel = useMemo(() => {
     return getDurationLabel(date, startTime, endTime);
@@ -1107,13 +1131,17 @@ export default function EditReservationPage() {
                     {getStatusLabel(status)}
                   </div>
                   <div className="mt-2 text-xs leading-5 text-blue-700">
-                    {isExternalBlock
+                    {isExternalSynced
+                      ? "HPB・ミニモから同期された予約です。通知と確定操作は予約元で管理してください。"
+                      : isExternalBlock
                       ? `${externalBlockLabel}です。所要時間：${durationLabel}`
                       : "予約確定にすると、顧客マイページにも「予約確定」と表示されます。"}
                   </div>
                 </div>
 
-                {!isAlreadyConfirmed && status !== "キャンセル" ? (
+                {!isExternalSynced &&
+                !isAlreadyConfirmed &&
+                status !== "キャンセル" ? (
                   <button
                     type="button"
                     onClick={handleConfirmReservation}
@@ -1127,7 +1155,9 @@ export default function EditReservationPage() {
                     <div className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-blue-700">
                       予約確定済み
                     </div>
-                    {!isExternalBlock && !confirmationLineRetryLock ? (
+                    {!isExternalBlock &&
+                    !isExternalSynced &&
+                    !confirmationLineRetryLock ? (
                       <button
                         type="button"
                         onClick={retryConfirmationLine}
@@ -1148,6 +1178,10 @@ export default function EditReservationPage() {
                       </div>
                     ) : null}
                   </div>
+                ) : isExternalSynced ? (
+                  <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
+                    外部予約元で状態を確認してください
+                  </div>
                 ) : (
                   <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
                     キャンセル中の予約です
@@ -1156,7 +1190,10 @@ export default function EditReservationPage() {
               </div>
             </section>
 
-            {status === "予約" && !isExternalBlock && customerId ? (
+            {status === "予約" &&
+            !isExternalBlock &&
+            !isExternalSynced &&
+            customerId ? (
               <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>

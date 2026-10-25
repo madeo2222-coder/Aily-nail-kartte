@@ -202,7 +202,7 @@ test("both staff reservation screens apply the shared retry lock", () => {
   }
   assert.match(
     listPage,
-    /canRetryConfirmationLine\(item\.status\) \? \([\s\S]{0,120}confirmationLineRetryLocks\[item\.id\] \?/
+    /canRetryConfirmationLine\(item\.status\) &&[\s\S]{0,80}!isExternalSynced \? \([\s\S]{0,120}confirmationLineRetryLocks\[item\.id\] \?/
   );
   assert.match(editPage, /!confirmationLineRetryLock/);
 });

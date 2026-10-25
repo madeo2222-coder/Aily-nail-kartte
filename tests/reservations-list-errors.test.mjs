@@ -71,6 +71,8 @@ async function mount({
   failureMode = "",
   empty = false,
   reservationStatus = "confirmed",
+  reservationSource = null,
+  reservationMemo = null,
 } = {}) {
   const states = [];
   const effects = [];
@@ -117,7 +119,8 @@ async function mount({
           reservation_date: "2026-09-29",
           reservation_time: "10:00",
           status: reservationStatus,
-          memo: null,
+          source: reservationSource,
+          memo: reservationMemo,
       }],
       customers: [{ id: "customer-1", name: "顧客A" }],
       staffs: [{ id: "staff-1", name: "黒木" }],
@@ -216,6 +219,14 @@ async function mount({
   return {
     requests,
     html,
+    hasButton(label) {
+      return Boolean(
+        findNode(
+          tree(),
+          node => node.type === "button" && node.props.children === label
+        )
+      );
+    },
     async retry() {
       const button = findNode(
         tree(),
@@ -319,4 +330,18 @@ test("reservation list renders complete successful data", async () => {
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /黒木/);
   assert.match(page.html(), /ワンカラー/);
+});
+
+test("reservation list hides Naily confirmation actions for customer-linked external syncs", async () => {
+  const confirmed = await mount({
+    reservationStatus: "confirmed",
+    reservationSource: "ｍｉｎｉｍｏ",
+  });
+  assert.equal(confirmed.hasButton("確定LINEを再試行"), false);
+
+  const requested = await mount({
+    reservationStatus: "requested",
+    reservationMemo: "ＨＰＢ予約番号：AB-123",
+  });
+  assert.equal(requested.hasButton("予約確定・LINE送信"), false);
 });

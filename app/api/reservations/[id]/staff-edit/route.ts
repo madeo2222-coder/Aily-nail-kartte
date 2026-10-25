@@ -127,7 +127,7 @@ async function findReservation(
   let query = supabase
     .from("reservations")
     .select(
-      "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo",
+      "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, source, memo",
     )
     .eq("id", reservationId);
 

@@ -439,6 +439,25 @@ function canRetryConfirmationLine(status: string) {
   return status === "予約確定" || status === "confirmed";
 }
 
+function isExternalSyncedReservation(
+  reservation: Pick<NormalizedReservation, "source" | "memo">
+) {
+  const source = reservation.source.normalize("NFKC").toLowerCase();
+  const memo = reservation.memo.normalize("NFKC").toLowerCase();
+
+  return (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
+    memo.includes("hpb予約番号") ||
+    memo.includes("ホットペッパー") ||
+    memo.includes("ミニモ予約id") ||
+    memo.includes("ミニモ")
+  );
+}
+
 function canMarkVisited(status: string) {
   return (
     status === "予約確定" ||
@@ -1176,6 +1195,7 @@ export default function ReservationsPageClient() {
               const isOverlap = overlapIds.has(item.id);
               const galleryReference = item.galleryReference;
               const displayMemo = buildDisplayMemo(item.memo);
+              const isExternalSynced = isExternalSyncedReservation(item);
 
               return (
                 <div
@@ -1325,7 +1345,8 @@ export default function ReservationsPageClient() {
                         編集
                       </Link>
 
-                      {canConfirmReservation(item.status) ? (
+                      {canConfirmReservation(item.status) &&
+                      !isExternalSynced ? (
                         <button
                           type="button"
                           onClick={() => handleConfirmReservation(item)}
@@ -1337,7 +1358,8 @@ export default function ReservationsPageClient() {
                         </button>
                       ) : null}
 
-                      {canRetryConfirmationLine(item.status) ? (
+                      {canRetryConfirmationLine(item.status) &&
+                      !isExternalSynced ? (
                         confirmationLineRetryLocks[item.id] ? (
                           <div
                             className={`max-w-sm rounded-2xl border px-4 py-3 text-xs font-bold leading-5 ${
