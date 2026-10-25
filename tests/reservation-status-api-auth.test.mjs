@@ -583,7 +583,14 @@ test("reservation status resumes completion only for a fully paid linked visit",
       error: null,
     },
     existingVisitResult: {
-      data: { id: "visit-1", customer_id: "customer-1", price: 5000 },
+      data: {
+        id: "visit-1",
+        customer_id: "customer-1",
+        price: 5000,
+        payment_status: "paid",
+        paid_amount: 5000,
+        unpaid_amount: 0,
+      },
       error: null,
     },
     existingVisitPaymentsResult: {
@@ -631,11 +638,65 @@ test("reservation status refuses completion recovery for incomplete payments", a
       error: null,
     },
     existingVisitResult: {
-      data: { id: "visit-1", customer_id: "customer-1", price: 5000 },
+      data: {
+        id: "visit-1",
+        customer_id: "customer-1",
+        price: 5000,
+        payment_status: "paid",
+        paid_amount: 5000,
+        unpaid_amount: 0,
+      },
       error: null,
     },
     existingVisitPaymentsResult: {
       data: [{ amount: 3000 }],
+      error: null,
+    },
+  });
+
+  const response = await runtime.exports.POST(
+    request("来店", "来店"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error, "この予約には既に来店履歴があります。");
+});
+
+test("reservation status refuses completion recovery for an unpaid visit", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    reservationResult: {
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "来店",
+      },
+      error: null,
+    },
+    existingVisitResult: {
+      data: {
+        id: "visit-1",
+        customer_id: "customer-1",
+        price: 5000,
+        payment_status: "pending",
+        paid_amount: 3000,
+        unpaid_amount: 2000,
+      },
+      error: null,
+    },
+    existingVisitPaymentsResult: {
+      data: [{ amount: 5000 }],
       error: null,
     },
   });

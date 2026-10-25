@@ -237,7 +237,9 @@ export async function POST(
     if (status === "来店") {
       let existingVisitQuery = supabase
         .from("visits")
-        .select("id, customer_id, price")
+        .select(
+          "id, customer_id, price, payment_status, paid_amount, unpaid_amount",
+        )
         .eq("reservation_id", id)
         .limit(1);
 
@@ -270,6 +272,12 @@ export async function POST(
           if (paymentResult.error) throw paymentResult.error;
 
           const visitPrice = toSafeInteger(existingVisitResult.data.price);
+          const paidAmount = toSafeInteger(
+            existingVisitResult.data.paid_amount,
+          );
+          const unpaidAmount = toSafeInteger(
+            existingVisitResult.data.unpaid_amount,
+          );
           const paymentAmounts = Array.isArray(paymentResult.data)
             ? paymentResult.data.map((payment) =>
                 toSafeInteger(payment?.amount),
@@ -277,6 +285,11 @@ export async function POST(
             : [];
           const hasCompletePayment =
             visitPrice !== null &&
+            normalizeWorkflowStatus(
+              existingVisitResult.data.payment_status,
+            ) === "paid" &&
+            paidAmount === visitPrice &&
+            unpaidAmount === 0 &&
             paymentAmounts.length > 0 &&
             paymentAmounts.every((amount) => amount !== null) &&
             paymentAmounts.reduce(
