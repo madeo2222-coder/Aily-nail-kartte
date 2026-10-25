@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import ReservationReferencePhoto from "./ReservationReferencePhoto";
-import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getReservationStatusLabel,
+  isCancelledReservationStatus,
+} from "@/lib/reservation-status";
 import {
   getConfirmationLineRetryLock,
   readConfirmationLineRetryLock,
@@ -281,15 +284,10 @@ function buildReservationTime(row: ReservationRow) {
 }
 
 function normalizeStatus(row: ReservationRow) {
-  const raw = pickString(row, ["status"], "予約");
-
-  if (isCancelledReservationStatus(raw)) return "キャンセル";
-  if (raw === "requested") return "予約申請中";
-  if (raw === "confirmed") return "予約確定";
-  if (raw === "completed") return "完了";
-  if (raw === "予約") return "予約受付";
-
-  return raw;
+  return getReservationStatusLabel(
+    pickNullableString(row, ["status"]),
+    "予約受付"
+  );
 }
 
 function normalizeSource(row: ReservationRow) {

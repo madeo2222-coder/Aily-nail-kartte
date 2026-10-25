@@ -24,6 +24,36 @@ function normalizeReservationStatus(value: string | null | undefined) {
     .toLowerCase();
 }
 
+const RESERVATION_STATUS_LABELS = new Map([
+  ["requested", "予約申請中"],
+  ["予約申請中", "予約申請中"],
+  ["予約受付", "予約受付"],
+  ["予約", "予約受付"],
+  ["confirmed", "予約確定"],
+  ["予約確定", "予約確定"],
+  ["来店予定", "来店予定"],
+  ["来店", "来店"],
+  ["完了待ち", "完了待ち"],
+  ["completed", "完了"],
+  ["完了", "完了"],
+]);
+
+export function getReservationStatusLabel(
+  status: string | null | undefined,
+  fallback = "予約受付"
+) {
+  const raw = String(status ?? "");
+  const normalized = normalizeReservationStatus(raw);
+
+  if (!normalized) return fallback;
+  if (CANCELLED_RESERVATION_STATUSES.has(normalized)) return "キャンセル";
+
+  return (
+    RESERVATION_STATUS_LABELS.get(normalized) ||
+    raw.normalize("NFKC").trim()
+  );
+}
+
 export function isCancelledReservationStatus(
   status: string | null | undefined
 ) {

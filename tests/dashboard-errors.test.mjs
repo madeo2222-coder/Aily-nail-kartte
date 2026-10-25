@@ -55,7 +55,12 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failureTable = "", rejection = false, empty = false } = {}) {
+async function mount({
+  failureTable = "",
+  rejection = false,
+  empty = false,
+  reservationStatus = "requested",
+} = {}) {
   const states = [];
   const effects = [];
   const queries = [];
@@ -123,7 +128,7 @@ async function mount({ failureTable = "", rejection = false, empty = false } = {
         id: "reservation-1",
         customer_id: "customer-1",
         staff_id: "staff-1",
-        status: "requested",
+        status: reservationStatus,
         reservation_date: FIXED_TODAY,
         reservation_time: "10:00",
         menu_name: "ワンカラー",
@@ -219,6 +224,14 @@ test("dashboard handles a rejected query", async () => {
   const page = await mount({ failureTable: "visits", rejection: true });
   assert.match(page.html(), /role="alert"/);
   assert.doesNotMatch(page.html(), /今日の売上|¥0|今日の予定はまだありません/);
+});
+
+test("dashboard shows normalized reservation status aliases", async () => {
+  const confirmed = await mount({ reservationStatus: " ＣＯＮＦＩＲＭＥＤ " });
+  assert.match(confirmed.html(), /予約確定/);
+
+  const completed = await mount({ reservationStatus: " ＣＯＭＰＬＥＴＥＤ " });
+  assert.match(completed.html(), /完了/);
 });
 
 test("dashboard recovers after retry", async () => {

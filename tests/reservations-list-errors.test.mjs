@@ -297,6 +297,16 @@ test("reservation list updates visit status through the authenticated API", asyn
   });
 });
 
+test("reservation list keeps workflow actions visible for normalized status aliases", async () => {
+  const confirmed = await mount({ reservationStatus: " ＣＯＮＦＩＲＭＥＤ " });
+  assert.match(confirmed.html(), /予約確定/);
+  assert.equal(confirmed.hasButton("来店にする"), true);
+
+  const visited = await mount({ reservationStatus: " 来 店 予 定 " });
+  assert.match(visited.html(), /来店予定/);
+  assert.equal(visited.hasButton("完了にする"), true);
+});
+
 test("reservation list confirms against the displayed reservation snapshot", async () => {
   const page = await mount({ reservationStatus: "requested" });
   await page.confirmReservation();
