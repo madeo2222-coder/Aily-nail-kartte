@@ -33,6 +33,7 @@ type ReservationRow = {
   start_at: string | null;
   end_at: string | null;
   status: string | null;
+  source: string | null;
   memo: string | null;
 };
 
@@ -60,6 +61,23 @@ function sameStoredDateTime(current: string | null, expected: string | null) {
     Number.isFinite(currentTime) &&
     Number.isFinite(expectedTime) &&
     currentTime === expectedTime
+  );
+}
+
+function isExternalReservation(reservation: ReservationRow) {
+  const source = (reservation.source || "").normalize("NFKC").toLowerCase();
+  const memo = (reservation.memo || "").normalize("NFKC").toLowerCase();
+
+  return (
+    source.includes("hpb") ||
+    source.includes("hotpepper") ||
+    source.includes("hot pepper") ||
+    source.includes("minimo") ||
+    source.includes("ミニモ") ||
+    memo.includes("hpb予約番号") ||
+    memo.includes("ホットペッパー") ||
+    memo.includes("ミニモ予約id") ||
+    memo.includes("ミニモ")
   );
 }
 
@@ -271,7 +289,7 @@ export async function POST(
     const { data: reservationData, error: reservationError } = await supabaseAdmin
       .from("reservations")
       .select(
-        "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo"
+        "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, source, memo"
       )
       .eq("id", reservationId)
       .maybeSingle();
@@ -303,6 +321,18 @@ export async function POST(
       return NextResponse.json(
         { ok: false, error: "この予約を操作する権限がありません。" },
         { status: 403 }
+      );
+    }
+
+    if (isExternalReservation(reservation)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          cancelled: false,
+          error:
+            "HPB・ミニモから同期された予約です。予約元でキャンセルしてください。",
+        },
+        { status: 409 }
       );
     }
 

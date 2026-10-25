@@ -88,6 +88,7 @@ function loadRoute(status, reservationOverrides = {}) {
           start_at: "2099-10-02T01:30:00.000Z",
           end_at: "2099-10-02T03:00:00.000Z",
           status,
+          source: null,
           memo: "",
           ...reservationOverrides,
         },
@@ -183,6 +184,23 @@ function loadRoute(status, reservationOverrides = {}) {
     },
   };
 }
+
+test("does not cancel customer-linked HPB or minimo reservations", async () => {
+  for (const reservation of [
+    { source: "ＨＯＴ ＰＥＰＰＥＲ" },
+    { memo: "ミニモ予約ＩＤ：M-123" },
+  ]) {
+    const runtime = loadRoute("予約", reservation);
+    const response = await runtime.post();
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.cancelled, false);
+    assert.match(response.body.error, /予約元でキャンセル/);
+    assert.equal(runtime.updateCalled, false);
+    assert.equal(runtime.fetchCalled, false);
+  }
+});
 
 test("every supported cancelled status is idempotent and does not resend LINE", async () => {
   for (const status of [
