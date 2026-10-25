@@ -300,13 +300,19 @@ test("reservation status rejects invalid direct transitions before writing", asy
 
 test("reservation status preserves the supported visit and completion transitions", async () => {
   const cases = [
+    { current: "pending", next: "来店" },
+    { current: "requested", next: "来店" },
     { current: "予約申請中", next: "来店" },
     { current: "予約受付", next: "来店" },
     { current: "予約", next: "来店" },
     { current: "予約確定", next: "来店" },
     { current: "confirmed", next: "来店" },
+    { current: "ＣＯＮＦＩＲＭＥＤ", next: "来店" },
+    { current: "予 約 確 定", next: "来店" },
     { current: "来店予定", next: "完了" },
     { current: "来店", next: "完了" },
+    { current: "来 店", next: "完了" },
+    { current: "完了待ち", next: "完了" },
   ];
 
   for (const { current, next } of cases) {

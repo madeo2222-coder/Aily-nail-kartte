@@ -6,24 +6,35 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_STATUSES = new Set(["来店", "完了"]);
 const VISITABLE_STATUSES = new Set([
+  "pending",
+  "requested",
   "予約申請中",
   "予約受付",
   "予約",
   "予約確定",
   "confirmed",
 ]);
-const COMPLETABLE_STATUSES = new Set(["来店予定", "来店"]);
+const COMPLETABLE_STATUSES = new Set(["来店予定", "来店", "完了待ち"]);
+
+function normalizeWorkflowStatus(status: string | null) {
+  return String(status ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
 
 function canTransitionReservationStatus(
   currentStatus: string | null,
   nextStatus: string,
 ) {
+  const current = normalizeWorkflowStatus(currentStatus);
+
   if (nextStatus === "来店") {
-    return VISITABLE_STATUSES.has(currentStatus || "");
+    return VISITABLE_STATUSES.has(current);
   }
 
   if (nextStatus === "完了") {
-    return COMPLETABLE_STATUSES.has(currentStatus || "");
+    return COMPLETABLE_STATUSES.has(current);
   }
 
   return false;
