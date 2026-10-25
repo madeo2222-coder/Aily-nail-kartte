@@ -495,7 +495,24 @@ test("HPB lookup does not require one historical colon spelling", async () => {
 施術時間：90分`);
 
   assert.equal(result.result.reservationId, "manual-reservation");
-  assert.deepEqual(runtime.reservationLookupPatterns, ["%HPB予約番号%"]);
+  assert.deepEqual(runtime.reservationLookupPatterns, ["%予約番号%"]);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
+test("HPB replay adopts a legacy full-width source marker", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "ＨＰＢ予約番号：ａ１２３４５６",
+  });
+
+  const result = await runtime.sync(`予約番号：A123456
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+施術時間：90分`);
+
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.deepEqual(runtime.reservationLookupPatterns, ["%予約番号%"]);
   assert.equal(runtime.writes[0].operation, "update");
 });
 

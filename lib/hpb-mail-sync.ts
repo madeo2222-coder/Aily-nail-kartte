@@ -822,9 +822,10 @@ function getReservationNumberMemoKey(source: MailSource) {
 
 function getReservationMemoLookupMarker(source: MailSource) {
   // Keep the database filter broad enough to include legacy punctuation and
-  // width variants. The exact normalized key and reservation number are still
-  // matched line-by-line after every candidate page has been read.
-  return source === "minimo" ? "ミニモ予約" : "HPB予約番号";
+  // width variants, including a full-width HPB prefix. The exact normalized
+  // key and reservation number are still matched line-by-line after every
+  // candidate page has been read.
+  return source === "minimo" ? "ミニモ予約" : "予約番号";
 }
 
 async function findExistingExternalReservation(
