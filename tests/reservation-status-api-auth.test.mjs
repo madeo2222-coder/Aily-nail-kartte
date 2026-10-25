@@ -28,7 +28,12 @@ class MockResponse {
   }
 }
 
-function executeRoute({ authentication, reservationResult, updateResult }) {
+function executeRoute({
+  authentication,
+  reservationResult,
+  existingVisitResult,
+  updateResult,
+}) {
   const calls = [];
   let clientCreated = false;
 
@@ -54,6 +59,11 @@ function executeRoute({ authentication, reservationResult, updateResult }) {
         return query;
       },
       maybeSingle() {
+        if (table === "visits") {
+          return Promise.resolve(
+            existingVisitResult || { data: null, error: null },
+          );
+        }
         return Promise.resolve(
           call.operation === "update"
             ? updateResult || {
@@ -65,6 +75,10 @@ function executeRoute({ authentication, reservationResult, updateResult }) {
                 error: null,
               },
         );
+      },
+      limit(value) {
+        call.limit = value;
+        return query;
       },
     };
     return query;
@@ -163,8 +177,10 @@ test("reservation status limits values and scopes individual staff writes", asyn
 
   const response = await runtime.exports.POST(request("来店"), context);
   const body = await response.json();
-  const read = runtime.calls[0];
-  const call = runtime.calls[1];
+  const read = runtime.calls.find(
+    (item) => item.table === "reservations" && !item.operation,
+  );
+  const call = runtime.calls.find((item) => item.operation === "update");
 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
@@ -195,7 +211,7 @@ test("reservation status keeps the signed shared-login update path available", a
   });
 
   const response = await runtime.exports.POST(request("来店"), context);
-  const call = runtime.calls[1];
+  const call = runtime.calls.find((item) => item.operation === "update");
 
   assert.equal(response.status, 200);
   assert.deepEqual(JSON.parse(JSON.stringify(call.filters)), [
@@ -256,6 +272,35 @@ test("reservation status refuses a stale list after sync changed the status", as
   );
 });
 
+test("reservation status refuses another visit when the reservation is already linked", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    existingVisitResult: {
+      data: { id: "visit-1" },
+      error: null,
+    },
+  });
+
+  const response = await runtime.exports.POST(request("来店"), context);
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error, "この予約には既に来店履歴があります。");
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
 test("reservation status rejects invalid direct transitions before writing", async () => {
   const cases = [
     { current: "confirmed", next: "完了" },
@@ -309,6 +354,10 @@ test("reservation status preserves the supported visit and completion transition
     { current: "confirmed", next: "来店" },
     { current: "ＣＯＮＦＩＲＭＥＤ", next: "来店" },
     { current: "予 約 確 定", next: "来店" },
+    { current: "来店予定", next: "来店" },
+    { current: "来店", next: "来店" },
+    { current: "来 店", next: "来店" },
+    { current: "完了待ち", next: "来店" },
     { current: "来店予定", next: "完了" },
     { current: "来店", next: "完了" },
     { current: "来 店", next: "完了" },

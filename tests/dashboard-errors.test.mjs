@@ -260,4 +260,8 @@ test("dashboard renders complete successful data", async () => {
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /黒木/);
   assert.match(page.html(), /ワンカラー/);
+  assert.match(
+    page.html(),
+    /reservation_status=requested/,
+  );
 });

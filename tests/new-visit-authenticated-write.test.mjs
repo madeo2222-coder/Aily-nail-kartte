@@ -30,7 +30,12 @@ function walk(node) {
   return [node, ...walk(node.props?.children ?? null)];
 }
 
-async function mount({ withPhoto = false } = {}) {
+async function mount({
+  withPhoto = false,
+  authenticationMode = "supabase",
+  reservationId = "",
+  reservationStatus,
+} = {}) {
   const slots = [];
   let cursor = 0;
   let pendingEffects = [];
@@ -40,6 +45,7 @@ async function mount({ withPhoto = false } = {}) {
   const storageUploads = [];
   const navigations = [];
   const alerts = [];
+  const operations = [];
 
   const hooks = {
     useState(initial) {
@@ -117,6 +123,7 @@ async function mount({ withPhoto = false } = {}) {
     console: { error() {} },
     fetch(url, options = {}) {
       requests.push({ url, options });
+      operations.push({ type: "fetch", url, options });
 
       if (url === "/api/visits/registration-data") {
         return Promise.resolve({
@@ -124,7 +131,7 @@ async function mount({ withPhoto = false } = {}) {
           status: 200,
           json: async () => ({
             ok: true,
-            authenticationMode: "supabase",
+            authenticationMode,
             customers: [
               {
                 id: CUSTOMER_ID,
@@ -143,6 +150,18 @@ async function mount({ withPhoto = false } = {}) {
           ok: true,
           status: 201,
           json: async () => ({ ok: true, visit: { id: VISIT_ID } }),
+        });
+      }
+
+      if (url === `/api/reservations/${reservationId}/status`) {
+        const body = JSON.parse(options.body);
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ok: true,
+            reservation: { id: reservationId, status: body.status },
+          }),
         });
       }
 
@@ -166,7 +185,14 @@ async function mount({ withPhoto = false } = {}) {
           useRouter: () => ({ push: (value) => navigations.push(value) }),
           useSearchParams: () => ({
             get(key) {
-              return key === "customer_id" ? CUSTOMER_ID : "";
+              if (key === "customer_id") return CUSTOMER_ID;
+              if (key === "reservation_id") return reservationId;
+              if (key === "reservation_status") {
+                return reservationStatus === undefined
+                  ? null
+                  : reservationStatus;
+              }
+              return "";
             },
           }),
         };
@@ -175,8 +201,43 @@ async function mount({ withPhoto = false } = {}) {
         return {
           supabase: {
             from(table) {
-              dbCalls.push(table);
-              throw new Error("individual staff registration must use the API");
+              if (authenticationMode === "supabase") {
+                dbCalls.push(table);
+                throw new Error("individual staff registration must use the API");
+              }
+
+              const call = { table };
+              dbCalls.push(call);
+              operations.push({ type: "db", call });
+              const chain = {
+                insert(value) {
+                  call.operation = "insert";
+                  call.value = value;
+                  return chain;
+                },
+                select(columns, options) {
+                  call.select = { columns, options };
+                  return chain;
+                },
+                eq(column, value) {
+                  call.filter = { column, value };
+                  return chain;
+                },
+                single() {
+                  return Promise.resolve({
+                    data: { id: VISIT_ID },
+                    error: null,
+                  });
+                },
+                then(resolve, reject) {
+                  return Promise.resolve(
+                    table === "visits" && call.operation !== "insert"
+                      ? { count: 1, error: null }
+                      : { error: null },
+                  ).then(resolve, reject);
+                },
+              };
+              return chain;
             },
             rpc(name) {
               dbCalls.push(`rpc:${name}`);
@@ -238,6 +299,16 @@ async function mount({ withPhoto = false } = {}) {
     storageUploads,
     navigations,
     alerts,
+    operations,
+    html() {
+      return walk(tree)
+        .map((node) =>
+          typeof node.props?.children === "string"
+            ? node.props.children
+            : "",
+        )
+        .join(" ");
+    },
     async submit() {
       if (withPhoto) {
         const fileInput = walk(tree).find(
@@ -269,9 +340,13 @@ async function mount({ withPhoto = false } = {}) {
             (child) => child.props?.children === "担当スタッフを選択してください",
           ),
       );
-      assert.ok(staffSelect, "staff select should be shown for individual auth");
-      staffSelect.props.onChange({ target: { value: STAFF_ID } });
-      render();
+      if (authenticationMode === "supabase") {
+        assert.ok(staffSelect, "staff select should be shown for individual auth");
+        staffSelect.props.onChange({ target: { value: STAFF_ID } });
+        render();
+      } else {
+        assert.equal(staffSelect, undefined);
+      }
 
       const priceInput = walk(tree).find(
         (node) => node.type === "input" && node.props?.placeholder === "売上金額",
@@ -321,4 +396,72 @@ test("authenticated photo registration uploads the file then stores metadata thr
   assert.equal(body.photos.length, 1);
   assert.match(body.photos[0].imageUrl, new RegExp(VISIT_ID));
   assert.equal(body.photos[0].photoType, "after");
+});
+
+test("shared-login reservation visit uses guarded status transitions around the linked visit write", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+  });
+  await page.submit();
+
+  const statusRequests = page.requests.filter(
+    (request) => request.url === "/api/reservations/reservation-1/status",
+  );
+  assert.deepEqual(
+    statusRequests.map((request) => JSON.parse(request.options.body)),
+    [
+      { status: "来店", expectedStatus: "confirmed" },
+      { status: "完了", expectedStatus: "来店" },
+    ],
+  );
+
+  const visitInsert = page.dbCalls.find(
+    (call) => call.table === "visits" && call.operation === "insert",
+  );
+  assert.ok(visitInsert);
+  assert.equal(visitInsert.value[0].reservation_id, "reservation-1");
+  assert.equal(
+    page.dbCalls.some((call) => call.table === "reservations"),
+    false,
+  );
+
+  const firstStatusIndex = page.operations.findIndex(
+    (operation) =>
+      operation.type === "fetch" &&
+      operation.url === "/api/reservations/reservation-1/status" &&
+      JSON.parse(operation.options.body).status === "来店",
+  );
+  const visitInsertIndex = page.operations.findIndex(
+    (operation) =>
+      operation.type === "db" &&
+      operation.call.table === "visits" &&
+      operation.call.operation === "insert",
+  );
+  const completionIndex = page.operations.findIndex(
+    (operation) =>
+      operation.type === "fetch" &&
+      operation.url === "/api/reservations/reservation-1/status" &&
+      JSON.parse(operation.options.body).status === "完了",
+  );
+  assert.ok(firstStatusIndex < visitInsertIndex);
+  assert.ok(visitInsertIndex < completionIndex);
+});
+
+test("shared-login reservation visit fails closed when its status snapshot is missing", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+  });
+  await page.submit();
+
+  assert.equal(page.dbCalls.length, 0);
+  assert.equal(
+    page.requests.some((request) =>
+      request.url.includes("/api/reservations/reservation-1/status")
+    ),
+    false,
+  );
+  assert.match(page.html(), /予約一覧を読み直してから来店登録してください/);
 });

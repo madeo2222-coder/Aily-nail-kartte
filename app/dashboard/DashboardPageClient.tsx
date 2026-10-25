@@ -54,6 +54,7 @@ type TodayReservation = {
   id: string;
   customerId: string | null;
   customerName: string;
+  rawStatus: string | null;
   reservationDate: string | null;
   reservationTime: string | null;
   menuName: string;
@@ -316,6 +317,10 @@ function buildVisitLink(item: TodayReservation) {
 
   params.set("reservation_id", item.id);
 
+  if (item.rawStatus !== null) {
+    params.set("reservation_status", item.rawStatus);
+  }
+
   if (item.reservationDate) {
     params.set("visit_date", item.reservationDate);
   }
@@ -576,6 +581,7 @@ export default function DashboardPageClient() {
             customerName: customerId
               ? customerMap[customerId] || "顧客名未設定"
               : "顧客未設定",
+            rawStatus: typeof row.status === "string" ? row.status : null,
             reservationDate: buildReservationDate(row),
             reservationTime: buildReservationTime(row),
             menuName: normalizeMenuName(row),

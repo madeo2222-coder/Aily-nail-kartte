@@ -415,6 +415,9 @@ function buildVisitLink(item: NormalizedReservation) {
 
   if (item.customerId) params.set("customer_id", item.customerId);
   params.set("reservation_id", item.id);
+  if (item.rawStatus !== null) {
+    params.set("reservation_status", item.rawStatus);
+  }
   if (item.reservationDate) params.set("visit_date", item.reservationDate);
   if (item.menuName && item.menuName !== "未設定") {
     params.set("menu_name", item.menuName);

@@ -82,6 +82,17 @@ const KNOWN_VISIT_API_ERRORS = new Set([
   "来店登録に失敗しました。",
   "来店登録結果を確認できませんでした。",
 ]);
+const KNOWN_RESERVATION_STATUS_API_ERRORS = new Set([
+  "スタッフ認証が必要です。",
+  "この操作を行う権限がありません。",
+  "予約ステータスが正しくありません。",
+  "予約内容を読み直してから更新してください。",
+  "予約が見つかりません。",
+  "予約内容が更新されています。最新の内容を読み込み直してください。",
+  "現在の予約状態からは更新できません。最新の内容を確認してください。",
+  "この予約には既に来店履歴があります。",
+  "予約ステータスの更新に失敗しました。",
+]);
 
 function createLineId() {
   return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -173,6 +184,42 @@ function getCreatedVisitId(value: unknown) {
   return value.visit.id;
 }
 
+function reservationStatusApiErrorMessage(status: number, value: unknown) {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    typeof value.error === "string" &&
+    KNOWN_RESERVATION_STATUS_API_ERRORS.has(value.error)
+  ) {
+    return value.error;
+  }
+
+  if (status === 401 || status === 403) {
+    return "ログイン状態を確認して、もう一度お試しください。";
+  }
+
+  return "予約状態を更新できませんでした。予約一覧を読み直してください。";
+}
+
+function getUpdatedReservationStatus(value: unknown) {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("ok" in value) ||
+    value.ok !== true ||
+    !("reservation" in value) ||
+    typeof value.reservation !== "object" ||
+    value.reservation === null ||
+    !("status" in value.reservation) ||
+    typeof value.reservation.status !== "string"
+  ) {
+    return null;
+  }
+
+  return value.reservation.status;
+}
+
 function isCustomer(value: unknown): value is Customer {
   if (typeof value !== "object" || value === null) return false;
 
@@ -233,6 +280,7 @@ export default function NewVisitPageClient() {
 
   const preselectedCustomerId = searchParams.get("customer_id") || "";
   const prefilledReservationId = searchParams.get("reservation_id") || "";
+  const prefilledReservationStatus = searchParams.get("reservation_status");
   const prefilledVisitDate = searchParams.get("visit_date") || "";
   const prefilledMenuName = searchParams.get("menu_name") || "";
   const prefilledStaffName = searchParams.get("staff_name") || "";
@@ -563,6 +611,38 @@ export default function NewVisitPageClient() {
     }
   }
 
+  async function updateReservationStatus({
+    reservationId,
+    status,
+    expectedStatus,
+  }: {
+    reservationId: string;
+    status: "来店" | "完了";
+    expectedStatus: string;
+  }) {
+    const response = await fetch(`/api/reservations/${reservationId}/status`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, expectedStatus }),
+    });
+    const responseBody: unknown = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(
+        reservationStatusApiErrorMessage(response.status, responseBody)
+      );
+    }
+
+    const updatedStatus = getUpdatedReservationStatus(responseBody);
+    if (!updatedStatus) {
+      throw new Error(
+        "予約状態の更新結果を確認できませんでした。予約一覧を読み直してください。"
+      );
+    }
+
+    return updatedStatus;
+  }
+
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setMessage("");
@@ -680,6 +760,7 @@ export default function NewVisitPageClient() {
     try {
       const normalizedMenuName = menuName.trim() || null;
       let insertedVisitId: string;
+      let reservationStatusForCompletion: string | null = null;
 
       if (authenticationMode === "supabase") {
         const response = await fetch("/api/visits", {
@@ -729,12 +810,28 @@ export default function NewVisitPageClient() {
         visitCommitted = true;
         keepSubmissionLocked = true;
       } else {
+        if (prefilledReservationId) {
+          if (prefilledReservationStatus === null) {
+            setMessage(
+              "予約一覧を読み直してから来店登録してください。"
+            );
+            return;
+          }
+
+          reservationStatusForCompletion = await updateReservationStatus({
+            reservationId: prefilledReservationId,
+            status: "来店",
+            expectedStatus: prefilledReservationStatus,
+          });
+        }
+
         const mainPaymentMethod =
           cleanedPaymentLines.length === 1
             ? cleanedPaymentLines[0].payment_method
             : "複数";
 
         const visitPayload = {
+          reservation_id: prefilledReservationId || null,
           customer_id: customerId,
           salon_id: resolvedSalonId,
           visit_date: visitDate,
@@ -866,21 +963,17 @@ export default function NewVisitPageClient() {
       });
 
       if (authenticationMode === "legacy" && prefilledReservationId) {
-        const { error: reservationUpdateError } = await supabase
-          .from("reservations")
-          .update({ status: "完了" })
-          .eq("id", prefilledReservationId);
-
-        if (reservationUpdateError) {
-          console.error(
-            "reservations update error:",
-            reservationUpdateError
+        if (!reservationStatusForCompletion) {
+          throw new Error(
+            "予約状態を確認できませんでした。予約一覧を読み直してください。"
           );
-          setMessage(
-            `来店履歴と写真は登録できましたが、予約ステータス更新に失敗しました: ${reservationUpdateError.message}`
-          );
-          return;
         }
+
+        await updateReservationStatus({
+          reservationId: prefilledReservationId,
+          status: "完了",
+          expectedStatus: reservationStatusForCompletion,
+        });
       }
 
       alert("来店履歴を登録しました");

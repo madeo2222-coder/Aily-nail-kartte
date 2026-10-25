@@ -30,7 +30,9 @@ function canTransitionReservationStatus(
   const current = normalizeWorkflowStatus(currentStatus);
 
   if (nextStatus === "来店") {
-    return VISITABLE_STATUSES.has(current);
+    return (
+      VISITABLE_STATUSES.has(current) || COMPLETABLE_STATUSES.has(current)
+    );
   }
 
   if (nextStatus === "完了") {
@@ -157,6 +159,32 @@ export async function POST(
         },
         { status: 409 },
       );
+    }
+
+    if (status === "来店") {
+      let existingVisitQuery = supabase
+        .from("visits")
+        .select("id")
+        .eq("reservation_id", id)
+        .limit(1);
+
+      if (authentication.principal.authenticationMode === "supabase") {
+        existingVisitQuery = existingVisitQuery.eq(
+          "salon_id",
+          authentication.principal.salonId,
+        );
+      }
+
+      const existingVisitResult = await existingVisitQuery.maybeSingle();
+
+      if (existingVisitResult.error) throw existingVisitResult.error;
+
+      if (existingVisitResult.data) {
+        return NextResponse.json(
+          { ok: false, error: "この予約には既に来店履歴があります。" },
+          { status: 409 },
+        );
+      }
     }
 
     let updateQuery = supabase
