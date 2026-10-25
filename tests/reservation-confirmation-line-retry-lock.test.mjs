@@ -227,10 +227,12 @@ test("external synced reservation edit screen is read-only before any mutation r
   );
   assert.match(
     editPage,
-    /isExternalSynced \? \([\s\S]{0,260}閲覧専用：変更・キャンセルは予約元で行ってください/
+    /isExternalSynced \? \([\s\S]{0,280}閲覧専用：予約の変更・確定・キャンセルは予約元で行ってください/
   );
   assert.match(
     editPage,
     /status === "キャンセル" &&[\s\S]{0,100}!isExternalSynced &&/
   );
+  assert.match(editPage, /href="\/reservations"[\s\S]{0,180}予約一覧で来店・完了を操作/);
+  assert.match(editPage, /来店・完了はAilyの予約一覧から操作できます/);
 });

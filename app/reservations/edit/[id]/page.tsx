@@ -1074,7 +1074,7 @@ export default function EditReservationPage() {
                 {isExternalBlock
                   ? "HPB・ミニモ・休憩・店休日などのブロックを変更できます。"
                   : isExternalSynced
-                  ? "HPB・ミニモから同期された予約は、内容を確認できます。変更やキャンセルは予約元で行ってください。"
+                  ? "HPB・ミニモから同期された予約は、内容を確認できます。予約の変更・確定・キャンセルは予約元で行ってください。"
                   : "ご予約内容の変更・削除・予約確定ができるページです。"}
               </p>
             </div>
@@ -1146,7 +1146,15 @@ export default function EditReservationPage() {
 
             {isExternalSynced ? (
               <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900">
-                この予約は閲覧専用です。日時・内容・状態の変更やキャンセルは、HPB・ミニモの予約元で行ってください。
+                <p>
+                  この画面は閲覧専用です。予約の日時・内容・確定・キャンセルは、HPB・ミニモの予約元で行ってください。
+                </p>
+                <Link
+                  href="/reservations"
+                  className="mt-3 block rounded-2xl border border-amber-300 bg-white px-4 py-3 text-center text-sm font-bold text-amber-900"
+                >
+                  予約一覧で来店・完了を操作
+                </Link>
               </section>
             ) : null}
 
@@ -1161,7 +1169,7 @@ export default function EditReservationPage() {
                   </div>
                   <div className="mt-2 text-xs leading-5 text-blue-700">
                     {isExternalSynced
-                      ? "HPB・ミニモから同期された予約です。内容の変更、状態管理、通知は予約元で行ってください。"
+                      ? "予約の変更・確定・キャンセル・通知は予約元で管理します。来店・完了はAilyの予約一覧から操作できます。"
                       : isExternalBlock
                       ? `${externalBlockLabel}です。所要時間：${durationLabel}`
                       : "予約確定にすると、顧客マイページにも「予約確定」と表示されます。"}
@@ -1513,7 +1521,7 @@ export default function EditReservationPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               {isExternalSynced ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-center text-sm font-bold text-amber-900 sm:col-span-2">
-                  閲覧専用：変更・キャンセルは予約元で行ってください
+                  閲覧専用：予約の変更・確定・キャンセルは予約元で行ってください
                 </div>
               ) : (
                 <>
