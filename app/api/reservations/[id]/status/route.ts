@@ -42,6 +42,23 @@ function canTransitionReservationStatus(
   return false;
 }
 
+function canResumeVisitTransition({
+  currentStatus,
+  expectedStatus,
+  nextStatus,
+}: {
+  currentStatus: string | null;
+  expectedStatus: string | null;
+  nextStatus: string;
+}) {
+  return (
+    nextStatus === "来店" &&
+    normalizeWorkflowStatus(currentStatus) ===
+      normalizeWorkflowStatus(nextStatus) &&
+    canTransitionReservationStatus(expectedStatus, nextStatus)
+  );
+}
+
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -141,9 +158,27 @@ export async function POST(
       );
     }
 
+    if (reservationResult.data.customer_id !== expectedCustomerId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "予約内容が更新されています。最新の内容を読み込み直してください。",
+        },
+        { status: 409 },
+      );
+    }
+
+    const resumesInterruptedVisit =
+      reservationResult.data.status !== expectedStatus &&
+      canResumeVisitTransition({
+        currentStatus: reservationResult.data.status,
+        expectedStatus,
+        nextStatus: status,
+      });
+
     if (
-      reservationResult.data.status !== expectedStatus ||
-      reservationResult.data.customer_id !== expectedCustomerId
+      reservationResult.data.status !== expectedStatus &&
+      !resumesInterruptedVisit
     ) {
       return NextResponse.json(
         {
@@ -194,6 +229,16 @@ export async function POST(
           { status: 409 },
         );
       }
+    }
+
+    if (resumesInterruptedVisit) {
+      return NextResponse.json({
+        ok: true,
+        reservation: {
+          id: reservationResult.data.id,
+          status: reservationResult.data.status,
+        },
+      });
     }
 
     let updateQuery = supabase

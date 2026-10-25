@@ -477,6 +477,80 @@ test("reservation status reports a write-time status race as a conflict", async 
   assert.match(body.error, /最新の内容を読み込み直して/);
 });
 
+test("reservation status resumes an interrupted visit transition without rewriting it", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    reservationResult: {
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "来店",
+      },
+      error: null,
+    },
+  });
+
+  const response = await runtime.exports.POST(
+    request("来店", "confirmed"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(body)), {
+    ok: true,
+    reservation: { id: "reservation-1", status: "来店" },
+  });
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
+test("reservation status does not resume when the interrupted visit already exists", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    reservationResult: {
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "来店",
+      },
+      error: null,
+    },
+    existingVisitResult: {
+      data: { id: "visit-1" },
+      error: null,
+    },
+  });
+  const response = await runtime.exports.POST(
+    request("来店", "confirmed"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(body.error, "この予約には既に来店履歴があります。");
+});
+
 test("reservation status preserves not-found and rejects an unset current status", async () => {
   const authentication = {
     ok: true,
