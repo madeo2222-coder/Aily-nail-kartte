@@ -14,6 +14,9 @@ export type ConfirmationLineRetryLock = {
   message: string;
 };
 
+export type AlternativeLineApiResult = ConfirmationLineApiResult;
+export type AlternativeLineRetryLock = ConfirmationLineRetryLock;
+
 type RetryLockStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 type StoredConfirmationLineRetryLock = {
@@ -23,8 +26,12 @@ type StoredConfirmationLineRetryLock = {
 };
 
 export const CONFIRMATION_LINE_RETRY_LOCK_TTL_MS = 23 * 60 * 60 * 1000;
+export const ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS =
+  CONFIRMATION_LINE_RETRY_LOCK_TTL_MS;
 
 const STORAGE_KEY_PREFIX = "aily:confirmation-line-retry-lock:v1:";
+const ALTERNATIVE_STORAGE_KEY_PREFIX =
+  "aily:alternative-line-retry-lock:v1:";
 const STORED_LOCK_MESSAGES: Record<
   ConfirmationLineRetryLock["kind"],
   string
@@ -41,8 +48,8 @@ const HISTORY_CHECK_STATUSES = new Set([
   "message_changed",
 ]);
 
-function getStorageKey(reservationId: string) {
-  return `${STORAGE_KEY_PREFIX}${reservationId}`;
+function getStorageKey(prefix: string, reservationId: string) {
+  return `${prefix}${reservationId}`;
 }
 
 function isRetryLockKind(
@@ -56,7 +63,23 @@ export function readConfirmationLineRetryLock(
   reservationId: string,
   now = Date.now()
 ): ConfirmationLineRetryLock | null {
-  const key = getStorageKey(reservationId);
+  return readLineRetryLock(
+    storage,
+    STORAGE_KEY_PREFIX,
+    STORED_LOCK_MESSAGES,
+    reservationId,
+    now
+  );
+}
+
+function readLineRetryLock(
+  storage: RetryLockStorage,
+  prefix: string,
+  messages: Record<ConfirmationLineRetryLock["kind"], string>,
+  reservationId: string,
+  now: number
+): ConfirmationLineRetryLock | null {
+  const key = getStorageKey(prefix, reservationId);
 
   try {
     const raw = storage.getItem(key);
@@ -77,7 +100,7 @@ export function readConfirmationLineRetryLock(
     }
 
     return stored.kind
-      ? { kind: stored.kind, message: STORED_LOCK_MESSAGES[stored.kind] }
+      ? { kind: stored.kind, message: messages[stored.kind] }
       : null;
   } catch {
     try {
@@ -95,7 +118,17 @@ export function saveConfirmationLineRetryLock(
   lock: ConfirmationLineRetryLock | null,
   now = Date.now()
 ) {
-  const key = getStorageKey(reservationId);
+  saveLineRetryLock(storage, STORAGE_KEY_PREFIX, reservationId, lock, now);
+}
+
+function saveLineRetryLock(
+  storage: RetryLockStorage,
+  prefix: string,
+  reservationId: string,
+  lock: ConfirmationLineRetryLock | null,
+  now: number
+) {
+  const key = getStorageKey(prefix, reservationId);
 
   try {
     if (!lock) {
@@ -150,4 +183,68 @@ export function getConfirmationLineRetryLock(
   }
 
   return null;
+}
+
+const ALTERNATIVE_STORED_LOCK_MESSAGES: Record<
+  AlternativeLineRetryLock["kind"],
+  string
+> = {
+  sent: "別日時入力のLINEは送信済みです。重複送信していません。",
+  history_check:
+    "別日時入力LINEの結果を確認できません。同じ送信を繰り返さず、通知状態とLINEの送信履歴を確認してください。",
+};
+
+export function readAlternativeLineRetryLock(
+  storage: RetryLockStorage,
+  reservationId: string,
+  now = Date.now()
+): AlternativeLineRetryLock | null {
+  return readLineRetryLock(
+    storage,
+    ALTERNATIVE_STORAGE_KEY_PREFIX,
+    ALTERNATIVE_STORED_LOCK_MESSAGES,
+    reservationId,
+    now
+  );
+}
+
+export function saveAlternativeLineRetryLock(
+  storage: RetryLockStorage,
+  reservationId: string,
+  lock: AlternativeLineRetryLock | null,
+  now = Date.now()
+) {
+  saveLineRetryLock(
+    storage,
+    ALTERNATIVE_STORAGE_KEY_PREFIX,
+    reservationId,
+    lock,
+    now
+  );
+}
+
+export function getAlternativeLineRetryLock(
+  result: AlternativeLineApiResult | null
+): AlternativeLineRetryLock | null {
+  const lock = getConfirmationLineRetryLock(result);
+  if (!lock) return null;
+
+  if (lock.kind === "sent") {
+    return {
+      kind: "sent",
+      message:
+        result?.message ||
+        (result?.alreadySent
+          ? "別日時入力のLINEは送信済みです。重複送信していません。"
+          : "別日時入力のLINEを送信しました。"),
+    };
+  }
+
+  return {
+    kind: "history_check",
+    message:
+      result?.error ||
+      result?.message ||
+      ALTERNATIVE_STORED_LOCK_MESSAGES.history_check,
+  };
 }

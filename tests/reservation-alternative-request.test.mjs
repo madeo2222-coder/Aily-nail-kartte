@@ -811,7 +811,7 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
   );
   assert.match(
     pageSource,
-    /別日時LINE依頼結果の確認エラー:[\s\S]{0,180}setMutationResultUnknown\(true\)/
+    /別日時LINE依頼結果の確認エラー:[\s\S]{0,700}setMutationResultUnknown\(true\)/
   );
   for (const errorLabel of [
     "予約キャンセル結果の確認エラー:",

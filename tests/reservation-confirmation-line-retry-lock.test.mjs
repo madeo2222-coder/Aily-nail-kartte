@@ -24,9 +24,13 @@ function loadRetryLockModule() {
 }
 
 const {
+  ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS,
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
+  getAlternativeLineRetryLock,
   getConfirmationLineRetryLock,
+  readAlternativeLineRetryLock,
   readConfirmationLineRetryLock,
+  saveAlternativeLineRetryLock,
   saveConfirmationLineRetryLock,
 } = loadRetryLockModule();
 
@@ -180,6 +184,60 @@ test("storage failures do not replace the current screen's in-memory guard", () 
   );
 });
 
+test("alternative-time LINE delivery persists sent and unknown-result locks", () => {
+  const storage = createMemoryStorage();
+
+  const sentLock = getAlternativeLineRetryLock({ ok: true, sent: true });
+  assert.equal(sentLock.kind, "sent");
+  assert.match(sentLock.message, /別日時入力のLINEを送信/);
+  saveAlternativeLineRetryLock(storage, "reservation-1", sentLock, 1_000);
+  assert.equal(
+    readAlternativeLineRetryLock(storage, "reservation-1", 2_000).kind,
+    "sent"
+  );
+
+  const unknownLock = getAlternativeLineRetryLock(null);
+  assert.equal(unknownLock.kind, "history_check");
+  assert.match(unknownLock.message, /同じ送信を繰り返さず/);
+  saveAlternativeLineRetryLock(storage, "reservation-2", unknownLock, 1_000);
+  assert.equal(
+    readAlternativeLineRetryLock(storage, "reservation-2", 2_000).kind,
+    "history_check"
+  );
+  assert.equal(
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-2",
+      1_000 + ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS
+    ),
+    null
+  );
+});
+
+test("alternative-time LINE keeps only recorded retryable failures available", () => {
+  assert.equal(
+    getAlternativeLineRetryLock({
+      ok: false,
+      status: "failed",
+      retryable: true,
+      error: "再試行できます。",
+    }),
+    null
+  );
+
+  for (const status of ["unknown", "sent_unrecorded", "retry_expired"]) {
+    assert.equal(
+      getAlternativeLineRetryLock({
+        ok: false,
+        status,
+        retryable: false,
+        error: "送信履歴を確認してください。",
+      }).kind,
+      "history_check"
+    );
+  }
+});
+
 test("both staff reservation screens apply the shared retry lock", () => {
   const listPage = readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -205,6 +263,24 @@ test("both staff reservation screens apply the shared retry lock", () => {
     /canRetryConfirmationLine\(item\.status\) &&[\s\S]{0,80}!isExternalSynced \? \([\s\S]{0,120}confirmationLineRetryLocks\[item\.id\] \?/
   );
   assert.match(editPage, /!confirmationLineRetryLock/);
+});
+
+test("staff edit screen blocks unsafe alternative-time LINE repeats across reloads", () => {
+  const editPage = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(editPage, /getAlternativeLineRetryLock\(result|null\)/);
+  assert.match(
+    editPage,
+    /readAlternativeLineRetryLock\(window\.localStorage, reservationId\)/
+  );
+  assert.match(editPage, /saveAlternativeLineRetryLock\(/);
+  assert.match(
+    editPage,
+    /alternativeLineRetryLock \? \([\s\S]{0,1400}別日時をLINEで依頼/
+  );
 });
 
 test("external synced reservation edit screen is read-only before any mutation request", () => {

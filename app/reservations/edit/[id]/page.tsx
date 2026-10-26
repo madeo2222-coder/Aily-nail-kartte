@@ -6,11 +6,16 @@ import { useParams, useRouter } from "next/navigation";
 import ReservationReferencePhoto from "../../ReservationReferencePhoto";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import {
+  getAlternativeLineRetryLock,
   getConfirmationLineRetryLock,
+  readAlternativeLineRetryLock,
   readConfirmationLineRetryLock,
+  saveAlternativeLineRetryLock,
   saveConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import type {
+  AlternativeLineApiResult,
+  AlternativeLineRetryLock,
   ConfirmationLineApiResult,
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
@@ -79,14 +84,6 @@ type CancellationResult = {
     status?: "sent" | "skipped" | "not_linked" | "failed" | "unknown";
     message?: string;
   };
-};
-
-type AlternativeRequestResult = {
-  ok?: boolean;
-  sent?: boolean;
-  alreadySent?: boolean;
-  error?: string;
-  message?: string;
 };
 
 const STATUS_OPTIONS: { value: ReservationStatus; label: string }[] = [
@@ -371,6 +368,8 @@ export default function EditReservationPage() {
   const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
   const [confirmationLineRetryLock, setConfirmationLineRetryLock] =
     useState<ConfirmationLineRetryLock | null>(null);
+  const [alternativeLineRetryLock, setAlternativeLineRetryLock] =
+    useState<AlternativeLineRetryLock | null>(null);
 
   const [salons, setSalons] = useState<Salon[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
@@ -500,6 +499,11 @@ export default function EditReservationPage() {
     setConfirmationLineRetryLock(
       reservationId
         ? readConfirmationLineRetryLock(window.localStorage, reservationId)
+        : null
+    );
+    setAlternativeLineRetryLock(
+      reservationId
+        ? readAlternativeLineRetryLock(window.localStorage, reservationId)
         : null
     );
     loadPageData();
@@ -775,9 +779,16 @@ export default function EditReservationPage() {
           }),
         }
       );
-      const result = (await response.json().catch(() => null)) as
-        | AlternativeRequestResult
-        | null;
+      const result = (await response.json().catch(
+        () => null
+      )) as AlternativeLineApiResult | null;
+      const retryLock = getAlternativeLineRetryLock(result);
+      saveAlternativeLineRetryLock(
+        window.localStorage,
+        reservationId,
+        retryLock
+      );
+      setAlternativeLineRetryLock(retryLock);
 
       if (!result) {
         setMutationResultUnknown(true);
@@ -800,6 +811,13 @@ export default function EditReservationPage() {
       );
     } catch (error) {
       console.error("別日時LINE依頼結果の確認エラー:", error);
+      const retryLock = getAlternativeLineRetryLock(null);
+      saveAlternativeLineRetryLock(
+        window.localStorage,
+        reservationId,
+        retryLock
+      );
+      setAlternativeLineRetryLock(retryLock);
       setMutationResultUnknown(true);
       setErrorMessage("");
     } finally {
@@ -1241,16 +1259,28 @@ export default function EditReservationPage() {
                       LINE連携済みのお客様へお知らせし、この予約の別希望日時入力ページへ案内します。送信済みの場合は重複送信しません。
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={requestAlternativeTime}
-                    disabled={mutationControlsDisabled}
-                    className="shrink-0 rounded-2xl bg-amber-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
-                  >
-                    {requestingAlternative
-                      ? "LINE送信中..."
-                      : "別日時をLINEで依頼"}
-                  </button>
+                  {alternativeLineRetryLock ? (
+                    <div
+                      className={`max-w-sm rounded-2xl border px-4 py-3 text-xs font-bold leading-5 ${
+                        alternativeLineRetryLock.kind === "sent"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          : "border-amber-300 bg-white text-amber-900"
+                      }`}
+                    >
+                      {alternativeLineRetryLock.message}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={requestAlternativeTime}
+                      disabled={mutationControlsDisabled}
+                      className="shrink-0 rounded-2xl bg-amber-600 px-5 py-4 text-sm font-bold text-white shadow-sm disabled:opacity-60"
+                    >
+                      {requestingAlternative
+                        ? "LINE送信中..."
+                        : "別日時をLINEで依頼"}
+                    </button>
+                  )}
                 </div>
               </section>
             ) : null}
