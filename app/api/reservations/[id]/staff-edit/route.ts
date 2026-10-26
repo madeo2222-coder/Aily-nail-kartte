@@ -19,8 +19,7 @@ const CANCELLED_STATUSES = new Set([
   "rejected",
   "declined",
 ]);
-const CONFIRMED_STATUSES = new Set(["confirmed", "予約確定"]);
-const ACTIVE_RESERVATION_STATUSES = new Set(["予約", "confirmed", "予約確定"]);
+const ACTIVE_RESERVATION_STATUSES = new Set(["予約", "confirmed"]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -436,10 +435,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       reservationResult.data.start_at || "",
     ).getTime();
     const activatesElapsedTime =
-      ACTIVE_RESERVATION_STATUSES.has(status) &&
+      ACTIVE_RESERVATION_STATUSES.has(normalizeWorkflowStatus(status)) &&
       nextStartTime <= Date.now() &&
       (!ACTIVE_RESERVATION_STATUSES.has(
-        reservationResult.data.status || "",
+        normalizeWorkflowStatus(reservationResult.data.status),
       ) || currentStartTime !== nextStartTime);
 
     if (activatesElapsedTime) {
@@ -450,8 +449,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     if (
-      status === "confirmed" &&
-      !CONFIRMED_STATUSES.has(reservationResult.data.status || "")
+      normalizeWorkflowStatus(status) === "confirmed" &&
+      normalizeWorkflowStatus(reservationResult.data.status) !== "confirmed"
     ) {
       return errorResponse(
         "予約確定は『予約確定にする』から実行してください。",
@@ -460,9 +459,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     }
 
     if (
-      CANCELLED_STATUSES.has(status) &&
+      normalizeWorkflowStatus(status) === "キャンセル" &&
       reservationResult.data.customer_id !== null &&
-      !CANCELLED_STATUSES.has(reservationResult.data.status || "")
+      normalizeWorkflowStatus(reservationResult.data.status) !== "キャンセル"
     ) {
       return errorResponse(
         "顧客予約のキャンセルはキャンセル通知の確認画面から実行してください。",
@@ -510,7 +509,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       }
     }
 
-    if (!CANCELLED_STATUSES.has(status)) {
+    if (normalizeWorkflowStatus(status) !== "キャンセル") {
       const [reservationsResult, blocksResult] = await Promise.all([
         supabase
           .from("reservations")
@@ -534,7 +533,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       const reservationOverlap = (reservationsResult.data || []).some(
         (reservation) =>
           (reservation.staff_id === null || reservation.staff_id === staffId) &&
-          !CANCELLED_STATUSES.has(reservation.status || ""),
+          normalizeWorkflowStatus(reservation.status) !== "キャンセル",
       );
       const blockOverlap = (blocksResult.data || []).some(
         (block) => block.staff_id === null || block.staff_id === staffId,

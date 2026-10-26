@@ -736,6 +736,7 @@ test("staff edit preserves supported status aliases and progress steps", async (
     { current: "予約受付", next: "予約" },
     { current: "予約", next: "来店" },
     { current: "予約確定", next: "confirmed" },
+    { current: " ＣＯＮＦＩＲＭＥＤ ", next: "confirmed" },
     { current: "confirmed", next: "来店" },
     { current: "来店予定", next: "来店" },
     { current: "来店", next: "完了" },
@@ -759,6 +760,44 @@ test("staff edit preserves supported status aliases and progress steps", async (
     const update = runtime.calls.find((call) => call.operation === "update");
     assert.equal(update.value.status, next, `${current} -> ${next}`);
   }
+});
+
+test("staff edit treats legacy confirmed aliases as already active for elapsed non-time corrections", async () => {
+  const elapsedReservation = {
+    ...reservation,
+    start_at: "2020-10-19T01:00:00.000Z",
+    end_at: "2020-10-19T02:30:00.000Z",
+    status: " ＣＯＮＦＩＲＭＥＤ ",
+  };
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: { data: elapsedReservation, error: null },
+    },
+  });
+  const response = await runtime.exports.PATCH(
+    patchRequest({
+      expectedStatus: elapsedReservation.status,
+      startAt: elapsedReservation.start_at,
+      endAt: elapsedReservation.end_at,
+      expectedStartAt: elapsedReservation.start_at,
+      expectedEndAt: elapsedReservation.end_at,
+      status: "confirmed",
+      memo: "過去予約のメモだけ修正",
+    }),
+    context(),
+  );
+
+  assert.equal(response.status, 200);
+  const update = runtime.calls.find((call) => call.operation === "update");
+  assert.equal(update.value.status, "confirmed");
+  assert.ok(
+    update.filters.some(
+      (filter) =>
+        filter.column === "status" &&
+        filter.value === elapsedReservation.status,
+    ),
+  );
 });
 
 test("staff edit rejects moving an active reservation into elapsed time", async () => {
