@@ -300,6 +300,35 @@ test("confirmed change request succeeds only after LINE accepts it", async () =>
   assert.equal(runtime.lineCalls[0].options.signal.aborted, false);
 });
 
+test("legacy full-width confirmed status keeps customer request actions available", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      status: " ＣＯＮＦＩＲＭＥＤ ",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      updated_at: "2099-09-01T00:00:00.000Z",
+      source: "customer-app",
+      memo: "",
+    },
+  });
+
+  const detail = await runtime.get();
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.reservation.canRequestChange, true);
+  assert.equal(detail.body.reservation.canRequestCancel, true);
+
+  const request = await runtime.patch({
+    action: "request_change",
+    requestMessage: "別の日時を希望します",
+  });
+  assert.equal(request.status, 200);
+  assert.equal(request.body.ok, true);
+  assert.equal(runtime.lineCalls.length, 1);
+});
+
 test("LINE failure is not reported to the customer as a sent request", async () => {
   const runtime = loadRoute({
     lineResponses: [new MockResponse("temporary failure", 500)],

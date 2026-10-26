@@ -94,7 +94,12 @@ function isRequestedStatus(status: string) {
 }
 
 function isConfirmedStatus(status: string) {
-  return status === "confirmed" || status === "予約確定";
+  const normalized = status
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+
+  return normalized === "confirmed" || normalized === "予約確定";
 }
 
 function isExternalReservation(row: AnyRow) {
