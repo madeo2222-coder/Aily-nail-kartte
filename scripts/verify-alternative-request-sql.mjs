@@ -8,6 +8,8 @@ const inspection = await readFile(`${root}/scripts/sql/aily-alternative-request-
 const migration = await readFile(`${root}/supabase/migrations/20261003120111_reservation_alternative_requests.sql`, 'utf8');
 const reservationWriteMigration = await readFile(`${root}/supabase/migrations/20261004030707_prevent_customer_reservation_races.sql`, 'utf8');
 const staffConfirmationMigration = await readFile(`${root}/supabase/migrations/20261004055916_prevent_staff_confirmation_races.sql`, 'utf8');
+const confirmationDeliveryMigration = await readFile(`${root}/supabase/migrations/20261004070432_reservation_confirmation_deliveries.sql`, 'utf8');
+const normalizedStatusMigration = await readFile(`${root}/supabase/migrations/20261026200835_normalize_customer_requested_statuses.sql`, 'utf8');
 const db = new PGlite();
 const inspect = async () => (await db.exec(inspection)).find(r => r.fields?.some(f => f.name === 'check_name')).rows;
 let checks = await inspect();
@@ -64,9 +66,12 @@ console.log('PASS: prerequisite-only schema identified as an initial migration c
 await db.exec(migration);
 await db.exec(reservationWriteMigration);
 await db.exec(staffConfirmationMigration);
+await db.exec(confirmationDeliveryMigration);
 checks = await inspect();
 assert.deepEqual(checks.filter(r => !['PASS', 'PRESENT'].includes(r.result)), []);
 console.log(`PASS: migrated schema passes all ${checks.length} catalog checks`);
+
+await db.exec(normalizedStatusMigration);
 
 await db.exec(`
 INSERT INTO public.salons VALUES ('00000000-0000-0000-0000-000000000001');
@@ -86,7 +91,7 @@ INSERT INTO public.reservations(id, customer_id, salon_id, staff_id, status, men
   '00000000-0000-0000-0000-000000000002',
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000003',
-  'requested',
+  ' 予 約 申 請 中 ',
   'test',
   '2026-10-10T01:00:00Z',
   '2026-10-10T02:00:00Z'

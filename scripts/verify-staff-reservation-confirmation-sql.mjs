@@ -22,6 +22,10 @@ const confirmationDeliveryMigration = await readFile(
   `${root}/supabase/migrations/20261004070432_reservation_confirmation_deliveries.sql`,
   "utf8"
 );
+const normalizedStatusMigration = await readFile(
+  `${root}/supabase/migrations/20261026200835_normalize_customer_requested_statuses.sql`,
+  "utf8"
+);
 const db = new PGlite();
 const inspectConfirmationDelivery = async () =>
   (await db.exec(confirmationDeliveryInspection)).find((result) =>
@@ -122,6 +126,8 @@ for (let mask = 0; mask < 8; mask += 1) {
 }
 console.log("PASS: delivery preflight requires all three grants across all 8 subsets");
 
+await db.exec(normalizedStatusMigration);
+
 await db.exec(`
 INSERT INTO public.salons VALUES ('00000000-0000-0000-0000-000000000001');
 INSERT INTO public.customers VALUES (
@@ -141,7 +147,7 @@ INSERT INTO public.reservations(
   '00000000-0000-0000-0000-000000000002',
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000003',
-  'requested',
+  ' ＲＥＱＵＥＳＴＥＤ ',
   'ジェル',
   '',
   '2026-10-10T01:00:00.000Z',
@@ -232,6 +238,10 @@ assert.equal(
   "superseded"
 );
 
+await db.query(
+  "UPDATE public.reservations SET status = $2 WHERE id = $1",
+  [confirmed.reservation_id, " 予 約 確 定 "]
+);
 const repeated = await confirmReservation();
 assert.equal(repeated.outcome, "already_confirmed");
 assert.equal(repeated.reservation_id, confirmed.reservation_id);

@@ -14,6 +14,14 @@ const writeMigration = await readFile(
   `${root}/supabase/migrations/20261004030707_prevent_customer_reservation_races.sql`,
   "utf8"
 );
+const staffConfirmationMigration = await readFile(
+  `${root}/supabase/migrations/20261004055916_prevent_staff_confirmation_races.sql`,
+  "utf8"
+);
+const confirmationDeliveryMigration = await readFile(
+  `${root}/supabase/migrations/20261004070432_reservation_confirmation_deliveries.sql`,
+  "utf8"
+);
 const normalizedStatusMigration = await readFile(
   `${root}/supabase/migrations/20261026200835_normalize_customer_requested_statuses.sql`,
   "utf8"
@@ -62,6 +70,8 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO service_role;
 
 await db.exec(alternativeMigration);
 await db.exec(writeMigration);
+await db.exec(staffConfirmationMigration);
+await db.exec(confirmationDeliveryMigration);
 await db.exec(normalizedStatusMigration);
 
 const preflight = (await db.query(normalizedStatusPreflight)).rows[0];
@@ -69,9 +79,15 @@ assert.equal(preflight.create_rpc_exists, true);
 assert.equal(preflight.update_rpc_exists, true);
 assert.equal(preflight.cancel_rpc_exists, true);
 assert.equal(preflight.normalization_helper_exists, true);
+assert.equal(preflight.confirm_rpc_exists, true);
+assert.equal(preflight.alternative_claim_rpc_exists, true);
+assert.equal(preflight.confirmation_delivery_claim_rpc_exists, true);
 assert.equal(preflight.service_role_can_create, true);
 assert.equal(preflight.service_role_can_update, true);
 assert.equal(preflight.service_role_can_cancel, true);
+assert.equal(preflight.service_role_can_confirm, true);
+assert.equal(preflight.service_role_can_claim_alternative, true);
+assert.equal(preflight.service_role_can_claim_confirmation_delivery, true);
 
 await db.exec(`
 INSERT INTO public.salons VALUES ('00000000-0000-0000-0000-000000000001');
