@@ -5,7 +5,11 @@ import { supabase } from "@/lib/supabase";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getReservationStatusLabel,
+  isCancelledReservationStatus,
+  isCompletedReservationStatus,
+} from "@/lib/reservation-status";
 
 type Customer = {
   id: string;
@@ -235,8 +239,7 @@ function getReservationTime(reservation: Reservation) {
 function isActiveReservation(status: string | null) {
   return (
     !isCancelledReservationStatus(status) &&
-    status !== "完了" &&
-    status !== "completed"
+    !isCompletedReservationStatus(status)
   );
 }
 
@@ -744,7 +747,9 @@ export default function CustomerDetailPage() {
                 </div>
                 <div>メニュー: {getReservationMenu(nextReservation)}</div>
                 <div>担当: {getReservationStaff(nextReservation)}</div>
-                <div>ステータス: {nextReservation.status || "-"}</div>
+                <div>
+                  ステータス: {getReservationStatusLabel(nextReservation.status, "-")}
+                </div>
               </div>
             ) : (
               <div className="mt-2 text-sm text-slate-600">

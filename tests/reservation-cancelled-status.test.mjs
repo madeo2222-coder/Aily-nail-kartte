@@ -72,6 +72,22 @@ test("confirmed reservation states share width and whitespace normalization", ()
   }
 });
 
+test("completed reservation states share width and whitespace normalization", () => {
+  for (const status of [
+    "completed",
+    "完了",
+    " COMPLETED ",
+    "ＣＯＭＰＬＥＴＥＤ",
+    "完 了",
+  ]) {
+    assert.equal(exports.isCompletedReservationStatus(status), true, status);
+  }
+
+  for (const status of [null, "", "requested", "confirmed", "予約", "キャンセル"]) {
+    assert.equal(exports.isCompletedReservationStatus(status), false, status);
+  }
+});
+
 test("staff-progressed reservation states are normalized consistently", () => {
   for (const status of [
     "来店",

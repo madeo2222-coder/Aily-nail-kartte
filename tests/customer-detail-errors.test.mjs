@@ -52,7 +52,13 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failureTable = "", rejection = false, empty = false, missing = false } = {}) {
+async function mount({
+  failureTable = "",
+  rejection = false,
+  empty = false,
+  missing = false,
+  reservationStatus = "confirmed",
+} = {}) {
   const slots = [];
   let cursor = 0;
   let pendingEffects = [];
@@ -131,7 +137,7 @@ async function mount({ failureTable = "", rejection = false, empty = false, miss
           id: "reservation-1",
           customer_id: "customer-1",
           staff_id: "staff-1",
-          status: "confirmed",
+          status: reservationStatus,
           start_at: "2026-10-01T01:00:00Z",
           menu: "グラデーション",
         }],
@@ -314,6 +320,22 @@ test("customer detail preserves authoritative empty states", async () => {
   assert.match(page.html(), /来店履歴はまだありません/);
   assert.match(page.html(), /初回カウンセリング情報はまだ登録/);
   assert.match(page.html(), /来店履歴を追加/);
+  page.unmount();
+});
+
+test("customer detail excludes a normalized completed reservation from the next visit", async () => {
+  const page = await mount({ reservationStatus: " ＣＯＭＰＬＥＴＥＤ " });
+
+  assert.match(page.html(), /次回予約は未登録/);
+  assert.doesNotMatch(page.html(), /ＣＯＭＰＬＥＴＥＤ/);
+  page.unmount();
+});
+
+test("customer detail normalizes the next reservation status label", async () => {
+  const page = await mount({ reservationStatus: " ＣＯＮＦＩＲＭＥＤ " });
+
+  assert.match(page.html(), /ステータス: 予約確定/);
+  assert.doesNotMatch(page.html(), /ＣＯＮＦＩＲＭＥＤ/);
   page.unmount();
 });
 

@@ -12,6 +12,11 @@ const CONFIRMED_RESERVATION_STATUSES = new Set([
   "予約確定",
 ]);
 
+const COMPLETED_RESERVATION_STATUSES = new Set([
+  "completed",
+  "完了",
+]);
+
 // These states are advanced by staff after a booking has been accepted.
 // Replaying an older external booking mail must never move them backwards.
 const PROGRESSED_RESERVATION_STATUSES = new Set([
@@ -71,6 +76,14 @@ export function isConfirmedReservationStatus(
   status: string | null | undefined
 ) {
   return CONFIRMED_RESERVATION_STATUSES.has(
+    normalizeReservationStatus(status)
+  );
+}
+
+export function isCompletedReservationStatus(
+  status: string | null | undefined
+) {
+  return COMPLETED_RESERVATION_STATUSES.has(
     normalizeReservationStatus(status)
   );
 }
