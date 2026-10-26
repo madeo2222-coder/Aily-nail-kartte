@@ -217,12 +217,10 @@ test("scopes reminder reads to the authenticated salon and records an accepted s
   );
 
   const listQuery = runtime.queries.find(
-    (query) => query.table === "reservations" && query.in.length > 0
+    (query) => query.table === "reservations" && query.gte.length > 0
   );
   assert.deepEqual(listQuery.eq, [["salon_id", "salon-1"]]);
-  assert.deepEqual(JSON.parse(JSON.stringify(listQuery.in)), [
-    ["status", ["confirmed", "予約確定"]],
-  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(listQuery.in)), []);
 
   const customerQuery = runtime.queries.find((query) => query.table === "customers");
   const staffQuery = runtime.queries.find((query) => query.table === "staffs");
@@ -237,6 +235,23 @@ test("scopes reminder reads to the authenticated salon and records an accepted s
 
   const retryKey = runtime.lineCalls[0].options.headers["X-Line-Retry-Key"];
   assert.match(retryKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("sends reminders for legacy confirmed aliases and ignores unconfirmed rows", async () => {
+  for (const status of [" ＣＯＮＦＩＲＭＥＤ ", " 予 約 確 定 "]) {
+    const reservation = { ...baseReservation, status };
+    const runtime = loadRoute({
+      reservations: [{ ...baseReservation, id: "pending-1", status: "pending" }, reservation],
+      latestReservation: reservation,
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.total, 1);
+    assert.equal(response.body.sentCount, 1);
+    assert.equal(runtime.lineCalls.length, 1);
+    assert.equal(runtime.logInserts.length, 1);
+  }
 });
 
 test("fails closed when the prior delivery log cannot be checked", async () => {

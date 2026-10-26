@@ -9,7 +9,6 @@ type AnyRow = Record<string, unknown>;
 
 const NOTIFICATION_TYPE = "reservation_reminder";
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
-const CONFIRMED_STATUSES = ["confirmed", "予約確定"];
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -31,6 +30,15 @@ function getString(row: AnyRow | null, keys: string[]) {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return "";
+}
+
+function isConfirmedStatus(status: unknown) {
+  const normalized = String(status ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+
+  return normalized === "confirmed" || normalized === "予約確定";
 }
 
 function toUtcRangeFromJstDate(dateText: string) {
@@ -218,7 +226,6 @@ async function runReminder(targetDate: string, salonId: string) {
     .from("reservations")
     .select("id, salon_id, customer_id, staff_id, status, menu, menu_name, start_at, end_at")
     .eq("salon_id", salonId)
-    .in("status", CONFIRMED_STATUSES)
     .gte("start_at", startIso)
     .lte("start_at", endIso)
     .order("start_at", { ascending: true });
@@ -237,8 +244,11 @@ async function runReminder(targetDate: string, salonId: string) {
   let unrecordedCount = 0;
   let recoveredCount = 0;
   const results: string[] = [];
+  const confirmedReservations = ((reservations || []) as AnyRow[]).filter(
+    (reservation) => isConfirmedStatus(reservation.status)
+  );
 
-  for (const reservation of (reservations || []) as AnyRow[]) {
+  for (const reservation of confirmedReservations) {
     const reservationId = getString(reservation, ["id"]);
     const customerId = getString(reservation, ["customer_id"]);
     const staffId = getString(reservation, ["staff_id"]);
@@ -353,7 +363,7 @@ async function runReminder(targetDate: string, salonId: string) {
   return NextResponse.json({
     ok: failedCount === 0 && unrecordedCount === 0,
     targetDate,
-    total: reservations?.length || 0,
+    total: confirmedReservations.length,
     sentCount,
     skippedCount,
     duplicateCount,
