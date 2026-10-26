@@ -80,6 +80,8 @@ async function mount({
   let cursor = 0;
   let collectEffects = true;
   let shouldFail = Boolean(failureMode);
+  const storedValues = new Map();
+  const alerts = [];
 
   const hooks = {
     useState(initial) {
@@ -138,7 +140,7 @@ async function mount({
     Set,
     URLSearchParams,
     console: { error() {} },
-    alert() {},
+    alert(message) { alerts.push(message); },
     async fetch(url, options = {}) {
       requests.push({ url, options });
 
@@ -182,6 +184,11 @@ async function mount({
     window: {
       confirm: () => true,
       history: { replaceState() {} },
+      localStorage: {
+        getItem(key) { return storedValues.get(key) ?? null; },
+        setItem(key, value) { storedValues.set(key, value); },
+        removeItem(key) { storedValues.delete(key); },
+      },
       requestAnimationFrame(callback) { callback(); },
     },
     require(name) {
@@ -258,6 +265,24 @@ async function mount({
       await button.props.onClick();
       await setImmediate();
     },
+    setConfirmationLineLock(kind = "sent") {
+      storedValues.set(
+        "aily:confirmation-line-retry-lock:v1:reservation-1",
+        JSON.stringify({ version: 1, savedAt: Date.now(), kind })
+      );
+    },
+    async retryConfirmationLine() {
+      const button = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          node.props.children === "確定LINEを再試行"
+      );
+      assert.ok(button, "confirmation LINE retry button exists");
+      await button.props.onClick();
+      await setImmediate();
+    },
+    alerts,
   };
 }
 
@@ -326,6 +351,21 @@ test("reservation list confirms against the displayed reservation snapshot", asy
     expectedStatus: "requested",
     expectedMemo: null,
   });
+});
+
+test("reservation list rechecks a cross-tab LINE lock before retrying", async () => {
+  const page = await mount({ reservationStatus: "confirmed" });
+  page.setConfirmationLineLock();
+  await page.retryConfirmationLine();
+
+  assert.match(page.alerts.at(-1), /送信済み/);
+  assert.equal(
+    page.requests.some(
+      request => request.url === "/api/send-reservation-confirmed-line"
+    ),
+    false
+  );
+  assert.equal(page.hasButton("確定LINEを再試行"), false);
 });
 
 test("reservation list preserves a successful empty result", async () => {

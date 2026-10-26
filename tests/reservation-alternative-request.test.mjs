@@ -853,8 +853,29 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
   );
   assert.match(
     retryFunctionSource,
+    /readConfirmationLineRetryLock\([\s\S]{0,160}if \(storedLock\) \{[\s\S]{0,220}return;/,
+    "confirmation retry rechecks a lock written by another tab"
+  );
+  assert.match(
+    retryFunctionSource,
     /const retryLock = getConfirmationLineRetryLock\(result\)[\s\S]{0,260}setConfirmationLineRetryLock\(retryLock\)[\s\S]{0,80}if \(!result\)/,
     "retryConfirmationLine blocks only the uncertain LINE retry after an unparseable response"
+  );
+  const alternativeFunctionStart = pageSource.indexOf(
+    "async function requestAlternativeTime("
+  );
+  const alternativeFunctionEnd = pageSource.indexOf(
+    "\n  async function ",
+    alternativeFunctionStart + 1
+  );
+  const alternativeFunctionSource = pageSource.slice(
+    alternativeFunctionStart,
+    alternativeFunctionEnd
+  );
+  assert.match(
+    alternativeFunctionSource,
+    /readAlternativeLineRetryLock\([\s\S]{0,160}if \(storedLock\) \{[\s\S]{0,220}return;/,
+    "alternative request rechecks a lock written by another tab"
   );
   assert.match(
     pageSource,

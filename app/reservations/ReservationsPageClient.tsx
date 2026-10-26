@@ -810,6 +810,19 @@ export default function ReservationsPageClient() {
   }
 
   async function handleRetryConfirmationLine(id: string) {
+    const storedLock = readConfirmationLineRetryLock(
+      window.localStorage,
+      id
+    );
+    if (storedLock) {
+      setConfirmationLineRetryLocks((current) => ({
+        ...current,
+        [id]: storedLock,
+      }));
+      alert(storedLock.message);
+      return;
+    }
+
     const ok = window.confirm(
       "予約確定LINEを再試行しますか？送信済みの場合は重複送信しません。"
     );

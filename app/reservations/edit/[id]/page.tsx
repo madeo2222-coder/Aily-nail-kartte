@@ -690,6 +690,17 @@ export default function EditReservationPage() {
   async function retryConfirmationLine() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
+    const storedLock = readConfirmationLineRetryLock(
+      window.localStorage,
+      reservationId
+    );
+    if (storedLock) {
+      setConfirmationLineRetryLock(storedLock);
+      setErrorMessage("");
+      setSuccessMessage(storedLock.message);
+      return;
+    }
+
     const confirmed = window.confirm(
       "予約確定LINEを再試行しますか？送信済みの場合は重複送信しません。"
     );
@@ -750,6 +761,17 @@ export default function EditReservationPage() {
 
   async function requestAlternativeTime() {
     if (!reservationId || mutationRequestPendingRef.current) return;
+
+    const storedLock = readAlternativeLineRetryLock(
+      window.localStorage,
+      reservationId
+    );
+    if (storedLock) {
+      setAlternativeLineRetryLock(storedLock);
+      setErrorMessage("");
+      setSuccessMessage(storedLock.message);
+      return;
+    }
 
     const confirmed = window.confirm(
       "この日時では予約確定できないことをLINEで知らせ、別の希望日時の入力を依頼しますか？"
