@@ -281,6 +281,31 @@ test("sends a confirmed reservation with the claimed LINE retry key", async () =
   assert.equal(runtime.completionCalls[0].p_status, "sent");
 });
 
+test("sends confirmation LINE for legacy full-width and spaced confirmed statuses", async () => {
+  for (const status of [" ＣＯＮＦＩＲＭＥＤ ", " 予 約 確 定 "]) {
+    const runtime = loadRoute({
+      reservation: {
+        id: "reservation-1",
+        salon_id: "salon-1",
+        customer_id: "customer-1",
+        staff_id: "staff-1",
+        status,
+        menu: "ワンカラー",
+        start_at: "2099-10-02T01:30:00.000Z",
+        end_at: "2099-10-02T03:00:00.000Z",
+        source: null,
+        memo: null,
+      },
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 200, status);
+    assert.equal(response.body.sent, true, status);
+    assert.equal(runtime.lineCalls.length, 1, status);
+    assert.equal(runtime.completionCalls[0].p_status, "sent", status);
+  }
+});
+
 test("does not send LINE again after a confirmation was already sent", async () => {
   const runtime = loadRoute({
     claims: [

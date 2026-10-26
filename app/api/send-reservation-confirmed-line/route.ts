@@ -103,6 +103,15 @@ function isExternalReservation(reservation: ReservationRow) {
   );
 }
 
+function isConfirmedStatus(status: string | null) {
+  const normalized = String(status ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+
+  return normalized === "confirmed" || normalized === "予約確定";
+}
+
 function buildLineMessage(params: {
   customerName: string;
   salonName: string;
@@ -260,7 +269,7 @@ export async function POST(request: Request) {
         { status: 403 }
       );
     }
-    if (reservation.status !== "confirmed" && reservation.status !== "予約確定") {
+    if (!isConfirmedStatus(reservation.status)) {
       return NextResponse.json(
         { ok: false, sent: false, error: "予約確定済みの予約ではありません。" },
         { status: 409 }
