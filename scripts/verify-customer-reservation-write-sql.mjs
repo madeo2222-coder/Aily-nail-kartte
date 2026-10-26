@@ -65,9 +65,11 @@ await db.exec(writeMigration);
 await db.exec(normalizedStatusMigration);
 
 const preflight = (await db.query(normalizedStatusPreflight)).rows[0];
+assert.equal(preflight.create_rpc_exists, true);
 assert.equal(preflight.update_rpc_exists, true);
 assert.equal(preflight.cancel_rpc_exists, true);
 assert.equal(preflight.normalization_helper_exists, true);
+assert.equal(preflight.service_role_can_create, true);
 assert.equal(preflight.service_role_can_update, true);
 assert.equal(preflight.service_role_can_cancel, true);
 
@@ -229,6 +231,12 @@ assert.equal(
   ).rows[0].status,
   "cancelled"
 );
+const recreatedOverLegacyCancelled = await createReservation(
+  "2026-10-13T01:00:00.000Z",
+  "2026-10-13T02:30:00.000Z"
+);
+assert.equal(recreatedOverLegacyCancelled.outcome, "created");
+assert.ok(recreatedOverLegacyCancelled.reservation_id);
 const repeatedCancel = (
   await db.query(
     `SELECT * FROM public.cancel_customer_requested_reservation(

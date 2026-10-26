@@ -5,6 +5,9 @@ select
   current_database() as database_name,
   current_user as executed_as,
   to_regprocedure(
+    'public.create_customer_requested_reservation(uuid,uuid,uuid,text,timestamp with time zone,timestamp with time zone,text)'
+  ) is not null as create_rpc_exists,
+  to_regprocedure(
     'public.update_customer_requested_reservation(uuid,uuid,timestamp with time zone,timestamp with time zone,uuid,text,timestamp with time zone,timestamp with time zone,text)'
   ) is not null as update_rpc_exists,
   to_regprocedure(
@@ -13,6 +16,16 @@ select
   to_regprocedure(
     'public.normalize_reservation_workflow_status(text)'
   ) is not null as normalization_helper_exists,
+  case
+    when to_regprocedure(
+      'public.create_customer_requested_reservation(uuid,uuid,uuid,text,timestamp with time zone,timestamp with time zone,text)'
+    ) is null then null
+    else has_function_privilege(
+      'service_role',
+      'public.create_customer_requested_reservation(uuid,uuid,uuid,text,timestamp with time zone,timestamp with time zone,text)',
+      'EXECUTE'
+    )
+  end as service_role_can_create,
   case
     when to_regprocedure(
       'public.update_customer_requested_reservation(uuid,uuid,timestamp with time zone,timestamp with time zone,uuid,text,timestamp with time zone,timestamp with time zone,text)'

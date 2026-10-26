@@ -23,6 +23,106 @@ as $function$
   );
 $function$;
 
+create or replace function public.create_customer_requested_reservation(
+  p_salon_id uuid,
+  p_customer_id uuid,
+  p_staff_id uuid,
+  p_menu text,
+  p_start_at timestamptz,
+  p_end_at timestamptz,
+  p_memo text
+)
+returns table (
+  outcome text,
+  reservation_id uuid
+)
+language plpgsql
+security invoker
+set search_path = ''
+as $function$
+declare
+  v_reservation_id uuid;
+begin
+  if p_end_at <= p_start_at or btrim(coalesce(p_menu, '')) = '' then
+    return query select 'invalid_input'::text, null::uuid;
+    return;
+  end if;
+
+  lock table public.reservations in share row exclusive mode;
+  lock table public.external_calendar_blocks in share row exclusive mode;
+
+  perform 1
+  from public.customers as customer
+  where customer.id = p_customer_id
+    and (customer.salon_id = p_salon_id or customer.salon_id is null)
+  for share;
+
+  if not found then
+    return query select 'invalid_customer'::text, null::uuid;
+    return;
+  end if;
+
+  perform 1
+  from public.staffs as staff
+  where staff.id = p_staff_id
+    and staff.salon_id = p_salon_id
+    and staff.role = 'staff'
+    and staff.is_active is true
+    and staff.customer_booking_enabled is true
+  for share;
+
+  if not found then
+    return query select 'invalid_staff'::text, null::uuid;
+    return;
+  end if;
+
+  if exists (
+    select 1
+    from public.reservations as reservation
+    where reservation.salon_id = p_salon_id
+      and (reservation.staff_id = p_staff_id or reservation.staff_id is null)
+      and reservation.start_at < p_end_at
+      and reservation.end_at > p_start_at
+      and public.normalize_reservation_workflow_status(reservation.status) not in (
+        'cancelled', 'canceled', 'cancel', 'キャンセル', '取消', '取り消し'
+      )
+  ) or exists (
+    select 1
+    from public.external_calendar_blocks as block
+    where block.salon_id = p_salon_id
+      and (block.staff_id = p_staff_id or block.staff_id is null)
+      and block.start_at < p_end_at
+      and block.end_at > p_start_at
+  ) then
+    return query select 'slot_unavailable'::text, null::uuid;
+    return;
+  end if;
+
+  insert into public.reservations (
+    menu,
+    start_at,
+    end_at,
+    status,
+    memo,
+    staff_id,
+    customer_id,
+    salon_id
+  ) values (
+    btrim(p_menu),
+    p_start_at,
+    p_end_at,
+    'requested',
+    coalesce(p_memo, ''),
+    p_staff_id,
+    p_customer_id,
+    p_salon_id
+  )
+  returning id into v_reservation_id;
+
+  return query select 'created'::text, v_reservation_id;
+end;
+$function$;
+
 create or replace function public.update_customer_requested_reservation(
   p_reservation_id uuid,
   p_customer_id uuid,
@@ -214,6 +314,19 @@ revoke all on function public.normalize_reservation_workflow_status(text) from p
 revoke all on function public.normalize_reservation_workflow_status(text) from anon;
 revoke all on function public.normalize_reservation_workflow_status(text) from authenticated;
 grant execute on function public.normalize_reservation_workflow_status(text) to service_role;
+
+revoke all on function public.create_customer_requested_reservation(
+  uuid, uuid, uuid, text, timestamptz, timestamptz, text
+) from public;
+revoke all on function public.create_customer_requested_reservation(
+  uuid, uuid, uuid, text, timestamptz, timestamptz, text
+) from anon;
+revoke all on function public.create_customer_requested_reservation(
+  uuid, uuid, uuid, text, timestamptz, timestamptz, text
+) from authenticated;
+grant execute on function public.create_customer_requested_reservation(
+  uuid, uuid, uuid, text, timestamptz, timestamptz, text
+) to service_role;
 
 revoke all on function public.update_customer_requested_reservation(
   uuid, uuid, timestamptz, timestamptz, uuid, text, timestamptz, timestamptz, text

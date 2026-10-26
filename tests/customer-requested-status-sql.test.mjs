@@ -14,7 +14,7 @@ const verifier = readFileSync(
   "utf8",
 );
 
-test("customer requested-status migration normalizes both guarded RPC writes", () => {
+test("customer requested-status migration normalizes all guarded RPC writes", () => {
   assert.match(
     migration,
     /create or replace function public\.normalize_reservation_workflow_status/,
@@ -26,6 +26,7 @@ test("customer requested-status migration normalizes both guarded RPC writes", (
   assert.match(migration, /\[\[:space:\]　\]\+/);
 
   for (const functionName of [
+    "create_customer_requested_reservation",
     "update_customer_requested_reservation",
     "cancel_customer_requested_reservation",
   ]) {
@@ -45,7 +46,7 @@ test("customer requested-status migration normalizes both guarded RPC writes", (
   );
 });
 
-test("normalization helper and customer write RPCs remain service-role-only", () => {
+test("normalization helper and all customer write RPCs remain service-role-only", () => {
   for (const role of ["public", "anon", "authenticated"]) {
     assert.match(
       migration,
@@ -57,6 +58,10 @@ test("normalization helper and customer write RPCs remain service-role-only", ()
   assert.match(
     migration,
     /grant execute on function public\.normalize_reservation_workflow_status\(text\) to service_role/,
+  );
+  assert.match(
+    migration,
+    /revoke all on function public\.create_customer_requested_reservation\([\s\S]*from anon/,
   );
   assert.match(
     migration,
@@ -72,5 +77,6 @@ test("PGlite verification covers full-width requested, spaced Japanese, and canc
   assert.match(verifier, /ＲＥＱＵＥＳＴＥＤ/);
   assert.match(verifier, /予 約 申 請 中/);
   assert.match(verifier, /ＣＡＮＣＥＬＬＥＤ/);
+  assert.match(verifier, /recreatedOverLegacyCancelled\.outcome, "created"/);
   assert.match(verifier, /assert\.equal\(legacyUpdated\.outcome, "updated"\)/);
 });
