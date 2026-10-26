@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getReservationStatusLabel as getCommonReservationStatusLabel,
+  isCancelledReservationStatus,
+  isCompletedReservationStatus,
+} from "@/lib/reservation-status";
 
 type CustomerRow = {
   id: string;
@@ -224,26 +228,8 @@ function getDisplayMenu(visit: VisitRow | null) {
 }
 
 function getReservationStatusLabel(status: string | null) {
-  if (isCancelledReservationStatus(status)) {
-    return "キャンセル";
-  }
-
-  switch (status) {
-    case "requested":
-      return "予約申請中";
-    case "confirmed":
-      return "予約確定";
-    case "completed":
-      return "来店完了";
-    case "予約":
-      return "予約受付";
-    case "来店":
-      return "来店予定";
-    case "完了":
-      return "来店完了";
-    default:
-      return status || "未設定";
-  }
+  const label = getCommonReservationStatusLabel(status, "未設定");
+  return label === "完了" ? "来店完了" : label;
 }
 
 function getReservationStatusClass(status: string | null) {
@@ -481,6 +467,8 @@ export default function CustomerAppMyPage() {
   const upcomingReservations = useMemo(() => {
     return activeReservations
       .filter((item) => {
+        if (isCompletedReservationStatus(item.status)) return false;
+
         const normalizedValue = normalizeSupabaseDateTime(item.start_at);
         if (!normalizedValue) return false;
 

@@ -51,6 +51,7 @@ async function mount({
   meOk = true,
   ordersOk = true,
   orders = [],
+  reservations = [],
 } = {}) {
   const states = [];
   const tableCalls = new Map();
@@ -85,7 +86,7 @@ async function mount({
     }
 
     return {
-      data: [],
+      data: table === "reservations" ? reservations : [],
       count: table === "visits" && callNumber === 2 ? 0 : null,
       error: null,
     };
@@ -232,6 +233,50 @@ test("customer mypage preserves legitimate empty states", async () => {
   assert.match(page.html(), /顧客A様のマイページ/);
   assert.match(page.html(), /まだ診断結果がありません/);
   assert.match(page.html(), /0回/);
+});
+
+test("customer mypage excludes normalized completed reservations from upcoming bookings", async () => {
+  const page = await mount({
+    reservations: [
+      {
+        id: "completed-1",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "完了済み",
+        start_at: "2099-11-01T01:00:00Z",
+        end_at: "2099-11-01T02:00:00Z",
+        status: " ＣＯＭＰＬＥＴＥＤ ",
+        memo: null,
+        created_at: "2026-10-01T00:00:00Z",
+      },
+    ],
+  });
+
+  const html = page.html();
+  assert.match(html, /現在、未来の予約はありません/);
+  assert.doesNotMatch(html, /次回予約/);
+});
+
+test("customer mypage normalizes a legacy confirmed reservation label", async () => {
+  const page = await mount({
+    reservations: [
+      {
+        id: "confirmed-1",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "ワンカラー",
+        start_at: "2099-11-02T01:00:00Z",
+        end_at: "2099-11-02T02:00:00Z",
+        status: " ＣＯＮＦＩＲＭＥＤ ",
+        memo: null,
+        created_at: "2026-10-01T00:00:00Z",
+      },
+    ],
+  });
+
+  const html = page.html();
+  assert.match(html, /予約確定/);
+  assert.doesNotMatch(html, /ＣＯＮＦＩＲＭＥＤ/);
 });
 
 test("customer mypage re-displays the submitted product, design, size and delivery request", async () => {

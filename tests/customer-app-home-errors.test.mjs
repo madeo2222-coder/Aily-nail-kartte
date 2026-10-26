@@ -214,3 +214,31 @@ test("customer home skips every cancelled spelling before choosing the next rese
     false
   );
 });
+
+test("customer home skips a normalized completed status before choosing the next reservation", async () => {
+  const page = await mount({
+    reservations: [
+      {
+        id: "completed-1",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "完了済み",
+        start_at: "2026-11-01T01:00:00Z",
+        status: " ＣＯＭＰＬＥＴＥＤ ",
+      },
+      {
+        id: "active-1",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "有効予約",
+        start_at: "2026-11-02T01:00:00Z",
+        status: "confirmed",
+      },
+    ],
+  });
+
+  const html = page.html();
+  assert.match(html, /次回予約：2026\/11\/2 10:00/);
+  assert.match(html, /\/customer-app\/reservations\/active-1/);
+  assert.doesNotMatch(html, /\/customer-app\/reservations\/completed-1/);
+});

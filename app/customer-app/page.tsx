@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  isCancelledReservationStatus,
+  isCompletedReservationStatus,
+} from "@/lib/reservation-status";
 import { supabase } from "@/lib/supabase";
 import CustomerPhoto from "./CustomerPhoto";
 
@@ -311,7 +314,8 @@ export default function CustomerAppPage() {
         const nextReservation =
           ((nextReservationData || []) as ReservationRow[]).find(
             (reservation) =>
-              !isCancelledReservationStatus(reservation.status)
+              !isCancelledReservationStatus(reservation.status) &&
+              !isCompletedReservationStatus(reservation.status)
           ) || null;
 
         if (nextReservation) {
