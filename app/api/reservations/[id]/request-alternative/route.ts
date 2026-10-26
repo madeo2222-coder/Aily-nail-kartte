@@ -112,11 +112,16 @@ function getSupabaseAdmin() {
 }
 
 function isRequestedStatus(status: string | null) {
+  const normalized = String(status ?? "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
+
   return (
-    status === "requested" ||
-    status === "予約申請中" ||
-    status === "予約受付" ||
-    status === "予約"
+    normalized === "requested" ||
+    normalized === "予約申請中" ||
+    normalized === "予約受付" ||
+    normalized === "予約"
   );
 }
 

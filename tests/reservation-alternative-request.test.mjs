@@ -361,6 +361,38 @@ test("sends the owned requested reservation with its stable LINE retry key", asy
   );
 });
 
+test("accepts legacy requested status aliases while preserving the exact snapshot", async () => {
+  for (const status of [" ＲＥＱＵＥＳＴＥＤ ", " 予 約 申 請 中 "]) {
+    const reservation = {
+      id: "reservation-1",
+      salon_id: "salon-1",
+      customer_id: "customer-1",
+      staff_id: "staff-1",
+      menu: "ワンカラー",
+      status,
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T02:30:00.000Z",
+      source: "customer-app",
+      memo: "",
+    };
+    const runtime = loadRoute({ reservation });
+    const response = await runtime.post({
+      expectedCustomerId: reservation.customer_id,
+      expectedStaffId: reservation.staff_id,
+      expectedMenu: reservation.menu,
+      expectedStartAt: reservation.start_at,
+      expectedEndAt: reservation.end_at,
+      expectedStatus: reservation.status,
+      expectedMemo: reservation.memo,
+    });
+
+    assert.equal(response.status, 200, status);
+    assert.equal(response.body.sent, true, status);
+    assert.equal(runtime.claimCalls.length, 1, status);
+    assert.equal(runtime.lineCalls.length, 1, status);
+  }
+});
+
 test("does not call LINE again after the request is already sent", async () => {
   const runtime = loadRoute({
     claims: [
