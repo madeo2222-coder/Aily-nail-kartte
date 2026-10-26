@@ -84,20 +84,23 @@ function getString(row: AnyRow | null, keys: string[]) {
   return "";
 }
 
+function normalizeReservationWorkflowStatus(status: string) {
+  return status.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+}
+
 function isRequestedStatus(status: string) {
+  const normalized = normalizeReservationWorkflowStatus(status);
+
   return (
-    status === "requested" ||
-    status === "予約申請中" ||
-    status === "予約受付" ||
-    status === "予約"
+    normalized === "requested" ||
+    normalized === "予約申請中" ||
+    normalized === "予約受付" ||
+    normalized === "予約"
   );
 }
 
 function isConfirmedStatus(status: string) {
-  const normalized = status
-    .normalize("NFKC")
-    .replace(/\s+/g, "")
-    .toLowerCase();
+  const normalized = normalizeReservationWorkflowStatus(status);
 
   return normalized === "confirmed" || normalized === "予約確定";
 }

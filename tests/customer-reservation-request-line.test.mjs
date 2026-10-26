@@ -329,6 +329,72 @@ test("legacy full-width confirmed status keeps customer request actions availabl
   assert.equal(runtime.lineCalls.length, 1);
 });
 
+test("legacy full-width requested status keeps customer direct actions available", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      status: " ＲＥＱＵＥＳＴＥＤ ",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      updated_at: "2099-09-01T00:00:00.000Z",
+      source: "customer-app",
+      memo: "",
+    },
+  });
+
+  const detail = await runtime.get();
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.reservation.canDirectEdit, true);
+  assert.equal(detail.body.reservation.canDirectCancel, true);
+  assert.equal(detail.body.reservation.canRequestChange, false);
+  assert.equal(detail.body.reservation.canRequestCancel, false);
+
+  const cancellation = await runtime.patch({ action: "cancel" });
+  assert.equal(cancellation.status, 200);
+  assert.equal(cancellation.body.ok, true);
+  assert.equal(
+    runtime.rpcCalls[0].name,
+    "cancel_customer_requested_reservation"
+  );
+});
+
+test("legacy spaced requested status can update through the guarded RPC", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      status: " 予 約 申 請 中 ",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      updated_at: "2099-09-01T00:00:00.000Z",
+      source: "customer-app",
+      memo: "",
+    },
+  });
+
+  const response = await runtime.patch({
+    action: "update",
+    date: "2099-10-03",
+    time: "10:30",
+    menu: "フレンチ",
+    staffId: "staff-1",
+    memo: "短め希望",
+    durationMinutes: 90,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(
+    runtime.rpcCalls[0].name,
+    "update_customer_requested_reservation"
+  );
+});
+
 test("LINE failure is not reported to the customer as a sent request", async () => {
   const runtime = loadRoute({
     lineResponses: [new MockResponse("temporary failure", 500)],
