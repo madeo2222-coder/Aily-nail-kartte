@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
+import { isConfirmedReservationStatus } from "@/lib/reservation-status";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -169,7 +170,7 @@ export async function loadVisitRegistrationFormData({
     if (
       row.id !== reservationId ||
       row.salon_id !== salonId ||
-      (row.status !== "confirmed" && row.status !== "予約確定") ||
+      !isConfirmedReservationStatus(row.status) ||
       !customer ||
       !staff ||
       !visitDate

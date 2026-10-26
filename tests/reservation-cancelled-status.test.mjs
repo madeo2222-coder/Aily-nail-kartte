@@ -56,6 +56,22 @@ test("active and completed reservation states are never cancelled", () => {
   }
 });
 
+test("confirmed reservation states share width and whitespace normalization", () => {
+  for (const status of [
+    "confirmed",
+    "予約確定",
+    " CONFIRMED ",
+    "ＣＯＮＦＩＲＭＥＤ",
+    "予 約 確 定",
+  ]) {
+    assert.equal(exports.isConfirmedReservationStatus(status), true, status);
+  }
+
+  for (const status of [null, "", "requested", "予約", "completed", "キャンセル"]) {
+    assert.equal(exports.isConfirmedReservationStatus(status), false, status);
+  }
+});
+
 test("staff-progressed reservation states are normalized consistently", () => {
   for (const status of [
     "来店",
