@@ -267,6 +267,21 @@ test("uses the same Resend idempotency key for the same confirmation payload", a
   assert.deepEqual(runtime.sendCalls[0].payload, runtime.sendCalls[1].payload);
 });
 
+test("sends confirmation email for legacy full-width and spaced confirmed statuses", async () => {
+  for (const status of [" ＣＯＮＦＩＲＭＥＤ ", " 予 約 確 定 "]) {
+    const reservation = { ...defaultReservation, status };
+    const runtime = loadRoute({
+      reservationReads: [reservation, reservation],
+    });
+    const response = await runtime.post();
+
+    assert.equal(response.status, 200);
+    assert.equal(response.body.sent, true);
+    assert.equal(response.body.idempotencyProtected, true);
+    assert.equal(runtime.sendCalls.length, 1);
+  }
+});
+
 test("does not email an unconfirmed reservation", async () => {
   const runtime = loadRoute({
     reservationReads: [{ ...defaultReservation, status: "pending" }],
