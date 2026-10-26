@@ -4,7 +4,10 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ReservationReferencePhoto from "../../ReservationReferencePhoto";
-import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getReservationStatusLabel,
+  isCancelledReservationStatus,
+} from "@/lib/reservation-status";
 import {
   getAlternativeLineRetryLock,
   getConfirmationLineRetryLock,
@@ -174,28 +177,14 @@ function buildDateTime(targetDate: string, targetTime: string) {
 }
 
 function normalizeStatus(value: string | null): ReservationStatus {
-  if (!value) return "予約";
+  const label = getReservationStatusLabel(value, "予約受付");
 
-  if (isCancelledReservationStatus(value)) return "キャンセル";
-  if (value === "pending") return "予約";
-  if (value === "requested") return "予約";
-  if (value === "confirmed") return "confirmed";
-  if (value === "completed") return "完了";
-
-  if (value === "予約受付") return "予約";
-  if (value === "予約申請中") return "予約";
-  if (value === "予約確定") return "confirmed";
-  if (value === "来店予定") return "来店";
-  if (value === "完了待ち") return "来店";
-
-  if (
-    value === "予約" ||
-    value === "来店" ||
-    value === "完了" ||
-    value === "キャンセル"
-  ) {
-    return value;
+  if (label === "キャンセル") return "キャンセル";
+  if (label === "予約確定") return "confirmed";
+  if (label === "来店予定" || label === "来店" || label === "完了待ち") {
+    return "来店";
   }
+  if (label === "完了") return "完了";
 
   return "予約";
 }

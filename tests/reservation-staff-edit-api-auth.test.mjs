@@ -967,4 +967,5 @@ test("reservation edit page uses the guarded API and synchronous request locks",
   assert.match(pageSource, /!pageDataLoaded/);
   assert.match(pageSource, /setInitialSource\(reservation\.source\)/);
   assert.match(pageSource, /!isExternalSynced/);
+  assert.match(pageSource, /getReservationStatusLabel\(value, "予約受付"\)/);
 });

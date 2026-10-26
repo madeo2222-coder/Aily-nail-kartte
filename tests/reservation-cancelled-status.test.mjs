@@ -83,3 +83,14 @@ test("new and cancelled reservation states are not staff-progressed", () => {
     assert.equal(exports.isProgressedReservationStatus(status), false, status);
   }
 });
+
+test("legacy width and whitespace variants keep their staff workflow labels", () => {
+  assert.equal(
+    exports.getReservationStatusLabel(" ＣＯＮＦＩＲＭＥＤ "),
+    "予約確定",
+  );
+  assert.equal(
+    exports.getReservationStatusLabel(" 完 了 待 ち "),
+    "完了待ち",
+  );
+});
