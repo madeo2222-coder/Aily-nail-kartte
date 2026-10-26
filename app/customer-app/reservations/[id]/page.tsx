@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import { getReservationStatusLabel } from "@/lib/reservation-status";
 import {
   getCustomerReservationRequestLineLock,
   readCustomerReservationRequestLineLock,
@@ -146,30 +146,26 @@ function formatDateTime(value: string) {
 }
 
 function getStatusLabel(status: string) {
-  if (status === "requested") return "予約申請中";
-  if (status === "confirmed") return "予約確定";
-  if (status === "completed") return "来店完了";
-  if (isCancelledReservationStatus(status)) {
-    return "キャンセル";
-  }
-
-  return status || "未設定";
+  const label = getReservationStatusLabel(status, "未設定");
+  return label === "完了" ? "来店完了" : label;
 }
 
 function getStatusClass(status: string) {
-  if (status === "requested") {
+  const label = getReservationStatusLabel(status, "未設定");
+
+  if (label === "予約申請中" || label === "予約受付") {
     return "bg-amber-100 text-amber-700";
   }
 
-  if (status === "confirmed") {
+  if (label === "予約確定") {
     return "bg-blue-100 text-blue-700";
   }
 
-  if (status === "completed") {
+  if (label === "完了") {
     return "bg-emerald-100 text-emerald-700";
   }
 
-  if (isCancelledReservationStatus(status)) {
+  if (label === "キャンセル") {
     return "bg-slate-200 text-slate-600";
   }
 

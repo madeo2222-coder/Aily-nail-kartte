@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getReservationStatusLabel,
+  isCancelledReservationStatus,
+} from "@/lib/reservation-status";
 
 type ReservationRow = {
   id: string;
@@ -246,12 +249,7 @@ function formatMonthLabel(monthText: string) {
 }
 
 function normalizeStatus(status: string | null) {
-  if (isCancelledReservationStatus(status)) return "キャンセル";
-  if (status === "requested") return "予約申請中";
-  if (status === "confirmed") return "予約確定";
-  if (status === "completed") return "完了";
-  if (status === "予約") return "予約受付";
-  return status || "予約申請中";
+  return getReservationStatusLabel(status, "予約申請中");
 }
 
 function normalizeBriefText(value: string | null | undefined) {

@@ -52,7 +52,12 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failure = false, rejection = false, empty = false } = {}) {
+async function mount({
+  failure = false,
+  rejection = false,
+  empty = false,
+  reservationStatus = "confirmed",
+} = {}) {
   const states = [];
   const effects = [];
   const requests = [];
@@ -101,7 +106,7 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
           customer_id: "customer-1",
           staff_id: "staff-1",
           menu: "ワンカラー",
-          status: "confirmed",
+          status: reservationStatus,
           memo: null,
           source: "Naily",
           start_at: "2026-09-28T01:00:00Z",
@@ -262,6 +267,15 @@ test("reservation calendar renders complete successful data", async () => {
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /黒木/);
   assert.match(page.html(), /ワンカラー/);
+});
+
+test("reservation calendar normalizes a legacy full-width confirmed status", async () => {
+  const page = await mount({ reservationStatus: " ＣＯＮＦＩＲＭＥＤ " });
+  const html = page.html();
+
+  assert.match(html, /予約確定/);
+  assert.match(html, /border-blue-200 bg-blue-100 text-blue-800/);
+  assert.doesNotMatch(html, /ＣＯＮＦＩＲＭＥＤ/);
 });
 
 test("reservation calendar ignores a second Gmail sync click before rerender", async () => {

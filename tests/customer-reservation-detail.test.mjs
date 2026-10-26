@@ -237,6 +237,38 @@ test("loads the reservation identified by the current route and renders it", asy
   );
 });
 
+test("renders a legacy full-width confirmed status as the normal confirmed badge", async () => {
+  const { html } = await loadPage({
+    reservationResponse: response({
+      body: {
+        ok: true,
+        reservation: {
+          id: "reservation-1",
+          customerId: "customer-1",
+          menu: "ワンカラー",
+          memo: "",
+          status: " ＣＯＮＦＩＲＭＥＤ ",
+          staffId: "staff-1",
+          staffName: "テスト担当",
+          salonId: "salon-1",
+          source: "customer",
+          startAt: "2099-10-02T01:30:00.000Z",
+          endAt: "2099-10-02T03:00:00.000Z",
+          externalReservation: false,
+          canDirectEdit: true,
+          canDirectCancel: true,
+          canRequestChange: false,
+          canRequestCancel: false,
+        },
+      },
+    }),
+  });
+
+  assert.match(html, /予約確定/);
+  assert.match(html, /bg-blue-100 text-blue-700/);
+  assert.doesNotMatch(html, /ＣＯＮＦＩＲＭＥＤ/);
+});
+
 test("shows the API error and does not fetch staff choices after a failed reservation", async () => {
   const { html, requests } = await loadPage({
     reservationResponse: response({
