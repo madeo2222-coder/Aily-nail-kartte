@@ -15,12 +15,54 @@ const pageSource = readFileSync(
   new URL("../app/customer-app/reservations/[id]/page.tsx", import.meta.url),
   "utf8"
 );
+const retryLockSource = readFileSync(
+  new URL(
+    "../lib/customer-reservation-request-line-retry.ts",
+    import.meta.url
+  ),
+  "utf8"
+);
 const compiledRoute = ts.transpileModule(routeSource, {
   compilerOptions: {
     module: ts.ModuleKind.CommonJS,
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
+const compiledRetryLock = ts.transpileModule(retryLockSource, {
+  compilerOptions: {
+    module: ts.ModuleKind.CommonJS,
+    target: ts.ScriptTarget.ES2022,
+  },
+}).outputText;
+
+function loadRetryLockModule() {
+  const exports = {};
+  vm.runInNewContext(compiledRetryLock, {
+    exports,
+    require,
+    Date,
+    JSON,
+    Number,
+  });
+  return exports;
+}
+
+function createMemoryStorage() {
+  const entries = new Map();
+
+  return {
+    getItem(key) {
+      return entries.has(key) ? entries.get(key) : null;
+    },
+    setItem(key, value) {
+      entries.set(key, value);
+    },
+    removeItem(key) {
+      entries.delete(key);
+    },
+    entries,
+  };
+}
 
 class MockResponse {
   constructor(body, status = 200, headers = {}) {
@@ -410,6 +452,89 @@ test("customer page keeps a saved result visible when post-save refresh fails", 
   assert.match(
     pageSource,
     /disabled=\{saving \|\| Boolean\(refreshErrorMessage\)\}/
+  );
+});
+
+test("successful customer LINE requests stay locked after a page reload", () => {
+  const {
+    CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS,
+    getCustomerReservationRequestLineLock,
+    readCustomerReservationRequestLineLock,
+    saveCustomerReservationRequestLineLock,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+
+  for (const action of ["request_change", "request_cancel"]) {
+    const lock = getCustomerReservationRequestLineLock(
+      { ok: true, message: "店舗へ送りました" },
+      action
+    );
+    assert.equal(lock.action, action);
+    saveCustomerReservationRequestLineLock(
+      storage,
+      "reservation-1",
+      lock,
+      1_000
+    );
+
+    const restored = readCustomerReservationRequestLineLock(
+      storage,
+      "reservation-1",
+      action,
+      2_000
+    );
+    assert.equal(restored.action, action);
+    assert.match(restored.message, /送信済み/);
+
+    assert.equal(
+      readCustomerReservationRequestLineLock(
+        storage,
+        "reservation-1",
+        action,
+        1_000 + CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS
+      ),
+      null
+    );
+  }
+});
+
+test("failed or unknown customer LINE requests remain safely retryable", () => {
+  const { getCustomerReservationRequestLineLock } = loadRetryLockModule();
+
+  assert.equal(
+    getCustomerReservationRequestLineLock(
+      { ok: false, message: "再試行してください" },
+      "request_change"
+    ),
+    null
+  );
+});
+
+test("customer reservation page restores separate change and cancel send locks", () => {
+  assert.match(
+    pageSource,
+    /readCustomerReservationRequestLineLock\([\s\S]{0,100}window\.localStorage/
+  );
+  assert.match(pageSource, /saveCustomerReservationRequestLineLock\(/);
+  assert.match(
+    pageSource,
+    /function restoreRequestLineLock[\s\S]{0,500}window\.localStorage/
+  );
+  assert.match(
+    pageSource,
+    /async function handleRequestChange\(\) \{[\s\S]{0,100}restoreRequestLineLock\("request_change"\)/
+  );
+  assert.match(
+    pageSource,
+    /async function handleRequestCancel\(\) \{[\s\S]{0,100}restoreRequestLineLock\("request_cancel"\)/
+  );
+  assert.match(
+    pageSource,
+    /requestLineLocks\.request_change \? \([\s\S]{0,700}変更希望を店舗へ送る/
+  );
+  assert.match(
+    pageSource,
+    /requestLineLocks\.request_cancel \? \([\s\S]{0,700}キャンセル希望を店舗へ送る/
   );
 });
 

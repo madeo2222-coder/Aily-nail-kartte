@@ -4,6 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import {
+  getCustomerReservationRequestLineLock,
+  readCustomerReservationRequestLineLock,
+  saveCustomerReservationRequestLineLock,
+  type CustomerReservationRequestAction,
+  type CustomerReservationRequestLineLock,
+} from "@/lib/customer-reservation-request-line-retry";
 
 type ReservationDetail = {
   id: string;
@@ -192,6 +199,14 @@ export default function CustomerReservationDetailPage() {
   const [memo, setMemo] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("90");
   const [requestMessage, setRequestMessage] = useState("");
+  const [requestLineLocks, setRequestLineLocks] = useState<
+    Partial<
+      Record<
+        CustomerReservationRequestAction,
+        CustomerReservationRequestLineLock
+      >
+    >
+  >({});
 
   const todayText = useMemo(() => getTodayText(), []);
   const maxDateText = useMemo(() => addDaysText(todayText, 30), [todayText]);
@@ -306,6 +321,31 @@ export default function CustomerReservationDetailPage() {
     void Promise.resolve().then(() => fetchReservation());
   }, [reservationId, fetchReservation]);
 
+  useEffect(() => {
+    if (!reservationId) return;
+
+    const nextLocks: Partial<
+      Record<
+        CustomerReservationRequestAction,
+        CustomerReservationRequestLineLock
+      >
+    > = {};
+
+    for (const action of [
+      "request_change",
+      "request_cancel",
+    ] as const) {
+      const lock = readCustomerReservationRequestLineLock(
+        window.localStorage,
+        reservationId,
+        action
+      );
+      if (lock) nextLocks[action] = lock;
+    }
+
+    setRequestLineLocks(nextLocks);
+  }, [reservationId]);
+
   async function runAction(body: Record<string, unknown>) {
     if (actionPendingRef.current) return;
     actionPendingRef.current = true;
@@ -337,6 +377,30 @@ export default function CustomerReservationDetailPage() {
       if (!response.ok || !json.ok) {
         setErrorMessage(json.error || "予約操作に失敗しました");
         return;
+      }
+
+      const requestAction =
+        body.action === "request_change" || body.action === "request_cancel"
+          ? body.action
+          : null;
+
+      if (requestAction) {
+        const lock = getCustomerReservationRequestLineLock(
+          json,
+          requestAction
+        );
+
+        if (lock) {
+          saveCustomerReservationRequestLineLock(
+            window.localStorage,
+            reservationId,
+            lock
+          );
+          setRequestLineLocks((current) => ({
+            ...current,
+            [requestAction]: lock,
+          }));
+        }
       }
 
       setMessage(json.message || "更新しました");
@@ -377,7 +441,28 @@ export default function CustomerReservationDetailPage() {
     });
   }
 
+  function restoreRequestLineLock(
+    action: CustomerReservationRequestAction
+  ) {
+    const lock = readCustomerReservationRequestLineLock(
+      window.localStorage,
+      reservationId,
+      action
+    );
+
+    if (!lock) return false;
+
+    setRequestLineLocks((current) => ({
+      ...current,
+      [action]: lock,
+    }));
+    setErrorMessage("");
+    return true;
+  }
+
   async function handleRequestChange() {
+    if (restoreRequestLineLock("request_change")) return;
+
     if (!requestMessage.trim()) {
       setErrorMessage("変更したい内容を入力してください");
       return;
@@ -390,6 +475,8 @@ export default function CustomerReservationDetailPage() {
   }
 
   async function handleRequestCancel() {
+    if (restoreRequestLineLock("request_cancel")) return;
+
     const confirmed = window.confirm(
       "店舗へキャンセル希望を送りますか？"
     );
@@ -712,25 +799,37 @@ export default function CustomerReservationDetailPage() {
 
             <div className="mt-3 grid grid-cols-1 gap-2">
               {reservation.canRequestChange ? (
-                <button
-                  type="button"
-                  onClick={handleRequestChange}
-                  disabled={saving || Boolean(refreshErrorMessage)}
-                  className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
-                >
-                  変更希望を店舗へ送る
-                </button>
+                requestLineLocks.request_change ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                    {requestLineLocks.request_change.message}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRequestChange}
+                    disabled={saving || Boolean(refreshErrorMessage)}
+                    className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    変更希望を店舗へ送る
+                  </button>
+                )
               ) : null}
 
               {reservation.canRequestCancel ? (
-                <button
-                  type="button"
-                  onClick={handleRequestCancel}
-                  disabled={saving || Boolean(refreshErrorMessage)}
-                  className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 disabled:opacity-50"
-                >
-                  キャンセル希望を店舗へ送る
-                </button>
+                requestLineLocks.request_cancel ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                    {requestLineLocks.request_cancel.message}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleRequestCancel}
+                    disabled={saving || Boolean(refreshErrorMessage)}
+                    className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 disabled:opacity-50"
+                  >
+                    キャンセル希望を店舗へ送る
+                  </button>
+                )
               ) : null}
             </div>
           </section>

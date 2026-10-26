@@ -23,6 +23,25 @@ vm.runInNewContext(
   ).outputText,
   { exports: reservationStatusExports, Set, String }
 );
+const requestLineRetryExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL(
+        "../lib/customer-reservation-request-line-retry.ts",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: requestLineRetryExports, Date, JSON, Number }
+);
 const source = readFileSync(
   new URL("../app/customer-app/reservations/[id]/page.tsx", import.meta.url),
   "utf8"
@@ -52,12 +71,27 @@ async function loadPage({
   let cursor = 0;
   let refCursor = 0;
   const refs = [];
+  const storedValues = new Map();
+  const localStorage = {
+    getItem(key) {
+      return storedValues.has(key) ? storedValues.get(key) : null;
+    },
+    setItem(key, value) {
+      storedValues.set(key, value);
+    },
+    removeItem(key) {
+      storedValues.delete(key);
+    },
+  };
 
   const hooks = {
     useState(initial) {
       const index = cursor++;
       if (!(index in states)) states[index] = initial;
-      return [states[index], (value) => { states[index] = value; }];
+      return [states[index], (value) => {
+        states[index] =
+          typeof value === "function" ? value(states[index]) : value;
+      }];
     },
     useRef(initial) {
       const index = refCursor++;
@@ -137,10 +171,14 @@ async function loadPage({
       if (name === "next/link") return { default: "a" };
       if (name === "next/navigation") return { useParams: () => ({ id: reservationId }) };
       if (name === "@/lib/reservation-status") return reservationStatusExports;
+      if (name === "@/lib/customer-reservation-request-line-retry") {
+        return requestLineRetryExports;
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
     console,
     fetch,
+    window: { localStorage },
   }, { filename: "customer-reservation-detail-page.js" });
 
   const renderElement = () => {
