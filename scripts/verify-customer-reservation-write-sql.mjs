@@ -14,6 +14,14 @@ const writeMigration = await readFile(
   `${root}/supabase/migrations/20261004030707_prevent_customer_reservation_races.sql`,
   "utf8"
 );
+const normalizedStatusMigration = await readFile(
+  `${root}/supabase/migrations/20261026200835_normalize_customer_requested_statuses.sql`,
+  "utf8"
+);
+const normalizedStatusPreflight = await readFile(
+  `${root}/scripts/sql/aily-customer-requested-status-preflight.sql`,
+  "utf8"
+);
 const db = new PGlite();
 
 await db.exec(`
@@ -54,6 +62,14 @@ GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA public TO service_role;
 
 await db.exec(alternativeMigration);
 await db.exec(writeMigration);
+await db.exec(normalizedStatusMigration);
+
+const preflight = (await db.query(normalizedStatusPreflight)).rows[0];
+assert.equal(preflight.update_rpc_exists, true);
+assert.equal(preflight.cancel_rpc_exists, true);
+assert.equal(preflight.normalization_helper_exists, true);
+assert.equal(preflight.service_role_can_update, true);
+assert.equal(preflight.service_role_can_cancel, true);
 
 await db.exec(`
 INSERT INTO public.salons VALUES ('00000000-0000-0000-0000-000000000001');
@@ -142,6 +158,38 @@ const blocked = await updateReservation({
 });
 assert.equal(blocked.outcome, "slot_unavailable");
 
+await db.query(
+  "UPDATE public.reservations SET status = $2 WHERE id = $1",
+  [created.reservation_id, " ＲＥＱＵＥＳＴＥＤ "]
+);
+await db.exec(`
+INSERT INTO public.reservations(
+  customer_id, salon_id, staff_id, status, menu, memo, start_at, end_at
+) VALUES (
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-0000-0000-000000000003',
+  ' ＣＡＮＣＥＬＬＥＤ ',
+  '取消済み予約',
+  '',
+  '2026-10-13T01:00:00.000Z',
+  '2026-10-13T02:30:00.000Z'
+);
+`);
+const legacyUpdated = await updateReservation({
+  expectedStart: "2026-10-11T01:00:00.000Z",
+  expectedEnd: "2026-10-11T02:30:00.000Z",
+  startAt: "2026-10-13T01:00:00.000Z",
+  endAt: "2026-10-13T02:30:00.000Z",
+});
+assert.equal(legacyUpdated.outcome, "updated");
+assert.equal(legacyUpdated.reservation_id, created.reservation_id);
+
+await db.query(
+  "UPDATE public.reservations SET status = $2 WHERE id = $1",
+  [created.reservation_id, " 予 約 申 請 中 "]
+);
+
 await db.exec(`
 INSERT INTO public.reservation_alternative_requests(
   reservation_id, customer_id, salon_id, status, message
@@ -216,5 +264,5 @@ await assert.rejects(
 
 await db.close();
 console.log(
-  "PASS: customer reservation create/update/cancel is atomic, conflict-aware, stale-safe, and service-role-only"
+  "PASS: customer reservation create/update/cancel is atomic, normalized-status-aware, conflict-aware, stale-safe, and service-role-only"
 );
