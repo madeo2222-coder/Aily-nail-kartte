@@ -250,6 +250,34 @@ test("delayed mail sync adopts one matching manual external reservation", () => 
   assert.equal(result?.id, "manual-1");
 });
 
+test("delayed mail sync may fill an unassigned manual reservation from the provider staff", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: "staff-1",
+    customerId: "customer-1",
+    candidates: [
+      {
+        id: "unassigned-manual",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "ジェル付替 90分",
+        memo: "電話を受けて先に登録",
+        status: "予約確定",
+      },
+      {
+        id: "other-assignee",
+        customer_id: "customer-1",
+        staff_id: "staff-2",
+        menu: "ホットペッパー予約",
+        memo: null,
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "unassigned-manual");
+});
+
 test("manual external source remains identifiable after its display title is customized", () => {
   const memo = externalReservationMetadata.buildExternalReservationMemo(
     "ホットペッパー",

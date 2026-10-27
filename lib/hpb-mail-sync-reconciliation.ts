@@ -209,7 +209,17 @@ export function findManualReservationCandidate({
 }) {
   const matches = candidates.filter((candidate) => {
     if (isCancelledReservationStatus(candidate.status)) return false;
-    if (staffId && candidate.staff_id !== staffId) return false;
+    // A staff member may enter the reservation before the provider mail
+    // arrives without choosing an assignee yet. Let the later HPB/minimo mail
+    // fill that blank assignment, while continuing to reject a row that is
+    // already assigned to a different staff member.
+    if (
+      staffId &&
+      candidate.staff_id != null &&
+      candidate.staff_id !== staffId
+    ) {
+      return false;
+    }
 
     const text = normalize(`${candidate.menu || ""}\n${candidate.memo || ""}`);
     if (hasExternalReservationKey(text)) return false;

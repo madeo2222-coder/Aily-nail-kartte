@@ -1273,6 +1273,25 @@ test("a new booking still resolves and saves its active named staff", async () =
   assert.equal(runtime.writes.at(-1).payload.staff_id, "active-staff");
 });
 
+test("a delayed named-staff mail fills an unassigned manual reservation without inserting a duplicate", async () => {
+  const runtime = loadSync("mail-customer", {
+    staffRows: [{ id: "active-staff", name: "退職スタッフ" }],
+  });
+
+  const result = await runtime.sync(namedStaffMail);
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.equal(runtime.writes[0].payload.staff_id, "active-staff");
+  assert.deepEqual(
+    runtime.writes[0].filters.find(([key]) => key === "staff_id"),
+    ["staff_id", null]
+  );
+});
+
 test("a changed Gmail booking still follows normal reconciliation", async () => {
   const initial = loadSync("mail-customer");
   await initial.sync(mail);
