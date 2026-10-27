@@ -1438,14 +1438,11 @@ async function cancelReservation(
     // uniquely resolvable, but do not lose the cancellation tombstone solely
     // because that optional assignment no longer resolves. Customer/time
     // reconciliation remains fail-closed when more than one manual row fits.
-    const hasNamedStaff =
-      normalizeForCompare(parsed.staffName) !==
-      normalizeForCompare("指名なし");
     context.staffId = await resolveStaffId(parsed, context, {
       allowUnresolved: true,
     });
     const requiresExactCustomerForManualCancellation =
-      hasNamedStaff && !context.staffId;
+      !context.staffId;
 
     // If the original provider booking mail was missed, staff may already have
     // entered the booking manually. A cancellation must close that row rather
