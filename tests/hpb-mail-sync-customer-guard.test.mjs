@@ -211,7 +211,11 @@ function loadSync(manualCustomerId, options = {}) {
                   : deterministicId && options.concurrentReservation &&
                     writes.some((write) => write.operation === "insert")
                   ? { ...manual, ...options.concurrentReservation, id: deterministicId }
-                  : options.missingReservation || (externalLookup && options.externalLookupMissing)
+                  : options.missingReservation ||
+                    (externalLookup && options.externalLookupMissing) ||
+                    (deterministicId &&
+                      options.deterministicReservationMissing &&
+                      writes.length === 0)
                     ? []
                     : deterministicId
                       ? { ...manual, id: deterministicId }
@@ -851,7 +855,6 @@ test("a cancellation retry stops after a second concurrent reservation change", 
 test("a cancellation received before its booking creates a persistent tombstone", async () => {
   const cancellation = loadSync("mail-customer", {
     missingReservation: true,
-    rejectCustomerLookup: true,
   });
   const result = await cancellation.sync(`ご予約のキャンセル\n${mail}`);
 
@@ -878,11 +881,142 @@ test("a cancellation received before its booking creates a persistent tombstone"
   assert.equal(replay.writes.length, 0);
 });
 
+test("a cancellation reconciles a source-marked manual booking when the original booking mail was missed", async () => {
+  const runtime = loadSync("mail-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    memo: "HPBから電話で先に登録",
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${mail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(result.result.customerMatch.matchStatus, "matched_by_phone");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  assert.equal(runtime.writes[0].payload.customer_id, "mail-customer");
+  assert.match(runtime.writes[0].payload.memo, /^HPB予約番号：A123456/m);
+  assert.match(runtime.writes[0].payload.memo, /HPBから電話で先に登録/);
+  assert.match(runtime.writes[0].payload.memo, /HPB手入力予約を同期済み：true/);
+  assert.match(runtime.writes[0].payload.memo, /【HPBキャンセルメール本文】/);
+  assert.deepEqual(runtime.writes[0].filters, [
+    ["id", "manual-reservation"],
+    ["salon_id", "salon-1"],
+    ["status", "confirmed"],
+    ["memo", "HPBから電話で先に登録"],
+    ["start_at", "2099-10-20T01:00:00.000Z"],
+    ["end_at", "2099-10-20T02:30:00.000Z"],
+    ["customer_id", "mail-customer"],
+    ["staff_id", null],
+    ["menu", "HPB予約"],
+  ]);
+
+  const replay = loadSync("mail-customer", {
+    existing: true,
+    status: runtime.writes[0].payload.status,
+    memo: runtime.writes[0].payload.memo,
+    rejectCustomerLookup: true,
+  });
+  const replayResult = await replay.sync(`ご予約のキャンセル\n${mail}`);
+  assert.equal(replayResult.result.alreadyCancelled, true);
+  assert.equal(replay.writes.length, 0);
+});
+
+test("a cancellation uses the resolved customer when source-marked manual bookings share a time window", async () => {
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    manualReservationRows: [
+      {
+        id: "different-customer-reservation",
+        customer_id: "different-customer",
+        staff_id: null,
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "HPBから別のお客様を先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+      {
+        id: "matching-customer-reservation",
+        customer_id: "mail-customer",
+        staff_id: null,
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "HPBから対象のお客様を先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${mail}`);
+
+  assert.equal(result.result.reservationId, "matching-customer-reservation");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  assert.match(runtime.writes[0].payload.memo, /対象のお客様を先に登録/);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /別のお客様を先に登録/);
+});
+
+test("a cancellation does not cancel another customer's source-marked manual booking", async () => {
+  const runtime = loadSync("different-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    memo: "HPBから電話で先に登録",
+  });
+
+  await assert.rejects(
+    runtime.sync(`ご予約のキャンセル\n${mail}`),
+    /手入力予約とメールの顧客が一致しません/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("a cancellation without a stable customer key stops before changing a likely manual booking", async () => {
+  const runtime = loadSync("mail-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    memo: "HPBから電話で先に登録",
+  });
+  const cancellationWithoutPhone = `ご予約のキャンセル\n${mail.replace(
+    "電話番号：09000000000",
+    "電話番号：非公開"
+  )}`;
+
+  await assert.rejects(
+    runtime.sync(cancellationWithoutPhone),
+    /顧客を一意に特定できません（phone_missing: 0件）/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("a reconciled cancellation protects a manual booking changed during sync", async () => {
+  const runtime = loadSync("mail-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    memo: "HPBから電話で先に登録",
+    updateData: null,
+    latestCustomerIdOnUpdate: "staff-corrected-customer",
+  });
+
+  await assert.rejects(
+    runtime.sync(`ご予約のキャンセル\n${mail}`),
+    /顧客紐付けが変更されました/
+  );
+  assert.equal(runtime.writes.length, 1);
+});
+
 test("concurrent duplicate cancellation converges after the deterministic insert loses the race", async () => {
   const cancellationBody = `ご予約のキャンセル\n${mail}`;
   const runtime = loadSync("mail-customer", {
     missingReservation: true,
-    rejectCustomerLookup: true,
     insertError: { code: "23505", message: "duplicate key" },
     concurrentReservation: {
       salon_id: "salon-1",
@@ -902,7 +1036,6 @@ test("concurrent duplicate cancellation converges after the deterministic insert
 test("concurrent booking insert is cancelled after the cancellation tombstone loses the race", async () => {
   const runtime = loadSync("mail-customer", {
     missingReservation: true,
-    rejectCustomerLookup: true,
     insertError: { code: "23505", message: "duplicate key" },
     concurrentReservation: {
       salon_id: "salon-1",
@@ -923,7 +1056,6 @@ test("concurrent booking insert is cancelled after the cancellation tombstone lo
 test("concurrent cancellation does not update a deterministic row from another salon", async () => {
   const runtime = loadSync("mail-customer", {
     missingReservation: true,
-    rejectCustomerLookup: true,
     insertError: { code: "23505", message: "duplicate key" },
     concurrentReservation: {
       salon_id: "salon-2",
@@ -1136,7 +1268,6 @@ for (const [reason, response] of [
   test(`an unmatched cancellation does not report success for ${reason}`, async () => {
     const runtime = loadSync("mail-customer", {
       missingReservation: true,
-      rejectCustomerLookup: true,
       ...response,
     });
 

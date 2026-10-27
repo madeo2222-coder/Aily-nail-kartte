@@ -926,6 +926,52 @@ async function findDelayedManualEntry(
   });
 }
 
+function buildReconciledCancellationMemo({
+  existingMemo,
+  parsed,
+  customerMatch,
+  sourceLabel,
+  reservationKey,
+  rawText,
+}: {
+  existingMemo: string | null | undefined;
+  parsed: ParsedHpbMail;
+  customerMatch: CustomerMatchResult;
+  sourceLabel: string;
+  reservationKey: string;
+  rawText: string;
+}) {
+  const alreadyLinked = findExternalReservationCandidate({
+    candidates: [{ memo: existingMemo || null }],
+    source: parsed.source,
+    reservationNumber: parsed.reservationNumber,
+  });
+
+  const linkedMemo = alreadyLinked
+    ? existingMemo
+    : [
+        `${reservationKey}：${parsed.reservationNumber}`,
+        `${sourceLabel}氏名：${parsed.customerName}`,
+        parsed.phone ? `${sourceLabel}電話番号：${parsed.phone}` : "",
+        `${sourceLabel}顧客照合：${customerMatch.matchStatus}（${customerMatch.matchedCount}件）`,
+        customerMatch.matchedName
+          ? `${sourceLabel}紐付け顧客：${customerMatch.matchedName}`
+          : "",
+        `${sourceLabel}担当：${parsed.staffName}`,
+        `${sourceLabel}手入力予約を同期済み：true`,
+        existingMemo?.trim() ? "【同期前の手入力メモ】" : "",
+        existingMemo?.trim() || "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+  return appendExternalCancellationMemo({
+    existingMemo: linkedMemo,
+    sourceLabel,
+    rawText,
+  });
+}
+
 async function upsertReservation(
   parsed: ParsedHpbMail,
   rawText: string,
@@ -1344,6 +1390,8 @@ async function cancelReservation(
     parsed.reservationNumber
   );
   let existing = await findExistingExternalReservation(parsed, context);
+  let reconciledManualEntry = false;
+  let cancellationCustomerMatch: CustomerMatchResult | null = null;
 
   if (!existing) {
     const { data, error } = await context.supabase
@@ -1370,70 +1418,118 @@ async function cancelReservation(
     }
     context.staffId = await resolveStaffId(parsed, context);
 
-    const cancellationMemo = appendExternalCancellationMemo({
-      existingMemo: [
-        `${reservationKey}：${parsed.reservationNumber}`,
-        `${sourceLabel}氏名：${parsed.customerName}`,
-        `${sourceLabel}担当：${parsed.staffName}`,
-      ].join("\n"),
-      sourceLabel,
-      rawText,
-    });
-    const cancellationPayload: {
-      id: string;
-      salon_id: string;
-      menu: string;
-      start_at: string;
-      end_at: string;
-      status: string;
-      memo: string;
-      staff_id?: string | null;
-    } = {
-      id: deterministicId,
-      salon_id: context.salonId,
-      menu: parsed.menu,
-      start_at: parsed.startAt,
-      end_at: parsed.endAt,
-      status: "キャンセル",
-      memo: cancellationMemo,
-    };
-
-    if (context.staffId) {
-      cancellationPayload.staff_id = context.staffId;
+    // If the original provider booking mail was missed, staff may already have
+    // entered the booking manually. A cancellation must close that row rather
+    // than insert a second tombstone beside an active booking. Only a stable,
+    // unique customer match may select the manual row; otherwise detect a
+    // likely source-marked conflict and stop without cancelling the wrong guest.
+    if (parsed.phone) {
+      cancellationCustomerMatch = await findOrCreateCustomer(parsed, context);
     }
 
-    const { data, error } = await context.supabase
-      .from("reservations")
-      .insert(cancellationPayload)
-      .select("id")
-      .single();
-
-    if (error?.code === "23505") {
-      existing = await readReservationById(
-        deterministicId,
-        context
+    if (cancellationCustomerMatch?.customerId) {
+      const delayedManualEntry = await findDelayedManualEntry(
+        parsed,
+        context,
+        cancellationCustomerMatch.customerId
       );
+      if (delayedManualEntry) {
+        existing = {
+          ...delayedManualEntry,
+          salon_id: context.salonId,
+          start_at: delayedManualEntry.start_at ?? null,
+          end_at: delayedManualEntry.end_at ?? null,
+        };
+        reconciledManualEntry = true;
+      }
     } else {
-      if (error) throw new Error(error.message);
-      if (data?.id !== deterministicId) {
+      const unresolvedManualEntry = await findDelayedManualEntry(parsed, context);
+      if (unresolvedManualEntry) {
+        const matchStatus = cancellationCustomerMatch?.matchStatus || "phone_missing";
+        const matchedCount = cancellationCustomerMatch?.matchedCount || 0;
         throw new Error(
-          "キャンセル予約の保存結果を確認できません。予約一覧を確認してから再試行してください。"
+          `キャンセル対象の手入力予約に対して顧客を一意に特定できません（${matchStatus}: ${matchedCount}件）。誤更新を避けるため同期を停止しました。`
         );
       }
+    }
 
-      return {
-        mode: "cancelled",
-        reservationId: deterministicId,
-        createdCancellation: true,
+    if (!existing?.id) {
+      const cancellationMemo = appendExternalCancellationMemo({
+        existingMemo: [
+          `${reservationKey}：${parsed.reservationNumber}`,
+          `${sourceLabel}氏名：${parsed.customerName}`,
+          `${sourceLabel}担当：${parsed.staffName}`,
+        ].join("\n"),
+        sourceLabel,
+        rawText,
+      });
+      const cancellationPayload: {
+        id: string;
+        salon_id: string;
+        menu: string;
+        start_at: string;
+        end_at: string;
+        status: string;
+        memo: string;
+        staff_id?: string | null;
+      } = {
+        id: deterministicId,
+        salon_id: context.salonId,
+        menu: parsed.menu,
+        start_at: parsed.startAt,
+        end_at: parsed.endAt,
+        status: "キャンセル",
+        memo: cancellationMemo,
       };
+
+      if (context.staffId) {
+        cancellationPayload.staff_id = context.staffId;
+      }
+
+      const { data, error } = await context.supabase
+        .from("reservations")
+        .insert(cancellationPayload)
+        .select("id")
+        .single();
+
+      if (error?.code === "23505") {
+        existing = await readReservationById(
+          deterministicId,
+          context
+        );
+      } else {
+        if (error) throw new Error(error.message);
+        if (data?.id !== deterministicId) {
+          throw new Error(
+            "キャンセル予約の保存結果を確認できません。予約一覧を確認してから再試行してください。"
+          );
+        }
+
+        return {
+          mode: "cancelled",
+          reservationId: deterministicId,
+          createdCancellation: true,
+        };
+      }
     }
   }
 
-  const nextMemo = appendExternalCancellationMemo({
-    existingMemo: existing.memo,
-    sourceLabel,
-    rawText,
-  });
+  const buildNextMemo = (memo: string | null | undefined) =>
+    reconciledManualEntry && cancellationCustomerMatch
+      ? buildReconciledCancellationMemo({
+          existingMemo: memo,
+          parsed,
+          customerMatch: cancellationCustomerMatch,
+          sourceLabel,
+          reservationKey,
+          rawText,
+        })
+      : appendExternalCancellationMemo({
+          existingMemo: memo,
+          sourceLabel,
+          rawText,
+        });
+  const nextMemo = buildNextMemo(existing.memo);
 
   if (
     isCancelledReservationStatus(existing.status) &&
@@ -1446,12 +1542,20 @@ async function cancelReservation(
     };
   }
 
+  const cancellationPayload: {
+    status: string;
+    memo: string;
+    customer_id?: string;
+  } = {
+    status: "キャンセル",
+    memo: nextMemo,
+  };
+  if (reconciledManualEntry && cancellationCustomerMatch?.customerId) {
+    cancellationPayload.customer_id = cancellationCustomerMatch.customerId;
+  }
   let cancellationUpdateQuery = context.supabase
     .from("reservations")
-    .update({
-      status: "キャンセル",
-      memo: nextMemo,
-    })
+    .update(cancellationPayload)
     .eq("id", existing.id)
     .eq("salon_id", context.salonId);
   cancellationUpdateQuery = existing.status == null
@@ -1460,6 +1564,23 @@ async function cancelReservation(
   cancellationUpdateQuery = existing.memo == null
     ? cancellationUpdateQuery.is("memo", null)
     : cancellationUpdateQuery.eq("memo", existing.memo);
+  if (reconciledManualEntry) {
+    cancellationUpdateQuery = existing.start_at == null
+      ? cancellationUpdateQuery.is("start_at", null)
+      : cancellationUpdateQuery.eq("start_at", existing.start_at);
+    cancellationUpdateQuery = existing.end_at == null
+      ? cancellationUpdateQuery.is("end_at", null)
+      : cancellationUpdateQuery.eq("end_at", existing.end_at);
+    cancellationUpdateQuery = existing.customer_id == null
+      ? cancellationUpdateQuery.is("customer_id", null)
+      : cancellationUpdateQuery.eq("customer_id", existing.customer_id);
+    cancellationUpdateQuery = existing.staff_id == null
+      ? cancellationUpdateQuery.is("staff_id", null)
+      : cancellationUpdateQuery.eq("staff_id", existing.staff_id);
+    cancellationUpdateQuery = existing.menu == null
+      ? cancellationUpdateQuery.is("menu", null)
+      : cancellationUpdateQuery.eq("menu", existing.menu);
+  }
   const { data, error } = await cancellationUpdateQuery
     .select("id")
     .maybeSingle();
@@ -1467,17 +1588,24 @@ async function cancelReservation(
   if (error) throw new Error(error.message);
   if (data?.id !== existing.id) {
     const latest = await readReservationById(existing.id, context);
-    if (latest.status === existing.status && latest.memo === existing.memo) {
+    const unchangedManualIdentity =
+      !reconciledManualEntry ||
+      (latest.customer_id === existing.customer_id &&
+        latest.staff_id === existing.staff_id &&
+        latest.menu === existing.menu &&
+        isSameReservationDateTime(existing.start_at, latest.start_at) &&
+        isSameReservationDateTime(existing.end_at, latest.end_at));
+    if (
+      latest.status === existing.status &&
+      latest.memo === existing.memo &&
+      unchangedManualIdentity
+    ) {
       throw new Error(
         "キャンセルの更新結果を確認できません。予約一覧を確認してから再試行してください。"
       );
     }
 
-    const retryMemo = appendExternalCancellationMemo({
-      existingMemo: latest.memo,
-      sourceLabel,
-      rawText,
-    });
+    const retryMemo = buildNextMemo(latest.memo);
     if (
       isCancelledReservationStatus(latest.status) &&
       retryMemo === latest.memo
@@ -1489,12 +1617,46 @@ async function cancelReservation(
       };
     }
 
+    if (reconciledManualEntry) {
+      if (latest.customer_id !== existing.customer_id) {
+        throw new Error(
+          "同期中に顧客紐付けが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.staff_id !== existing.staff_id) {
+        throw new Error(
+          "同期中に担当スタッフが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (latest.menu !== existing.menu) {
+        throw new Error(
+          "同期中にメニューが変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+      if (
+        !isSameReservationDateTime(existing.start_at, latest.start_at) ||
+        !isSameReservationDateTime(existing.end_at, latest.end_at)
+      ) {
+        throw new Error(
+          "同期中に予約日時が変更されました。スタッフの変更を保護したため、最新内容を確認してから再試行してください。"
+        );
+      }
+    }
+
+    const retryPayload: {
+      status: string;
+      memo: string;
+      customer_id?: string;
+    } = {
+      status: "キャンセル",
+      memo: retryMemo,
+    };
+    if (reconciledManualEntry && cancellationCustomerMatch?.customerId) {
+      retryPayload.customer_id = cancellationCustomerMatch.customerId;
+    }
     let retryQuery = context.supabase
       .from("reservations")
-      .update({
-        status: "キャンセル",
-        memo: retryMemo,
-      })
+      .update(retryPayload)
       .eq("id", latest.id)
       .eq("salon_id", context.salonId);
     retryQuery = latest.status == null
@@ -1503,6 +1665,23 @@ async function cancelReservation(
     retryQuery = latest.memo == null
       ? retryQuery.is("memo", null)
       : retryQuery.eq("memo", latest.memo);
+    if (reconciledManualEntry) {
+      retryQuery = latest.start_at == null
+        ? retryQuery.is("start_at", null)
+        : retryQuery.eq("start_at", latest.start_at);
+      retryQuery = latest.end_at == null
+        ? retryQuery.is("end_at", null)
+        : retryQuery.eq("end_at", latest.end_at);
+      retryQuery = latest.customer_id == null
+        ? retryQuery.is("customer_id", null)
+        : retryQuery.eq("customer_id", latest.customer_id);
+      retryQuery = latest.staff_id == null
+        ? retryQuery.is("staff_id", null)
+        : retryQuery.eq("staff_id", latest.staff_id);
+      retryQuery = latest.menu == null
+        ? retryQuery.is("menu", null)
+        : retryQuery.eq("menu", latest.menu);
+    }
     const { data: retried, error: retryError } = await retryQuery
       .select("id")
       .maybeSingle();
@@ -1518,6 +1697,12 @@ async function cancelReservation(
   return {
     mode: "cancelled",
     reservationId: existing.id,
+    ...(reconciledManualEntry
+      ? {
+          reconciledManualEntry: true,
+          customerMatch: cancellationCustomerMatch,
+        }
+      : {}),
   };
 }
 
