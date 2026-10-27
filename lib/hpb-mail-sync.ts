@@ -516,7 +516,8 @@ async function resolveSyncContext(): Promise<SyncContext> {
 
 async function resolveStaffId(
   parsed: ParsedHpbMail,
-  context: SyncContext
+  context: SyncContext,
+  { allowUnresolved = false }: { allowUnresolved?: boolean } = {}
 ): Promise<string | null> {
   let staffId: string | null = null;
 
@@ -536,12 +537,14 @@ async function resolveStaffId(
     );
 
     if (matches.length > 1) {
+      if (allowUnresolved) return null;
       throw new Error(
         `担当「${parsed.staffName}」が複数見つかりました。重複登録を避けるため同期を停止しました。`
       );
     }
 
     if (matches.length === 0) {
+      if (allowUnresolved) return null;
       throw new Error(
         `担当「${parsed.staffName}」を特定できません。担当なしで重複登録することを避けるため同期を停止しました。`
       );
@@ -1426,7 +1429,14 @@ async function cancelReservation(
         "外部予約番号に一致する予約がなく、キャンセル予約の保存に必要な氏名と来店日時が不足しています。"
       );
     }
-    context.staffId = await resolveStaffId(parsed, context);
+    // A cancellation is still authoritative when its former provider staff
+    // has been deactivated, renamed or removed. Keep the staff hint when it is
+    // uniquely resolvable, but do not lose the cancellation tombstone solely
+    // because that optional assignment no longer resolves. Customer/time
+    // reconciliation remains fail-closed when more than one manual row fits.
+    context.staffId = await resolveStaffId(parsed, context, {
+      allowUnresolved: true,
+    });
 
     // If the original provider booking mail was missed, staff may already have
     // entered the booking manually. A cancellation must close that row rather

@@ -1453,6 +1453,39 @@ test("an existing cancellation does not require its former staff to remain activ
   assert.equal(runtime.writes[0].payload.status, "キャンセル");
 });
 
+test("an unmatched cancellation persists when its former staff is no longer active", async () => {
+  const runtime = loadSync("mail-customer", {
+    missingReservation: true,
+    staffRows: [],
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.createdCancellation, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "insert");
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  assert.equal(runtime.writes[0].payload.staff_id, undefined);
+});
+
+test("an unmatched cancellation still closes one customer-matched manual booking when its former staff is inactive", async () => {
+  const runtime = loadSync("mail-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    staffRows: [],
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+});
+
 test("a changed booking still requires its named staff to be active", async () => {
   const runtime = loadSync("mail-customer", {
     existing: true,
