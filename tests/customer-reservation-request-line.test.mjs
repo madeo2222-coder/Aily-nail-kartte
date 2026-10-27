@@ -310,6 +310,20 @@ test("confirmed change request succeeds only after LINE accepts it", async () =>
   assert.equal(runtime.lineCalls[0].options.signal.aborted, false);
 });
 
+test("over-limit customer request stops before calling LINE", async () => {
+  const runtime = loadRoute();
+  const response = await runtime.patch({
+    requestMessage: "あ".repeat(5_000),
+  });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.retryable, true);
+  assert.equal(response.body.deliveryStatus, "not_sent");
+  assert.match(response.body.error, /長すぎます/);
+  assert.equal(runtime.lineCalls.length, 0);
+});
+
 test("customer lookup failure is an API error instead of a false signed-out response", async () => {
   const runtime = loadRoute({
     customerReadError: { message: "private database detail" },

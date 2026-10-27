@@ -38,6 +38,8 @@ type AdminLineDeliveryResult = {
   status: "sent" | "failed" | "unknown" | "not_configured";
 };
 
+const LINE_TEXT_MAX_CODE_UNITS = 5_000;
+
 function getReservationWriteRow(value: unknown): ReservationWriteRow | null {
   const row = Array.isArray(value) ? value[0] : value;
 
@@ -211,6 +213,18 @@ async function sendAdminLineMessage(
   text: string,
   retryKey?: string
 ): Promise<AdminLineDeliveryResult> {
+  // LINE counts text length in UTF-16 code units, which matches JavaScript's
+  // String.length. Reject an over-limit request locally so a known-invalid
+  // payload never reaches the external API.
+  if (text.length > LINE_TEXT_MAX_CODE_UNITS) {
+    return {
+      accepted: false,
+      alreadyAccepted: false,
+      retryable: false,
+      status: "failed",
+    };
+  }
+
   const accessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const adminUserId = process.env.LINE_ADMIN_USER_ID;
 
@@ -590,6 +604,20 @@ export async function PATCH(
         action,
         requestMessage,
       ]);
+
+      if (lineMessage.length > LINE_TEXT_MAX_CODE_UNITS) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "希望内容が長すぎます。内容を短くしてから再送してください",
+            retryable: true,
+            deliveryStatus: "not_sent",
+          },
+          { status: 400 }
+        );
+      }
+
       const delivery = await sendAdminLineMessage(
         lineMessage,
         lineRetryKey
