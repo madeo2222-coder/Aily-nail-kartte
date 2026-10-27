@@ -188,7 +188,7 @@ async function getOwnedReservation(params: {
     .maybeSingle();
 
   if (error) {
-    throw new Error(error.message);
+    throw new Error("予約情報の取得に失敗しました");
   }
 
   return (data || null) as AnyRow | null;
@@ -342,14 +342,21 @@ export async function GET(
     if (staffId) {
       const supabaseAdmin = getSupabaseAdmin();
 
-      const { data: staff } = await supabaseAdmin
+      const { data: staff, error: staffError } = await supabaseAdmin
         .from("staffs")
         .select("id, name")
         .eq("id", staffId)
+        .eq("salon_id", getString(reservation, ["salon_id"]))
         .maybeSingle();
+
+      if (staffError) {
+        throw new Error("担当スタッフ情報の取得に失敗しました");
+      }
 
       if (staff?.name) {
         staffName = staff.name;
+      } else {
+        staffName = "担当者情報なし";
       }
     }
 

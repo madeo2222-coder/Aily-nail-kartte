@@ -100,6 +100,9 @@ function loadRoute({
   lineConfigured = true,
   reservation,
   customerReadError = null,
+  reservationReadError = null,
+  staff = { id: "staff-1", name: "テスト担当" },
+  staffReadError = null,
 } = {}) {
   const lineCalls = [];
   const rpcCalls = [];
@@ -127,7 +130,13 @@ function loadRoute({
         }, customerReadError);
       }
       if (table === "reservations") {
-        return createReadQuery(reservation ?? defaultReservation);
+        return createReadQuery(
+          reservation ?? defaultReservation,
+          reservationReadError
+        );
+      }
+      if (table === "staffs") {
+        return createReadQuery(staff, staffReadError);
       }
       throw new Error(`Unexpected table: ${table}`);
     },
@@ -317,6 +326,67 @@ test("customer lookup failure is an API error instead of a false signed-out resp
   }
   assert.equal(runtime.rpcCalls.length, 0);
   assert.equal(runtime.lineCalls.length, 0);
+});
+
+test("reservation lookup failure is an API error without exposing database details", async () => {
+  const runtime = loadRoute({
+    reservationReadError: { message: "private reservation database detail" },
+  });
+
+  const response = await runtime.get();
+
+  assert.equal(response.status, 500);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.error, "予約情報の取得に失敗しました");
+  assert.doesNotMatch(response.body.error, /見つかりません|private/);
+});
+
+test("staff lookup failure is not displayed as an unassigned reservation", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      staff_id: "staff-1",
+      status: "confirmed",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      source: "customer-app",
+      memo: "",
+    },
+    staffReadError: { message: "private staff database detail" },
+  });
+
+  const response = await runtime.get();
+
+  assert.equal(response.status, 500);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.error, "担当スタッフ情報の取得に失敗しました");
+  assert.doesNotMatch(response.body.error, /指名なし|private/);
+});
+
+test("missing assigned staff is distinct from a reservation with no assignment", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      staff_id: "missing-staff",
+      status: "confirmed",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      source: "customer-app",
+      memo: "",
+    },
+    staff: null,
+  });
+
+  const response = await runtime.get();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.reservation.staffId, "missing-staff");
+  assert.equal(response.body.reservation.staffName, "担当者情報なし");
+  assert.notEqual(response.body.reservation.staffName, "指名なし");
 });
 
 test("legacy full-width confirmed status keeps customer request actions available", async () => {
