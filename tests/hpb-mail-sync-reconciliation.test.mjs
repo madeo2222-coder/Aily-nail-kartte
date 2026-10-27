@@ -278,6 +278,48 @@ test("delayed mail sync may fill an unassigned manual reservation from the provi
   assert.equal(result?.id, "unassigned-manual");
 });
 
+test("normal delayed mail does not overwrite a manually corrected staff assignment", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: "provider-staff",
+    customerId: "customer-1",
+    candidates: [
+      {
+        id: "staff-corrected-manual",
+        customer_id: "customer-1",
+        staff_id: "corrected-staff",
+        menu: "ホットペッパー予約",
+        memo: "電話を受けて先に登録",
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(result, null);
+});
+
+test("cancellation lookup may select a reassigned booking only for the exact customer", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: "provider-staff",
+    customerId: "customer-1",
+    requireExactCustomerMatch: true,
+    allowStaffMismatchForExactCustomer: true,
+    candidates: [
+      {
+        id: "staff-corrected-manual",
+        customer_id: "customer-1",
+        staff_id: "corrected-staff",
+        menu: "ホットペッパー予約",
+        memo: "電話を受けて先に登録",
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "staff-corrected-manual");
+});
+
 test("manual external source remains identifiable after its display title is customized", () => {
   const memo = externalReservationMetadata.buildExternalReservationMemo(
     "ホットペッパー",

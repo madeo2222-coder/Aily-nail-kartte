@@ -921,7 +921,11 @@ async function findDelayedManualEntry(
   customerId: string | null = null,
   {
     requireExactCustomerMatch = false,
-  }: { requireExactCustomerMatch?: boolean } = {}
+    allowStaffMismatchForExactCustomer = false,
+  }: {
+    requireExactCustomerMatch?: boolean;
+    allowStaffMismatchForExactCustomer?: boolean;
+  } = {}
 ) {
   const lookupWindow = buildManualReservationLookupWindow(parsed.startAt);
   const { data, error } = await context.supabase
@@ -939,6 +943,7 @@ async function findDelayedManualEntry(
     staffId: context.staffId,
     customerId,
     requireExactCustomerMatch,
+    allowStaffMismatchForExactCustomer,
   });
 }
 
@@ -1463,6 +1468,11 @@ async function cancelReservation(
         cancellationCustomerId,
         {
           requireExactCustomerMatch: true,
+          // Staff may have reassigned a manually entered booking after the
+          // provider mail was sent. The exact customer and time window still
+          // identify the cancellation target, and the update below preserves
+          // the corrected staff assignment.
+          allowStaffMismatchForExactCustomer: true,
         }
       );
       if (delayedManualEntry) {

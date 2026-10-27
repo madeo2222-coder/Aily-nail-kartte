@@ -202,16 +202,22 @@ export function findManualReservationCandidate({
   staffId,
   customerId = null,
   requireExactCustomerMatch = false,
+  allowStaffMismatchForExactCustomer = false,
 }: {
   candidates: ManualReservationCandidate[];
   source: MailSyncSource;
   staffId: string | null;
   customerId?: string | null;
   requireExactCustomerMatch?: boolean;
+  allowStaffMismatchForExactCustomer?: boolean;
 }) {
   let hasConflictingSourceCandidate = false;
   const matches = candidates.filter((candidate) => {
     if (isCancelledReservationStatus(candidate.status)) return false;
+    const text = normalize(`${candidate.menu || ""}\n${candidate.memo || ""}`);
+    if (hasExternalReservationKey(text)) return false;
+    const matchesSource = hasSourceMarker(source, text);
+
     // A staff member may enter the reservation before the provider mail
     // arrives without choosing an assignee yet. Let the later HPB/minimo mail
     // fill that blank assignment, while continuing to reject a row that is
@@ -219,15 +225,20 @@ export function findManualReservationCandidate({
     if (
       staffId &&
       candidate.staff_id != null &&
-      candidate.staff_id !== staffId
+      candidate.staff_id !== staffId &&
+      !(
+        allowStaffMismatchForExactCustomer &&
+        Boolean(customerId) &&
+        candidate.customer_id === customerId
+      )
     ) {
+      if (requireExactCustomerMatch && matchesSource) {
+        hasConflictingSourceCandidate = true;
+      }
       return false;
     }
 
-    const text = normalize(`${candidate.menu || ""}\n${candidate.memo || ""}`);
-    if (hasExternalReservationKey(text)) return false;
-
-    if (hasSourceMarker(source, text)) {
+    if (matchesSource) {
       // A source marker, staff and time are still insufficient to identify the
       // guest for a cancellation. When the caller requires an exact match,
       // only the stable customer ID may select the manual row.

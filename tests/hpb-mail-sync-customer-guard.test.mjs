@@ -1632,6 +1632,49 @@ test("a resolved-staff cancellation closes one source-marked booking with the ex
   assert.equal(runtime.writes[0].payload.status, "キャンセル");
 });
 
+test("a resolved-staff cancellation closes the exact customer's manually reassigned booking", async () => {
+  const runtime = loadSync("mail-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    staffRows: [{ id: "provider-staff", name: "退職スタッフ" }],
+    staffId: "corrected-staff",
+    memo: "HPBから電話で先に登録",
+  });
+
+  const result = await runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.equal(runtime.writes[0].payload.status, "キャンセル");
+  assert.equal(runtime.writes[0].payload.staff_id, undefined);
+  assert.deepEqual(
+    runtime.writes[0].filters.find(([key]) => key === "staff_id"),
+    ["staff_id", "corrected-staff"]
+  );
+});
+
+test("a resolved-staff cancellation does not close another customer's manually reassigned booking", async () => {
+  const runtime = loadSync("other-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    staffRows: [{ id: "provider-staff", name: "退職スタッフ" }],
+    staffId: "corrected-staff",
+    memo: "HPBから電話で先に登録",
+    customerRows: [
+      { id: "mail-customer", name: "テスト顧客", phone: "09000000000" },
+    ],
+  });
+
+  await assert.rejects(
+    runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`),
+    /顧客が一致しません/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
 test("a changed booking still requires its named staff to be active", async () => {
   const runtime = loadSync("mail-customer", {
     existing: true,
