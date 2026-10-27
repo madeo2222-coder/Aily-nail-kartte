@@ -23,9 +23,9 @@ const autoCustomerId = buildExternalCustomerId("hpb", "A123456");
 
 function loadSync(manualCustomerId, options = {}) {
   const writes = [];
-  const customerReadRanges = [];
-  const reservationReadRanges = [];
-  const manualReservationReadRanges = [];
+  const customerReadCursors = [];
+  const reservationReadCursors = [];
+  const manualReservationReadCursors = [];
   const reservationLookupPatterns = [];
   const customer = { id: "mail-customer", name: "テスト顧客", phone: "09000000000" };
   const manual = {
@@ -54,27 +54,22 @@ function loadSync(manualCustomerId, options = {}) {
       let externalLookup = false;
       let payload;
       let selected;
-      let rangeBounds = null;
+      let idCursor = null;
+      let pageLimit = null;
       const filters = [];
       const query = {
         select(columns) { selected = columns; return query; },
         eq(key, value) { filters.push([key, value]); return query; },
+        gt(key, value) {
+          if (key === "id") idCursor = value;
+          return query;
+        },
         is(key, value) { filters.push([key, value]); return query; },
         not() { return query; },
         gte() { return query; },
         lte() { return query; },
-        limit() { return query; },
+        limit(value) { pageLimit = value; return query; },
         order() { return query; },
-        range(from, to) {
-          rangeBounds = [from, to];
-          if (table === "customers") customerReadRanges.push(rangeBounds);
-          if (table === "reservations" && externalLookup) {
-            reservationReadRanges.push(rangeBounds);
-          } else if (table === "reservations") {
-            manualReservationReadRanges.push(rangeBounds);
-          }
-          return query;
-        },
         ilike(_column, pattern) {
           externalLookup = true;
           if (table === "reservations") reservationLookupPatterns.push(pattern);
@@ -173,10 +168,18 @@ function loadSync(manualCustomerId, options = {}) {
                     : "スタッフ修正顧客",
                 }
               : null);
+          if (pageLimit !== null) {
+            if (table === "customers") customerReadCursors.push(idCursor);
+            if (table === "reservations" && externalLookup) {
+              reservationReadCursors.push(idCursor);
+            } else if (table === "reservations") {
+              manualReservationReadCursors.push(idCursor);
+            }
+          }
           if (
             table === "customers" &&
-            rangeBounds &&
-            options.customerReadErrorAtOffset === rangeBounds[0]
+            pageLimit !== null &&
+            options.customerReadErrorAfterId === idCursor
           ) {
             return Promise.resolve({
               data: null,
@@ -186,8 +189,8 @@ function loadSync(manualCustomerId, options = {}) {
           if (
             table === "reservations" &&
             externalLookup &&
-            rangeBounds &&
-            options.reservationReadErrorAtOffset === rangeBounds[0]
+            pageLimit !== null &&
+            options.reservationReadErrorAfterId === idCursor
           ) {
             return Promise.resolve({
               data: null,
@@ -197,14 +200,28 @@ function loadSync(manualCustomerId, options = {}) {
           if (
             table === "reservations" &&
             !externalLookup &&
-            rangeBounds &&
-            options.manualReservationReadErrorAtOffset === rangeBounds[0]
+            pageLimit !== null &&
+            options.manualReservationReadErrorAfterId === idCursor
           ) {
             return Promise.resolve({
               data: null,
               error: { message: "fixture manual reservation page rejected" },
             }).then(resolve, reject);
           }
+          const paginate = (rows) => {
+            if (pageLimit === null) return rows;
+            const ordered = [...rows].sort((left, right) =>
+              String(left.id).localeCompare(String(right.id))
+            );
+            const remaining = idCursor
+              ? ordered.filter((row) => String(row.id) > idCursor)
+              : ordered;
+            const responseLimit = Math.min(
+              pageLimit,
+              options.dataApiMaxRows ?? pageLimit
+            );
+            return remaining.slice(0, responseLimit);
+          };
           const data = table === "salons" ? [{ id: "salon-1" }]
             : table === "staffs" ? options.staffRows ?? []
             : table === "customers" ? (deterministicId
@@ -213,15 +230,10 @@ function loadSync(manualCustomerId, options = {}) {
                   : externalCustomer
                 : (() => {
                     const rows = options.customerRows ?? [customer];
-                    return rangeBounds
-                      ? rows.slice(rangeBounds[0], rangeBounds[1] + 1)
-                      : rows;
+                    return paginate(rows);
                   })())
               : table === "reservations" ? (externalLookup && Array.isArray(options.externalReservationRows)
-                  ? options.externalReservationRows.slice(
-                      rangeBounds?.[0] ?? 0,
-                      (rangeBounds?.[1] ?? options.externalReservationRows.length - 1) + 1
-                    )
+                  ? paginate(options.externalReservationRows)
                   : deterministicId && options.concurrentReservation &&
                     writes.some((write) => write.operation === "insert")
                   ? { ...manual, ...options.concurrentReservation, id: deterministicId }
@@ -235,15 +247,8 @@ function loadSync(manualCustomerId, options = {}) {
                       ? { ...manual, id: deterministicId }
                     : externalLookup && !options.existing ? []
                       : Array.isArray(options.manualReservationRows)
-                        ? rangeBounds
-                          ? options.manualReservationRows.slice(
-                              rangeBounds[0],
-                              rangeBounds[1] + 1
-                            )
-                          : options.manualReservationRows
-                        : rangeBounds && rangeBounds[0] > 0
-                          ? []
-                          : [{ ...manual }])
+                        ? paginate(options.manualReservationRows)
+                        : paginate([{ ...manual }]))
                 : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
         },
@@ -275,9 +280,9 @@ function loadSync(manualCustomerId, options = {}) {
   return {
     sync: load("../lib/hpb-mail-sync.ts").syncHpbMailText,
     writes,
-    customerReadRanges,
-    reservationReadRanges,
-    manualReservationReadRanges,
+    customerReadCursors,
+    reservationReadCursors,
+    manualReservationReadCursors,
     reservationLookupPatterns,
   };
 }
@@ -507,7 +512,10 @@ test("minimo replay adopts a legacy full-width lowercase reservation marker", as
   assert.equal(result.parsed.reservationNumber, "MINIMO-123");
   assert.equal(result.result.reservationId, "manual-reservation");
   assert.equal(runtime.writes.length, 1);
-  assert.deepEqual(runtime.reservationLookupPatterns, ["%ミニモ予約%"]);
+  assert.deepEqual(runtime.reservationLookupPatterns, [
+    "%ミニモ予約%",
+    "%ミニモ予約%",
+  ]);
   assert.equal(runtime.writes[0].operation, "update");
 });
 
@@ -524,7 +532,10 @@ test("HPB lookup does not require one historical colon spelling", async () => {
 施術時間：90分`);
 
   assert.equal(result.result.reservationId, "manual-reservation");
-  assert.deepEqual(runtime.reservationLookupPatterns, ["%予約番号%"]);
+  assert.deepEqual(runtime.reservationLookupPatterns, [
+    "%予約番号%",
+    "%予約番号%",
+  ]);
   assert.equal(runtime.writes[0].operation, "update");
 });
 
@@ -541,13 +552,16 @@ test("HPB replay adopts a legacy full-width source marker", async () => {
 施術時間：90分`);
 
   assert.equal(result.result.reservationId, "manual-reservation");
-  assert.deepEqual(runtime.reservationLookupPatterns, ["%予約番号%"]);
+  assert.deepEqual(runtime.reservationLookupPatterns, [
+    "%予約番号%",
+    "%予約番号%",
+  ]);
   assert.equal(runtime.writes[0].operation, "update");
 });
 
-test("external reservation lookup reads beyond the Supabase 1000-row response limit", async () => {
-  const unrelated = Array.from({ length: 1000 }, (_, index) => ({
-    id: `unrelated-${String(index).padStart(4, "0")}`,
+test("external reservation lookup reads the 501st row when Data API max_rows is 500", async () => {
+  const unrelated = Array.from({ length: 500 }, (_, index) => ({
+    id: `external-${String(index).padStart(4, "0")}`,
     customer_id: "mail-customer",
     staff_id: null,
     salon_id: "salon-1",
@@ -558,7 +572,7 @@ test("external reservation lookup reads beyond the Supabase 1000-row response li
     end_at: "2099-10-20T02:30:00.000Z",
   }));
   const target = {
-    id: "legacy-page-two",
+    id: "external-0500-target",
     customer_id: "mail-customer",
     staff_id: null,
     salon_id: "salon-1",
@@ -571,6 +585,7 @@ test("external reservation lookup reads beyond the Supabase 1000-row response li
   const runtime = loadSync("mail-customer", {
     existing: true,
     externalReservationRows: [...unrelated, target],
+    dataApiMaxRows: 500,
   });
 
   const result = await runtime.sync(`ミニモ予約受付
@@ -581,23 +596,25 @@ test("external reservation lookup reads beyond the Supabase 1000-row response li
 担当者：指名なし
 施術時間：90分`);
 
-  assert.equal(result.result.reservationId, "legacy-page-two");
-  assert.deepEqual(runtime.reservationReadRanges, [
-    [0, 999],
-    [1000, 1999],
+  assert.equal(result.result.reservationId, "external-0500-target");
+  assert.deepEqual(runtime.reservationReadCursors, [
+    null,
+    "external-0499",
+    "external-0500-target",
   ]);
   assert.equal(runtime.writes[0].operation, "update");
 });
 
-test("external reservation lookup fails closed when a later page cannot be read", async () => {
-  const firstPage = Array.from({ length: 1000 }, (_, index) => ({
-    id: `unrelated-${String(index).padStart(4, "0")}`,
+test("external reservation lookup fails closed when a cursor page cannot be read", async () => {
+  const firstPage = Array.from({ length: 500 }, (_, index) => ({
+    id: `external-${String(index).padStart(4, "0")}`,
     memo: `ミニモ予約ID：OTHER-${index}`,
   }));
   const runtime = loadSync("mail-customer", {
     existing: true,
     externalReservationRows: firstPage,
-    reservationReadErrorAtOffset: 1000,
+    dataApiMaxRows: 500,
+    reservationReadErrorAfterId: "external-0499",
   });
 
   await assert.rejects(
@@ -613,9 +630,9 @@ test("external reservation lookup fails closed when a later page cannot be read"
   assert.equal(runtime.writes.length, 0);
 });
 
-test("manual reservation lookup reads beyond the Supabase 1000-row response limit", async () => {
-  const unrelated = Array.from({ length: 1000 }, (_, index) => ({
-    id: `other-manual-${String(index).padStart(4, "0")}`,
+test("manual reservation lookup reads the 501st row when Data API max_rows is 500", async () => {
+  const unrelated = Array.from({ length: 500 }, (_, index) => ({
+    id: `manual-${String(index).padStart(4, "0")}`,
     customer_id: `other-customer-${index}`,
     staff_id: null,
     salon_id: "salon-1",
@@ -631,7 +648,7 @@ test("manual reservation lookup reads beyond the Supabase 1000-row response limi
     manualReservationRows: [
       ...unrelated,
       {
-        id: "matching-manual-page-two",
+        id: "manual-0500-target",
         customer_id: "mail-customer",
         staff_id: null,
         salon_id: "salon-1",
@@ -642,23 +659,25 @@ test("manual reservation lookup reads beyond the Supabase 1000-row response limi
         end_at: "2099-10-20T02:30:00.000Z",
       },
     ],
+    dataApiMaxRows: 500,
   });
 
   const result = await runtime.sync(mail);
 
-  assert.equal(result.result.reservationId, "matching-manual-page-two");
+  assert.equal(result.result.reservationId, "manual-0500-target");
   assert.equal(result.result.reconciledManualEntry, true);
-  assert.deepEqual(runtime.manualReservationReadRanges, [
-    [0, 999],
-    [1000, 1999],
+  assert.deepEqual(runtime.manualReservationReadCursors, [
+    null,
+    "manual-0499",
+    "manual-0500-target",
   ]);
   assert.equal(runtime.writes.length, 1);
   assert.equal(runtime.writes[0].operation, "update");
 });
 
-test("manual reservation lookup fails closed when a later page cannot be read", async () => {
-  const firstPage = Array.from({ length: 1000 }, (_, index) => ({
-    id: `other-manual-${String(index).padStart(4, "0")}`,
+test("manual reservation lookup fails closed when a cursor page cannot be read", async () => {
+  const firstPage = Array.from({ length: 500 }, (_, index) => ({
+    id: `manual-${String(index).padStart(4, "0")}`,
     customer_id: `other-customer-${index}`,
     staff_id: null,
     salon_id: "salon-1",
@@ -672,16 +691,17 @@ test("manual reservation lookup fails closed when a later page cannot be read", 
     externalLookupMissing: true,
     deterministicReservationMissing: true,
     manualReservationRows: firstPage,
-    manualReservationReadErrorAtOffset: 1000,
+    dataApiMaxRows: 500,
+    manualReservationReadErrorAfterId: "manual-0499",
   });
 
   await assert.rejects(
     runtime.sync(mail),
     /fixture manual reservation page rejected/
   );
-  assert.deepEqual(runtime.manualReservationReadRanges, [
-    [0, 999],
-    [1000, 1999],
+  assert.deepEqual(runtime.manualReservationReadCursors, [
+    null,
+    "manual-0499",
   ]);
   assert.equal(runtime.writes.length, 0);
 });
@@ -2094,14 +2114,14 @@ test("a new booking stops before writes when one phone belongs to multiple custo
   assert.equal(runtime.writes.length, 0);
 });
 
-test("customer matching reads beyond the Supabase 1000-row response limit", async () => {
-  const customerRows = Array.from({ length: 1001 }, (_, index) => ({
+test("customer matching reads the 501st row when Data API max_rows is 500", async () => {
+  const customerRows = Array.from({ length: 501 }, (_, index) => ({
     id: `customer-${String(index).padStart(4, "0")}`,
     name: `別顧客${index}`,
     phone: `080${String(index).padStart(8, "0")}`,
   }));
-  customerRows[1000] = {
-    id: "customer-target",
+  customerRows[500] = {
+    id: "customer-0500-target",
     name: "テスト顧客",
     phone: "09000000000",
   };
@@ -2109,24 +2129,26 @@ test("customer matching reads beyond the Supabase 1000-row response limit", asyn
   const runtime = loadSync(null, {
     missingReservation: true,
     customerRows,
+    dataApiMaxRows: 500,
   });
 
   const result = await runtime.sync(mail);
 
   assert.equal(result.result.mode, "inserted");
   assert.equal(result.result.customerMatch.matchStatus, "matched_by_phone");
-  assert.equal(result.result.customerMatch.customerId, "customer-target");
-  assert.deepEqual(runtime.customerReadRanges, [
-    [0, 999],
-    [1000, 1999],
+  assert.equal(result.result.customerMatch.customerId, "customer-0500-target");
+  assert.deepEqual(runtime.customerReadCursors, [
+    null,
+    "customer-0499",
+    "customer-0500-target",
   ]);
   assert.equal(runtime.writes.length, 1);
   assert.equal(runtime.writes[0].table, "reservations");
-  assert.equal(runtime.writes[0].payload.customer_id, "customer-target");
+  assert.equal(runtime.writes[0].payload.customer_id, "customer-0500-target");
 });
 
-test("customer matching fails closed when a later page cannot be read", async () => {
-  const customerRows = Array.from({ length: 1001 }, (_, index) => ({
+test("customer matching fails closed when a cursor page cannot be read", async () => {
+  const customerRows = Array.from({ length: 500 }, (_, index) => ({
     id: `customer-${String(index).padStart(4, "0")}`,
     name: `別顧客${index}`,
     phone: `080${String(index).padStart(8, "0")}`,
@@ -2134,13 +2156,14 @@ test("customer matching fails closed when a later page cannot be read", async ()
   const runtime = loadSync(null, {
     missingReservation: true,
     customerRows,
-    customerReadErrorAtOffset: 1000,
+    dataApiMaxRows: 500,
+    customerReadErrorAfterId: "customer-0499",
   });
 
   await assert.rejects(runtime.sync(mail), /fixture customer page rejected/);
-  assert.deepEqual(runtime.customerReadRanges, [
-    [0, 999],
-    [1000, 1999],
+  assert.deepEqual(runtime.customerReadCursors, [
+    null,
+    "customer-0499",
   ]);
   assert.equal(runtime.writes.length, 0);
 });

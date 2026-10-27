@@ -709,20 +709,31 @@ async function findOrCreateCustomer(
   }
 
   const customers: MatchedCustomer[] = [];
-  for (let offset = 0; ; offset += CUSTOMER_LOOKUP_PAGE_SIZE) {
-    const { data, error } = await context.supabase
+  let customerCursor: string | null = null;
+  for (;;) {
+    let query = context.supabase
       .from("customers")
       .select("id, name, phone")
       .eq("salon_id", context.salonId)
       .not("name", "is", null)
       .order("id", { ascending: true })
-      .range(offset, offset + CUSTOMER_LOOKUP_PAGE_SIZE - 1);
+      .limit(CUSTOMER_LOOKUP_PAGE_SIZE);
+
+    if (customerCursor) query = query.gt("id", customerCursor);
+
+    const { data, error } = await query;
 
     if (error) throw new Error(error.message);
 
     const page = (data || []) as MatchedCustomer[];
+    if (page.length === 0) break;
     customers.push(...page);
-    if (page.length < CUSTOMER_LOOKUP_PAGE_SIZE) break;
+
+    const nextCursor = page.at(-1)?.id;
+    if (!nextCursor || nextCursor === customerCursor) {
+      throw new Error("顧客候補のページングを継続できませんでした");
+    }
+    customerCursor = nextCursor;
   }
 
   const phoneCompare = normalizePhone(parsed.phone || "");
@@ -852,28 +863,35 @@ async function findExistingExternalReservation(
   // Fetch source-keyed rows and compare the exact normalized marker locally
   // so a replay updates the existing reservation instead of inserting a
   // second deterministic row under the newly canonicalized ID. Page through
-  // every match because PostgREST commonly limits one response to 1,000 rows;
-  // silently checking only the first page could create a duplicate later.
-  for (
-    let offset = 0;
-    ;
-    offset += EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE
-  ) {
-    const { data, error } = await context.supabase
+  // every match. Advance by the last stable id instead of assuming the API
+  // returned the requested number of rows: a project-level max_rows setting
+  // can truncate every response below this client's requested page size.
+  let externalReservationCursor: string | null = null;
+  for (;;) {
+    let query = context.supabase
       .from("reservations")
       .select("id, salon_id, customer_id, staff_id, menu, memo, status, start_at, end_at")
       .ilike("memo", `%${reservationLookupMarker}%`)
       .order("id", { ascending: true })
-      .range(
-        offset,
-        offset + EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE - 1
-      );
+      .limit(EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE);
+
+    if (externalReservationCursor) {
+      query = query.gt("id", externalReservationCursor);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw new Error(error.message);
 
     const page = (data || []) as ExistingReservation[];
+    if (page.length === 0) break;
     candidates.push(...page);
-    if (page.length < EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE) break;
+
+    const nextCursor = page.at(-1)?.id;
+    if (!nextCursor || nextCursor === externalReservationCursor) {
+      throw new Error("外部予約候補のページングを継続できませんでした");
+    }
+    externalReservationCursor = nextCursor;
   }
 
   const existing = findExternalReservationCandidate({
@@ -931,28 +949,37 @@ async function findDelayedManualEntry(
   const lookupWindow = buildManualReservationLookupWindow(parsed.startAt);
   const candidates: ExistingReservation[] = [];
 
-  // PostgREST commonly caps one response at 1,000 rows. Read the whole time
-  // window before deciding whether the manual booking is unique; otherwise a
-  // matching row after the cap could be missed and a duplicate inserted.
-  for (
-    let offset = 0;
-    ;
-    offset += MANUAL_RESERVATION_LOOKUP_PAGE_SIZE
-  ) {
-    const { data, error } = await context.supabase
+  // Read the whole time window before deciding whether the manual booking is
+  // unique. Cursor pagination remains complete even when PostgREST max_rows
+  // is lower than the requested page size.
+  let manualReservationCursor: string | null = null;
+  for (;;) {
+    let query = context.supabase
       .from("reservations")
       .select("id, customer_id, staff_id, menu, memo, status, start_at, end_at")
       .eq("salon_id", context.salonId)
       .gte("start_at", lookupWindow.from)
       .lte("start_at", lookupWindow.to)
       .order("id", { ascending: true })
-      .range(offset, offset + MANUAL_RESERVATION_LOOKUP_PAGE_SIZE - 1);
+      .limit(MANUAL_RESERVATION_LOOKUP_PAGE_SIZE);
+
+    if (manualReservationCursor) {
+      query = query.gt("id", manualReservationCursor);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw new Error(error.message);
 
     const page = (data || []) as ExistingReservation[];
+    if (page.length === 0) break;
     candidates.push(...page);
-    if (page.length < MANUAL_RESERVATION_LOOKUP_PAGE_SIZE) break;
+
+    const nextCursor = page.at(-1)?.id;
+    if (!nextCursor || nextCursor === manualReservationCursor) {
+      throw new Error("手入力予約候補のページングを継続できませんでした");
+    }
+    manualReservationCursor = nextCursor;
   }
 
   return findManualReservationCandidate({
