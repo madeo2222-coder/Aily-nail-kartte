@@ -897,6 +897,66 @@ test("a cancellation tombstone stays unlinked when the mail has no stable custom
   assert.equal(cancellation.writes[0].payload.customer_id, undefined);
 });
 
+test("a cancellation does not reconcile a manual booking through a same-name customer with no phone", async () => {
+  const cancellation = loadSync("same-name-customer", {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    customerRows: [
+      { id: "same-name-customer", name: "テスト顧客", phone: null },
+    ],
+    memo: "HPBから電話で先に登録",
+  });
+
+  await assert.rejects(
+    cancellation.sync(`ご予約のキャンセル\n${mail}`),
+    /顧客を一意に特定できません（matched_by_name: 1件）/
+  );
+  assert.equal(cancellation.writes.length, 0);
+});
+
+test("a cancellation tombstone does not link a same-name customer whose phone is missing", async () => {
+  const cancellation = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    manualReservationRows: [],
+    customerRows: [
+      { id: "same-name-customer", name: "テスト顧客", phone: null },
+    ],
+  });
+
+  const result = await cancellation.sync(`ご予約のキャンセル\n${mail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.createdCancellation, true);
+  assert.equal(cancellation.writes.length, 1);
+  assert.equal(cancellation.writes[0].operation, "insert");
+  assert.equal(cancellation.writes[0].payload.customer_id, undefined);
+});
+
+test("a cancellation tombstone may reuse the exact provider reservation customer ID", async () => {
+  const cancellation = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    manualReservationRows: [],
+    existingExternalCustomer: {
+      id: autoCustomerId,
+      salon_id: "salon-1",
+      name: "テスト顧客",
+    },
+    customerRows: [
+      { id: "different-phone-customer", name: "テスト顧客", phone: null },
+    ],
+  });
+
+  const result = await cancellation.sync(`ご予約のキャンセル\n${mail}`);
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.createdCancellation, true);
+  assert.equal(cancellation.writes.length, 1);
+  assert.equal(cancellation.writes[0].operation, "insert");
+  assert.equal(cancellation.writes[0].payload.customer_id, autoCustomerId);
+});
+
 test("a cancellation reconciles a source-marked manual booking when the original booking mail was missed", async () => {
   const runtime = loadSync("mail-customer", {
     externalLookupMissing: true,

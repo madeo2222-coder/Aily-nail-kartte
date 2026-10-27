@@ -48,6 +48,15 @@ type CustomerMatchResult = {
   autoCreated?: boolean;
 };
 
+function isStableCancellationCustomerMatch(
+  match: CustomerMatchResult | null
+) {
+  return (
+    match?.matchStatus === "matched_by_phone" ||
+    match?.matchStatus === "matched_by_external_id"
+  );
+}
+
 type SyncContext = {
   supabase: SupabaseClient;
   salonId: string;
@@ -1392,6 +1401,7 @@ async function cancelReservation(
   let existing = await findExistingExternalReservation(parsed, context);
   let reconciledManualEntry = false;
   let cancellationCustomerMatch: CustomerMatchResult | null = null;
+  let cancellationCustomerId: string | null = null;
 
   if (!existing) {
     const { data, error } = await context.supabase
@@ -1425,13 +1435,18 @@ async function cancelReservation(
     // likely source-marked conflict and stop without cancelling the wrong guest.
     if (parsed.phone) {
       cancellationCustomerMatch = await findOrCreateCustomer(parsed, context);
+      cancellationCustomerId = isStableCancellationCustomerMatch(
+        cancellationCustomerMatch
+      )
+        ? cancellationCustomerMatch.customerId
+        : null;
     }
 
-    if (cancellationCustomerMatch?.customerId) {
+    if (cancellationCustomerId) {
       const delayedManualEntry = await findDelayedManualEntry(
         parsed,
         context,
-        cancellationCustomerMatch.customerId
+        cancellationCustomerId
       );
       if (delayedManualEntry) {
         existing = {
@@ -1483,8 +1498,8 @@ async function cancelReservation(
         memo: cancellationMemo,
       };
 
-      if (cancellationCustomerMatch?.customerId) {
-        cancellationPayload.customer_id = cancellationCustomerMatch.customerId;
+      if (cancellationCustomerId) {
+        cancellationPayload.customer_id = cancellationCustomerId;
       }
 
       if (context.staffId) {
