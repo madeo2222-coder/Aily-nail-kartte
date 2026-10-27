@@ -81,7 +81,7 @@ class MockResponse {
   }
 }
 
-function createReadQuery(row) {
+function createReadQuery(row, error = null) {
   return {
     select() {
       return this;
@@ -90,7 +90,7 @@ function createReadQuery(row) {
       return this;
     },
     async maybeSingle() {
-      return { data: row, error: null };
+      return { data: row, error };
     },
   };
 }
@@ -99,6 +99,7 @@ function loadRoute({
   lineResponses = [new MockResponse({}, 200)],
   lineConfigured = true,
   reservation,
+  customerReadError = null,
 } = {}) {
   const lineCalls = [];
   const rpcCalls = [];
@@ -123,7 +124,7 @@ function loadRoute({
           salon_id: "salon-1",
           line_user_id: "line-user-1",
           line_login_id: "line-login-1",
-        });
+        }, customerReadError);
       }
       if (table === "reservations") {
         return createReadQuery(reservation ?? defaultReservation);
@@ -298,6 +299,24 @@ test("confirmed change request succeeds only after LINE accepts it", async () =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
   );
   assert.equal(runtime.lineCalls[0].options.signal.aborted, false);
+});
+
+test("customer lookup failure is an API error instead of a false signed-out response", async () => {
+  const runtime = loadRoute({
+    customerReadError: { message: "private database detail" },
+  });
+
+  const detail = await runtime.get();
+  const mutation = await runtime.patch();
+
+  for (const response of [detail, mutation]) {
+    assert.equal(response.status, 500);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.error, "顧客認証状態の確認に失敗しました");
+    assert.doesNotMatch(response.body.error, /LINEログインが必要|private/);
+  }
+  assert.equal(runtime.rpcCalls.length, 0);
+  assert.equal(runtime.lineCalls.length, 0);
 });
 
 test("legacy full-width confirmed status keeps customer request actions available", async () => {

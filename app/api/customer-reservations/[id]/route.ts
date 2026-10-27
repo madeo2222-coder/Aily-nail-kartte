@@ -163,7 +163,11 @@ async function getAuthenticatedCustomer(request: NextRequest) {
     .eq("line_login_id", session.line_user_id)
     .maybeSingle();
 
-  if (error || !customer) {
+  if (error) {
+    throw new Error("顧客認証状態の確認に失敗しました");
+  }
+
+  if (!customer) {
     return null;
   }
 
