@@ -284,6 +284,7 @@ export async function POST(
 
   try {
     const { id: reservationId } = await context.params;
+    const salonId = authentication.principal.salonId;
     const {
       sendLine,
       reason,
@@ -311,6 +312,7 @@ export async function POST(
         "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, source, memo"
       )
       .eq("id", reservationId)
+      .eq("salon_id", salonId)
       .maybeSingle();
 
     if (reservationError) {
@@ -336,7 +338,7 @@ export async function POST(
       );
     }
 
-    if (authentication.principal.salonId !== reservation.salon_id) {
+    if (salonId !== reservation.salon_id) {
       return NextResponse.json(
         { ok: false, error: "この予約を操作する権限がありません。" },
         { status: 403 }

@@ -165,6 +165,7 @@ function loadRoute(status, reservationOverrides = {}) {
   });
 
   return {
+    calls,
     async post(body = cancellationBody(status)) {
       const response = await exports.POST(
         {
@@ -184,6 +185,23 @@ function loadRoute(status, reservationOverrides = {}) {
     },
   };
 }
+
+test("scopes the initial cancellation read to the authenticated staff salon", async () => {
+  const runtime = loadRoute("予約");
+  const response = await runtime.post(
+    cancellationBody("予約", { sendLine: false }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.calls.slice(0, 3), [
+    [
+      "select",
+      "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, source, memo",
+    ],
+    ["eq", "id", "reservation-1"],
+    ["eq", "salon_id", "salon-1"],
+  ]);
+});
 
 test("does not cancel customer-linked HPB or minimo reservations", async () => {
   for (const reservation of [
