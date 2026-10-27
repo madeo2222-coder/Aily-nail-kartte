@@ -38,12 +38,14 @@ class MockResponse {
   }
 }
 
-function createReadQuery(row, error = null) {
+function createReadQuery(row, error = null, calls = null) {
   return {
-    select() {
+    select(columns) {
+      calls?.push(["select", columns]);
       return this;
     },
-    eq() {
+    eq(column, value) {
+      calls?.push(["eq", column, value]);
       return this;
     },
     async maybeSingle() {
@@ -73,6 +75,7 @@ function loadRoute({
   const claimCalls = [];
   const completionCalls = [];
   const lineCalls = [];
+  const reservationReadCalls = [];
   let clientCreated = false;
   const claimQueue = [...claims];
   const lineQueue = [...lineResponses];
@@ -106,7 +109,11 @@ function loadRoute({
   const supabaseAdmin = {
     from(table) {
       if (table === "reservations") {
-        return createReadQuery(reservation ?? defaultReservation);
+        return createReadQuery(
+          reservation ?? defaultReservation,
+          null,
+          reservationReadCalls,
+        );
       }
       if (table === "customers") {
         return createReadQuery(customer ?? defaultCustomer);
@@ -228,8 +235,24 @@ function loadRoute({
     },
     lineCalls,
     post,
+    reservationReadCalls,
   };
 }
+
+test("scopes the initial alternative-time read to the authenticated staff salon", async () => {
+  const runtime = loadRoute();
+  const response = await runtime.post();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.reservationReadCalls, [
+    [
+      "select",
+      "id, salon_id, customer_id, staff_id, menu, status, start_at, end_at, source, memo",
+    ],
+    ["eq", "id", "reservation-1"],
+    ["eq", "salon_id", "salon-1"],
+  ]);
+});
 
 test("rejects unauthenticated alternative-time requests before privileged work", async () => {
   const runtime = loadRoute({ authenticated: false });
