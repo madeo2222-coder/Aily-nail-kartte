@@ -196,6 +196,14 @@ const GMAIL_MESSAGE_FETCH_CONCURRENCY = 5;
 const RESERVATION_MAIL_QUERY =
   'newer_than:30d ("SALON BOARD" OR "HOT PEPPER Beauty" OR "予約番号" OR "ミニモ" OR "minimo" OR "ＭＩＮＩＭＯ" OR "ミニモサロンツール" OR "予約ID" OR "予約ＩＤ")';
 
+// A staff member can start a manual sync while the scheduled sync is still
+// running, or start it from two browser tabs. Keep one Gmail scan per warm
+// server instance so those requests do not repeat every Gmail read and race
+// through the same reservation events. Reservation-level database guards
+// remain the final protection because separate serverless instances do not
+// share module state.
+let gmailSyncInFlight = false;
+
 function decodeHtmlEntities(value: string) {
   return value
     .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
@@ -787,6 +795,26 @@ async function runHpbGmailSync() {
   );
 }
 
+async function runHpbGmailSyncExclusively() {
+  if (gmailSyncInFlight) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error:
+          "予約メール同期はすでに実行中です。完了後に画面を更新してください。",
+      },
+      { status: 409 }
+    );
+  }
+
+  gmailSyncInFlight = true;
+  try {
+    return await runHpbGmailSync();
+  } finally {
+    gmailSyncInFlight = false;
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const cronSecret = process.env.CRON_SECRET;
@@ -802,7 +830,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return await runHpbGmailSync();
+    return await runHpbGmailSyncExclusively();
   } catch (error) {
     return NextResponse.json(
       {
@@ -832,7 +860,7 @@ export async function POST() {
   }
 
   try {
-    return await runHpbGmailSync();
+    return await runHpbGmailSyncExclusively();
   } catch (error) {
     return NextResponse.json(
       {

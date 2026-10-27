@@ -307,6 +307,30 @@ test("cron Gmail sync accepts the configured bearer token", async () => {
   assert.equal(runtime.gmailListCount, 1);
 });
 
+test("manual and scheduled Gmail sync share a local lock that releases afterward", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "reservation-message" }] }],
+    messageGetDelayMs: 20,
+  });
+
+  const firstRequest = runtime.exports.GET({
+    headers: { get: () => "Bearer cron-secret" },
+  });
+  const secondRequest = runtime.exports.POST();
+  const responses = await Promise.all([firstRequest, secondRequest]);
+  const statuses = responses.map((response) => response.status).toSorted();
+  const conflict = responses.find((response) => response.status === 409);
+
+  assert.deepEqual(statuses, [200, 409]);
+  assert.match((await conflict.json()).error, /すでに実行中/);
+  assert.equal(runtime.gmailListCount, 1);
+  assert.deepEqual(runtime.syncedTexts, ["reservation-message"]);
+
+  const retry = await runtime.exports.POST();
+  assert.equal(retry.status, 200);
+  assert.equal(runtime.gmailListCount, 2);
+});
+
 test("Gmail sync follows every result page and processes oldest mail first", async () => {
   const runtime = loadRoute({
     listPages: [
