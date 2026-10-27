@@ -201,11 +201,13 @@ export function findManualReservationCandidate({
   source,
   staffId,
   customerId = null,
+  requireExactCustomerMatch = false,
 }: {
   candidates: ManualReservationCandidate[];
   source: MailSyncSource;
   staffId: string | null;
   customerId?: string | null;
+  requireExactCustomerMatch?: boolean;
 }) {
   let hasConflictingSourceCandidate = false;
   const matches = candidates.filter((candidate) => {
@@ -226,6 +228,19 @@ export function findManualReservationCandidate({
     if (hasExternalReservationKey(text)) return false;
 
     if (hasSourceMarker(source, text)) {
+      // When a named provider staff can no longer be resolved, staff identity
+      // cannot narrow the time window. In that case a source marker alone is
+      // insufficient: require the manual row itself to carry the same stable
+      // customer ID, otherwise a former staff member's neighbouring booking
+      // could be cancelled.
+      if (
+        requireExactCustomerMatch &&
+        candidate.customer_id !== customerId
+      ) {
+        hasConflictingSourceCandidate = true;
+        return false;
+      }
+
       // Several external bookings can share the same five-minute window,
       // especially when the provider reports "no preference" and no staff ID
       // can narrow the lookup. Once the mail customer has been resolved, use

@@ -918,7 +918,10 @@ async function readReservationById(
 async function findDelayedManualEntry(
   parsed: ParsedHpbMail,
   context: SyncContext,
-  customerId: string | null = null
+  customerId: string | null = null,
+  {
+    requireExactCustomerMatch = false,
+  }: { requireExactCustomerMatch?: boolean } = {}
 ) {
   const lookupWindow = buildManualReservationLookupWindow(parsed.startAt);
   const { data, error } = await context.supabase
@@ -935,6 +938,7 @@ async function findDelayedManualEntry(
     source: parsed.source,
     staffId: context.staffId,
     customerId,
+    requireExactCustomerMatch,
   });
 }
 
@@ -1434,9 +1438,14 @@ async function cancelReservation(
     // uniquely resolvable, but do not lose the cancellation tombstone solely
     // because that optional assignment no longer resolves. Customer/time
     // reconciliation remains fail-closed when more than one manual row fits.
+    const hasNamedStaff =
+      normalizeForCompare(parsed.staffName) !==
+      normalizeForCompare("指名なし");
     context.staffId = await resolveStaffId(parsed, context, {
       allowUnresolved: true,
     });
+    const requiresExactCustomerForManualCancellation =
+      hasNamedStaff && !context.staffId;
 
     // If the original provider booking mail was missed, staff may already have
     // entered the booking manually. A cancellation must close that row rather
@@ -1456,7 +1465,11 @@ async function cancelReservation(
       const delayedManualEntry = await findDelayedManualEntry(
         parsed,
         context,
-        cancellationCustomerId
+        cancellationCustomerId,
+        {
+          requireExactCustomerMatch:
+            requiresExactCustomerForManualCancellation,
+        }
       );
       if (delayedManualEntry) {
         existing = {

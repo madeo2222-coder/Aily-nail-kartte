@@ -1474,6 +1474,7 @@ test("an unmatched cancellation still closes one customer-matched manual booking
     externalLookupMissing: true,
     deterministicReservationMissing: true,
     staffRows: [],
+    memo: "HPBから電話で先に登録",
   });
 
   const result = await runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`);
@@ -1484,6 +1485,63 @@ test("an unmatched cancellation still closes one customer-matched manual booking
   assert.equal(runtime.writes.length, 1);
   assert.equal(runtime.writes[0].operation, "update");
   assert.equal(runtime.writes[0].payload.status, "キャンセル");
+});
+
+test("an inactive-staff cancellation does not close a source-marked manual booking without a customer", async () => {
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    staffRows: [],
+    memo: "HPBから電話で先に登録",
+    customerRows: [
+      { id: "mail-customer", name: "テスト顧客", phone: "09000000000" },
+    ],
+  });
+
+  await assert.rejects(
+    runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`),
+    /顧客が一致しません/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("an inactive-staff cancellation closes neither an unlinked nor another customer's source-marked booking", async () => {
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    staffRows: [],
+    customerRows: [
+      { id: "mail-customer", name: "テスト顧客", phone: "09000000000" },
+    ],
+    manualReservationRows: [
+      {
+        id: "unlinked-manual",
+        customer_id: null,
+        staff_id: "former-staff",
+        menu: "HPB予約",
+        memo: "HPBから電話で先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+      {
+        id: "other-customer-manual",
+        customer_id: "other-customer",
+        staff_id: "former-staff",
+        menu: "HPB予約",
+        memo: "HPBから電話で先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+    ],
+  });
+
+  await assert.rejects(
+    runtime.sync(`ご予約のキャンセル\n${namedStaffMail}`),
+    /顧客が一致しません/
+  );
+  assert.equal(runtime.writes.length, 0);
 });
 
 test("a changed booking still requires its named staff to be active", async () => {
