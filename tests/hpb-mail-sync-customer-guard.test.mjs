@@ -852,7 +852,7 @@ test("a cancellation retry stops after a second concurrent reservation change", 
   assert.equal(runtime.writes.length, 2);
 });
 
-test("a cancellation received before its booking creates a persistent tombstone", async () => {
+test("a cancellation received before its booking creates a customer-linked persistent tombstone", async () => {
   const cancellation = loadSync("mail-customer", {
     missingReservation: true,
   });
@@ -864,7 +864,7 @@ test("a cancellation received before its booking creates a persistent tombstone"
   assert.equal(cancellation.writes[0].operation, "insert");
   assert.equal(cancellation.writes[0].payload.status, "キャンセル");
   assert.equal(cancellation.writes[0].payload.salon_id, "salon-1");
-  assert.equal(cancellation.writes[0].payload.customer_id, undefined);
+  assert.equal(cancellation.writes[0].payload.customer_id, "mail-customer");
   assert.match(cancellation.writes[0].payload.memo, /^HPB予約番号：A123456/m);
   assert.match(cancellation.writes[0].payload.memo, /【HPBキャンセルメール本文】/);
 
@@ -879,6 +879,22 @@ test("a cancellation received before its booking creates a persistent tombstone"
   assert.equal(replayResult.result.mode, "cancelled");
   assert.equal(replayResult.result.alreadyCancelled, true);
   assert.equal(replay.writes.length, 0);
+});
+
+test("a cancellation tombstone stays unlinked when the mail has no stable customer key", async () => {
+  const cancellation = loadSync(null, {
+    missingReservation: true,
+    rejectCustomerLookup: true,
+  });
+  const result = await cancellation.sync(
+    `ご予約のキャンセル\n${mail.replace("\n電話番号：09000000000", "")}`
+  );
+
+  assert.equal(result.result.mode, "cancelled");
+  assert.equal(result.result.createdCancellation, true);
+  assert.equal(cancellation.writes.length, 1);
+  assert.equal(cancellation.writes[0].operation, "insert");
+  assert.equal(cancellation.writes[0].payload.customer_id, undefined);
 });
 
 test("a cancellation reconciles a source-marked manual booking when the original booking mail was missed", async () => {

@@ -1466,6 +1466,7 @@ async function cancelReservation(
       const cancellationPayload: {
         id: string;
         salon_id: string;
+        customer_id?: string;
         menu: string;
         start_at: string;
         end_at: string;
@@ -1481,6 +1482,10 @@ async function cancelReservation(
         status: "キャンセル",
         memo: cancellationMemo,
       };
+
+      if (cancellationCustomerMatch?.customerId) {
+        cancellationPayload.customer_id = cancellationCustomerMatch.customerId;
+      }
 
       if (context.staffId) {
         cancellationPayload.staff_id = context.staffId;
