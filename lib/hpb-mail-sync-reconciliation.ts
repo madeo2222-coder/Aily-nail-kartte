@@ -228,11 +228,9 @@ export function findManualReservationCandidate({
     if (hasExternalReservationKey(text)) return false;
 
     if (hasSourceMarker(source, text)) {
-      // When there is no resolved staff ID, including "no preference" mails,
-      // staff identity cannot narrow the time window. In that case a source
-      // marker alone is insufficient: require the manual row itself to carry
-      // the same stable customer ID, otherwise another guest's neighbouring
-      // booking could be cancelled.
+      // A source marker, staff and time are still insufficient to identify the
+      // guest for a cancellation. When the caller requires an exact match,
+      // only the stable customer ID may select the manual row.
       if (
         requireExactCustomerMatch &&
         candidate.customer_id !== customerId

@@ -1441,8 +1441,6 @@ async function cancelReservation(
     context.staffId = await resolveStaffId(parsed, context, {
       allowUnresolved: true,
     });
-    const requiresExactCustomerForManualCancellation =
-      !context.staffId;
 
     // If the original provider booking mail was missed, staff may already have
     // entered the booking manually. A cancellation must close that row rather
@@ -1464,8 +1462,7 @@ async function cancelReservation(
         context,
         cancellationCustomerId,
         {
-          requireExactCustomerMatch:
-            requiresExactCustomerForManualCancellation,
+          requireExactCustomerMatch: true,
         }
       );
       if (delayedManualEntry) {
