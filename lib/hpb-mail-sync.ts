@@ -77,6 +77,7 @@ type ExistingReservation = {
 
 const CUSTOMER_LOOKUP_PAGE_SIZE = 1000;
 const EXTERNAL_RESERVATION_LOOKUP_PAGE_SIZE = 1000;
+const MANUAL_RESERVATION_LOOKUP_PAGE_SIZE = 1000;
 const MAX_RESERVATION_DURATION_MINUTES = 24 * 60;
 
 function getSupabaseAdmin() {
@@ -928,17 +929,34 @@ async function findDelayedManualEntry(
   } = {}
 ) {
   const lookupWindow = buildManualReservationLookupWindow(parsed.startAt);
-  const { data, error } = await context.supabase
-    .from("reservations")
-    .select("id, customer_id, staff_id, menu, memo, status, start_at, end_at")
-    .eq("salon_id", context.salonId)
-    .gte("start_at", lookupWindow.from)
-    .lte("start_at", lookupWindow.to);
+  const candidates: ExistingReservation[] = [];
 
-  if (error) throw new Error(error.message);
+  // PostgREST commonly caps one response at 1,000 rows. Read the whole time
+  // window before deciding whether the manual booking is unique; otherwise a
+  // matching row after the cap could be missed and a duplicate inserted.
+  for (
+    let offset = 0;
+    ;
+    offset += MANUAL_RESERVATION_LOOKUP_PAGE_SIZE
+  ) {
+    const { data, error } = await context.supabase
+      .from("reservations")
+      .select("id, customer_id, staff_id, menu, memo, status, start_at, end_at")
+      .eq("salon_id", context.salonId)
+      .gte("start_at", lookupWindow.from)
+      .lte("start_at", lookupWindow.to)
+      .order("id", { ascending: true })
+      .range(offset, offset + MANUAL_RESERVATION_LOOKUP_PAGE_SIZE - 1);
+
+    if (error) throw new Error(error.message);
+
+    const page = (data || []) as ExistingReservation[];
+    candidates.push(...page);
+    if (page.length < MANUAL_RESERVATION_LOOKUP_PAGE_SIZE) break;
+  }
 
   return findManualReservationCandidate({
-    candidates: data || [],
+    candidates,
     source: parsed.source,
     staffId: context.staffId,
     customerId,

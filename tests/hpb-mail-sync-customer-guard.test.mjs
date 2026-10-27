@@ -25,6 +25,7 @@ function loadSync(manualCustomerId, options = {}) {
   const writes = [];
   const customerReadRanges = [];
   const reservationReadRanges = [];
+  const manualReservationReadRanges = [];
   const reservationLookupPatterns = [];
   const customer = { id: "mail-customer", name: "テスト顧客", phone: "09000000000" };
   const manual = {
@@ -69,6 +70,8 @@ function loadSync(manualCustomerId, options = {}) {
           if (table === "customers") customerReadRanges.push(rangeBounds);
           if (table === "reservations" && externalLookup) {
             reservationReadRanges.push(rangeBounds);
+          } else if (table === "reservations") {
+            manualReservationReadRanges.push(rangeBounds);
           }
           return query;
         },
@@ -191,6 +194,17 @@ function loadSync(manualCustomerId, options = {}) {
               error: { message: "fixture reservation page rejected" },
             }).then(resolve, reject);
           }
+          if (
+            table === "reservations" &&
+            !externalLookup &&
+            rangeBounds &&
+            options.manualReservationReadErrorAtOffset === rangeBounds[0]
+          ) {
+            return Promise.resolve({
+              data: null,
+              error: { message: "fixture manual reservation page rejected" },
+            }).then(resolve, reject);
+          }
           const data = table === "salons" ? [{ id: "salon-1" }]
             : table === "staffs" ? options.staffRows ?? []
             : table === "customers" ? (deterministicId
@@ -221,8 +235,15 @@ function loadSync(manualCustomerId, options = {}) {
                       ? { ...manual, id: deterministicId }
                     : externalLookup && !options.existing ? []
                       : Array.isArray(options.manualReservationRows)
-                        ? options.manualReservationRows
-                        : [{ ...manual }])
+                        ? rangeBounds
+                          ? options.manualReservationRows.slice(
+                              rangeBounds[0],
+                              rangeBounds[1] + 1
+                            )
+                          : options.manualReservationRows
+                        : rangeBounds && rangeBounds[0] > 0
+                          ? []
+                          : [{ ...manual }])
                 : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
         },
@@ -256,6 +277,7 @@ function loadSync(manualCustomerId, options = {}) {
     writes,
     customerReadRanges,
     reservationReadRanges,
+    manualReservationReadRanges,
     reservationLookupPatterns,
   };
 }
@@ -588,6 +610,79 @@ test("external reservation lookup fails closed when a later page cannot be read"
 施術時間：90分`),
     /fixture reservation page rejected/
   );
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("manual reservation lookup reads beyond the Supabase 1000-row response limit", async () => {
+  const unrelated = Array.from({ length: 1000 }, (_, index) => ({
+    id: `other-manual-${String(index).padStart(4, "0")}`,
+    customer_id: `other-customer-${index}`,
+    staff_id: null,
+    salon_id: "salon-1",
+    menu: "HPB予約",
+    memo: "HPBから電話で先に登録",
+    status: "confirmed",
+    start_at: "2099-10-20T01:00:00.000Z",
+    end_at: "2099-10-20T02:30:00.000Z",
+  }));
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    manualReservationRows: [
+      ...unrelated,
+      {
+        id: "matching-manual-page-two",
+        customer_id: "mail-customer",
+        staff_id: null,
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "HPBから電話で先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.reservationId, "matching-manual-page-two");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.deepEqual(runtime.manualReservationReadRanges, [
+    [0, 999],
+    [1000, 1999],
+  ]);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
+test("manual reservation lookup fails closed when a later page cannot be read", async () => {
+  const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+    id: `other-manual-${String(index).padStart(4, "0")}`,
+    customer_id: `other-customer-${index}`,
+    staff_id: null,
+    salon_id: "salon-1",
+    menu: "HPB予約",
+    memo: "HPBから電話で先に登録",
+    status: "confirmed",
+    start_at: "2099-10-20T01:00:00.000Z",
+    end_at: "2099-10-20T02:30:00.000Z",
+  }));
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    manualReservationRows: firstPage,
+    manualReservationReadErrorAtOffset: 1000,
+  });
+
+  await assert.rejects(
+    runtime.sync(mail),
+    /fixture manual reservation page rejected/
+  );
+  assert.deepEqual(runtime.manualReservationReadRanges, [
+    [0, 999],
+    [1000, 1999],
+  ]);
   assert.equal(runtime.writes.length, 0);
 });
 
