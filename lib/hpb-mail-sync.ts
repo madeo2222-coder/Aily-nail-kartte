@@ -972,9 +972,6 @@ async function upsertReservation(
     );
   }
   context.staffId = await resolveStaffId(parsed, context);
-  const sourceMarkedManualEntry = existing
-    ? null
-    : await findDelayedManualEntry(parsed, context);
   const preservedExistingCustomer = existing
     ? await preserveExistingReservationCustomer(existing, context)
     : null;
@@ -994,18 +991,9 @@ async function upsertReservation(
       "既存予約の顧客紐付けとメールの顧客照合結果が一致しません。誤更新を避けるため同期を停止しました。"
     );
   }
-  if (
-    sourceMarkedManualEntry?.customer_id &&
-    customerMatch.customerId &&
-    sourceMarkedManualEntry.customer_id !== customerMatch.customerId
-  ) {
-    throw new Error(
-      "手入力予約とメールの顧客が一致しません。誤更新を避けるため同期を停止しました。"
-    );
-  }
   const delayedManualEntry =
-    existing || sourceMarkedManualEntry || !customerMatch.customerId
-      ? sourceMarkedManualEntry
+    existing || !customerMatch.customerId
+      ? null
       : await findDelayedManualEntry(
           parsed,
           context,

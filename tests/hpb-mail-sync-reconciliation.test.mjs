@@ -372,6 +372,56 @@ test("customer fallback does not adopt a reservation marked as the other externa
   assert.equal(result, null);
 });
 
+test("resolved customer disambiguates source-marked bookings in the same time window", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: null,
+    customerId: "customer-1",
+    candidates: [
+      {
+        id: "different-customer",
+        customer_id: "customer-2",
+        staff_id: "staff-2",
+        menu: "ホットペッパー予約",
+        memo: null,
+        status: "予約確定",
+      },
+      {
+        id: "matching-customer",
+        customer_id: "customer-1",
+        staff_id: "staff-1",
+        menu: "ホットペッパー予約",
+        memo: null,
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "matching-customer");
+});
+
+test("a source-marked booking for another resolved customer remains a hard conflict", () => {
+  assert.throws(
+    () =>
+      reconciliation.findManualReservationCandidate({
+        source: "hpb",
+        staffId: null,
+        customerId: "customer-1",
+        candidates: [
+          {
+            id: "different-customer",
+            customer_id: "customer-2",
+            staff_id: "staff-2",
+            menu: "ホットペッパー予約",
+            memo: null,
+            status: "予約確定",
+          },
+        ],
+      }),
+    /顧客.*一致.*同期を停止/
+  );
+});
+
 test("replayed cancellation mail does not grow the reservation memo", () => {
   const first = reconciliation.appendExternalCancellationMemo({
     existingMemo: "HPB予約番号：A123456",

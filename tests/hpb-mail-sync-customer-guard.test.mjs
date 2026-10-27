@@ -215,7 +215,10 @@ function loadSync(manualCustomerId, options = {}) {
                     ? []
                     : deterministicId
                       ? { ...manual, id: deterministicId }
-                    : externalLookup && !options.existing ? [] : [{ ...manual }])
+                    : externalLookup && !options.existing ? []
+                      : Array.isArray(options.manualReservationRows)
+                        ? options.manualReservationRows
+                        : [{ ...manual }])
                 : [];
           return Promise.resolve({ data, error: null }).then(resolve, reject);
         },
@@ -1669,6 +1672,48 @@ test("delayed mail refuses to reassign another customer's source-marked reservat
   const runtime = loadSync("different-customer");
   await assert.rejects(runtime.sync(mail), /顧客.*一致.*同期を停止/);
   assert.equal(runtime.writes.length, 0);
+});
+
+test("delayed mail uses the resolved customer when source-marked bookings share a time window", async () => {
+  const runtime = loadSync(null, {
+    manualReservationRows: [
+      {
+        id: "different-customer-reservation",
+        customer_id: "different-customer",
+        staff_id: "staff-2",
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "別のお客様を先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+      {
+        id: "matching-customer-reservation",
+        customer_id: "mail-customer",
+        staff_id: "staff-1",
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "対象のお客様を先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.reservationId, "matching-customer-reservation");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.deepEqual(runtime.writes[0].filters.slice(0, 2), [
+    ["id", "matching-customer-reservation"],
+    ["salon_id", "salon-1"],
+  ]);
+  assert.match(runtime.writes[0].payload.memo, /対象のお客様を先に登録/);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /別のお客様を先に登録/);
 });
 
 test("a changed external booking preserves the staff-corrected customer link", async () => {

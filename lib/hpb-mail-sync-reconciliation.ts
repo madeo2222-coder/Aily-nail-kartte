@@ -207,6 +207,7 @@ export function findManualReservationCandidate({
   staffId: string | null;
   customerId?: string | null;
 }) {
+  let hasConflictingSourceCandidate = false;
   const matches = candidates.filter((candidate) => {
     if (isCancelledReservationStatus(candidate.status)) return false;
     // A staff member may enter the reservation before the provider mail
@@ -224,7 +225,25 @@ export function findManualReservationCandidate({
     const text = normalize(`${candidate.menu || ""}\n${candidate.memo || ""}`);
     if (hasExternalReservationKey(text)) return false;
 
-    if (hasSourceMarker(source, text)) return true;
+    if (hasSourceMarker(source, text)) {
+      // Several external bookings can share the same five-minute window,
+      // especially when the provider reports "no preference" and no staff ID
+      // can narrow the lookup. Once the mail customer has been resolved, use
+      // that stable link to choose the intended manual row. A source-marked
+      // row already linked to another customer remains a hard conflict when
+      // there is no safe candidate, so the caller never inserts a duplicate
+      // beside it silently.
+      if (
+        customerId &&
+        candidate.customer_id &&
+        candidate.customer_id !== customerId
+      ) {
+        hasConflictingSourceCandidate = true;
+        return false;
+      }
+
+      return true;
+    }
 
     const hasAnySourceMarker =
       hasSourceMarker("hpb", text) || hasSourceMarker("minimo", text);
@@ -239,6 +258,12 @@ export function findManualReservationCandidate({
   if (matches.length > 1) {
     throw new Error(
       "同時刻に未照合の外部予約が複数あります。重複作成を避けるため同期を停止しました。"
+    );
+  }
+
+  if (matches.length === 0 && hasConflictingSourceCandidate) {
+    throw new Error(
+      "手入力予約とメールの顧客が一致しません。誤更新を避けるため同期を停止しました。"
     );
   }
 
