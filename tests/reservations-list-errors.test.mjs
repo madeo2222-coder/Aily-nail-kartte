@@ -265,6 +265,17 @@ async function mount({
       await button.props.onClick();
       await setImmediate();
     },
+    async confirmReservationTwice() {
+      const button = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          node.props.children === "予約確定・LINE送信"
+      );
+      assert.ok(button, "confirm reservation button exists");
+      await Promise.all([button.props.onClick(), button.props.onClick()]);
+      await setImmediate();
+    },
     setConfirmationLineLock(kind = "sent") {
       storedValues.set(
         "aily:confirmation-line-retry-lock:v1:reservation-1",
@@ -351,6 +362,18 @@ test("reservation list confirms against the displayed reservation snapshot", asy
     expectedStatus: "requested",
     expectedMemo: null,
   });
+});
+
+test("reservation list ignores a second confirmation click while the first is pending", async () => {
+  const page = await mount({ reservationStatus: "requested" });
+  await page.confirmReservationTwice();
+
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/reservations/reservation-1/confirm"
+    ).length,
+    1
+  );
 });
 
 test("reservation list rechecks a cross-tab LINE lock before retrying", async () => {

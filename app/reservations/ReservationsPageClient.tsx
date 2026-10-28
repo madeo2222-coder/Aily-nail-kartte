@@ -473,6 +473,7 @@ export default function ReservationsPageClient() {
   const searchParams = useSearchParams();
   const pendingListRef = useRef<HTMLDivElement | null>(null);
   const loadRequestIdRef = useRef(0);
+  const mutationRequestPendingIdsRef = useRef(new Set<string>());
   const [reservations, setReservations] = useState<ReservationRow[]>([]);
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
@@ -810,6 +811,8 @@ export default function ReservationsPageClient() {
   }
 
   async function handleRetryConfirmationLine(id: string) {
+    if (mutationRequestPendingIdsRef.current.has(id)) return;
+
     const storedLock = readConfirmationLineRetryLock(
       window.localStorage,
       id
@@ -828,15 +831,23 @@ export default function ReservationsPageClient() {
     );
     if (!ok) return;
 
+    mutationRequestPendingIdsRef.current.add(id);
     setUpdatingId(id);
-    await sendReservationConfirmedLine(id);
-    setUpdatingId(null);
+    try {
+      await sendReservationConfirmedLine(id);
+    } finally {
+      mutationRequestPendingIdsRef.current.delete(id);
+      setUpdatingId(null);
+    }
   }
 
   async function updateStatus(
     reservation: NormalizedReservation,
     status: string
   ) {
+    if (mutationRequestPendingIdsRef.current.has(reservation.id)) return;
+
+    mutationRequestPendingIdsRef.current.add(reservation.id);
     setUpdatingId(reservation.id);
 
     try {
@@ -867,6 +878,7 @@ export default function ReservationsPageClient() {
       console.error("reservation status update error:", error);
       alert("予約ステータスの更新に失敗しました。");
     } finally {
+      mutationRequestPendingIdsRef.current.delete(reservation.id);
       setUpdatingId(null);
     }
   }
@@ -874,11 +886,14 @@ export default function ReservationsPageClient() {
   async function handleConfirmReservation(
     reservation: NormalizedReservation,
   ) {
+    if (mutationRequestPendingIdsRef.current.has(reservation.id)) return;
+
     const ok = window.confirm(
       "この予約を『予約確定』に変更し、LINE通知を送信しますか？"
     );
     if (!ok) return;
 
+    mutationRequestPendingIdsRef.current.add(reservation.id);
     setUpdatingId(reservation.id);
 
     try {
@@ -922,6 +937,7 @@ export default function ReservationsPageClient() {
       console.error("予約確定APIエラー:", error);
       alert("予約確定処理でエラーが発生しました。");
     } finally {
+      mutationRequestPendingIdsRef.current.delete(reservation.id);
       setUpdatingId(null);
     }
   }
