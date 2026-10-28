@@ -561,9 +561,11 @@ test("reservation list offers one same-screen email retry after a transient fail
   await page.confirmReservation();
   assert.equal(page.hasButton("確定メールを再試行"), true);
   assert.match(page.alerts.at(-1), /24時間以内/);
+  assert.match(page.html(), /24時間以内に再試行できます/);
 
   await page.retryConfirmationEmail();
   assert.equal(page.hasButton("確定メールを再試行"), false);
+  assert.doesNotMatch(page.html(), /24時間以内に再試行できます/);
   assert.match(page.alerts.at(-1), /予約確定メールを送信しました/);
   assert.equal(
     page.requests.filter(

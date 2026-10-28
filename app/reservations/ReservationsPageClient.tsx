@@ -488,9 +488,8 @@ export default function ReservationsPageClient() {
   const [confirmationLineRetryLocks, setConfirmationLineRetryLocks] = useState<
     Record<string, ConfirmationLineRetryLock>
   >({});
-  const [confirmationEmailRetryIds, setConfirmationEmailRetryIds] = useState<
-    Record<string, boolean>
-  >({});
+  const [confirmationEmailRetryNotices, setConfirmationEmailRetryNotices] =
+    useState<Record<string, ConfirmationEmailNotice>>({});
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedStaff, setSelectedStaff] = useState("全員");
   const [showPendingOnly, setShowPendingOnly] = useState(false);
@@ -827,8 +826,8 @@ export default function ReservationsPageClient() {
     id: string,
     notice: ConfirmationEmailNotice
   ) {
-    setConfirmationEmailRetryIds((current) => {
-      if (notice.canRetry) return { ...current, [id]: true };
+    setConfirmationEmailRetryNotices((current) => {
+      if (notice.canRetry) return { ...current, [id]: notice };
       const next = { ...current };
       delete next[id];
       return next;
@@ -1503,18 +1502,23 @@ export default function ReservationsPageClient() {
 
                       {canRetryConfirmationLine(item.status) &&
                       !isExternalSynced &&
-                      confirmationEmailRetryIds[item.id] ? (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleRetryConfirmationEmail(item.id)
-                          }
-                          disabled={isUpdating}
-                          className="rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-bold text-violet-700 disabled:opacity-50"
-                          suppressHydrationWarning
-                        >
-                          {isUpdating ? "送信中..." : "確定メールを再試行"}
-                        </button>
+                      confirmationEmailRetryNotices[item.id] ? (
+                        <div className="max-w-sm rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-violet-900">
+                          <p className="text-xs font-bold leading-5">
+                            {confirmationEmailRetryNotices[item.id].message}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleRetryConfirmationEmail(item.id)
+                            }
+                            disabled={isUpdating}
+                            className="mt-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-bold text-violet-700 disabled:opacity-50"
+                            suppressHydrationWarning
+                          >
+                            {isUpdating ? "送信中..." : "確定メールを再試行"}
+                          </button>
+                        </div>
                       ) : null}
 
                       {canMarkVisited(item.status) ? (
