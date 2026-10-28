@@ -869,6 +869,9 @@ export default function ReservationsPageClient() {
       };
 
       if (!response.ok || !result.ok) {
+        if (response.status === 409) {
+          await fetchReservations();
+        }
         alert(result.error || "予約ステータスの更新に失敗しました。");
         return;
       }
@@ -876,7 +879,10 @@ export default function ReservationsPageClient() {
       await fetchReservations();
     } catch (error) {
       console.error("reservation status update error:", error);
-      alert("予約ステータスの更新に失敗しました。");
+      await fetchReservations();
+      alert(
+        "予約ステータス更新の結果を確認できませんでした。最新の予約一覧を確認してください。"
+      );
     } finally {
       mutationRequestPendingIdsRef.current.delete(reservation.id);
       setUpdatingId(null);

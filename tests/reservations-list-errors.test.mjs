@@ -74,6 +74,7 @@ async function mount({
   reservationSource = null,
   reservationMemo = null,
   confirmFailureMode = "stale",
+  statusFailureMode = "success",
 } = {}) {
   const states = [];
   const effects = [];
@@ -164,8 +165,29 @@ async function mount({
       }
 
       if (url === "/api/reservations/reservation-1/status") {
+        currentReservationStatus = "来店";
+        if (statusFailureMode === "reject") {
+          throw new Error("response lost after status commit");
+        }
+        if (statusFailureMode === "invalid-json") {
+          return {
+            ok: true,
+            status: 200,
+            async json() { throw new Error("invalid json"); },
+          };
+        }
+        if (statusFailureMode === "stale") {
+          return {
+            ok: false,
+            status: 409,
+            async json() {
+              return { ok: false, error: "予約内容が更新されています。" };
+            },
+          };
+        }
         return {
           ok: true,
+          status: 200,
           async json() {
             return { ok: true, reservation: { id: "reservation-1", status: "来店" } };
           },
@@ -346,6 +368,41 @@ test("reservation list updates visit status through the authenticated API", asyn
     expectedCustomerId: "customer-1",
     expectedStatus: "confirmed",
   });
+});
+
+for (const statusFailureMode of ["reject", "invalid-json"]) {
+  test(`reservation list reloads authoritative status after ${statusFailureMode} status result`, async () => {
+    const page = await mount({ statusFailureMode });
+    await page.markVisited();
+
+    assert.equal(
+      page.requests.filter(
+        request => request.url === "/api/reservations/list-data"
+      ).length,
+      2
+    );
+    assert.equal(page.hasButton("来店にする"), false);
+    assert.equal(page.hasButton("完了にする"), true);
+    assert.match(
+      page.alerts.at(-1),
+      /予約ステータス更新の結果を確認できませんでした/
+    );
+  });
+}
+
+test("reservation list refreshes stale status conflicts", async () => {
+  const page = await mount({ statusFailureMode: "stale" });
+  await page.markVisited();
+
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/reservations/list-data"
+    ).length,
+    2
+  );
+  assert.equal(page.hasButton("来店にする"), false);
+  assert.equal(page.hasButton("完了にする"), true);
+  assert.match(page.alerts.at(-1), /予約内容が更新されています/);
 });
 
 test("reservation list keeps workflow actions visible for normalized status aliases", async () => {
