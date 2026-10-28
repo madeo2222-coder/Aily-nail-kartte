@@ -611,11 +611,11 @@ test("migration and staff screens preserve idempotent retry controls", () => {
   assert.match(editPage, /確定LINEを再試行/);
   assert.match(
     listPage,
-    /if \(result\.confirmed \|\| result\.alreadyConfirmed\) \{[\s\S]{0,160}await sendReservationConfirmedLine\(reservation\.id\)/
+    /if \(result\.confirmed \|\| result\.alreadyConfirmed\) \{[\s\S]{0,400}sendReservationConfirmedLine\(/
   );
   assert.match(
     editPage,
-    /if \(confirmation\.confirmed \|\| confirmation\.alreadyConfirmed\) \{[\s\S]{0,180}\/api\/send-reservation-confirmed-line/
+    /if \(confirmation\.confirmed \|\| confirmation\.alreadyConfirmed\) \{[\s\S]{0,220}sendConfirmationLineNotice\(/
   );
   assert.match(
     listPage,
@@ -627,6 +627,6 @@ test("migration and staff screens preserve idempotent retry controls", () => {
   );
   assert.match(
     editPage,
-    /if \(!lineRes\.ok \|\| lineData\?\.error\) \{[\s\S]{0,180}else if \(lineData\?\.sent\)/
+    /if \(!response\.ok \|\| result\?\.error\) \{[\s\S]{0,240}if \(result\?\.sent\)/
   );
 });

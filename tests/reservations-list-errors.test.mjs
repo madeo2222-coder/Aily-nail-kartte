@@ -206,11 +206,44 @@ async function mount({
             async json() { throw new Error("invalid json"); },
           };
         }
+        if (confirmFailureMode === "success") {
+          return {
+            ok: true,
+            status: 200,
+            async json() {
+              return { ok: true, confirmed: true };
+            },
+          };
+        }
         return {
           ok: false,
           status: 409,
           async json() {
             return { ok: false, error: "予約内容が更新されています。" };
+          },
+        };
+      }
+
+      if (url === "/api/send-reservation-confirmed-line") {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { ok: true, sent: true };
+          },
+        };
+      }
+
+      if (url === "/api/send-reservation-confirmed-email") {
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              ok: true,
+              sent: true,
+              message: "予約確定メールを送信しました。",
+            };
           },
         };
       }
@@ -295,7 +328,7 @@ async function mount({
         tree(),
         node =>
           node.type === "button" &&
-          node.props.children === "予約確定・LINE送信"
+          node.props.children === "予約確定・通知送信"
       );
       assert.ok(button, "confirm reservation button exists");
       await button.props.onClick();
@@ -306,7 +339,7 @@ async function mount({
         tree(),
         node =>
           node.type === "button" &&
-          node.props.children === "予約確定・LINE送信"
+          node.props.children === "予約確定・通知送信"
       );
       assert.ok(button, "confirm reservation button exists");
       await Promise.all([button.props.onClick(), button.props.onClick()]);
@@ -435,6 +468,24 @@ test("reservation list confirms against the displayed reservation snapshot", asy
   });
 });
 
+test("reservation list sends LINE and email only after confirmation succeeds", async () => {
+  const page = await mount({
+    reservationStatus: "requested",
+    confirmFailureMode: "success",
+  });
+  await page.confirmReservation();
+
+  const urls = page.requests.map(request => request.url);
+  const confirmIndex = urls.indexOf("/api/reservations/reservation-1/confirm");
+  const lineIndex = urls.indexOf("/api/send-reservation-confirmed-line");
+  const emailIndex = urls.indexOf("/api/send-reservation-confirmed-email");
+  assert.ok(confirmIndex >= 0);
+  assert.ok(lineIndex > confirmIndex);
+  assert.ok(emailIndex > lineIndex);
+  assert.match(page.alerts.at(-1), /LINE通知を送信しました/);
+  assert.match(page.alerts.at(-1), /予約確定メールを送信しました/);
+});
+
 test("reservation list ignores a second confirmation click while the first is pending", async () => {
   const page = await mount({ reservationStatus: "requested" });
   await page.confirmReservationTwice();
@@ -461,7 +512,7 @@ for (const confirmFailureMode of ["reject", "invalid-json"]) {
       ).length,
       2
     );
-    assert.equal(page.hasButton("予約確定・LINE送信"), false);
+    assert.equal(page.hasButton("予約確定・通知送信"), false);
     assert.equal(page.hasButton("確定LINEを再試行"), true);
     assert.equal(
       page.requests.some(
@@ -483,7 +534,7 @@ test("reservation list refreshes stale confirmation conflicts", async () => {
     ).length,
     2
   );
-  assert.equal(page.hasButton("予約確定・LINE送信"), false);
+  assert.equal(page.hasButton("予約確定・通知送信"), false);
   assert.equal(page.hasButton("確定LINEを再試行"), true);
   assert.match(page.alerts.at(-1), /予約内容が更新されています/);
 });
@@ -533,5 +584,5 @@ test("reservation list hides Naily confirmation actions for customer-linked exte
     reservationStatus: "requested",
     reservationMemo: "ＨＰＢ予約番号：AB-123",
   });
-  assert.equal(requested.hasButton("予約確定・LINE送信"), false);
+  assert.equal(requested.hasButton("予約確定・通知送信"), false);
 });

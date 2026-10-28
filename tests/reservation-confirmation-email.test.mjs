@@ -451,3 +451,34 @@ test("fails closed when scoped customer data cannot be confirmed", async () => {
     assert.doesNotMatch(response.body.message, /private/);
   }
 });
+
+test("both staff confirmation screens invoke the guarded email API only after confirmation", () => {
+  const listPage = readFileSync(
+    new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
+    "utf8"
+  );
+  const editPage = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    listPage,
+    /if \(result\.confirmed \|\| result\.alreadyConfirmed\) \{[\s\S]{0,400}sendReservationConfirmedEmail\(/
+  );
+  assert.match(
+    listPage,
+    /async function sendReservationConfirmedEmail[\s\S]{0,240}\/api\/send-reservation-confirmed-email/
+  );
+  assert.match(
+    editPage,
+    /if \(confirmation\.confirmed \|\| confirmation\.alreadyConfirmed\) \{[\s\S]{0,260}sendConfirmationEmailNotice\(/
+  );
+  assert.match(
+    editPage,
+    /async function sendConfirmationEmailNotice[\s\S]{0,240}\/api\/send-reservation-confirmed-email/
+  );
+  for (const page of [listPage, editPage]) {
+    assert.match(page, /body: JSON\.stringify\(\{ reservationId(?:: id)? \}\)/);
+  }
+});

@@ -547,10 +547,77 @@ export default function EditReservationPage() {
     return { startAt, endAt };
   }
 
+  async function sendConfirmationLineNotice(id: string) {
+    try {
+      const response = await fetch("/api/send-reservation-confirmed-line", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservationId: id }),
+      });
+      const result = (await response.json().catch(
+        () => null
+      )) as ConfirmationLineApiResult | null;
+      const retryLock = getConfirmationLineRetryLock(result);
+      saveConfirmationLineRetryLock(window.localStorage, id, retryLock);
+      setConfirmationLineRetryLock(retryLock);
+
+      if (!response.ok || result?.error) {
+        return ` LINE通知：${
+          result?.error ||
+          retryLock?.message ||
+          "送信結果を確認できませんでした。"
+        }`;
+      }
+      if (result?.sent) return " 顧客へLINE通知も送信しました。";
+      if (result?.message) return ` LINE通知：${result.message}`;
+      return " LINE通知は送信されませんでした。";
+    } catch (error) {
+      console.error("予約確定LINE通知エラー:", error);
+      const retryLock = getConfirmationLineRetryLock(null);
+      saveConfirmationLineRetryLock(window.localStorage, id, retryLock);
+      setConfirmationLineRetryLock(retryLock);
+      return ` LINE通知：${
+        retryLock?.message || "送信結果を確認できませんでした。"
+      }`;
+    }
+  }
+
+  async function sendConfirmationEmailNotice(id: string) {
+    try {
+      const response = await fetch("/api/send-reservation-confirmed-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservationId: id }),
+      });
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        sent?: boolean;
+        message?: string;
+      } | null;
+
+      if (!response.ok || !result?.ok) {
+        return ` メール通知：${
+          result?.message || "送信結果を確認できませんでした。"
+        }`;
+      }
+      return ` メール通知：${
+        result.message ||
+        (result.sent
+          ? "予約確定メールを送信しました。"
+          : "予約確定メールは送信されませんでした。")
+      }`;
+    } catch (error) {
+      console.error("予約確定メール通知エラー:", error);
+      return " メール通知：送信結果を確認できませんでした。予約は確定済みです。";
+    }
+  }
+
   async function handleConfirmReservation() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
-    const confirmed = window.confirm("この予約を『予約確定』にしますか？");
+    const confirmed = window.confirm(
+      "この予約を『予約確定』に変更し、LINE・メール通知を送信しますか？"
+    );
     if (!confirmed) return;
 
     const dateTime = validateRequiredFields();
@@ -604,56 +671,13 @@ export default function EditReservationPage() {
     }
 
     let lineNoticeMessage = "";
+    let emailNoticeMessage = "";
 
     if (confirmation.confirmed || confirmation.alreadyConfirmed) {
-      try {
-        const lineRes = await fetch("/api/send-reservation-confirmed-line", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            reservationId,
-          }),
-        });
-
-        const lineData = (await lineRes.json().catch(
-          () => null
-        )) as ConfirmationLineApiResult | null;
-        const retryLock = getConfirmationLineRetryLock(lineData);
-        saveConfirmationLineRetryLock(
-          window.localStorage,
-          reservationId,
-          retryLock
-        );
-        setConfirmationLineRetryLock(retryLock);
-
-        if (!lineRes.ok || lineData?.error) {
-          lineNoticeMessage = ` LINE通知：${
-            lineData?.error ||
-            retryLock?.message ||
-            "送信結果を確認できませんでした。"
-          }`;
-        } else if (lineData?.sent) {
-          lineNoticeMessage = " 顧客へLINE通知も送信しました。";
-        } else if (lineData?.message) {
-          lineNoticeMessage = ` LINE通知：${lineData.message}`;
-        } else {
-          lineNoticeMessage = " LINE通知は送信されませんでした。";
-        }
-      } catch (lineError) {
-        console.error("予約確定LINE通知エラー:", lineError);
-        const retryLock = getConfirmationLineRetryLock(null);
-        saveConfirmationLineRetryLock(
-          window.localStorage,
-          reservationId,
-          retryLock
-        );
-        setConfirmationLineRetryLock(retryLock);
-        lineNoticeMessage = ` LINE通知：${
-          retryLock?.message || "送信結果を確認できませんでした。"
-        }`;
-      }
+      [lineNoticeMessage, emailNoticeMessage] = await Promise.all([
+        sendConfirmationLineNotice(reservationId),
+        sendConfirmationEmailNotice(reservationId),
+      ]);
     } else {
       lineNoticeMessage = ` ${
         confirmation.message ||
@@ -664,7 +688,7 @@ export default function EditReservationPage() {
     setStatus("confirmed");
     setWasInitiallyConfirmed(true);
     setSuccessMessage(
-      `予約確定に変更しました。顧客マイページにも反映されます。${lineNoticeMessage}`
+      `予約確定に変更しました。顧客マイページにも反映されます。${lineNoticeMessage}${emailNoticeMessage}`
     );
   } catch (error) {
     console.error("予約確定結果の確認エラー:", error);

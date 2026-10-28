@@ -750,7 +750,10 @@ export default function ReservationsPageClient() {
     window.history.replaceState(null, "", "/reservations");
   }
 
-  async function sendReservationConfirmedLine(id: string) {
+  async function sendReservationConfirmedLine(
+    id: string,
+    showAlert = true
+  ): Promise<string> {
     try {
       const response = await fetch("/api/send-reservation-confirmed-line", {
         method: "POST",
@@ -776,37 +779,71 @@ export default function ReservationsPageClient() {
 
       if (!response.ok || !result?.ok) {
         console.error("予約確定LINE通知エラー:", result);
-        alert(
+        const message =
           result?.error ||
-            retryLock?.message ||
-            "予約は確定しましたが、LINE通知に失敗しました。確定済み予約の『確定LINEを再試行』から再送できます。"
-        );
-        return;
+          retryLock?.message ||
+          "予約は確定しましたが、LINE通知に失敗しました。確定済み予約の『確定LINEを再試行』から再送できます。";
+        if (showAlert) alert(message);
+        return message;
       }
 
       if (result.sent === false) {
-        alert(
+        const message =
           result.message ||
-            "予約は確定しましたが、顧客のLINE連携が未登録のためLINE通知は送信していません。"
-        );
-        return;
+          "予約は確定しましたが、顧客のLINE連携が未登録のためLINE通知は送信していません。";
+        if (showAlert) alert(message);
+        return message;
       }
 
-      alert(
-        result.retried
-          ? "予約確定LINEの再試行が完了しました。"
-          : "予約を確定し、LINE通知を送信しました。"
-      );
+      const message = result.retried
+        ? "予約確定LINEの再試行が完了しました。"
+        : "LINE通知を送信しました。";
+      if (showAlert) alert(message);
+      return message;
     } catch (error) {
       console.error("予約確定LINE通知APIエラー:", error);
       const retryLock = getConfirmationLineRetryLock(null);
-      if (!retryLock) return;
+      if (!retryLock) return "LINE通知の送信結果を確認できませんでした。";
       saveConfirmationLineRetryLock(window.localStorage, id, retryLock);
       setConfirmationLineRetryLocks((current) => ({
         ...current,
         [id]: retryLock,
       }));
-      alert(`予約は確定しました。${retryLock.message}`);
+      const message = `予約は確定しました。${retryLock.message}`;
+      if (showAlert) alert(message);
+      return message;
+    }
+  }
+
+  async function sendReservationConfirmedEmail(id: string) {
+    try {
+      const response = await fetch("/api/send-reservation-confirmed-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reservationId: id }),
+      });
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        sent?: boolean;
+        message?: string;
+      } | null;
+
+      if (!response.ok || !result?.ok) {
+        return (
+          result?.message ||
+          "メール通知の送信結果を確認できませんでした。予約は確定済みです。"
+        );
+      }
+
+      return (
+        result.message ||
+        (result.sent
+          ? "予約確定メールを送信しました。"
+          : "予約確定メールは送信されませんでした。")
+      );
+    } catch (error) {
+      console.error("予約確定メール通知APIエラー:", error);
+      return "メール通知の送信結果を確認できませんでした。予約は確定済みです。";
     }
   }
 
@@ -895,7 +932,7 @@ export default function ReservationsPageClient() {
     if (mutationRequestPendingIdsRef.current.has(reservation.id)) return;
 
     const ok = window.confirm(
-      "この予約を『予約確定』に変更し、LINE通知を送信しますか？"
+      "この予約を『予約確定』に変更し、LINE・メール通知を送信しますか？"
     );
     if (!ok) return;
 
@@ -936,7 +973,11 @@ export default function ReservationsPageClient() {
       }
 
       if (result.confirmed || result.alreadyConfirmed) {
-        await sendReservationConfirmedLine(reservation.id);
+        const [lineMessage, emailMessage] = await Promise.all([
+          sendReservationConfirmedLine(reservation.id, false),
+          sendReservationConfirmedEmail(reservation.id),
+        ]);
+        alert(`予約を確定しました。\n${lineMessage}\n${emailMessage}`);
       } else {
         alert(result.message || "予約確定の結果を確認できませんでした。");
       }
@@ -1024,7 +1065,7 @@ export default function ReservationsPageClient() {
               </p>
               <h1 className="mt-2 text-2xl font-bold text-white">予約ページ</h1>
               <p className="mt-2 text-sm leading-6 text-white/90">
-                ご予約の確認・確定・LINE通知・来店変更・重複チェックをまとめたページです。
+                ご予約の確認・確定・通知・来店変更・重複チェックをまとめたページです。
               </p>
             </div>
 
@@ -1116,7 +1157,7 @@ export default function ReservationsPageClient() {
                   未確認の予約希望が{requestedCount}件あります
                 </div>
                 <div className="mt-1 text-sm leading-6 text-amber-800">
-                  予約日が先でもここに表示されます。内容を確認して、予約確定・LINE送信まで対応してください。
+                  予約日が先でもここに表示されます。内容を確認して、予約確定・通知送信まで対応してください。
                 </div>
               </div>
 
@@ -1397,7 +1438,7 @@ export default function ReservationsPageClient() {
                           className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                           suppressHydrationWarning
                         >
-                          {isUpdating ? "更新中..." : "予約確定・LINE送信"}
+                          {isUpdating ? "更新中..." : "予約確定・通知送信"}
                         </button>
                       ) : null}
 
