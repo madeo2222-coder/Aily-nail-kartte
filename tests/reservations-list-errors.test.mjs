@@ -37,6 +37,25 @@ vm.runInNewContext(
   ).outputText,
   { exports: confirmationLineRetryExports, Set }
 );
+const confirmationEmailRetryExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL(
+        "../lib/reservation-confirmation-email-retry.ts",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: confirmationEmailRetryExports }
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -75,6 +94,7 @@ async function mount({
   reservationMemo = null,
   confirmFailureMode = "stale",
   statusFailureMode = "success",
+  emailResponses = [],
 } = {}) {
   const states = [];
   const effects = [];
@@ -85,6 +105,7 @@ async function mount({
   let currentReservationStatus = reservationStatus;
   const storedValues = new Map();
   const alerts = [];
+  const confirmationEmailResponses = [...emailResponses];
 
   const hooks = {
     useState(initial) {
@@ -235,6 +256,15 @@ async function mount({
       }
 
       if (url === "/api/send-reservation-confirmed-email") {
+        const configured = confirmationEmailResponses.shift();
+        if (configured instanceof Error) throw configured;
+        if (configured) {
+          return {
+            ok: configured.ok,
+            status: configured.status,
+            async json() { return configured.body; },
+          };
+        }
         return {
           ok: true,
           status: 200,
@@ -273,6 +303,9 @@ async function mount({
       if (name === "@/lib/reservation-status") return reservationStatusExports;
       if (name === "@/lib/reservation-confirmation-line-retry") {
         return confirmationLineRetryExports;
+      }
+      if (name === "@/lib/reservation-confirmation-email-retry") {
+        return confirmationEmailRetryExports;
       }
       throw new Error(`Unexpected import: ${name}`);
     },
@@ -359,6 +392,17 @@ async function mount({
           node.props.children === "確定LINEを再試行"
       );
       assert.ok(button, "confirmation LINE retry button exists");
+      await button.props.onClick();
+      await setImmediate();
+    },
+    async retryConfirmationEmail() {
+      const button = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          node.props.children === "確定メールを再試行"
+      );
+      assert.ok(button, "confirmation email retry button exists");
       await button.props.onClick();
       await setImmediate();
     },
@@ -484,6 +528,49 @@ test("reservation list sends LINE and email only after confirmation succeeds", a
   assert.ok(emailIndex > lineIndex);
   assert.match(page.alerts.at(-1), /LINE通知を送信しました/);
   assert.match(page.alerts.at(-1), /予約確定メールを送信しました/);
+});
+
+test("reservation list offers one same-screen email retry after a transient failure", async () => {
+  const page = await mount({
+    reservationStatus: "requested",
+    confirmFailureMode: "success",
+    emailResponses: [
+      {
+        ok: false,
+        status: 502,
+        body: {
+          ok: false,
+          sent: false,
+          retryable: true,
+          retryWindowHours: 24,
+          message: "24時間以内に再試行できます。",
+        },
+      },
+      {
+        ok: true,
+        status: 200,
+        body: {
+          ok: true,
+          sent: true,
+          message: "予約確定メールを送信しました。",
+        },
+      },
+    ],
+  });
+
+  await page.confirmReservation();
+  assert.equal(page.hasButton("確定メールを再試行"), true);
+  assert.match(page.alerts.at(-1), /24時間以内/);
+
+  await page.retryConfirmationEmail();
+  assert.equal(page.hasButton("確定メールを再試行"), false);
+  assert.match(page.alerts.at(-1), /予約確定メールを送信しました/);
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/send-reservation-confirmed-email"
+    ).length,
+    2
+  );
 });
 
 test("reservation list ignores a second confirmation click while the first is pending", async () => {

@@ -480,5 +480,6 @@ test("both staff confirmation screens invoke the guarded email API only after co
   );
   for (const page of [listPage, editPage]) {
     assert.match(page, /body: JSON\.stringify\(\{ reservationId(?:: id)? \}\)/);
+    assert.match(page, /確定メールを再試行/);
   }
 });

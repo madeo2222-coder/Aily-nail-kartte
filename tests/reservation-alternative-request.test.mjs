@@ -885,7 +885,7 @@ test("staff mutation buttons are disabled throughout every pending operation", (
     ts.forEachChild(node, visit);
   }
   visit(sourceFile);
-  assert.equal(buttons.length, 5, "all five write/notification buttons are covered");
+  assert.equal(buttons.length, 6, "all six write/notification buttons are covered");
   assert.ok(pendingExpression, "pending mutation expression exists");
   assert.ok(disabledExpression, "blocked mutation expression exists");
   for (let mask = 0; mask < 32; mask++) {

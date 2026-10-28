@@ -17,6 +17,11 @@ import type {
   ConfirmationLineApiResult,
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
+import {
+  getConfirmationEmailNotice,
+  type ConfirmationEmailApiResult,
+  type ConfirmationEmailNotice,
+} from "@/lib/reservation-confirmation-email-retry";
 
 type ReservationRow = {
   id: string;
@@ -483,6 +488,9 @@ export default function ReservationsPageClient() {
   const [confirmationLineRetryLocks, setConfirmationLineRetryLocks] = useState<
     Record<string, ConfirmationLineRetryLock>
   >({});
+  const [confirmationEmailRetryIds, setConfirmationEmailRetryIds] = useState<
+    Record<string, boolean>
+  >({});
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedStaff, setSelectedStaff] = useState("全員");
   const [showPendingOnly, setShowPendingOnly] = useState(false);
@@ -815,35 +823,57 @@ export default function ReservationsPageClient() {
     }
   }
 
-  async function sendReservationConfirmedEmail(id: string) {
+  function updateConfirmationEmailRetryState(
+    id: string,
+    notice: ConfirmationEmailNotice
+  ) {
+    setConfirmationEmailRetryIds((current) => {
+      if (notice.canRetry) return { ...current, [id]: true };
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+  }
+
+  async function sendReservationConfirmedEmail(
+    id: string
+  ): Promise<ConfirmationEmailNotice> {
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reservationId: id }),
       });
-      const result = (await response.json().catch(() => null)) as {
-        ok?: boolean;
-        sent?: boolean;
-        message?: string;
-      } | null;
-
-      if (!response.ok || !result?.ok) {
-        return (
-          result?.message ||
-          "メール通知の送信結果を確認できませんでした。予約は確定済みです。"
-        );
-      }
-
-      return (
-        result.message ||
-        (result.sent
-          ? "予約確定メールを送信しました。"
-          : "予約確定メールは送信されませんでした。")
-      );
+      const result = (await response.json().catch(
+        () => null
+      )) as ConfirmationEmailApiResult | null;
+      const notice = getConfirmationEmailNotice(response.ok, result);
+      updateConfirmationEmailRetryState(id, notice);
+      return notice;
     } catch (error) {
       console.error("予約確定メール通知APIエラー:", error);
-      return "メール通知の送信結果を確認できませんでした。予約は確定済みです。";
+      const notice = getConfirmationEmailNotice(false, null);
+      updateConfirmationEmailRetryState(id, notice);
+      return notice;
+    }
+  }
+
+  async function handleRetryConfirmationEmail(id: string) {
+    if (mutationRequestPendingIdsRef.current.has(id)) return;
+
+    const ok = window.confirm(
+      "予約確定メールを再試行しますか？24時間以内は同じ予約内容の重複送信を防ぎます。"
+    );
+    if (!ok) return;
+
+    mutationRequestPendingIdsRef.current.add(id);
+    setUpdatingId(id);
+    try {
+      const notice = await sendReservationConfirmedEmail(id);
+      alert(notice.message);
+    } finally {
+      mutationRequestPendingIdsRef.current.delete(id);
+      setUpdatingId(null);
     }
   }
 
@@ -973,11 +1003,13 @@ export default function ReservationsPageClient() {
       }
 
       if (result.confirmed || result.alreadyConfirmed) {
-        const [lineMessage, emailMessage] = await Promise.all([
+        const [lineMessage, emailNotice] = await Promise.all([
           sendReservationConfirmedLine(reservation.id, false),
           sendReservationConfirmedEmail(reservation.id),
         ]);
-        alert(`予約を確定しました。\n${lineMessage}\n${emailMessage}`);
+        alert(
+          `予約を確定しました。\n${lineMessage}\n${emailNotice.message}`
+        );
       } else {
         alert(result.message || "予約確定の結果を確認できませんでした。");
       }
@@ -1467,6 +1499,22 @@ export default function ReservationsPageClient() {
                             {isUpdating ? "送信中..." : "確定LINEを再試行"}
                           </button>
                         )
+                      ) : null}
+
+                      {canRetryConfirmationLine(item.status) &&
+                      !isExternalSynced &&
+                      confirmationEmailRetryIds[item.id] ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleRetryConfirmationEmail(item.id)
+                          }
+                          disabled={isUpdating}
+                          className="rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-bold text-violet-700 disabled:opacity-50"
+                          suppressHydrationWarning
+                        >
+                          {isUpdating ? "送信中..." : "確定メールを再試行"}
+                        </button>
                       ) : null}
 
                       {canMarkVisited(item.status) ? (
