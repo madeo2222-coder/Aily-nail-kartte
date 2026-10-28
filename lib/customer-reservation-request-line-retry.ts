@@ -9,6 +9,7 @@ export type CustomerReservationRequestLineResult = {
 
 export type CustomerReservationRequestLineLock = {
   action: CustomerReservationRequestAction;
+  kind: "sent" | "history_check";
   message: string;
 };
 
@@ -17,6 +18,7 @@ type RetryLockStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type StoredCustomerReservationRequestLineLock = {
   version: 1;
   savedAt: number;
+  kind?: CustomerReservationRequestLineLock["kind"];
 };
 
 export const CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS =
@@ -31,7 +33,14 @@ function getStorageKey(
   return `${STORAGE_KEY_PREFIX}${reservationId}:${action}`;
 }
 
-function getStoredMessage(action: CustomerReservationRequestAction) {
+function getStoredMessage(
+  action: CustomerReservationRequestAction,
+  kind: CustomerReservationRequestLineLock["kind"]
+) {
+  if (kind === "history_check") {
+    return "店舗へのLINE送信結果を確認できません。同じ依頼を繰り返さず、店舗へ送信状況を確認してください。";
+  }
+
   return action === "request_cancel"
     ? "キャンセル希望は店舗へ送信済みです。重複送信していません。"
     : "変更希望は店舗へ送信済みです。重複送信していません。";
@@ -65,9 +74,12 @@ export function readCustomerReservationRequestLineLock(
       return null;
     }
 
+    const kind = stored.kind === "history_check" ? "history_check" : "sent";
+
     return {
       action,
-      message: getStoredMessage(action),
+      kind,
+      message: getStoredMessage(action, kind),
     };
   } catch {
     try {
@@ -93,6 +105,7 @@ export function saveCustomerReservationRequestLineLock(
     const stored: StoredCustomerReservationRequestLineLock = {
       version: 1,
       savedAt: now,
+      kind: lock.kind,
     };
     storage.setItem(key, JSON.stringify(stored));
   } catch {
@@ -101,13 +114,22 @@ export function saveCustomerReservationRequestLineLock(
 }
 
 export function getCustomerReservationRequestLineLock(
-  result: CustomerReservationRequestLineResult,
+  result: CustomerReservationRequestLineResult | null,
   action: CustomerReservationRequestAction
 ): CustomerReservationRequestLineLock | null {
+  if (!result) {
+    return {
+      action,
+      kind: "history_check",
+      message: getStoredMessage(action, "history_check"),
+    };
+  }
+
   if (!result.ok) return null;
 
   return {
     action,
-    message: result.message || getStoredMessage(action),
+    kind: "sent",
+    message: result.message || getStoredMessage(action, "sent"),
   };
 }

@@ -668,6 +668,7 @@ test("successful customer LINE requests stay locked after a page reload", () => 
       action
     );
     assert.equal(lock.action, action);
+    assert.equal(lock.kind, "sent");
     saveCustomerReservationRequestLineLock(
       storage,
       "reservation-1",
@@ -682,6 +683,7 @@ test("successful customer LINE requests stay locked after a page reload", () => 
       2_000
     );
     assert.equal(restored.action, action);
+    assert.equal(restored.kind, "sent");
     assert.match(restored.message, /送信済み/);
 
     assert.equal(
@@ -696,7 +698,7 @@ test("successful customer LINE requests stay locked after a page reload", () => 
   }
 });
 
-test("failed or unknown customer LINE requests remain safely retryable", () => {
+test("explicitly failed customer LINE requests remain safely retryable", () => {
   const { getCustomerReservationRequestLineLock } = loadRetryLockModule();
 
   assert.equal(
@@ -708,12 +710,69 @@ test("failed or unknown customer LINE requests remain safely retryable", () => {
   );
 });
 
+test("an unobservable customer LINE result stays locked for history confirmation", () => {
+  const {
+    getCustomerReservationRequestLineLock,
+    readCustomerReservationRequestLineLock,
+    saveCustomerReservationRequestLineLock,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+  const lock = getCustomerReservationRequestLineLock(
+    null,
+    "request_change"
+  );
+
+  assert.equal(lock.action, "request_change");
+  assert.equal(lock.kind, "history_check");
+  assert.match(lock.message, /同じ依頼を繰り返さず/);
+
+  saveCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    lock,
+    1_000
+  );
+  const restored = readCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    "request_change",
+    2_000
+  );
+
+  assert.equal(restored.kind, "history_check");
+  assert.match(restored.message, /送信状況を確認/);
+});
+
+test("legacy customer LINE locks restore as sent locks", () => {
+  const { readCustomerReservationRequestLineLock } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+  storage.setItem(
+    "aily:customer-reservation-request-line:v1:reservation-1:request_cancel",
+    JSON.stringify({ version: 1, savedAt: 1_000 })
+  );
+
+  const restored = readCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    "request_cancel",
+    2_000
+  );
+
+  assert.equal(restored.kind, "sent");
+  assert.match(restored.message, /送信済み/);
+});
+
 test("customer reservation page restores separate change and cancel send locks", () => {
   assert.match(
     pageSource,
     /readCustomerReservationRequestLineLock\([\s\S]{0,100}window\.localStorage/
   );
   assert.match(pageSource, /saveCustomerReservationRequestLineLock\(/);
+  assert.match(
+    pageSource,
+    /getCustomerReservationRequestLineLock\([\s\S]{0,80}null,[\s\S]{0,80}requestAction/
+  );
+  assert.match(pageSource, /requestLineLocks\.request_change\.kind === "history_check"/);
   assert.match(
     pageSource,
     /function restoreRequestLineLock[\s\S]{0,500}window\.localStorage/
@@ -728,11 +787,11 @@ test("customer reservation page restores separate change and cancel send locks",
   );
   assert.match(
     pageSource,
-    /requestLineLocks\.request_change \? \([\s\S]{0,700}変更希望を店舗へ送る/
+    /requestLineLocks\.request_change \? \([\s\S]{0,1200}変更希望を店舗へ送る/
   );
   assert.match(
     pageSource,
-    /requestLineLocks\.request_cancel \? \([\s\S]{0,700}キャンセル希望を店舗へ送る/
+    /requestLineLocks\.request_cancel \? \([\s\S]{0,1200}キャンセル希望を店舗へ送る/
   );
 });
 

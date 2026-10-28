@@ -350,6 +350,10 @@ export default function CustomerReservationDetailPage() {
     setWarningMessage("");
     setRefreshErrorMessage("");
     setErrorMessage("");
+    const requestAction =
+      body.action === "request_change" || body.action === "request_cancel"
+        ? body.action
+        : null;
 
     try {
       const response = await fetch(
@@ -363,22 +367,12 @@ export default function CustomerReservationDetailPage() {
         }
       );
 
-      const json = (await response.json()) as {
+      const json = (await response.json().catch(() => null)) as {
         ok?: boolean;
         message?: string;
         error?: string;
         notificationWarning?: string;
-      };
-
-      if (!response.ok || !json.ok) {
-        setErrorMessage(json.error || "予約操作に失敗しました");
-        return;
-      }
-
-      const requestAction =
-        body.action === "request_change" || body.action === "request_cancel"
-          ? body.action
-          : null;
+      } | null;
 
       if (requestAction) {
         const lock = getCustomerReservationRequestLineLock(
@@ -399,13 +393,44 @@ export default function CustomerReservationDetailPage() {
         }
       }
 
+      if (!json) {
+        setRefreshErrorMessage(
+          requestAction
+            ? "店舗へのLINE送信結果を確認できませんでした。同じ依頼を繰り返さず、店舗へ送信状況を確認してください。"
+            : "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
+        );
+        return;
+      }
+
+      if (!response.ok || !json.ok) {
+        setErrorMessage(json.error || "予約操作に失敗しました");
+        return;
+      }
+
       setMessage(json.message || "更新しました");
       setWarningMessage(json.notificationWarning || "");
       await fetchReservation({ preserveCurrent: true });
     } catch (error) {
       console.error(error);
+      if (requestAction) {
+        const lock = getCustomerReservationRequestLineLock(
+          null,
+          requestAction
+        );
+        saveCustomerReservationRequestLineLock(
+          window.localStorage,
+          reservationId,
+          lock
+        );
+        setRequestLineLocks((current) => ({
+          ...current,
+          [requestAction]: lock,
+        }));
+      }
       setRefreshErrorMessage(
-        "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
+        requestAction
+          ? "店舗へのLINE送信結果を確認できませんでした。同じ依頼を繰り返さず、店舗へ送信状況を確認してください。"
+          : "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
       );
     } finally {
       actionPendingRef.current = false;
@@ -796,7 +821,13 @@ export default function CustomerReservationDetailPage() {
             <div className="mt-3 grid grid-cols-1 gap-2">
               {reservation.canRequestChange ? (
                 requestLineLocks.request_change ? (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                  <div
+                    className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+                      requestLineLocks.request_change.kind === "history_check"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    }`}
+                  >
                     {requestLineLocks.request_change.message}
                   </div>
                 ) : (
@@ -813,7 +844,13 @@ export default function CustomerReservationDetailPage() {
 
               {reservation.canRequestCancel ? (
                 requestLineLocks.request_cancel ? (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+                  <div
+                    className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+                      requestLineLocks.request_cancel.kind === "history_check"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    }`}
+                  >
                     {requestLineLocks.request_cancel.message}
                   </div>
                 ) : (
