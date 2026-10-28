@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import CustomerPhoto from "../CustomerPhoto";
 
@@ -173,6 +173,8 @@ function ReservePageContent() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [reservationResultUnknown, setReservationResultUnknown] =
+    useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authAttempt, setAuthAttempt] = useState(0);
@@ -203,6 +205,7 @@ function ReservePageContent() {
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [note, setNote] = useState("");
+  const submissionInFlight = useRef(false);
 
   const todayText = useMemo(() => getTodayText(), []);
   const maxReservationDate = useMemo(() => addDaysText(todayText, 30), [todayText]);
@@ -615,6 +618,8 @@ function ReservePageContent() {
   }
 
   async function handleReserveSubmit() {
+    if (submissionInFlight.current || reservationResultUnknown) return;
+
     if (!reservationMenu) {
       showMessage("メニューを選択してください");
       return;
@@ -645,6 +650,7 @@ function ReservePageContent() {
       return;
     }
 
+    submissionInFlight.current = true;
     setSending(true);
 
     try {
@@ -686,7 +692,18 @@ function ReservePageContent() {
         }),
       });
 
-      const json = await response.json();
+      const json = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+
+      if (!json) {
+        setReservationResultUnknown(true);
+        showMessage(
+          "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
+        );
+        return;
+      }
 
       if (!response.ok || !json.ok) {
         showMessage(json.error || "予約保存に失敗しました");
@@ -708,8 +725,12 @@ function ReservePageContent() {
       setSelectedTime("");
     } catch (error) {
       console.error(error);
-      showMessage("通信エラーが発生しました");
+      setReservationResultUnknown(true);
+      showMessage(
+        "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
+      );
     } finally {
+      submissionInFlight.current = false;
       setSending(false);
     }
   }
@@ -1238,11 +1259,29 @@ function ReservePageContent() {
             ) : null}
           </div>
 
+          {reservationResultUnknown ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900"
+            >
+              <p>
+                予約申請の結果を確認できませんでした。同じ内容を再送せず、マイページの予約一覧で最新状態を確認してください。
+              </p>
+              <Link
+                href="/customer-app/mypage"
+                className="mt-3 block rounded-xl border border-amber-300 bg-white px-4 py-3 text-center"
+              >
+                マイページで予約を確認
+              </Link>
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={handleReserveSubmit}
             disabled={
               sending ||
+              reservationResultUnknown ||
               availabilityLoading ||
               Boolean(availabilityError) ||
               !selectedTime ||
@@ -1250,7 +1289,11 @@ function ReservePageContent() {
             }
             className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
-            {sending ? "送信中..." : "この内容で予約希望を送る"}
+            {sending
+              ? "送信中..."
+              : reservationResultUnknown
+              ? "マイページで予約を確認してください"
+              : "この内容で予約希望を送る"}
           </button>
 
           <div className="mt-3 rounded-2xl bg-amber-50 p-4 text-sm leading-6 text-amber-800">

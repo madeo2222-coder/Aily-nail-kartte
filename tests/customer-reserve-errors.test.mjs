@@ -8,8 +8,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const pageSource = readFileSync(
+  new URL("../app/customer-app/reserve/page.tsx", import.meta.url),
+  "utf8",
+);
 const compiled = ts.transpileModule(
-  readFileSync(new URL("../app/customer-app/reserve/page.tsx", import.meta.url), "utf8"),
+  pageSource,
   {
     compilerOptions: {
       module: ts.ModuleKind.CommonJS,
@@ -33,7 +37,12 @@ function response({ ok = true, body = {} } = {}) {
   return { ok, json: async () => body };
 }
 
-async function mount({ authResponse, rejectAuth = false, availabilityMode = "success" } = {}) {
+async function mount({
+  authResponse,
+  rejectAuth = false,
+  availabilityMode = "success",
+  reservationMode = "success",
+} = {}) {
   const states = [];
   const effects = [];
   const requests = [];
@@ -52,6 +61,11 @@ async function mount({ authResponse, rejectAuth = false, availabilityMode = "suc
       }];
     },
     useMemo: fn => fn(),
+    useRef(initial) {
+      const index = cursor++;
+      if (!(index in states)) states[index] = { current: initial };
+      return states[index];
+    },
     useEffect: fn => { effects.push(fn); },
   };
 
@@ -83,6 +97,28 @@ async function mount({ authResponse, rejectAuth = false, availabilityMode = "suc
           slots: [{ time: "10:00", staffIds: ["staff-1"] }],
         },
       });
+    }
+
+    if (url === "/api/reservations") {
+      if (reservationMode === "reject") throw new Error("connection lost");
+      if (reservationMode === "unknown-json") {
+        return {
+          ok: true,
+          async json() {
+            throw new Error("response lost");
+          },
+        };
+      }
+      if (reservationMode === "failure") {
+        return {
+          ok: false,
+          status: 409,
+          async json() {
+            return { ok: false, error: "選択した時間は埋まりました" };
+          },
+        };
+      }
+      return response({ body: { ok: true, reservation: { id: "reservation-1" } } });
     }
 
     throw new Error(`Unexpected request: ${url}`);
@@ -146,7 +182,7 @@ async function mount({ authResponse, rejectAuth = false, availabilityMode = "suc
     assert.ok(menuSelect);
     assert.ok(dateInput);
     menuSelect.props.onChange({ target: { value: "one_color" } });
-    dateInput.props.onChange({ target: { value: "2026-10-01" } });
+    dateInput.props.onChange({ target: { value: "2026-11-01" } });
 
     tree();
     const selectedEffects = [...effects];
@@ -158,6 +194,29 @@ async function mount({ authResponse, rejectAuth = false, availabilityMode = "suc
     html,
     requests,
     selectMenuAndDate,
+    async submitReservation() {
+      const currentTree = tree();
+      const timeSelect = findNode(
+        currentTree,
+        node =>
+          node.type === "select" &&
+          [node.props.children]
+            .flat(Infinity)
+            .some(child => child?.props?.value === "10:00"),
+      );
+      assert.ok(timeSelect);
+      timeSelect.props.onChange({ target: { value: "10:00" } });
+
+      const submitButton = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          String(node.props.className || "").includes("mt-4 w-full"),
+      );
+      assert.ok(submitButton);
+      await submitButton.props.onClick();
+      await setImmediate();
+    },
     async recoverAvailability() {
       const retryButton = findNode(
         tree(),
@@ -219,4 +278,50 @@ test("reservation creation preserves an authoritative empty availability result"
 
   assert.doesNotMatch(page.html(), /role="alert"/);
   assert.match(page.html(), /この日は予約可能なスタッフの空きがありません/);
+});
+
+test("customer reservation blocks resubmission after losing a successful response", async () => {
+  const page = await mount({ reservationMode: "unknown-json" });
+  await page.selectMenuAndDate();
+  await page.submitReservation();
+
+  assert.match(page.html(), /予約申請の結果を確認できませんでした/);
+  assert.match(page.html(), /マイページで予約を確認/);
+  assert.match(page.html(), /マイページで予約を確認してください/);
+  assert.equal(page.requests.filter(request => request.url === "/api/reservations").length, 1);
+
+  await page.submitReservation();
+  assert.equal(page.requests.filter(request => request.url === "/api/reservations").length, 1);
+});
+
+test("customer reservation blocks resubmission after a network result loss", async () => {
+  const page = await mount({ reservationMode: "reject" });
+  await page.selectMenuAndDate();
+  await page.submitReservation();
+
+  assert.match(page.html(), /同じ内容を再送せず/);
+  assert.equal(page.requests.filter(request => request.url === "/api/reservations").length, 1);
+
+  await page.submitReservation();
+  assert.equal(page.requests.filter(request => request.url === "/api/reservations").length, 1);
+});
+
+test("customer reservation allows retry after an authoritative conflict", async () => {
+  const page = await mount({ reservationMode: "failure" });
+  await page.selectMenuAndDate();
+  await page.submitReservation();
+
+  assert.match(page.html(), /選択した時間は埋まりました/);
+  assert.doesNotMatch(page.html(), /マイページで予約を確認/);
+});
+
+test("customer reservation guards the request before React rerenders", () => {
+  assert.match(
+    pageSource,
+    /if \(submissionInFlight\.current \|\| reservationResultUnknown\) return/,
+  );
+  assert.ok(
+    pageSource.indexOf("submissionInFlight.current = true") <
+      pageSource.indexOf('fetch("/api/reservations"'),
+  );
 });
