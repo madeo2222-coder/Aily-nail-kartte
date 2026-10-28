@@ -73,6 +73,7 @@ async function mount({
   reservationStatus = "confirmed",
   reservationSource = null,
   reservationMemo = null,
+  confirmFailureMode = "stale",
 } = {}) {
   const states = [];
   const effects = [];
@@ -80,6 +81,7 @@ async function mount({
   let cursor = 0;
   let collectEffects = true;
   let shouldFail = Boolean(failureMode);
+  let currentReservationStatus = reservationStatus;
   const storedValues = new Map();
   const alerts = [];
 
@@ -120,7 +122,7 @@ async function mount({
           end_at: "2026-09-29T02:30:00.000Z",
           reservation_date: "2026-09-29",
           reservation_time: "10:00",
-          status: reservationStatus,
+          status: currentReservationStatus,
           source: reservationSource,
           memo: reservationMemo,
       }],
@@ -171,8 +173,20 @@ async function mount({
       }
 
       if (url === "/api/reservations/reservation-1/confirm") {
+        currentReservationStatus = "confirmed";
+        if (confirmFailureMode === "reject") {
+          throw new Error("response lost after commit");
+        }
+        if (confirmFailureMode === "invalid-json") {
+          return {
+            ok: true,
+            status: 200,
+            async json() { throw new Error("invalid json"); },
+          };
+        }
         return {
           ok: false,
+          status: 409,
           async json() {
             return { ok: false, error: "予約内容が更新されています。" };
           },
@@ -374,6 +388,47 @@ test("reservation list ignores a second confirmation click while the first is pe
     ).length,
     1
   );
+});
+
+for (const confirmFailureMode of ["reject", "invalid-json"]) {
+  test(`reservation list reloads authoritative status after ${confirmFailureMode} confirmation result`, async () => {
+    const page = await mount({
+      reservationStatus: "requested",
+      confirmFailureMode,
+    });
+    await page.confirmReservation();
+
+    assert.equal(
+      page.requests.filter(
+        request => request.url === "/api/reservations/list-data"
+      ).length,
+      2
+    );
+    assert.equal(page.hasButton("予約確定・LINE送信"), false);
+    assert.equal(page.hasButton("確定LINEを再試行"), true);
+    assert.equal(
+      page.requests.some(
+        request => request.url === "/api/send-reservation-confirmed-line"
+      ),
+      false
+    );
+    assert.match(page.alerts.at(-1), /予約確定の結果を確認できませんでした/);
+  });
+}
+
+test("reservation list refreshes stale confirmation conflicts", async () => {
+  const page = await mount({ reservationStatus: "requested" });
+  await page.confirmReservation();
+
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/reservations/list-data"
+    ).length,
+    2
+  );
+  assert.equal(page.hasButton("予約確定・LINE送信"), false);
+  assert.equal(page.hasButton("確定LINEを再試行"), true);
+  assert.match(page.alerts.at(-1), /予約内容が更新されています/);
 });
 
 test("reservation list rechecks a cross-tab LINE lock before retrying", async () => {
