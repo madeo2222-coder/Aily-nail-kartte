@@ -482,6 +482,18 @@ test("both staff confirmation screens invoke the guarded email API only after co
     assert.match(page, /body: JSON\.stringify\(\{ reservationId(?:: id)? \}\)/);
     assert.match(page, /確定メールを再試行/);
   }
+  assert.match(
+    listPage,
+    /予約確定APIエラー:[\s\S]{0,260}getConfirmationEmailRecoveryNotice\(Date\.now\(\)\)/
+  );
+  assert.match(
+    editPage,
+    /if \(!confirmation\) \{[\s\S]{0,220}getConfirmationEmailRecoveryNotice\(Date\.now\(\)\)[\s\S]{0,120}setMutationResultUnknown\(true\)/
+  );
+  assert.match(
+    editPage,
+    /normalizedStatus !== "confirmed"[\s\S]{0,100}setConfirmationEmailRetryNotice\(null\)/
+  );
   assert.match(listPage, /isConfirmationEmailRetryActive\(retryNotice, Date\.now\(\)\)/);
   assert.match(editPage, /isConfirmationEmailRetryActive\([\s\S]{0,120}Date\.now\(\)/);
 

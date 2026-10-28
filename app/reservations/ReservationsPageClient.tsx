@@ -19,6 +19,7 @@ import type {
 } from "@/lib/reservation-confirmation-line-retry";
 import {
   getExpiredConfirmationEmailNotice,
+  getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
   type ConfirmationEmailApiResult,
@@ -1037,15 +1038,23 @@ export default function ReservationsPageClient() {
           `予約を確定しました。\n${lineMessage}\n${emailNotice.message}`
         );
       } else {
+        updateConfirmationEmailRetryState(
+          reservation.id,
+          getConfirmationEmailRecoveryNotice(Date.now())
+        );
         alert(result.message || "予約確定の結果を確認できませんでした。");
       }
 
       await fetchReservations();
     } catch (error) {
       console.error("予約確定APIエラー:", error);
+      updateConfirmationEmailRetryState(
+        reservation.id,
+        getConfirmationEmailRecoveryNotice(Date.now())
+      );
       await fetchReservations();
       alert(
-        "予約確定の結果を確認できませんでした。最新の予約一覧を確認してください。確定済みの場合は「確定LINEを再試行」から通知してください。"
+        "予約確定の結果を確認できませんでした。最新の予約一覧を確認してください。確定済みの場合は確定LINE・メールの送信ボタンから通知してください。"
       );
     } finally {
       mutationRequestPendingIdsRef.current.delete(reservation.id);
@@ -1546,7 +1555,8 @@ export default function ReservationsPageClient() {
                             >
                               {isUpdating
                                 ? "送信中..."
-                                : "確定メールを再試行"}
+                                : confirmationEmailRetryNotices[item.id]
+                                    .actionLabel || "確定メールを再試行"}
                             </button>
                           ) : null}
                         </div>

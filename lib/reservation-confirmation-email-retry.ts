@@ -12,9 +12,29 @@ export type ConfirmationEmailNotice = {
   completed: boolean;
   retryWindowHours: number | null;
   expiresAt: number | null;
+  actionLabel?: "確定メールを送信" | "確定メールを再試行";
 };
 
 const DEFAULT_RETRY_WINDOW_HOURS = 24;
+
+export function getConfirmationEmailRecoveryNotice(
+  now = Date.now(),
+  previousExpiresAt: number | null = null
+): ConfirmationEmailNotice {
+  return {
+    message:
+      "予約確定の通信結果を確認できませんでした。最新情報で確定済みと確認できた場合は、同じ画面から24時間以内に確定メールを送信できます。",
+    canRetry: true,
+    completed: false,
+    retryWindowHours: DEFAULT_RETRY_WINDOW_HOURS,
+    expiresAt: getRetryExpiresAt(
+      now,
+      DEFAULT_RETRY_WINDOW_HOURS,
+      previousExpiresAt
+    ),
+    actionLabel: "確定メールを送信",
+  };
+}
 
 export function getConfirmationEmailNotice(
   responseOk: boolean,
@@ -35,6 +55,7 @@ export function getConfirmationEmailNotice(
       completed: false,
       retryWindowHours: DEFAULT_RETRY_WINDOW_HOURS,
       expiresAt,
+      actionLabel: "確定メールを再試行",
     };
   }
 
@@ -74,6 +95,7 @@ export function getConfirmationEmailNotice(
     completed: false,
     retryWindowHours,
     expiresAt,
+    actionLabel: canRetry ? "確定メールを再試行" : undefined,
   };
 }
 

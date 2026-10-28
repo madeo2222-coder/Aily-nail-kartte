@@ -24,6 +24,7 @@ import type {
 } from "@/lib/reservation-confirmation-line-retry";
 import {
   getExpiredConfirmationEmailNotice,
+  getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
   type ConfirmationEmailApiResult,
@@ -475,6 +476,9 @@ export default function EditReservationPage() {
     setWasInitiallyCancelled(
       isCancelledReservationStatus(reservation.status)
     );
+    if (normalizedStatus !== "confirmed") {
+      setConfirmationEmailRetryNotice(null);
+    }
     setInitialCustomerId(reservation.customer_id);
     setInitialStaffId(reservation.staff_id);
     setInitialMenu(reservation.menu);
@@ -673,6 +677,9 @@ export default function EditReservationPage() {
     } | null;
 
     if (!confirmation) {
+      setConfirmationEmailRetryNotice(
+        getConfirmationEmailRecoveryNotice(Date.now())
+      );
       setMutationResultUnknown(true);
       setErrorMessage("");
       return;
@@ -707,6 +714,9 @@ export default function EditReservationPage() {
     );
   } catch (error) {
     console.error("予約確定結果の確認エラー:", error);
+    setConfirmationEmailRetryNotice(
+      getConfirmationEmailRecoveryNotice(Date.now())
+    );
     setMutationResultUnknown(true);
     setErrorMessage("");
   } finally {
@@ -1334,7 +1344,10 @@ export default function EditReservationPage() {
                         disabled={mutationControlsDisabled}
                         className="rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-bold text-violet-700 disabled:opacity-60"
                       >
-                        {confirming ? "送信中..." : "確定メールを再試行"}
+                        {confirming
+                          ? "送信中..."
+                          : confirmationEmailRetryNotice.actionLabel ||
+                            "確定メールを再試行"}
                       </button>
                     ) : null}
                   </div>

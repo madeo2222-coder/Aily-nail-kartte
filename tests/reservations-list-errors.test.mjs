@@ -402,12 +402,12 @@ async function mount({
       await button.props.onClick();
       await setImmediate();
     },
-    async retryConfirmationEmail() {
+    async retryConfirmationEmail(label = "確定メールを再試行") {
       const button = findNode(
         tree(),
         node =>
           node.type === "button" &&
-          node.props.children === "確定メールを再試行"
+          node.props.children === label
       );
       assert.ok(button, "confirmation email retry button exists");
       await button.props.onClick();
@@ -652,6 +652,7 @@ for (const confirmFailureMode of ["reject", "invalid-json"]) {
     );
     assert.equal(page.hasButton("予約確定・通知送信"), false);
     assert.equal(page.hasButton("確定LINEを再試行"), true);
+    assert.equal(page.hasButton("確定メールを送信"), true);
     assert.equal(
       page.requests.some(
         request => request.url === "/api/send-reservation-confirmed-line"
@@ -659,8 +660,38 @@ for (const confirmFailureMode of ["reject", "invalid-json"]) {
       false
     );
     assert.match(page.alerts.at(-1), /予約確定の結果を確認できませんでした/);
+
+    await page.retryConfirmationEmail("確定メールを送信");
+    assert.equal(page.hasButton("確定メールを送信"), false);
+    assert.equal(
+      page.requests.filter(
+        request => request.url === "/api/send-reservation-confirmed-email"
+      ).length,
+      1
+    );
   });
 }
+
+test("reservation list expires unknown-confirmation email recovery without sending", async () => {
+  const page = await mount({
+    reservationStatus: "requested",
+    confirmFailureMode: "reject",
+  });
+  await page.confirmReservation();
+  assert.equal(page.hasButton("確定メールを送信"), true);
+
+  page.advanceTime(25);
+  await page.retryConfirmationEmail("確定メールを送信");
+
+  assert.equal(page.hasButton("確定メールを送信"), false);
+  assert.match(page.alerts.at(-1), /送信履歴を確認/);
+  assert.equal(
+    page.requests.some(
+      request => request.url === "/api/send-reservation-confirmed-email"
+    ),
+    false
+  );
+});
 
 test("reservation list refreshes stale confirmation conflicts", async () => {
   const page = await mount({ reservationStatus: "requested" });

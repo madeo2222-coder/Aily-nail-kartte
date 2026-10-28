@@ -25,10 +25,22 @@ vm.runInNewContext(
 );
 
 const {
+  getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   getExpiredConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
 } = exports;
+
+test("offers a bounded first email send after an unknown confirmation result", () => {
+  const startedAt = 9_000;
+  const notice = getConfirmationEmailRecoveryNotice(startedAt);
+
+  assert.equal(notice.canRetry, true);
+  assert.equal(notice.completed, false);
+  assert.equal(notice.actionLabel, "確定メールを送信");
+  assert.equal(notice.expiresAt, startedAt + 24 * 60 * 60 * 1000);
+  assert.match(notice.message, /確定済みと確認できた場合/);
+});
 
 test("enables a same-screen retry when the confirmation email response is lost", () => {
   const startedAt = 12_345;
