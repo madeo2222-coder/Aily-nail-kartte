@@ -54,14 +54,20 @@ function loadRoute({
     name: "顧客 <b>一郎</b>",
     email: "customer@example.test",
   },
+  customerReads = null,
   customerError = null,
   staff = { id: "staff-1", name: "担当 <i>A</i>" },
+  staffReads = null,
   staffError = null,
   salon = { id: "salon-1", name: "Aily & Nail" },
+  salonReads = null,
   salonError = null,
   sendResponses = [{ data: { id: "email-1" }, error: null }],
 } = {}) {
   const reservationQueue = [...reservationReads];
+  const customerQueue = customerReads ? [...customerReads] : null;
+  const staffQueue = staffReads ? [...staffReads] : null;
+  const salonQueue = salonReads ? [...salonReads] : null;
   const sendQueue = [...sendResponses];
   const queryCalls = [];
   const sendCalls = [];
@@ -82,6 +88,15 @@ function loadRoute({
       async maybeSingle() {
         if (table === "reservations") {
           return { data: reservationQueue.shift() ?? null, error: reservationError };
+        }
+        if (table === "customers" && customerQueue) {
+          return { data: customerQueue.shift() ?? null, error };
+        }
+        if (table === "staffs" && staffQueue) {
+          return { data: staffQueue.shift() ?? null, error };
+        }
+        if (table === "salons" && salonQueue) {
+          return { data: salonQueue.shift() ?? null, error };
         }
         return { data: row, error };
       },
@@ -337,6 +352,57 @@ test("stops when the reservation changes immediately before sending", async () =
   assert.match(response.body.message, /読み込み直して/);
   assert.equal(runtime.resendCreated, 0);
   assert.equal(runtime.sendCalls.length, 0);
+});
+
+test("stops when the customer email changes immediately before sending", async () => {
+  const runtime = loadRoute({
+    customerReads: [
+      {
+        id: "customer-1",
+        salon_id: "salon-1",
+        name: "顧客 一郎",
+        email: "old-address@example.test",
+      },
+      {
+        id: "customer-1",
+        salon_id: "salon-1",
+        name: "顧客 一郎",
+        email: "new-address@example.test",
+      },
+    ],
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.sent, false);
+  assert.match(response.body.message, /読み込み直して/);
+  assert.equal(runtime.resendCreated, 0);
+  assert.equal(runtime.sendCalls.length, 0);
+});
+
+test("stops when customer, staff, or salon mail content disappears before sending", async () => {
+  for (const options of [
+    { customerReads: [
+      { id: "customer-1", salon_id: "salon-1", name: "顧客", email: "customer@example.test" },
+      null,
+    ] },
+    { salonReads: [
+      { id: "salon-1", name: "Aily & Nail" },
+      null,
+    ] },
+    { staffReads: [
+      { id: "staff-1", name: "担当 A" },
+      null,
+    ] },
+  ]) {
+    const runtime = loadRoute(options);
+    const response = await runtime.post();
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.sent, false);
+    assert.equal(runtime.resendCreated, 0);
+    assert.equal(runtime.sendCalls.length, 0);
+  }
 });
 
 test("marks a lost Resend response as safely retryable within the provider window", async () => {
