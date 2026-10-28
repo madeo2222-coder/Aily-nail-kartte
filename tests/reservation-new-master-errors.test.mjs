@@ -32,7 +32,10 @@ const compiled = ts.transpileModule(
 test("staff reservation creation uses its authenticated API instead of browser database access", () => {
   assert.doesNotMatch(pageSource, /@\/lib\/supabase|supabase\.from/);
   assert.match(pageSource, /fetch\("\/api\/reservations\/staff-create"/);
-  assert.match(pageSource, /if \(submissionInFlight\.current\) return/);
+  assert.match(
+    pageSource,
+    /if \(submissionInFlight\.current \|\| submissionResultUnknown\) return/,
+  );
   assert.ok(
     pageSource.indexOf("submissionInFlight.current = true") <
       pageSource.indexOf('method: "POST"'),
@@ -49,13 +52,19 @@ function findNode(node, predicate) {
   return null;
 }
 
-async function mount({ failure = false, rejection = false, empty = false } = {}) {
+async function mount({
+  failure = false,
+  rejection = false,
+  empty = false,
+  postMode = "success",
+} = {}) {
   const states = [];
   let cursor = 0;
   let effects = [];
   const cleanups = [];
   let shouldFail = failure;
   const requests = [];
+  const pushed = [];
 
   const hooks = {
     useState(initial) {
@@ -77,6 +86,31 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
 
   async function fetch(url, options) {
     requests.push({ url, options });
+    if (options?.method === "POST") {
+      if (postMode === "rejection") throw new Error("connection lost");
+      if (postMode === "unknown-json") {
+        return {
+          ok: true,
+          async json() {
+            throw new Error("response lost");
+          },
+        };
+      }
+      if (postMode === "failure") {
+        return {
+          ok: false,
+          async json() {
+            return { ok: false, error: "予約枠が重複しています。" };
+          },
+        };
+      }
+      return {
+        ok: true,
+        async json() {
+          return { ok: true, reservation: { id: "r1" } };
+        },
+      };
+    }
     if (shouldFail && rejection) throw new Error("offline");
     if (shouldFail) {
       return {
@@ -114,7 +148,9 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
-      if (name === "next/navigation") return { useRouter: () => ({ push() {} }) };
+      if (name === "next/navigation") {
+        return { useRouter: () => ({ push(path) { pushed.push(path); } }) };
+      }
       if (name === "@/lib/external-reservation-metadata") {
         return externalReservationMetadata;
       }
@@ -138,6 +174,7 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
 
   return {
     requests,
+    pushed,
     html,
     unmount() { for (const cleanup of cleanups) cleanup(); },
     async retry() {
@@ -145,6 +182,36 @@ async function mount({ failure = false, rejection = false, empty = false } = {})
       assert.ok(button);
       shouldFail = false;
       button.props.onClick();
+      await setImmediate();
+    },
+    async submit() {
+      const current = tree();
+      const customer = findNode(
+        current,
+        node =>
+          node.type === "select" &&
+          Boolean(findNode(node, child => child.type === "option" && child.props.value === "c1")),
+      );
+      const staff = findNode(
+        current,
+        node =>
+          node.type === "select" &&
+          Boolean(findNode(node, child => child.type === "option" && child.props.value === "st1")),
+      );
+      const date = findNode(current, node => node.type === "input" && node.props.type === "date");
+      assert.ok(customer);
+      assert.ok(staff);
+      assert.ok(date);
+      customer.props.onChange({ target: { value: "c1" } });
+      staff.props.onChange({ target: { value: "st1" } });
+      date.props.onChange({ target: { value: "2026-11-01" } });
+
+      const button = findNode(
+        tree(),
+        node => node.type === "button" && String(node.props.className || "").includes("w-full"),
+      );
+      assert.ok(button);
+      await button.props.onClick();
       await setImmediate();
     },
   };
@@ -194,5 +261,48 @@ test("reservation creation renders complete master data only after every query s
   assert.match(page.html(), /スタッフA/);
   assert.match(page.html(), /登録内容確認/);
   assert.equal(page.requests.length, 1);
+  page.unmount();
+});
+
+test("reservation creation locks resubmission when a successful response body is lost", async () => {
+  const page = await mount({ postMode: "unknown-json" });
+  await page.submit();
+  assert.match(page.html(), /予約登録の結果を確認できませんでした/);
+  assert.match(page.html(), /最新の予約を確認/);
+  assert.match(page.html(), /カレンダーで結果を確認してください/);
+  assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 1);
+
+  await page.submit();
+  assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 1);
+  page.unmount();
+});
+
+test("reservation creation opens the calendar after an authoritative success", async () => {
+  const page = await mount();
+  await page.submit();
+  assert.deepEqual(page.pushed, ["/reservations/calendar"]);
+  assert.doesNotMatch(page.html(), /予約登録の結果を確認できませんでした/);
+  page.unmount();
+});
+
+test("reservation creation locks resubmission after a network result loss", async () => {
+  const page = await mount({ postMode: "rejection" });
+  await page.submit();
+  assert.match(page.html(), /同じ内容を再送せず/);
+  assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 1);
+
+  await page.submit();
+  assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 1);
+  page.unmount();
+});
+
+test("reservation creation allows retry after an authoritative API rejection", async () => {
+  const page = await mount({ postMode: "failure" });
+  await page.submit();
+  assert.match(page.html(), /予約枠が重複しています/);
+  assert.doesNotMatch(page.html(), /最新の予約を確認/);
+
+  await page.submit();
+  assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 2);
   page.unmount();
 });

@@ -241,6 +241,7 @@ export default function ReservationNewPage() {
   const [pageLoading, setPageLoading] = useState(true);
   const [masterDataError, setMasterDataError] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [submissionResultUnknown, setSubmissionResultUnknown] = useState(false);
   const masterRequestVersion = useRef(0);
   const submissionInFlight = useRef(false);
 
@@ -624,7 +625,7 @@ export default function ReservationNewPage() {
 }
 
   async function handleSubmit() {
-    if (submissionInFlight.current) return;
+    if (submissionInFlight.current || submissionResultUnknown) return;
 
     setErrorMessage("");
 
@@ -685,19 +686,28 @@ export default function ReservationNewPage() {
         error?: string;
       } | null;
 
-      if (!response.ok || !result?.ok) {
+      if (!result) {
+        setSubmissionResultUnknown(true);
         setErrorMessage(
-          result?.error ||
-            "予約を登録できませんでした。通信状況を確認して再試行してください。"
+          "予約登録の結果を確認できませんでした。同じ内容を再送せず、予約カレンダーで最新状態を確認してください。"
+        );
+        return;
+      }
+
+      if (!response.ok || !result.ok) {
+        setErrorMessage(
+          result.error ||
+            "予約を登録できませんでした。入力内容を確認して再試行してください。"
         );
         return;
       }
 
       router.push("/reservations/calendar");
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "登録中にエラーが発生しました";
-      setErrorMessage(message);
+    } catch {
+      setSubmissionResultUnknown(true);
+      setErrorMessage(
+        "予約登録の結果を確認できませんでした。同じ内容を再送せず、予約カレンダーで最新状態を確認してください。"
+      );
     } finally {
       submissionInFlight.current = false;
       setLoading(false);
@@ -758,8 +768,19 @@ export default function ReservationNewPage() {
         ) : (
           <section className="space-y-4 rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm sm:p-6">
             {errorMessage ? (
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-                {errorMessage}
+              <div
+                className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"
+                role="alert"
+              >
+                <p>{errorMessage}</p>
+                {submissionResultUnknown ? (
+                  <Link
+                    href="/reservations/calendar"
+                    className="mt-3 inline-flex rounded-xl border border-rose-300 bg-white px-4 py-2 text-rose-800"
+                  >
+                    最新の予約を確認
+                  </Link>
+                ) : null}
               </div>
             ) : null}
 
@@ -1200,7 +1221,7 @@ export default function ReservationNewPage() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={loading}
+              disabled={loading || submissionResultUnknown}
               className={`w-full rounded-2xl py-4 text-sm font-bold text-white disabled:opacity-60 ${
                 reservationMode === "external" ? "bg-purple-700" : "bg-slate-900"
               }`}
@@ -1208,6 +1229,8 @@ export default function ReservationNewPage() {
             >
               {loading
                 ? "登録中..."
+                : submissionResultUnknown
+                ? "カレンダーで結果を確認してください"
                 : reservationMode === "external"
                 ? "外部予約ブロックを登録する"
                 : "登録する"}
