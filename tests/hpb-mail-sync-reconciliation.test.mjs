@@ -442,6 +442,72 @@ test("resolved customer disambiguates source-marked bookings in the same time wi
   assert.equal(result?.id, "matching-customer");
 });
 
+test("resolved customer prefers its linked source booking over an unlinked source booking", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: null,
+    customerId: "customer-1",
+    candidates: [
+      {
+        id: "unlinked-source-booking",
+        customer_id: null,
+        staff_id: "staff-1",
+        menu: "ホットペッパー予約",
+        memo: null,
+        status: "予約確定",
+      },
+      {
+        id: "linked-source-booking",
+        customer_id: "customer-1",
+        staff_id: "staff-2",
+        menu: "ホットペッパー予約",
+        memo: null,
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "linked-source-booking");
+});
+
+test("multiple linked source bookings for the resolved customer still stop", () => {
+  assert.throws(
+    () =>
+      reconciliation.findManualReservationCandidate({
+        source: "minimo",
+        staffId: null,
+        customerId: "customer-1",
+        candidates: [
+          {
+            id: "linked-first",
+            customer_id: "customer-1",
+            staff_id: "staff-1",
+            menu: "ミニモ予約",
+            memo: null,
+            status: "予約確定",
+          },
+          {
+            id: "linked-second",
+            customer_id: "customer-1",
+            staff_id: "staff-2",
+            menu: "minimo booking",
+            memo: null,
+            status: "予約確定",
+          },
+          {
+            id: "unlinked",
+            customer_id: null,
+            staff_id: null,
+            menu: "ミニモ予約",
+            memo: null,
+            status: "予約確定",
+          },
+        ],
+      }),
+    /同期を停止/
+  );
+});
+
 test("a source-marked booking for another resolved customer remains a hard conflict", () => {
   assert.throws(
     () =>

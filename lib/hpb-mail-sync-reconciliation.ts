@@ -279,17 +279,36 @@ export function findManualReservationCandidate({
     );
   });
 
-  if (matches.length > 1) {
+  // A stable customer link plus the same external source is stronger than an
+  // otherwise matching source-marked row whose customer is still blank. This
+  // can happen when staff entered two nearby bookings before the provider mail
+  // arrived. Prefer the already linked row instead of treating the blank row
+  // as equally ambiguous. Multiple equally strong rows still fail closed.
+  const exactCustomerSourceMatches = customerId
+    ? matches.filter((candidate) => {
+        if (candidate.customer_id !== customerId) return false;
+        const text = normalize(
+          `${candidate.menu || ""}\n${candidate.memo || ""}`
+        );
+        return hasSourceMarker(source, text);
+      })
+    : [];
+  const preferredMatches =
+    exactCustomerSourceMatches.length > 0
+      ? exactCustomerSourceMatches
+      : matches;
+
+  if (preferredMatches.length > 1) {
     throw new Error(
       "同時刻に未照合の外部予約が複数あります。重複作成を避けるため同期を停止しました。"
     );
   }
 
-  if (matches.length === 0 && hasConflictingSourceCandidate) {
+  if (preferredMatches.length === 0 && hasConflictingSourceCandidate) {
     throw new Error(
       "手入力予約とメールの顧客が一致しません。誤更新を避けるため同期を停止しました。"
     );
   }
 
-  return matches[0] || null;
+  return preferredMatches[0] || null;
 }
