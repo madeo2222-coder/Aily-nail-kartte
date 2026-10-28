@@ -35,12 +35,14 @@ class MockResponse {
   }
 }
 
-function createReadQuery(row, error = null) {
+function createReadQuery(row, error = null, calls = null) {
   return {
-    select() {
+    select(columns) {
+      calls?.push(["select", columns]);
       return this;
     },
-    eq() {
+    eq(column, value) {
+      calls?.push(["eq", column, value]);
       return this;
     },
     async maybeSingle() {
@@ -67,6 +69,7 @@ function loadRoute({
 } = {}) {
   const completionCalls = [];
   const lineCalls = [];
+  const reservationReadCalls = [];
   const claimQueue = [...claims];
   const lineQueue = [...lineResponses];
   const defaultReservation = {
@@ -84,7 +87,11 @@ function loadRoute({
   const supabaseAdmin = {
     from(table) {
       if (table === "reservations") {
-        return createReadQuery(reservation ?? defaultReservation);
+        return createReadQuery(
+          reservation ?? defaultReservation,
+          null,
+          reservationReadCalls
+        );
       }
       if (table === "customers") {
         return createReadQuery({
@@ -183,8 +190,23 @@ function loadRoute({
     return { body: await response.json(), status: response.status };
   }
 
-  return { completionCalls, lineCalls, post };
+  return { completionCalls, lineCalls, post, reservationReadCalls };
 }
+
+test("scopes the initial confirmation LINE read to the authenticated staff salon", async () => {
+  const runtime = loadRoute();
+  const response = await runtime.post();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(runtime.reservationReadCalls, [
+    [
+      "select",
+      "id, salon_id, customer_id, staff_id, status, menu, start_at, end_at, source, memo",
+    ],
+    ["eq", "id", "reservation-1"],
+    ["eq", "salon_id", "salon-1"],
+  ]);
+});
 
 test("rejects malformed confirmation LINE requests before privileged reads or sends", async () => {
   for (const options of [

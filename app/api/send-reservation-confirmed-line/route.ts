@@ -248,11 +248,13 @@ export async function POST(request: Request) {
       );
     }
 
+    const salonId = authentication.principal.salonId;
     const supabaseAdmin = getSupabaseAdmin();
     const { data: reservationData, error: reservationError } = await supabaseAdmin
       .from("reservations")
       .select("id, salon_id, customer_id, staff_id, status, menu, start_at, end_at, source, memo")
       .eq("id", reservationId)
+      .eq("salon_id", salonId)
       .maybeSingle();
     if (reservationError) throw new Error(reservationError.message);
     if (!reservationData) {
@@ -263,7 +265,7 @@ export async function POST(request: Request) {
     }
 
     const reservation = reservationData as ReservationRow;
-    if (reservation.salon_id !== authentication.principal.salonId) {
+    if (reservation.salon_id !== salonId) {
       return NextResponse.json(
         { ok: false, sent: false, error: "この予約を操作する権限がありません。" },
         { status: 403 }
