@@ -384,6 +384,27 @@ test("sends the owned requested reservation with its stable LINE retry key", asy
   );
 });
 
+test("rejects an over-limit alternative request before claiming or sending", async () => {
+  const runtime = loadRoute({
+    customer: {
+      id: "customer-1",
+      name: "😀".repeat(2_501),
+      salon_id: "salon-1",
+      line_user_id: "line-user-1",
+    },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.sent, false);
+  assert.equal(response.body.status, "message_too_long");
+  assert.match(response.body.error, /長すぎます/);
+  assert.equal(runtime.claimCalls.length, 0);
+  assert.equal(runtime.lineCalls.length, 0);
+  assert.equal(runtime.completionCalls.length, 0);
+});
+
 test("accepts legacy requested status aliases while preserving the exact snapshot", async () => {
   for (const status of [" ＲＥＱＵＥＳＴＥＤ ", " 予 約 申 請 中 "]) {
     const reservation = {
