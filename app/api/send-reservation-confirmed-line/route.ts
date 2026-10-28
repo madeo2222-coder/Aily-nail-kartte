@@ -37,6 +37,7 @@ type ClaimFailure = {
 };
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
+const LINE_TEXT_MAX_CODE_UNITS = 5_000;
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -348,6 +349,22 @@ export async function POST(request: Request) {
       staffName: staff?.name?.trim() || "指名なし",
       startAt: endAtText ? `${startAtText} 〜 ${endAtText}` : startAtText,
     });
+
+    // LINE counts text length in UTF-16 code units, which matches
+    // JavaScript's String.length. Stop before claiming a delivery so a known
+    // invalid payload does not create a retryable send attempt.
+    if (message.length > LINE_TEXT_MAX_CODE_UNITS) {
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: false,
+          status: "message_too_long",
+          error:
+            "予約確定LINEの内容が長すぎます。顧客名・サロン名・メニュー名・担当者名を短くしてから再試行してください。",
+        },
+        { status: 400 }
+      );
+    }
 
     const { data: claimData, error: claimError } = await supabaseAdmin.rpc(
       "claim_reservation_confirmation_delivery",

@@ -68,6 +68,7 @@ function loadRoute({
   reservation,
 } = {}) {
   const completionCalls = [];
+  const claimCalls = [];
   const lineCalls = [];
   const reservationReadCalls = [];
   const claimQueue = [...claims];
@@ -111,6 +112,7 @@ function loadRoute({
     },
     async rpc(name, args) {
       if (name === "claim_reservation_confirmation_delivery") {
+        claimCalls.push(args);
         if (claimError) return { data: null, error: claimError };
         const claim = claimQueue.shift();
         if (!claim) throw new Error("No claim response configured");
@@ -190,7 +192,13 @@ function loadRoute({
     return { body: await response.json(), status: response.status };
   }
 
-  return { completionCalls, lineCalls, post, reservationReadCalls };
+  return {
+    claimCalls,
+    completionCalls,
+    lineCalls,
+    post,
+    reservationReadCalls,
+  };
 }
 
 test("scopes the initial confirmation LINE read to the authenticated staff salon", async () => {
@@ -301,6 +309,33 @@ test("sends a confirmed reservation with the claimed LINE retry key", async () =
     "123e4567-e89b-12d3-a456-426614174000"
   );
   assert.equal(runtime.completionCalls[0].p_status, "sent");
+});
+
+test("rejects an over-limit confirmation message before claiming or sending", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      salon_id: "salon-1",
+      customer_id: "customer-1",
+      staff_id: "staff-1",
+      status: "confirmed",
+      menu: "😀".repeat(2_501),
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      source: null,
+      memo: null,
+    },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.sent, false);
+  assert.equal(response.body.status, "message_too_long");
+  assert.match(response.body.error, /長すぎます/);
+  assert.equal(runtime.claimCalls.length, 0);
+  assert.equal(runtime.lineCalls.length, 0);
+  assert.equal(runtime.completionCalls.length, 0);
 });
 
 test("sends confirmation LINE for legacy full-width and spaced confirmed statuses", async () => {
