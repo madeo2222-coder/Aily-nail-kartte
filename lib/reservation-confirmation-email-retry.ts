@@ -11,21 +11,30 @@ export type ConfirmationEmailNotice = {
   canRetry: boolean;
   completed: boolean;
   retryWindowHours: number | null;
+  expiresAt: number | null;
 };
 
 const DEFAULT_RETRY_WINDOW_HOURS = 24;
 
 export function getConfirmationEmailNotice(
   responseOk: boolean,
-  result: ConfirmationEmailApiResult | null
+  result: ConfirmationEmailApiResult | null,
+  now = Date.now(),
+  previousExpiresAt: number | null = null
 ): ConfirmationEmailNotice {
   if (!result) {
+    const expiresAt = getRetryExpiresAt(
+      now,
+      DEFAULT_RETRY_WINDOW_HOURS,
+      previousExpiresAt
+    );
     return {
       message:
         "メール通知の送信結果を確認できませんでした。予約は確定済みです。同じ画面から24時間以内に再試行できます。",
       canRetry: true,
       completed: false,
       retryWindowHours: DEFAULT_RETRY_WINDOW_HOURS,
+      expiresAt,
     };
   }
 
@@ -39,6 +48,7 @@ export function getConfirmationEmailNotice(
       canRetry: false,
       completed: true,
       retryWindowHours: null,
+      expiresAt: null,
     };
   }
 
@@ -46,6 +56,13 @@ export function getConfirmationEmailNotice(
   const retryWindowHours = canRetry
     ? result.retryWindowHours || DEFAULT_RETRY_WINDOW_HOURS
     : null;
+  const expiresAt = retryWindowHours
+    ? getRetryExpiresAt(now, retryWindowHours, previousExpiresAt)
+    : null;
+
+  if (canRetry && expiresAt !== null && expiresAt <= now) {
+    return getExpiredConfirmationEmailNotice();
+  }
 
   return {
     message:
@@ -56,5 +73,39 @@ export function getConfirmationEmailNotice(
     canRetry,
     completed: false,
     retryWindowHours,
+    expiresAt,
+  };
+}
+
+function getRetryExpiresAt(
+  now: number,
+  retryWindowHours: number,
+  previousExpiresAt: number | null
+) {
+  const candidate = now + retryWindowHours * 60 * 60 * 1000;
+  return previousExpiresAt === null
+    ? candidate
+    : Math.min(previousExpiresAt, candidate);
+}
+
+export function isConfirmationEmailRetryActive(
+  notice: ConfirmationEmailNotice | null | undefined,
+  now = Date.now()
+) {
+  return Boolean(
+    notice?.canRetry &&
+      notice.expiresAt !== null &&
+      now < notice.expiresAt
+  );
+}
+
+export function getExpiredConfirmationEmailNotice(): ConfirmationEmailNotice {
+  return {
+    message:
+      "予約確定メールの安全な再試行期限を過ぎました。再送せず、メールの送信履歴を確認してください。",
+    canRetry: false,
+    completed: false,
+    retryWindowHours: null,
+    expiresAt: null,
   };
 }

@@ -482,4 +482,20 @@ test("both staff confirmation screens invoke the guarded email API only after co
     assert.match(page, /body: JSON\.stringify\(\{ reservationId(?:: id)? \}\)/);
     assert.match(page, /確定メールを再試行/);
   }
+  assert.match(listPage, /isConfirmationEmailRetryActive\(retryNotice, Date\.now\(\)\)/);
+  assert.match(editPage, /isConfirmationEmailRetryActive\([\s\S]{0,120}Date\.now\(\)/);
+
+  const editRetryHandler = editPage.slice(
+    editPage.indexOf("async function retryConfirmationEmail"),
+    editPage.indexOf("async function requestAlternativeTime")
+  );
+  const expiryCheckIndex = editRetryHandler.indexOf(
+    "isConfirmationEmailRetryActive"
+  );
+  const confirmIndex = editRetryHandler.indexOf("window.confirm");
+  const sendIndex = editRetryHandler.indexOf("sendConfirmationEmailNotice");
+  assert.ok(expiryCheckIndex >= 0 && expiryCheckIndex < confirmIndex);
+  assert.ok(confirmIndex < sendIndex);
+  assert.match(editRetryHandler, /getExpiredConfirmationEmailNotice\(\)[\s\S]{0,220}return;/);
+  assert.match(editRetryHandler, /retryNotice\?\.expiresAt \?\? null/);
 });

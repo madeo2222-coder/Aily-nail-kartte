@@ -23,7 +23,9 @@ import type {
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import {
+  getExpiredConfirmationEmailNotice,
   getConfirmationEmailNotice,
+  isConfirmationEmailRetryActive,
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
 } from "@/lib/reservation-confirmation-email-retry";
@@ -362,8 +364,8 @@ export default function EditReservationPage() {
   const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
   const [confirmationLineRetryLock, setConfirmationLineRetryLock] =
     useState<ConfirmationLineRetryLock | null>(null);
-  const [confirmationEmailCanRetry, setConfirmationEmailCanRetry] =
-    useState(false);
+  const [confirmationEmailRetryNotice, setConfirmationEmailRetryNotice] =
+    useState<ConfirmationEmailNotice | null>(null);
   const [alternativeLineRetryLock, setAlternativeLineRetryLock] =
     useState<AlternativeLineRetryLock | null>(null);
 
@@ -590,7 +592,8 @@ export default function EditReservationPage() {
   }
 
   async function sendConfirmationEmailNotice(
-    id: string
+    id: string,
+    previousExpiresAt: number | null = null
   ): Promise<ConfirmationEmailNotice> {
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
@@ -601,13 +604,23 @@ export default function EditReservationPage() {
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationEmailApiResult | null;
-      const notice = getConfirmationEmailNotice(response.ok, result);
-      setConfirmationEmailCanRetry(notice.canRetry);
+      const notice = getConfirmationEmailNotice(
+        response.ok,
+        result,
+        Date.now(),
+        previousExpiresAt
+      );
+      setConfirmationEmailRetryNotice(notice.canRetry ? notice : null);
       return { ...notice, message: ` メール通知：${notice.message}` };
     } catch (error) {
       console.error("予約確定メール通知エラー:", error);
-      const notice = getConfirmationEmailNotice(false, null);
-      setConfirmationEmailCanRetry(true);
+      const notice = getConfirmationEmailNotice(
+        false,
+        null,
+        Date.now(),
+        previousExpiresAt
+      );
+      setConfirmationEmailRetryNotice(notice);
       return { ...notice, message: ` メール通知：${notice.message}` };
     }
   }
@@ -777,6 +790,20 @@ export default function EditReservationPage() {
   async function retryConfirmationEmail() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
+    const retryNotice = confirmationEmailRetryNotice;
+    if (
+      !isConfirmationEmailRetryActive(
+        retryNotice,
+        Date.now()
+      )
+    ) {
+      const expiredNotice = getExpiredConfirmationEmailNotice();
+      setConfirmationEmailRetryNotice(expiredNotice);
+      setErrorMessage(expiredNotice.message);
+      setSuccessMessage("");
+      return;
+    }
+
     const confirmed = window.confirm(
       "予約確定メールを再試行しますか？24時間以内は同じ予約内容の重複送信を防ぎます。"
     );
@@ -788,7 +815,10 @@ export default function EditReservationPage() {
     setSuccessMessage("");
 
     try {
-      const notice = await sendConfirmationEmailNotice(reservationId);
+      const notice = await sendConfirmationEmailNotice(
+        reservationId,
+        retryNotice?.expiresAt ?? null
+      );
       if (!notice.completed) {
         setErrorMessage(notice.message.trim());
       } else {
@@ -1297,7 +1327,7 @@ export default function EditReservationPage() {
                     ) : null}
                     {!isExternalBlock &&
                     !isExternalSynced &&
-                    confirmationEmailCanRetry ? (
+                    confirmationEmailRetryNotice?.canRetry ? (
                       <button
                         type="button"
                         onClick={retryConfirmationEmail}

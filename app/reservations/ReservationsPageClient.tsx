@@ -18,7 +18,9 @@ import type {
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import {
+  getExpiredConfirmationEmailNotice,
   getConfirmationEmailNotice,
+  isConfirmationEmailRetryActive,
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
 } from "@/lib/reservation-confirmation-email-retry";
@@ -835,7 +837,8 @@ export default function ReservationsPageClient() {
   }
 
   async function sendReservationConfirmedEmail(
-    id: string
+    id: string,
+    previousExpiresAt: number | null = null
   ): Promise<ConfirmationEmailNotice> {
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
@@ -846,12 +849,22 @@ export default function ReservationsPageClient() {
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationEmailApiResult | null;
-      const notice = getConfirmationEmailNotice(response.ok, result);
+      const notice = getConfirmationEmailNotice(
+        response.ok,
+        result,
+        Date.now(),
+        previousExpiresAt
+      );
       updateConfirmationEmailRetryState(id, notice);
       return notice;
     } catch (error) {
       console.error("予約確定メール通知APIエラー:", error);
-      const notice = getConfirmationEmailNotice(false, null);
+      const notice = getConfirmationEmailNotice(
+        false,
+        null,
+        Date.now(),
+        previousExpiresAt
+      );
       updateConfirmationEmailRetryState(id, notice);
       return notice;
     }
@@ -859,6 +872,17 @@ export default function ReservationsPageClient() {
 
   async function handleRetryConfirmationEmail(id: string) {
     if (mutationRequestPendingIdsRef.current.has(id)) return;
+
+    const retryNotice = confirmationEmailRetryNotices[id];
+    if (!isConfirmationEmailRetryActive(retryNotice, Date.now())) {
+      const expiredNotice = getExpiredConfirmationEmailNotice();
+      setConfirmationEmailRetryNotices((current) => ({
+        ...current,
+        [id]: expiredNotice,
+      }));
+      alert(expiredNotice.message);
+      return;
+    }
 
     const ok = window.confirm(
       "予約確定メールを再試行しますか？24時間以内は同じ予約内容の重複送信を防ぎます。"
@@ -868,7 +892,10 @@ export default function ReservationsPageClient() {
     mutationRequestPendingIdsRef.current.add(id);
     setUpdatingId(id);
     try {
-      const notice = await sendReservationConfirmedEmail(id);
+      const notice = await sendReservationConfirmedEmail(
+        id,
+        retryNotice.expiresAt
+      );
       alert(notice.message);
     } finally {
       mutationRequestPendingIdsRef.current.delete(id);
@@ -1507,17 +1534,21 @@ export default function ReservationsPageClient() {
                           <p className="text-xs font-bold leading-5">
                             {confirmationEmailRetryNotices[item.id].message}
                           </p>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleRetryConfirmationEmail(item.id)
-                            }
-                            disabled={isUpdating}
-                            className="mt-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-bold text-violet-700 disabled:opacity-50"
-                            suppressHydrationWarning
-                          >
-                            {isUpdating ? "送信中..." : "確定メールを再試行"}
-                          </button>
+                          {confirmationEmailRetryNotices[item.id].canRetry ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRetryConfirmationEmail(item.id)
+                              }
+                              disabled={isUpdating}
+                              className="mt-2 rounded-xl border border-violet-200 bg-white px-3 py-2 text-sm font-bold text-violet-700 disabled:opacity-50"
+                              suppressHydrationWarning
+                            >
+                              {isUpdating
+                                ? "送信中..."
+                                : "確定メールを再試行"}
+                            </button>
+                          ) : null}
                         </div>
                       ) : null}
 

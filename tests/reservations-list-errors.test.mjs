@@ -8,6 +8,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+let currentTimeMs = Date.parse("2026-09-29T00:00:00Z");
+
+class FixedDate extends Date {
+  constructor(...args) {
+    super(...(args.length ? args : [currentTimeMs]));
+  }
+
+  static now() {
+    return currentTimeMs;
+  }
+}
+
 const reservationStatusExports = {};
 vm.runInNewContext(
   ts.transpileModule(
@@ -54,7 +66,7 @@ vm.runInNewContext(
       },
     }
   ).outputText,
-  { exports: confirmationEmailRetryExports }
+  { exports: confirmationEmailRetryExports, Date: FixedDate }
 );
 const compiled = ts.transpileModule(
   readFileSync(
@@ -69,12 +81,6 @@ const compiled = ts.transpileModule(
     },
   }
 ).outputText;
-
-class FixedDate extends Date {
-  constructor(...args) {
-    super(...(args.length ? args : ["2026-09-29T00:00:00Z"]));
-  }
-}
 
 function findNode(node, predicate) {
   if (!node || typeof node !== "object") return null;
@@ -96,6 +102,7 @@ async function mount({
   statusFailureMode = "success",
   emailResponses = [],
 } = {}) {
+  currentTimeMs = Date.parse("2026-09-29T00:00:00Z");
   const states = [];
   const effects = [];
   const requests = [];
@@ -406,6 +413,9 @@ async function mount({
       await button.props.onClick();
       await setImmediate();
     },
+    advanceTime(hours) {
+      currentTimeMs += hours * 60 * 60 * 1000;
+    },
     alerts,
   };
 }
@@ -572,6 +582,45 @@ test("reservation list offers one same-screen email retry after a transient fail
       request => request.url === "/api/send-reservation-confirmed-email"
     ).length,
     2
+  );
+});
+
+test("reservation list removes an expired email retry without calling the API", async () => {
+  const page = await mount({
+    reservationStatus: "requested",
+    confirmFailureMode: "success",
+    emailResponses: [
+      {
+        ok: false,
+        status: 502,
+        body: {
+          ok: false,
+          sent: false,
+          retryable: true,
+          retryWindowHours: 24,
+          message: "24時間以内に再試行できます。",
+        },
+      },
+    ],
+  });
+
+  await page.confirmReservation();
+  assert.equal(page.hasButton("確定メールを再試行"), true);
+  const emailRequestCount = page.requests.filter(
+    request => request.url === "/api/send-reservation-confirmed-email"
+  ).length;
+
+  page.advanceTime(25);
+  await page.retryConfirmationEmail();
+
+  assert.equal(page.hasButton("確定メールを再試行"), false);
+  assert.match(page.html(), /送信履歴を確認/);
+  assert.match(page.alerts.at(-1), /送信履歴を確認/);
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/send-reservation-confirmed-email"
+    ).length,
+    emailRequestCount
   );
 });
 
