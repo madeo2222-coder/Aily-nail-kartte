@@ -508,6 +508,13 @@ test("both staff confirmation screens invoke the guarded email API only after co
   const sendIndex = editRetryHandler.indexOf("sendConfirmationEmailNotice");
   assert.ok(expiryCheckIndex >= 0 && expiryCheckIndex < confirmIndex);
   assert.ok(confirmIndex < sendIndex);
-  assert.match(editRetryHandler, /getExpiredConfirmationEmailNotice\(\)[\s\S]{0,220}return;/);
+  assert.match(
+    editRetryHandler,
+    /getExpiredConfirmationEmailNotice\([\s\S]{0,100}retryNotice\?\.actionLabel[\s\S]{0,220}return;/
+  );
+  assert.match(
+    editRetryHandler,
+    /getConfirmationEmailActionPrompt\(retryNotice\)/
+  );
   assert.match(editRetryHandler, /retryNotice\?\.expiresAt \?\? null/);
 });

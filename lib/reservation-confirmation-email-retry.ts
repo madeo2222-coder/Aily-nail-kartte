@@ -121,10 +121,23 @@ export function isConfirmationEmailRetryActive(
   );
 }
 
-export function getExpiredConfirmationEmailNotice(): ConfirmationEmailNotice {
+export function getConfirmationEmailActionPrompt(
+  notice: ConfirmationEmailNotice | null | undefined
+) {
+  return notice?.actionLabel === "確定メールを送信"
+    ? "最新情報で確定済みと確認した予約に、確定メールを送信しますか？送信記録がある場合は重複送信しません。"
+    : "予約確定メールを再試行しますか？24時間以内は同じ予約内容の重複送信を防ぎます。";
+}
+
+export function getExpiredConfirmationEmailNotice(
+  actionLabel: ConfirmationEmailNotice["actionLabel"] =
+    "確定メールを再試行"
+): ConfirmationEmailNotice {
   return {
     message:
-      "予約確定メールの安全な再試行期限を過ぎました。再送せず、メールの送信履歴を確認してください。",
+      actionLabel === "確定メールを送信"
+        ? "予約確定メールを安全に送信できる期限を過ぎました。送信せず、メールの送信履歴を確認してください。"
+        : "予約確定メールの安全な再試行期限を過ぎました。再送せず、メールの送信履歴を確認してください。",
     canRetry: false,
     completed: false,
     retryWindowHours: null,

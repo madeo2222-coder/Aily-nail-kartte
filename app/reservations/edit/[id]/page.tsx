@@ -23,6 +23,7 @@ import type {
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import {
+  getConfirmationEmailActionPrompt,
   getExpiredConfirmationEmailNotice,
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
@@ -807,7 +808,9 @@ export default function EditReservationPage() {
         Date.now()
       )
     ) {
-      const expiredNotice = getExpiredConfirmationEmailNotice();
+      const expiredNotice = getExpiredConfirmationEmailNotice(
+        retryNotice?.actionLabel
+      );
       setConfirmationEmailRetryNotice(expiredNotice);
       setErrorMessage(expiredNotice.message);
       setSuccessMessage("");
@@ -815,7 +818,7 @@ export default function EditReservationPage() {
     }
 
     const confirmed = window.confirm(
-      "予約確定メールを再試行しますか？24時間以内は同じ予約内容の重複送信を防ぎます。"
+      getConfirmationEmailActionPrompt(retryNotice)
     );
     if (!confirmed) return;
 

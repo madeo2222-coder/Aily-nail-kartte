@@ -25,6 +25,7 @@ vm.runInNewContext(
 );
 
 const {
+  getConfirmationEmailActionPrompt,
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   getExpiredConfirmationEmailNotice,
@@ -40,6 +41,11 @@ test("offers a bounded first email send after an unknown confirmation result", (
   assert.equal(notice.actionLabel, "確定メールを送信");
   assert.equal(notice.expiresAt, startedAt + 24 * 60 * 60 * 1000);
   assert.match(notice.message, /確定済みと確認できた場合/);
+  assert.match(
+    getConfirmationEmailActionPrompt(notice),
+    /確定済みと確認した予約/
+  );
+  assert.doesNotMatch(getConfirmationEmailActionPrompt(notice), /再試行/);
 });
 
 test("enables a same-screen retry when the confirmation email response is lost", () => {
@@ -51,6 +57,7 @@ test("enables a same-screen retry when the confirmation email response is lost",
   assert.equal(notice.retryWindowHours, 24);
   assert.equal(notice.expiresAt, startedAt + 24 * 60 * 60 * 1000);
   assert.match(notice.message, /24時間以内/);
+  assert.match(getConfirmationEmailActionPrompt(notice), /再試行/);
 });
 
 test("keeps the API retry window for a transient provider failure", () => {
@@ -124,4 +131,11 @@ test("expires an open-tab retry at the original provider deadline", () => {
   const expired = getExpiredConfirmationEmailNotice();
   assert.equal(expired.canRetry, false);
   assert.match(expired.message, /送信履歴を確認/);
+
+  const expiredRecovery = getExpiredConfirmationEmailNotice(
+    "確定メールを送信"
+  );
+  assert.match(expiredRecovery.message, /安全に送信できる期限/);
+  assert.match(expiredRecovery.message, /送信せず/);
+  assert.doesNotMatch(expiredRecovery.message, /再送せず/);
 });
