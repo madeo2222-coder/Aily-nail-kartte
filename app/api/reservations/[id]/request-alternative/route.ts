@@ -522,6 +522,35 @@ export async function POST(
       );
     }
 
+    // A safe retry reuses the message stored with its LINE retry key. Validate
+    // that claimed payload too, because it can predate the current request and
+    // differ from the freshly generated message checked above.
+    if (claim.line_message.length > LINE_TEXT_MAX_CODE_UNITS) {
+      try {
+        await supabaseAdmin.rpc("complete_reservation_alternative_request", {
+          p_reservation_id: reservation.id,
+          p_attempt_count: claim.attempt_count,
+          p_status: "failed",
+          p_error: "LINE message exceeds 5000 UTF-16 code units",
+        });
+      } catch {
+        // No external request was made. The delivery remains blocked even if
+        // its ledger cannot be moved out of the sending state.
+      }
+
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: false,
+          status: "message_too_long",
+          retryable: false,
+          error:
+            "保存済みの別日時依頼LINEが長すぎるため送信していません。通知状態を確認してください。",
+        },
+        { status: 409 }
+      );
+    }
+
     let lineResponse: Response;
 
     try {

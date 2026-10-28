@@ -456,6 +456,40 @@ test("does not call LINE again after the request is already sent", async () => {
   assert.equal(runtime.completionCalls.length, 0);
 });
 
+test("blocks an over-limit claimed retry payload before calling LINE", async () => {
+  const runtime = loadRoute({
+    claims: [
+      {
+        claim_status: "claimed",
+        attempt_count: 2,
+        line_retry_key: "123e4567-e89b-12d3-a456-426614174000",
+        line_message: "😀".repeat(2_501),
+      },
+    ],
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.sent, false);
+  assert.equal(response.body.status, "message_too_long");
+  assert.equal(response.body.retryable, false);
+  assert.match(response.body.error, /長すぎるため送信していません/);
+  assert.equal(runtime.claimCalls.length, 1);
+  assert.equal(runtime.lineCalls.length, 0);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(runtime.completionCalls)),
+    [
+      {
+        p_reservation_id: "reservation-1",
+        p_attempt_count: 2,
+        p_status: "failed",
+        p_error: "LINE message exceeds 5000 UTF-16 code units",
+      },
+    ]
+  );
+});
+
 test("maps known alternative-request claim failures without exposing database details", async () => {
   const cases = [
     {
