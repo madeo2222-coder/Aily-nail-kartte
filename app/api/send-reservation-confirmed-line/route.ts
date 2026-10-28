@@ -411,6 +411,35 @@ export async function POST(request: Request) {
       );
     }
 
+    // Safe retries reuse the payload stored with the LINE retry key. Check the
+    // claimed value too because it can predate this request and differ from the
+    // freshly generated message validated above.
+    if (claim.line_message.length > LINE_TEXT_MAX_CODE_UNITS) {
+      try {
+        await supabaseAdmin.rpc("complete_reservation_confirmation_delivery", {
+          p_reservation_id: reservation.id,
+          p_attempt_count: claim.attempt_count,
+          p_status: "failed",
+          p_error: "LINE message exceeds 5000 UTF-16 code units",
+        });
+      } catch {
+        // No external request was made. Keep the response non-retryable even
+        // when the delivery ledger cannot be moved out of the sending state.
+      }
+
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: false,
+          status: "message_too_long",
+          retryable: false,
+          error:
+            "保存済みの予約確定LINEが長すぎるため送信していません。通知状態を確認してください。",
+        },
+        { status: 409 }
+      );
+    }
+
     let lineResponse: Response;
     try {
       lineResponse = await fetch("https://api.line.me/v2/bot/message/push", {
