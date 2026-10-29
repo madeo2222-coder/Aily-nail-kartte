@@ -50,7 +50,7 @@ const routes = [
   {
     name: "visit review request LINE",
     path: "send-review-request-line",
-    methods: ["POST", "GET"],
+    methods: ["POST"],
     authOptions: {
       allowedRoles: ["owner", "staff"],
       legacyAllowed: true,
