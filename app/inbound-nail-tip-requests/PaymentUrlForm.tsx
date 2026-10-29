@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type Props = {
   requestId: string;
@@ -13,6 +13,8 @@ export default function PaymentUrlForm({
 }: Props) {
   const [paymentUrl, setPaymentUrl] = useState(defaultUrl || "");
   const [processing, setProcessing] = useState(false);
+  const [sendResultUnknown, setSendResultUnknown] = useState(false);
+  const operationInFlight = useRef(false);
 
   async function readJsonSafely(response: Response) {
     try {
@@ -23,6 +25,8 @@ export default function PaymentUrlForm({
   }
 
   async function handleGenerateAndSend() {
+    if (operationInFlight.current || sendResultUnknown) return;
+
     const ok = confirm(
       paymentUrl
         ? "DG決済URLを再生成して、見積メールを送信しますか？"
@@ -31,7 +35,9 @@ export default function PaymentUrlForm({
 
     if (!ok) return;
 
+    operationInFlight.current = true;
     setProcessing(true);
+    let stage: "generate" | "send" = "generate";
 
     try {
       const generateResponse = await fetch(
@@ -58,6 +64,7 @@ export default function PaymentUrlForm({
       }
 
       setPaymentUrl(generatedPaymentUrl);
+      stage = "send";
 
       const sendResponse = await fetch(
         `/api/inbound-nail-tip-requests/${requestId}/send-quote`,
@@ -68,7 +75,18 @@ export default function PaymentUrlForm({
 
       const sendJson = await readJsonSafely(sendResponse);
 
+      if (sendResponse.ok && !sendJson) {
+        setSendResultUnknown(true);
+        alert(
+          "見積メールの送信結果を確認できませんでした。重複送信を防ぐため再送を停止しました。管理画面を再読み込みし、相談状態とResend送信履歴を確認してください。"
+        );
+        return;
+      }
+
       if (!sendResponse.ok || !sendJson?.ok) {
+        if (sendJson?.emailAccepted) {
+          setSendResultUnknown(true);
+        }
         alert(
           `決済URLは生成されましたが、見積メール送信に失敗しました。\n\n${
             sendJson?.error || "送信失敗"
@@ -83,12 +101,20 @@ export default function PaymentUrlForm({
     } catch (error) {
       console.error("DG決済URL生成・見積メール送信エラー:", error);
 
-      alert(
-        error instanceof Error
-          ? error.message
-          : "DG決済URL生成・見積メール送信に失敗しました"
-      );
+      if (stage === "send") {
+        setSendResultUnknown(true);
+        alert(
+          "見積メールの送信結果を確認できませんでした。重複送信を防ぐため再送を停止しました。管理画面を再読み込みし、相談状態とResend送信履歴を確認してください。"
+        );
+      } else {
+        alert(
+          error instanceof Error
+            ? error.message
+            : "DG決済URLの生成に失敗しました"
+        );
+      }
     } finally {
+      operationInFlight.current = false;
       setProcessing(false);
     }
   }
@@ -116,6 +142,15 @@ export default function PaymentUrlForm({
       <p className="mt-2 text-sm leading-6 text-emerald-950">
         見積金額を確認後、決済ページのURLを自動生成してお客様へ見積メールを送信します。
       </p>
+
+      {sendResultUnknown ? (
+        <div
+          role="alert"
+          className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm leading-6 text-amber-900"
+        >
+          送信結果を確認できません。お客様への重複送信を防ぐため再送を停止しました。管理画面を再読み込みし、相談状態とResend送信履歴を確認してください。
+        </div>
+      ) : null}
 
       {paymentUrl ? (
         <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
@@ -150,10 +185,12 @@ export default function PaymentUrlForm({
       <button
         type="button"
         onClick={handleGenerateAndSend}
-        disabled={processing}
+        disabled={processing || sendResultUnknown}
         className="mt-3 w-full rounded-xl bg-emerald-600 px-4 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {processing
+        {sendResultUnknown
+          ? "送信結果を確認してください"
+          : processing
           ? "URL生成・メール送信中..."
           : paymentUrl
             ? "DG決済URL再生成・見積メール再送信"

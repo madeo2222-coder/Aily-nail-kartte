@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
@@ -23,6 +24,27 @@ function getFromEmail() {
     process.env.RESEND_FROM_EMAIL ||
     "Aily Nail Studio <onboarding@resend.dev>"
   );
+}
+
+function buildIdempotencyKey(params: {
+  requestId: string;
+  customerEmail: string;
+  quoteAmount: number;
+  paymentUrl: string;
+}) {
+  const digest = createHash("sha256")
+    .update(
+      [
+        params.requestId,
+        params.customerEmail,
+        String(params.quoteAmount),
+        params.paymentUrl,
+      ].join("\u001f")
+    )
+    .digest("hex")
+    .slice(0, 32);
+
+  return `inbound-quote/${params.requestId}/${digest}`;
 }
 
 export async function POST(
@@ -111,11 +133,19 @@ export async function POST(
       "Aily Nail Studio",
     ].join("\n");
 
+    const idempotencyKey = buildIdempotencyKey({
+      requestId: id,
+      customerEmail,
+      quoteAmount,
+      paymentUrl,
+    });
+
     const emailResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${resendApiKey}`,
         "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify({
         from: getFromEmail(),
@@ -137,7 +167,7 @@ export async function POST(
       );
     }
 
-    await supabase
+    const { error: updateError } = await supabase
       .from("inbound_nail_tip_requests")
       .update({
         status: "payment_waiting",
@@ -145,8 +175,22 @@ export async function POST(
       })
       .eq("id", id);
 
+    if (updateError) {
+      return NextResponse.json(
+        {
+          ok: false,
+          emailAccepted: true,
+          idempotencyProtected: true,
+          error:
+            "見積メールは受付済みですが、相談状態を更新できませんでした。再送せず管理画面を再読み込みしてください。",
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       ok: true,
+      idempotencyProtected: true,
     });
   } catch (error) {
     return NextResponse.json(

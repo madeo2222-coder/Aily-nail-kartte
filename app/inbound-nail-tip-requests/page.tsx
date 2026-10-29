@@ -5,7 +5,6 @@ import { createClient } from "@supabase/supabase-js";
 import { authenticateStaff } from "@/lib/server/staffAuthentication";
 import StatusForm from "./StatusForm";
 import QuoteForm from "./QuoteForm";
-import SendQuoteButton from "./SendQuoteButton";
 import PaymentUrlForm from "./PaymentUrlForm";
 import MarkPaidButton from "./MarkPaidButton";
 import ShippingForm from "./ShippingForm";
@@ -477,7 +476,6 @@ export default async function InboundNailTipRequestsPage({
                         defaultAmount={request.quote_amount}
                       />
 
-                      <SendQuoteButton requestId={request.id} />
                     </>
                   )}
 
