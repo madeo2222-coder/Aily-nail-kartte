@@ -85,25 +85,66 @@ for (const first of [0, 1]) {
   });
 }
 
-test("network, JSON and partial failures release both buttons for explicit retry", async () => {
-  for (const failure of ["network", "json", "partial"]) {
+test("network and JSON failures lock both sync modes until the result is checked", async () => {
+  for (const failure of ["network", "json"]) {
     const page = mount(); page.input("架空の予約メール");
     const pending = page.buttons()[0].props.onClick();
     assert.ok(page.buttons().every(button => button.props.disabled));
     if (failure === "network") page.requests[0].reject(new Error("offline"));
-    else page.requests[0].resolve({ ok: false, json: async () => {
-      if (failure === "json") throw new Error("bad JSON");
-      return { ok: false, partial: true, syncedCount: 1, failedCount: 1 };
+    else page.requests[0].resolve({ ok: true, json: async () => {
+      throw new Error("bad JSON");
     } });
+    await pending;
+    assert.ok(page.buttons().every(button => button.props.disabled));
+    assert.equal(page.alerts.length, 1);
+    assert.match(page.alerts[0], /結果を確認できませんでした/);
+    assert.ok(
+      page.buttons().every(
+        button => button.props.children === "同期結果を確認してください",
+      ),
+    );
+    await page.buttons()[1].props.onClick();
+    assert.equal(page.requests.length, 1);
+  }
+});
+
+test("partial and explicit API failures release both buttons for retry", async () => {
+  for (const failure of ["partial", "explicit"]) {
+    const page = mount(); page.input("架空の予約メール");
+    const pending = page.buttons()[0].props.onClick();
+    assert.ok(page.buttons().every(button => button.props.disabled));
+    page.requests[0].resolve({
+      ok: false,
+      json: async () => failure === "partial"
+        ? { ok: false, partial: true, syncedCount: 1, failedCount: 1 }
+        : { ok: false, error: "fixture failure" },
+    });
     await pending;
     assert.ok(page.buttons().every(button => !button.props.disabled));
     assert.equal(page.alerts.length, 1);
     const retry = page.buttons()[1].props.onClick();
     assert.equal(page.requests.length, 2);
-    page.requests[1].resolve({ ok: false, json: async () => ({ ok: false, error: "fixture failure" }) });
+    page.requests[1].resolve({ ok: true, json: async () => ({ ok: true }) });
     await retry;
-    assert.ok(page.buttons().every(button => !button.props.disabled));
   }
+});
+
+test("manual mail response loss locks Gmail and manual retries", async () => {
+  const page = mount(); page.input("架空の予約メール");
+  const pending = page.buttons()[1].props.onClick();
+  assert.equal(page.requests.length, 1);
+  page.requests[0].reject(new Error("offline"));
+  await pending;
+
+  assert.ok(page.buttons().every(button => button.props.disabled));
+  assert.ok(
+    page.buttons().every(
+      button => button.props.children === "同期結果を確認してください",
+    ),
+  );
+  assert.match(page.alerts[0], /手動同期の結果を確認できませんでした/);
+  await page.buttons()[0].props.onClick();
+  assert.equal(page.requests.length, 1);
 });
 
 test("cancelled confirmation and empty manual text never acquire a stuck lock", async () => {
