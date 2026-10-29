@@ -16,11 +16,24 @@ const compiled = ts.transpileModule(source, {
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
+const staffReservationSubmission = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/staff-reservation-submission.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  vm.runInNewContext(source, { exports, JSON, RegExp });
+  return exports;
+})();
 
 const SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
 const OTHER_SALON_ID = "954e4418-4606-4932-8f03-87dfbe962967";
 const STAFF_ID = "e568f9c8-3c8f-4f6b-9aa4-e9ded5e126e9";
 const CUSTOMER_ID = "d9dfb5b6-f8c8-4e83-8c5c-ce241b7212c9";
+const OPERATION_ID = "33333333-3333-4333-8333-333333333333";
 
 class MockResponse {
   constructor(body, status = 200) {
@@ -37,6 +50,7 @@ function executeRoute({ authentication, rows = {} }) {
   const calls = [];
   let authOptions = null;
   let clientCreated = false;
+  let reservationSingleCount = 0;
 
   function resultFor(call, terminal) {
     if (call.operation === "insert") {
@@ -63,6 +77,13 @@ function executeRoute({ authentication, rows = {} }) {
             error: null,
           }
         );
+      }
+      if (call.table === "reservations") {
+        const result = rows.operationSingles?.[reservationSingleCount]
+          ?? rows.operationSingle
+          ?? { data: null, error: null };
+        reservationSingleCount += 1;
+        return result;
       }
     }
     return rows[call.table] || { data: [], error: null };
@@ -161,6 +182,9 @@ function executeRoute({ authentication, rows = {} }) {
             return { from: makeQuery };
           },
         };
+      }
+      if (name === "@/lib/staff-reservation-submission") {
+        return staffReservationSubmission;
       }
       return require(name);
     },
@@ -354,6 +378,118 @@ test("staff reservation creation validates ownership, both calendars, and insert
       memo: "確認メモ",
     },
   ]);
+});
+
+test("staff reservation creation returns the existing reservation for a repeated operation", async () => {
+  const existing = {
+    id: OPERATION_ID,
+    salon_id: SALON_ID,
+    customer_id: CUSTOMER_ID,
+    staff_id: STAFF_ID,
+    menu: "ワンカラー",
+    start_at: "2099-10-19T01:00:00+00:00",
+    end_at: "2099-10-19T02:30:00+00:00",
+    status: "予約",
+    memo: "確認メモ",
+  };
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: { operationSingle: { data: existing, error: null } },
+  });
+  const response = await runtime.exports.POST(
+    postRequest({ operationId: OPERATION_ID }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(body)), {
+    ok: true,
+    id: OPERATION_ID,
+    replayed: true,
+  });
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "insert"),
+    false,
+  );
+  assert.equal(
+    runtime.calls.some((call) => call.filters.some((filter) => filter.method === "lt")),
+    false,
+  );
+});
+
+test("staff reservation creation rejects a repeated operation with different content", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      operationSingle: {
+        data: {
+          id: OPERATION_ID,
+          salon_id: SALON_ID,
+          customer_id: CUSTOMER_ID,
+          staff_id: STAFF_ID,
+          menu: "別メニュー",
+          start_at: "2099-10-19T01:00:00.000Z",
+          end_at: "2099-10-19T02:30:00.000Z",
+          status: "予約",
+          memo: "確認メモ",
+        },
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.POST(
+    postRequest({ operationId: OPERATION_ID }),
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "insert"),
+    false,
+  );
+});
+
+test("staff reservation creation converges when a concurrent operation wins the insert", async () => {
+  const existing = {
+    id: OPERATION_ID,
+    salon_id: SALON_ID,
+    customer_id: CUSTOMER_ID,
+    staff_id: STAFF_ID,
+    menu: "ワンカラー",
+    start_at: "2099-10-19T01:00:00.000Z",
+    end_at: "2099-10-19T02:30:00.000Z",
+    status: "予約",
+    memo: "確認メモ",
+  };
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      operationSingles: [
+        { data: null, error: null },
+        { data: existing, error: null },
+      ],
+      insert: { data: null, error: { message: "duplicate key" } },
+    },
+  });
+  const response = await runtime.exports.POST(
+    postRequest({ operationId: OPERATION_ID }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.replayed, true);
+  const insert = runtime.calls.find((call) => call.operation === "insert");
+  assert.equal(insert.insert[0].id, OPERATION_ID);
+});
+
+test("staff reservation creation rejects an invalid operation ID before database access", async () => {
+  const runtime = executeRoute({ authentication: principal() });
+  const response = await runtime.exports.POST(
+    postRequest({ operationId: "not-an-operation-id" }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(runtime.clientCreated, false);
+  assert.equal(runtime.calls.length, 0);
 });
 
 test("staff reservation creation refuses a matching external-calendar block", async () => {

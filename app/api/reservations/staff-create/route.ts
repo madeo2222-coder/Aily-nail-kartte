@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
+import { isSubmissionOperationId } from "@/lib/staff-reservation-submission";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,19 @@ type CreateReservationBody = {
   endAt?: unknown;
   status?: unknown;
   memo?: unknown;
+  operationId?: unknown;
+};
+
+type ExistingReservation = {
+  id: string;
+  salon_id: string;
+  customer_id: string | null;
+  staff_id: string;
+  menu: string;
+  start_at: string;
+  end_at: string;
+  status: string;
+  memo: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -71,6 +85,24 @@ function validDateRange(startAt: string, endAt: string) {
     Number.isFinite(end.getTime()) &&
     durationMinutes >= 30 &&
     durationMinutes <= 24 * 60
+  );
+}
+
+function matchesSubmission(
+  existing: ExistingReservation,
+  payload: Record<string, string | null>,
+) {
+  const startAt = new Date(payload.start_at || "");
+  const endAt = new Date(payload.end_at || "");
+  return (
+    existing.salon_id === payload.salon_id &&
+    existing.customer_id === payload.customer_id &&
+    existing.staff_id === payload.staff_id &&
+    existing.menu === payload.menu &&
+    new Date(existing.start_at).getTime() === startAt.getTime() &&
+    new Date(existing.end_at).getTime() === endAt.getTime() &&
+    existing.status === payload.status &&
+    existing.memo === payload.memo
   );
 }
 
@@ -170,6 +202,7 @@ export async function POST(request: NextRequest) {
   const endAt = cleanString(body.endAt);
   const requestedStatus = cleanString(body.status);
   const memo = cleanString(body.memo);
+  const operationId = cleanString(body.operationId);
   const salonId =
     authentication.principal.authenticationMode === "supabase"
       ? authentication.principal.salonId
@@ -185,6 +218,10 @@ export async function POST(request: NextRequest) {
     (mode === "normal" && !validUuid(customerId))
   ) {
     return errorResponse("サロン・顧客・担当スタッフを確認してください。", 400);
+  }
+
+  if (operationId && !isSubmissionOperationId(operationId)) {
+    return errorResponse("予約登録操作を確認できません。", 400);
   }
 
   if (
@@ -255,6 +292,44 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const insertPayload: Record<string, string | null> = {
+      salon_id: salonId,
+      customer_id: mode === "normal" ? customerId : null,
+      staff_id: staffId,
+      menu,
+      start_at: new Date(startAt).toISOString(),
+      end_at: new Date(endAt).toISOString(),
+      status: storedStatus,
+      memo: memo || null,
+    };
+
+    const readExistingOperation = async () => {
+      if (!operationId) return null;
+
+      const result = await supabase
+        .from("reservations")
+        .select(
+          "id, salon_id, customer_id, staff_id, menu, start_at, end_at, status, memo",
+        )
+        .eq("id", operationId)
+        .eq("salon_id", salonId)
+        .maybeSingle();
+      if (result.error) throw new Error(result.error.message);
+      return (result.data || null) as ExistingReservation | null;
+    };
+
+    const existingOperation = await readExistingOperation();
+    if (existingOperation) {
+      if (!matchesSubmission(existingOperation, insertPayload)) {
+        return errorResponse("予約登録操作の内容が一致しません。", 409);
+      }
+      return NextResponse.json({
+        ok: true,
+        id: existingOperation.id,
+        replayed: true,
+      });
+    }
+
     const [reservationsResult, blocksResult] = await Promise.all([
       supabase
         .from("reservations")
@@ -290,16 +365,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const insertPayload: Record<string, string | null> = {
-      salon_id: salonId,
-      customer_id: mode === "normal" ? customerId : null,
-      staff_id: staffId,
-      menu,
-      start_at: new Date(startAt).toISOString(),
-      end_at: new Date(endAt).toISOString(),
-      status: storedStatus,
-      memo: memo || null,
-    };
+    if (operationId) insertPayload.id = operationId;
     const insertResult = await supabase
       .from("reservations")
       .insert([insertPayload])
@@ -307,6 +373,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (insertResult.error || !insertResult.data?.id) {
+      const reconciled = await readExistingOperation();
+      if (reconciled && matchesSubmission(reconciled, insertPayload)) {
+        return NextResponse.json({
+          ok: true,
+          id: reconciled.id,
+          replayed: true,
+        });
+      }
       return internalErrorResponse();
     }
 

@@ -20,6 +20,18 @@ const externalReservationMetadata = (() => {
   vm.runInNewContext(source, { exports });
   return exports;
 })();
+const staffReservationSubmission = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/staff-reservation-submission.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  vm.runInNewContext(source, { exports, JSON, RegExp });
+  return exports;
+})();
 const pageSource = readFileSync(
   new URL("../app/reservations/new/page.tsx", import.meta.url),
   "utf8",
@@ -65,6 +77,18 @@ async function mount({
   let shouldFail = failure;
   const requests = [];
   const pushed = [];
+  const storageValues = new Map();
+  const localStorage = {
+    getItem(key) {
+      return storageValues.has(key) ? storageValues.get(key) : null;
+    },
+    setItem(key, value) {
+      storageValues.set(key, String(value));
+    },
+    removeItem(key) {
+      storageValues.delete(key);
+    },
+  };
 
   const hooks = {
     useState(initial) {
@@ -143,6 +167,12 @@ async function mount({
     Intl,
     Number,
     Promise,
+    crypto: {
+      randomUUID() {
+        return "33333333-3333-4333-8333-333333333333";
+      },
+    },
+    window: { localStorage },
     console: { error() {} },
     require(name) {
       if (name === "react") return hooks;
@@ -153,6 +183,9 @@ async function mount({
       }
       if (name === "@/lib/external-reservation-metadata") {
         return externalReservationMetadata;
+      }
+      if (name === "@/lib/staff-reservation-submission") {
+        return staffReservationSubmission;
       }
       throw new Error(`Unexpected import: ${name}`);
     },
@@ -175,6 +208,7 @@ async function mount({
   return {
     requests,
     pushed,
+    localStorage,
     html,
     unmount() { for (const cleanup of cleanups) cleanup(); },
     async retry() {
@@ -271,6 +305,14 @@ test("reservation creation locks resubmission when a successful response body is
   assert.match(page.html(), /最新の予約を確認/);
   assert.match(page.html(), /カレンダーで結果を確認してください/);
   assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 1);
+  const postBody = JSON.parse(
+    page.requests.find(request => request.options?.method === "POST").options.body,
+  );
+  assert.equal(postBody.operationId, "33333333-3333-4333-8333-333333333333");
+  assert.match(
+    page.localStorage.getItem("aily:staff-reservation-submission:v1"),
+    /33333333-3333-4333-8333-333333333333/,
+  );
 
   await page.submit();
   assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 1);
@@ -282,6 +324,10 @@ test("reservation creation opens the calendar after an authoritative success", a
   await page.submit();
   assert.deepEqual(page.pushed, ["/reservations/calendar"]);
   assert.doesNotMatch(page.html(), /予約登録の結果を確認できませんでした/);
+  assert.equal(
+    page.localStorage.getItem("aily:staff-reservation-submission:v1"),
+    null,
+  );
   page.unmount();
 });
 
@@ -301,6 +347,10 @@ test("reservation creation allows retry after an authoritative API rejection", a
   await page.submit();
   assert.match(page.html(), /予約枠が重複しています/);
   assert.doesNotMatch(page.html(), /最新の予約を確認/);
+  assert.equal(
+    page.localStorage.getItem("aily:staff-reservation-submission:v1"),
+    null,
+  );
 
   await page.submit();
   assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 2);

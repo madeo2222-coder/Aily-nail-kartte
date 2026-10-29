@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { buildExternalReservationMemo } from "@/lib/external-reservation-metadata";
+import {
+  buildStaffReservationFingerprint,
+  clearStaffReservationOperation,
+  getOrCreateStaffReservationOperationId,
+} from "@/lib/staff-reservation-submission";
 
 type Salon = {
   id: string;
@@ -665,21 +670,29 @@ export default function ReservationNewPage() {
     submissionInFlight.current = true;
     setLoading(true);
 
+    const submission = {
+      mode: reservationMode,
+      salonId,
+      customerId: reservationMode === "normal" ? customerId : null,
+      staffId,
+      menu: displayMenu,
+      startAt,
+      endAt,
+      status,
+      memo: combinedMemo,
+    };
+    const fingerprint = buildStaffReservationFingerprint(submission);
+    const operationId = getOrCreateStaffReservationOperationId(
+      window.localStorage,
+      fingerprint,
+      () => crypto.randomUUID(),
+    );
+
     try {
       const response = await fetch("/api/reservations/staff-create", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          mode: reservationMode,
-          salonId,
-          customerId: reservationMode === "normal" ? customerId : null,
-          staffId,
-          menu: displayMenu,
-          startAt,
-          endAt,
-          status,
-          memo: combinedMemo,
-        }),
+        body: JSON.stringify({ ...submission, operationId }),
       });
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
@@ -695,6 +708,7 @@ export default function ReservationNewPage() {
       }
 
       if (!response.ok || !result.ok) {
+        clearStaffReservationOperation(window.localStorage, operationId);
         setErrorMessage(
           result.error ||
             "予約を登録できませんでした。入力内容を確認して再試行してください。"
@@ -702,6 +716,7 @@ export default function ReservationNewPage() {
         return;
       }
 
+      clearStaffReservationOperation(window.localStorage, operationId);
       router.push("/reservations/calendar");
     } catch {
       setSubmissionResultUnknown(true);
