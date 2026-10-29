@@ -36,6 +36,7 @@ async function mount({
   reservationId = "",
   reservationStatus,
   resumeExistingVisit = false,
+  completionFirstResult = null,
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -47,6 +48,7 @@ async function mount({
   const navigations = [];
   const alerts = [];
   const operations = [];
+  let completionAttempts = 0;
 
   const hooks = {
     useState(initial) {
@@ -156,6 +158,31 @@ async function mount({
 
       if (url === `/api/reservations/${reservationId}/status`) {
         const body = JSON.parse(options.body);
+
+        if (body.status === "完了") {
+          completionAttempts += 1;
+
+          if (completionAttempts === 1 && completionFirstResult === "network") {
+            throw new Error("response lost after completion");
+          }
+
+          if (completionAttempts === 1 && completionFirstResult === "server") {
+            return Promise.resolve({
+              ok: false,
+              status: 500,
+              json: async () => ({ ok: false }),
+            });
+          }
+
+          if (completionAttempts === 1 && completionFirstResult === "invalid") {
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              json: async () => null,
+            });
+          }
+        }
+
         return Promise.resolve({
           ok: true,
           status: 200,
@@ -531,3 +558,30 @@ test("shared-login reservation visit completes a fully saved existing visit with
   assert.deepEqual(page.alerts, ["来店履歴を登録しました"]);
   assert.deepEqual(page.navigations, [`/customers/${CUSTOMER_ID}`]);
 });
+
+for (const completionFirstResult of ["network", "server", "invalid"]) {
+  test(`shared-login reservation visit retries an unknown ${completionFirstResult} completion result without another visit`, async () => {
+    const page = await mount({
+      authenticationMode: "legacy",
+      reservationId: "reservation-1",
+      reservationStatus: "confirmed",
+      completionFirstResult,
+    });
+    await page.submit();
+
+    const statusRequests = page.requests.filter(
+      (request) => request.url === "/api/reservations/reservation-1/status",
+    );
+    const completionRequests = statusRequests.filter(
+      (request) => JSON.parse(request.options.body).status === "完了",
+    );
+    const visitInserts = page.dbCalls.filter(
+      (call) => call.table === "visits" && call.operation === "insert",
+    );
+
+    assert.equal(completionRequests.length, 2);
+    assert.equal(visitInserts.length, 1);
+    assert.deepEqual(page.alerts, ["来店履歴を登録しました"]);
+    assert.deepEqual(page.navigations, [`/customers/${CUSTOMER_ID}`]);
+  });
+}

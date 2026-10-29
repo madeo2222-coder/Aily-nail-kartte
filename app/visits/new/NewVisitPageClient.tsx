@@ -641,27 +641,53 @@ export default function NewVisitPageClient() {
     expectedCustomerId: string;
     expectedStatus: string;
   }) {
-    const response = await fetch(`/api/reservations/${reservationId}/status`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, expectedCustomerId, expectedStatus }),
+    const requestBody = JSON.stringify({
+      status,
+      expectedCustomerId,
+      expectedStatus,
     });
-    const responseBody: unknown = await response.json().catch(() => null);
+    const maxAttempts = status === "完了" ? 2 : 1;
 
-    if (!response.ok) {
-      throw new Error(
-        reservationStatusApiErrorMessage(response.status, responseBody)
-      );
-    }
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      let response: Response;
 
-    const statusResult = getReservationStatusResult(responseBody);
-    if (!statusResult) {
+      try {
+        response = await fetch(`/api/reservations/${reservationId}/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: requestBody,
+        });
+      } catch {
+        if (attempt + 1 < maxAttempts) continue;
+
+        throw new Error(
+          "予約状態の更新結果を確認できませんでした。予約一覧を読み直してください。"
+        );
+      }
+
+      const responseBody: unknown = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        if (response.status >= 500 && attempt + 1 < maxAttempts) continue;
+
+        throw new Error(
+          reservationStatusApiErrorMessage(response.status, responseBody)
+        );
+      }
+
+      const statusResult = getReservationStatusResult(responseBody);
+      if (statusResult) return statusResult;
+
+      if (attempt + 1 < maxAttempts) continue;
+
       throw new Error(
         "予約状態の更新結果を確認できませんでした。予約一覧を読み直してください。"
       );
     }
 
-    return statusResult;
+    throw new Error(
+      "予約状態の更新結果を確認できませんでした。予約一覧を読み直してください。"
+    );
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
