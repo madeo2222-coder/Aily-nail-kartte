@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type StaffRow = {
@@ -35,6 +36,7 @@ export default function ExternalCalendarBlocksPage() {
   const [saving, setSaving] = useState(false);
   const [staffsLoading, setStaffsLoading] = useState(true);
   const [staffsError, setStaffsError] = useState("");
+  const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
   const staffRequestVersionRef = useRef(0);
   const submissionInFlightRef = useRef(false);
 
@@ -97,7 +99,7 @@ export default function ExternalCalendarBlocksPage() {
   }, [loadStaffs]);
 
   async function handleSave() {
-    if (submissionInFlightRef.current) return;
+    if (submissionInFlightRef.current || mutationResultUnknown) return;
 
     if (!staffId) {
       alert("担当スタッフを選択してください");
@@ -121,6 +123,7 @@ export default function ExternalCalendarBlocksPage() {
 
     submissionInFlightRef.current = true;
     setSaving(true);
+    let resultUnknown = false;
 
     try {
       const res = await fetch("/api/external-calendar-blocks", {
@@ -142,10 +145,20 @@ export default function ExternalCalendarBlocksPage() {
         }),
       });
 
-      const json = await res.json();
+      const json = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+
+      if (!json) {
+        resultUnknown = true;
+        setMutationResultUnknown(true);
+        return;
+      }
 
       if (!res.ok || !json.ok) {
-        throw new Error(json.error || "登録に失敗しました");
+        alert(json.error || "登録に失敗しました");
+        return;
       }
 
       alert("外部予約ブロックを登録しました");
@@ -155,14 +168,12 @@ export default function ExternalCalendarBlocksPage() {
       setContractorStaffName("");
     } catch (error) {
       console.error(error);
-
-      alert(
-        error instanceof Error
-          ? error.message
-          : "登録中にエラーが発生しました"
-      );
+      resultUnknown = true;
+      setMutationResultUnknown(true);
     } finally {
-      submissionInFlightRef.current = false;
+      if (!resultUnknown) {
+        submissionInFlightRef.current = false;
+      }
       setSaving(false);
     }
   }
@@ -330,13 +341,35 @@ export default function ExternalCalendarBlocksPage() {
           </div>
         )}
 
+        {mutationResultUnknown ? (
+          <section
+            role="alert"
+            className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
+          >
+            <p className="font-bold">登録結果を確認できませんでした。</p>
+            <p className="mt-2">
+              同じ予定を再登録すると重複する可能性があります。予約カレンダーで対象日時を確認してください。
+            </p>
+            <Link
+              href="/reservations/calendar"
+              className="mt-3 block rounded-xl bg-amber-700 px-4 py-3 text-center font-bold text-white"
+            >
+              予約カレンダーで確認
+            </Link>
+          </section>
+        ) : null}
+
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
+          disabled={saving || mutationResultUnknown}
           className="w-full rounded-xl bg-slate-900 px-4 py-3 font-bold text-white"
         >
-          {saving ? "登録中..." : "ブロック登録"}
+          {saving
+            ? "登録中..."
+            : mutationResultUnknown
+              ? "カレンダーで登録結果を確認してください"
+              : "ブロック登録"}
         </button>
         </div>
       )}
