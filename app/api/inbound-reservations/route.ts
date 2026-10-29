@@ -313,28 +313,42 @@ export async function POST(request: Request) {
       (_, index) => buildStableUuid(`inbound-reservation/${submissionDigest}/guest/${index + 1}`)
     );
 
-    const { data: existingData, error: existingError } = await supabase
-      .from("reservations")
-      .select("id, salon_id, status, staff_id, start_at, end_at, menu")
-      .in("id", reservationIds);
-    if (existingError) {
-      return NextResponse.json({ ok: false, error: existingError.message }, { status: 500 });
-    }
-    const existingRows = (existingData || []) as ExistingReservationRow[];
-    if (existingRows.length > 0) {
+    const readExistingSubmission = async () => {
+      const { data, error } = await supabase
+        .from("reservations")
+        .select("id, salon_id, status, staff_id, start_at, end_at, menu")
+        .in("id", reservationIds);
+      if (error) return { state: "error" as const, error };
+
+      const rows = (data || []) as ExistingReservationRow[];
+      if (rows.length === 0) return { state: "missing" as const };
       if (!matchesExistingSubmission({
-        rows: existingRows,
+        rows,
         reservationIds,
         salonId,
         menu,
         startIso,
         endIso,
       })) {
-        return NextResponse.json(
-          { ok: false, error: "Reservation request key conflict." },
-          { status: 409 }
-        );
+        return { state: "conflict" as const };
       }
+      return { state: "match" as const };
+    };
+
+    const existingSubmission = await readExistingSubmission();
+    if (existingSubmission.state === "error") {
+      return NextResponse.json(
+        { ok: false, error: existingSubmission.error.message },
+        { status: 500 }
+      );
+    }
+    if (existingSubmission.state === "conflict") {
+      return NextResponse.json(
+        { ok: false, error: "Reservation request key conflict." },
+        { status: 409 }
+      );
+    }
+    if (existingSubmission.state === "match") {
       return NextResponse.json({
         ok: true,
         replayed: true,
@@ -419,6 +433,20 @@ export async function POST(request: Request) {
       .select("id");
 
     if (insertError) {
+      const reconciliation = await readExistingSubmission();
+      if (reconciliation.state === "match") {
+        return NextResponse.json({
+          ok: true,
+          replayed: true,
+          reservationIds,
+        });
+      }
+      if (reconciliation.state === "conflict") {
+        return NextResponse.json(
+          { ok: false, error: "Reservation request key conflict." },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
     }
 

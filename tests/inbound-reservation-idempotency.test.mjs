@@ -49,6 +49,8 @@ const requestBody = {
 function loadRoute({
   existingRows = [],
   existingError = null,
+  existingRowsAfterInsert = null,
+  existingErrorAfterInsert = null,
   staffs = [
     { id: "staff-1", name: "Staff 1", salon_id: "salon-1" },
     { id: "staff-2", name: "Staff 2", salon_id: "salon-1" },
@@ -59,6 +61,7 @@ function loadRoute({
   const externalCalls = [];
   const queries = [];
   const inserts = [];
+  let existingLookupCount = 0;
 
   function createQuery(table) {
     const record = { table, select: "", eq: [], in: null, insert: null };
@@ -99,7 +102,16 @@ function loadRoute({
         if (table === "staffs") {
           result = { data: staffs, error: null };
         } else if (table === "reservations" && record.in) {
-          result = { data: existingRows, error: existingError };
+          const afterInsert = existingLookupCount > 0;
+          existingLookupCount += 1;
+          result = {
+            data: afterInsert && existingRowsAfterInsert !== null
+              ? existingRowsAfterInsert
+              : existingRows,
+            error: afterInsert && existingErrorAfterInsert !== null
+              ? existingErrorAfterInsert
+              : existingError,
+          };
         } else if (table === "reservations") {
           result = { data: overlaps, error: null };
         } else {
@@ -245,4 +257,43 @@ test("stops before availability and notifications when replay lookup fails", asy
   assert.equal(runtime.inserts.length, 0);
   assert.equal(runtime.externalCalls.length, 0);
   assert.equal(runtime.queries.some((query) => query.table === "staffs"), false);
+});
+
+test("converges when a concurrent identical insert wins after the initial lookup", async () => {
+  const baseline = loadRoute();
+  await baseline.post();
+  const existingRowsAfterInsert = baseline.inserts[0].map((row) => ({
+    id: row.id,
+    salon_id: row.salon_id,
+    status: row.status,
+    staff_id: row.staff_id,
+    start_at: row.start_at,
+    end_at: row.end_at,
+    menu: row.menu,
+  }));
+  const runtime = loadRoute({
+    existingRowsAfterInsert,
+    insertError: { message: "duplicate key" },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.replayed, true);
+  assert.equal(runtime.inserts.length, 1);
+  assert.equal(runtime.externalCalls.length, 0);
+  assert.equal(runtime.queries.filter((query) => query.in).length, 2);
+});
+
+test("does not notify when a failed insert cannot be reconciled", async () => {
+  const runtime = loadRoute({
+    existingErrorAfterInsert: { message: "reconciliation read failed" },
+    insertError: { message: "insert result unknown" },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 500);
+  assert.equal(response.body.ok, false);
+  assert.equal(runtime.externalCalls.length, 0);
+  assert.equal(runtime.queries.filter((query) => query.in).length, 2);
 });
