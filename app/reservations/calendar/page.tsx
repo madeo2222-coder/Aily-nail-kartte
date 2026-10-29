@@ -521,6 +521,7 @@ function buildMonthDays(monthText: string) {
 export default function ReservationsCalendarPage() {
   const loadRequestIdRef = useRef(0);
   const hpbSyncInFlightRef = useRef(false);
+  const externalBlockDeleteInFlightRef = useRef(new Set<string>());
   const [selectedDate, setSelectedDate] = useState(getTodayText());
   const [selectedMonth, setSelectedMonth] = useState(
     getMonthText(getTodayText()),
@@ -539,6 +540,9 @@ export default function ReservationsCalendarPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [syncingHpb, setSyncingHpb] = useState(false);
   const [hpbSyncResultUnknown, setHpbSyncResultUnknown] = useState(false);
+  const [deletingExternalBlockIds, setDeletingExternalBlockIds] = useState(
+    () => new Set<string>(),
+  );
 
   async function fetchCalendarData() {
     const requestId = ++loadRequestIdRef.current;
@@ -643,6 +647,63 @@ export default function ReservationsCalendarPage() {
         hpbSyncInFlightRef.current = false;
       }
       setSyncingHpb(false);
+    }
+  }
+
+  async function deleteExternalBlock(blockId: string) {
+    if (externalBlockDeleteInFlightRef.current.has(blockId)) return;
+
+    const confirmed = window.confirm(
+      "この外部予約ブロックを削除しますか？",
+    );
+    if (!confirmed) return;
+
+    externalBlockDeleteInFlightRef.current.add(blockId);
+    setDeletingExternalBlockIds((current) => {
+      const next = new Set(current);
+      next.add(blockId);
+      return next;
+    });
+
+    try {
+      const response = await fetch("/api/external-calendar-blocks/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: blockId }),
+      });
+      const result = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+      } | null;
+
+      if (!result) {
+        await fetchCalendarData();
+        alert(
+          "削除結果を確認できなかったため、カレンダーを再読み込みしました。予定が残っている場合だけ再度削除してください。",
+        );
+        return;
+      }
+
+      if (!response.ok || !result.ok) {
+        alert(result.error || "削除に失敗しました");
+        return;
+      }
+
+      alert("削除しました");
+      await fetchCalendarData();
+    } catch (error) {
+      console.error("外部予約ブロック削除結果の確認エラー:", error);
+      await fetchCalendarData();
+      alert(
+        "削除結果を確認できなかったため、カレンダーを再読み込みしました。予定が残っている場合だけ再度削除してください。",
+      );
+    } finally {
+      externalBlockDeleteInFlightRef.current.delete(blockId);
+      setDeletingExternalBlockIds((current) => {
+        const next = new Set(current);
+        next.delete(blockId);
+        return next;
+      });
     }
   }
 
@@ -1509,57 +1570,21 @@ export default function ReservationsCalendarPage() {
 
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  const ok =
-                                    window.confirm(
-                                      "この外部予約ブロックを削除しますか？",
-                                    );
-
-                                  if (!ok) return;
-
-                                  try {
-                                    const blockId = reservation.id.replace(
-                                      "external-",
-                                      "",
-                                    );
-
-                                    const res = await fetch(
-                                      "/api/external-calendar-blocks/delete",
-                                      {
-                                        method: "POST",
-                                        headers: {
-                                          "Content-Type": "application/json",
-                                        },
-                                        body: JSON.stringify({
-                                          id: blockId,
-                                        }),
-                                      },
-                                    );
-
-                                    const data = await res.json();
-
-                                    if (!res.ok || !data.ok) {
-                                      throw new Error(
-                                        data?.error || "削除に失敗しました",
-                                      );
-                                    }
-
-                                    alert("削除しました");
-
-                                    await fetchCalendarData();
-                                  } catch (error) {
-                                    console.error(error);
-
-                                    alert(
-                                      error instanceof Error
-                                        ? error.message
-                                        : "削除に失敗しました",
-                                    );
-                                  }
-                                }}
+                                onClick={() =>
+                                  deleteExternalBlock(
+                                    reservation.id.replace("external-", ""),
+                                  )
+                                }
+                                disabled={deletingExternalBlockIds.has(
+                                  reservation.id.replace("external-", ""),
+                                )}
                                 className="mt-2 w-full rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white"
                               >
-                                削除
+                                {deletingExternalBlockIds.has(
+                                  reservation.id.replace("external-", ""),
+                                )
+                                  ? "削除中..."
+                                  : "削除"}
                               </button>
                             </div>
                           );

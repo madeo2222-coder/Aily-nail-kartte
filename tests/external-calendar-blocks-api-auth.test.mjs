@@ -499,9 +499,15 @@ test("signed shared login may create a validated block for the selected staff sa
   );
 });
 
-function executeDelete({ authentication, block, deleted = true }) {
+function executeDelete({
+  authentication,
+  block,
+  deleted = true,
+  afterDeleteBlock = block,
+}) {
   const calls = [];
   let clientCreated = false;
+  let blockReadCount = 0;
 
   function makeQuery(table) {
     const call = { table, operation: "read", filters: [], selects: [] };
@@ -531,7 +537,9 @@ function executeDelete({ authentication, block, deleted = true }) {
           });
         }
         if (table === "external_calendar_blocks") {
-          return Promise.resolve({ data: block, error: null });
+          const data = blockReadCount === 0 ? block : afterDeleteBlock;
+          blockReadCount += 1;
+          return Promise.resolve({ data, error: null });
         }
         return Promise.resolve({ data: null, error: null });
       },
@@ -630,7 +638,43 @@ test("signed shared login may delete a selected existing block", async () => {
   );
 });
 
-test("external block deletion does not report success when no row was deleted", async () => {
+test("external block deletion is idempotent when the block is already absent", async () => {
+  const runtime = executeDelete({
+    authentication: principal(),
+    block: null,
+  });
+  const response = await runtime.exports.POST({
+    json: async () => ({ id: BLOCK.id }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.id, BLOCK.id);
+  assert.equal(body.alreadyDeleted, true);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "delete"),
+    false,
+  );
+});
+
+test("external block deletion converges when another request deleted the row", async () => {
+  const runtime = executeDelete({
+    authentication: principal(),
+    block: BLOCK,
+    deleted: false,
+    afterDeleteBlock: null,
+  });
+  const response = await runtime.exports.POST({
+    json: async () => ({ id: BLOCK.id }),
+  });
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.id, BLOCK.id);
+  assert.equal(body.alreadyDeleted, true);
+});
+
+test("external block deletion does not report success when the row remains", async () => {
   const runtime = executeDelete({
     authentication: principal(),
     block: BLOCK,
@@ -640,5 +684,5 @@ test("external block deletion does not report success when no row was deleted", 
     json: async () => ({ id: BLOCK.id }),
   });
 
-  assert.equal(response.status, 500);
+  assert.equal(response.status, 409);
 });

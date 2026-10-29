@@ -58,10 +58,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (!block) {
-      return NextResponse.json(
-        { ok: false, error: "予定が見つかりません" },
-        { status: 404 }
-      );
+      return NextResponse.json({ ok: true, id, alreadyDeleted: true });
     }
 
     const authenticatedSalonId =
@@ -116,13 +113,41 @@ export async function POST(req: NextRequest) {
       .select("id")
       .maybeSingle();
 
-    if (error || !deletedBlock) {
+    if (error) {
       return NextResponse.json(
         {
           ok: false,
-          error: error?.message || "予定を削除できませんでした",
+          error: error.message || "予定を削除できませんでした",
         },
         { status: 500 }
+      );
+    }
+
+    if (!deletedBlock) {
+      const { data: remainingBlock, error: remainingError } = await supabase
+        .from("external_calendar_blocks")
+        .select("id")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (remainingError) {
+        return NextResponse.json(
+          { ok: false, error: "削除結果を確認できませんでした" },
+          { status: 500 }
+        );
+      }
+
+      if (!remainingBlock) {
+        return NextResponse.json({ ok: true, id, alreadyDeleted: true });
+      }
+
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "予定が更新されたため削除できませんでした。カレンダーを再読み込みしてください。",
+        },
+        { status: 409 }
       );
     }
 

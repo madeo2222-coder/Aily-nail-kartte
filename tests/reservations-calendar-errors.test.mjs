@@ -58,6 +58,8 @@ async function mount({
   empty = false,
   reservationStatus = "confirmed",
   hpbOutcomes = ["success"],
+  externalBlock = false,
+  deleteOutcomes = ["success"],
 } = {}) {
   const states = [];
   const effects = [];
@@ -67,6 +69,8 @@ async function mount({
   let shouldFail = failure;
   const alerts = [];
   const pendingHpbOutcomes = [...hpbOutcomes];
+  const pendingDeleteOutcomes = [...deleteOutcomes];
+  let externalBlockExists = externalBlock;
 
   const hooks = {
     useState(initial) {
@@ -116,7 +120,19 @@ async function mount({
           end_at: "2026-09-28T02:00:00Z",
           created_at: "2026-09-27T00:00:00Z",
       }],
-      externalBlocks: [],
+      externalBlocks: externalBlockExists
+        ? [{
+            id: "block-1",
+            salon_id: "salon-1",
+            staff_id: "staff-1",
+            source: "HPB",
+            title: "外部予約",
+            start_at: "2026-09-28T01:00:00Z",
+            end_at: "2026-09-28T02:00:00Z",
+            memo: "受付番号123",
+            created_at: "2026-09-27T00:00:00Z",
+          }]
+        : [],
       customers: [{ id: "customer-1", name: "顧客A" }],
       staffs: [{ id: "staff-1", name: "黒木" }],
       visits: [{
@@ -156,6 +172,33 @@ async function mount({
     },
     fetch: async (url, options) => {
       requests.push({ url, options });
+      if (url === "/api/external-calendar-blocks/delete") {
+        const outcome = pendingDeleteOutcomes.shift() || "success";
+        if (outcome === "networkFailure") throw new Error("offline");
+        if (outcome === "bodyLossAfterDelete") {
+          externalBlockExists = false;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => {
+              throw new Error("response body lost");
+            },
+          };
+        }
+        if (outcome === "explicitFailure") {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({ ok: false, error: "削除が競合しました" }),
+          };
+        }
+        externalBlockExists = false;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, id: "block-1" }),
+        };
+      }
       if (url !== "/api/reservations/calendar-data") {
         const outcome = pendingHpbOutcomes.shift() || "success";
         if (outcome === "networkFailure") throw new Error("offline");
@@ -255,6 +298,28 @@ async function mount({
       shouldFail = false;
       button.props.onClick();
       assert.match(html(), /読み込み中/);
+      await setImmediate();
+    },
+    async deleteBlockOnce() {
+      const button = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          ["削除", "削除中..."].includes(node.props.children),
+      );
+      assert.ok(button, "external block delete button exists");
+      await button.props.onClick();
+      await setImmediate();
+    },
+    async deleteBlockTwiceBeforeRerender() {
+      const button = findNode(
+        tree(),
+        node => node.type === "button" && node.props.children === "削除",
+      );
+      assert.ok(button, "external block delete button exists");
+      const first = button.props.onClick();
+      const second = button.props.onClick();
+      await Promise.all([first, second]);
       await setImmediate();
     },
   };
@@ -374,4 +439,61 @@ test("reservation calendar allows retry after an explicit Gmail sync failure", a
       .length,
     2,
   );
+});
+
+test("reservation calendar ignores a second external block delete click before rerender", async () => {
+  const page = await mount({ externalBlock: true });
+
+  await page.deleteBlockTwiceBeforeRerender();
+
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/external-calendar-blocks/delete",
+    ).length,
+    1,
+  );
+  assert.match(page.alerts.at(-1), /削除しました/);
+});
+
+test("reservation calendar refreshes after an external block delete response is lost", async () => {
+  const page = await mount({
+    externalBlock: true,
+    deleteOutcomes: ["bodyLossAfterDelete"],
+  });
+
+  await page.deleteBlockOnce();
+
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/external-calendar-blocks/delete",
+    ).length,
+    1,
+  );
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/reservations/calendar-data",
+    ).length,
+    2,
+  );
+  assert.match(page.alerts.at(-1), /カレンダーを再読み込み/);
+  assert.doesNotMatch(page.html(), /受付番号123/);
+});
+
+test("reservation calendar allows retry after an explicit external block delete failure", async () => {
+  const page = await mount({
+    externalBlock: true,
+    deleteOutcomes: ["explicitFailure", "success"],
+  });
+
+  await page.deleteBlockOnce();
+  assert.match(page.alerts.at(-1), /削除が競合しました/);
+
+  await page.deleteBlockOnce();
+  assert.equal(
+    page.requests.filter(
+      request => request.url === "/api/external-calendar-blocks/delete",
+    ).length,
+    2,
+  );
+  assert.match(page.alerts.at(-1), /削除しました/);
 });
