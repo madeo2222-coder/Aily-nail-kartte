@@ -56,6 +56,48 @@ const reservationRecoveryCopy: Record<
   },
 };
 
+const nailTipRecoveryCopy: Record<
+  InboundLanguage,
+  { title: string; body: string }
+> = {
+  en: {
+    title: "We could not confirm the custom request result.",
+    body: "Do not send the same request again. Please check your email and contact Aily Nail Studio if you do not receive a confirmation.",
+  },
+  ja: {
+    title: "ネイルチップ相談の結果を確認できませんでした。",
+    body: "同じ内容を再送せず、メールをご確認ください。確認メールが届かない場合はAily Nail Studioへお問い合わせください。",
+  },
+  "zh-TW": {
+    title: "無法確認美甲貼片諮詢結果。",
+    body: "請勿重複送出相同內容。請查看電子郵件；若未收到確認信，請聯絡 Aily Nail Studio。",
+  },
+  "zh-CN": {
+    title: "无法确认美甲贴片咨询结果。",
+    body: "请勿重复提交相同内容。请查看电子邮件；若未收到确认邮件，请联系 Aily Nail Studio。",
+  },
+  ko: {
+    title: "네일팁 상담 결과를 확인할 수 없습니다.",
+    body: "같은 요청을 다시 보내지 마세요. 이메일을 확인하고 확인 메일이 오지 않으면 Aily Nail Studio로 문의해 주세요.",
+  },
+  fr: {
+    title: "Nous ne pouvons pas confirmer le résultat de votre demande.",
+    body: "Ne renvoyez pas la même demande. Vérifiez votre e-mail et contactez Aily Nail Studio si vous ne recevez pas de confirmation.",
+  },
+  es: {
+    title: "No pudimos confirmar el resultado de tu solicitud.",
+    body: "No vuelvas a enviar la misma solicitud. Revisa tu correo y contacta con Aily Nail Studio si no recibes la confirmación.",
+  },
+  th: {
+    title: "ไม่สามารถยืนยันผลคำขอเล็บปลอมได้",
+    body: "กรุณาอย่าส่งคำขอเดิมซ้ำ ตรวจสอบอีเมล และติดต่อ Aily Nail Studio หากไม่ได้รับอีเมลยืนยัน",
+  },
+  ar: {
+    title: "تعذر تأكيد نتيجة طلب الأظافر اللاصقة.",
+    body: "يرجى عدم إرسال الطلب نفسه مرة أخرى. تحققي من بريدك الإلكتروني وتواصلي مع Aily Nail Studio إذا لم تصلك رسالة تأكيد.",
+  },
+};
+
 const inboundMenus = [
   {
     id: "japan_simple",
@@ -213,6 +255,8 @@ export default function InboundReservePage() {
   const [reservationResultUnknown, setReservationResultUnknown] =
     useState(false);
   const reservationSubmissionInFlight = useRef(false);
+  const [nailTipResultUnknown, setNailTipResultUnknown] = useState(false);
+  const nailTipSubmissionInFlight = useRef(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleUserEmail, setGoogleUserEmail] = useState("");
 
@@ -410,6 +454,9 @@ export default function InboundReservePage() {
   }
 
   async function handleTipsSubmit() {
+    if (nailTipSubmissionInFlight.current || nailTipResultUnknown) {
+      return;
+    }
     if (!customerName.trim()) return showMessage(copy.messages.nameRequired);
     if (!customerEmail.trim()) return showMessage(copy.messages.emailRequired);
     if (!country.trim()) return showMessage(copy.messages.countryRequired);
@@ -425,6 +472,7 @@ export default function InboundReservePage() {
     if (!tipDesignRequest.trim())
       return showMessage(copy.messages.designRequired);
 
+    nailTipSubmissionInFlight.current = true;
     setSending(true);
 
     try {
@@ -458,11 +506,23 @@ export default function InboundReservePage() {
         }),
       });
 
-      const json = await response.json();
+      let json: { ok?: boolean; error?: string };
+
+      try {
+        json = await response.json();
+      } catch (error) {
+        console.error(error);
+        if (response.ok) {
+          setNailTipResultUnknown(true);
+          return;
+        }
+
+        showMessage(copy.messages.requestFailed);
+        return;
+      }
 
       if (!response.ok || !json.ok) {
-        showMessage(copy.messages.requestFailed);
-        setSending(false);
+        showMessage(json.error || copy.messages.requestFailed);
         return;
       }
 
@@ -472,8 +532,9 @@ export default function InboundReservePage() {
       setNote("");
     } catch (error) {
       console.error(error);
-      showMessage(copy.messages.networkError);
+      setNailTipResultUnknown(true);
     } finally {
+      nailTipSubmissionInFlight.current = false;
       setSending(false);
     }
   }
@@ -1182,10 +1243,22 @@ export default function InboundReservePage() {
               </div>
             </div>
 
+            {nailTipResultUnknown ? (
+              <div
+                role="alert"
+                className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900"
+              >
+                <div className="font-black">
+                  {nailTipRecoveryCopy[language].title}
+                </div>
+                <p className="mt-2">{nailTipRecoveryCopy[language].body}</p>
+              </div>
+            ) : null}
+
             <button
               type="button"
               onClick={handleTipsSubmit}
-              disabled={sending}
+              disabled={sending || nailTipResultUnknown}
               className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
             >
               {sending ? copy.uploadingAndSending : copy.sendCustom}

@@ -53,7 +53,7 @@ function response({ ok = true, body = { ok: true } } = {}) {
   return { ok, async json() { return body; } };
 }
 
-function mount({ mode = "success" } = {}) {
+function mount({ mode = "success", flow = "reservation" } = {}) {
   const states = [];
   let cursor = 0;
   const requests = [];
@@ -79,7 +79,12 @@ function mount({ mode = "success" } = {}) {
 
   async function fetch(url, options = {}) {
     requests.push({ url, options });
-    assert.equal(url, "/api/inbound-reservations");
+    assert.equal(
+      url,
+      flow === "reservation"
+        ? "/api/inbound-reservations"
+        : "/api/inbound-nail-tip-requests",
+    );
 
     if (mode === "reject") throw new Error("response lost");
     if (mode === "unknown-json") {
@@ -91,10 +96,21 @@ function mount({ mode = "success" } = {}) {
     if (mode === "failure") {
       return response({
         ok: false,
-        body: { ok: false, error: "Not enough staff available." },
+        body: {
+          ok: false,
+          error:
+            flow === "reservation"
+              ? "Not enough staff available."
+              : "Request details are incomplete.",
+        },
       });
     }
-    return response({ body: { ok: true, reservationIds: ["r1"] } });
+    return response({
+      body:
+        flow === "reservation"
+          ? { ok: true, reservationIds: ["r1"] }
+          : { ok: true, requestId: "request-1" },
+    });
   }
 
   const exports = {};
@@ -169,6 +185,42 @@ function mount({ mode = "success" } = {}) {
     ).props.onChange({ target: { value: "guest@example.com" } });
   }
 
+  function prepareNailTipRequest() {
+    const requestTree = tree();
+    const changeInput = (placeholder, value) => {
+      const input = findNode(
+        requestTree,
+        node => node.type === "input" && node.props.placeholder === placeholder,
+      );
+      assert.ok(input, `input ${placeholder}`);
+      input.props.onChange({ target: { value } });
+    };
+
+    changeInput("Your name", "Guest A");
+    changeInput("you@example.com", "guest@example.com");
+    changeInput("France / USA / Korea / Thailand...", "France");
+    changeInput("Full name for delivery", "Guest A");
+    changeInput("City", "Paris");
+    changeInput("Postal code", "75001");
+    changeInput("+1 123 456 7890", "+33 1 23 45 67 89");
+
+    const address = findNode(
+      requestTree,
+      node =>
+        node.type === "textarea" &&
+        node.props.placeholder === "Street address, apartment, building",
+    );
+    assert.ok(address);
+    address.props.onChange({ target: { value: "1 Rue de Test" } });
+
+    const design = findNode(
+      requestTree,
+      node => node.type === "textarea" && node.props.rows === 5,
+    );
+    assert.ok(design);
+    design.props.onChange({ target: { value: "Pink original design" } });
+  }
+
   async function submit() {
     const submitButton = findNode(
       tree(),
@@ -178,7 +230,26 @@ function mount({ mode = "success" } = {}) {
     await submitButton.props.onClick();
   }
 
-  return { html, prepareReservation, requests, submit, tree };
+  async function submitNailTipRequest() {
+    const submitButton = findNode(
+      tree(),
+      node =>
+        node.type === "button" &&
+        nodeText(node).includes("Send custom nail tips request"),
+    );
+    assert.ok(submitButton);
+    await submitButton.props.onClick();
+  }
+
+  return {
+    html,
+    prepareNailTipRequest,
+    prepareReservation,
+    requests,
+    submit,
+    submitNailTipRequest,
+    tree,
+  };
 }
 
 test("inbound reservation guards before sending and exposes a persistent unknown-result lock", () => {
@@ -217,5 +288,44 @@ test("inbound reservation keeps an authoritative API rejection retryable", async
   assert.match(page.html(), /Not enough staff available/);
 
   await page.submit();
+  assert.equal(page.requests.length, 2);
+});
+
+test("inbound nail-tip request guards before uploading or sending", () => {
+  assert.match(
+    pageSource,
+    /if \(nailTipSubmissionInFlight\.current \|\| nailTipResultUnknown\)/,
+  );
+  assert.ok(
+    pageSource.indexOf("nailTipSubmissionInFlight.current = true") <
+      pageSource.indexOf("await uploadDesignImages()"),
+  );
+  assert.match(pageSource, /disabled=\{sending \|\| nailTipResultUnknown\}/);
+});
+
+for (const mode of ["reject", "unknown-json"]) {
+  test(`inbound nail-tip request blocks duplicate submission after ${mode}`, async () => {
+    const page = mount({ mode, flow: "nail-tip" });
+    page.prepareNailTipRequest();
+    await page.submitNailTipRequest();
+
+    assert.match(page.html(), /We could not confirm the custom request result/);
+    assert.match(page.html(), /Do not send the same request again/);
+    assert.equal(page.requests.length, 1);
+
+    await page.submitNailTipRequest();
+    assert.equal(page.requests.length, 1);
+  });
+}
+
+test("inbound nail-tip request keeps an authoritative API rejection retryable", async () => {
+  const page = mount({ mode: "failure", flow: "nail-tip" });
+  page.prepareNailTipRequest();
+  await page.submitNailTipRequest();
+
+  assert.doesNotMatch(page.html(), /We could not confirm the custom request result/);
+  assert.match(page.html(), /Request details are incomplete/);
+
+  await page.submitNailTipRequest();
   assert.equal(page.requests.length, 2);
 });
