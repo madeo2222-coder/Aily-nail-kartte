@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
+import { isExternalBlockOperationId } from "@/lib/external-calendar-block-submission";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,18 @@ type CreateBlockBody = {
   startTime?: unknown;
   endTime?: unknown;
   memo?: unknown;
+  operationId?: unknown;
+};
+
+type ExistingBlock = {
+  id: string;
+  salon_id: string;
+  staff_id: string;
+  source: string;
+  title: string | null;
+  start_at: string;
+  end_at: string;
+  memo: string | null;
 };
 
 function getSupabaseAdmin() {
@@ -58,6 +71,23 @@ function cleanString(value: unknown) {
 
 function validUuid(value: string) {
   return UUID_PATTERN.test(value);
+}
+
+function matchesSubmission(
+  existing: ExistingBlock,
+  payload: Record<string, string | null>,
+) {
+  return (
+    existing.salon_id === payload.salon_id &&
+    existing.staff_id === payload.staff_id &&
+    existing.source === payload.source &&
+    existing.title === payload.title &&
+    new Date(existing.start_at).getTime() ===
+      new Date(payload.start_at || "").getTime() &&
+    new Date(existing.end_at).getTime() ===
+      new Date(payload.end_at || "").getTime() &&
+    existing.memo === payload.memo
+  );
 }
 
 function buildJstDateTime(date: string, time: string) {
@@ -156,6 +186,7 @@ export async function POST(request: NextRequest) {
   const startTime = cleanString(body.startTime);
   const endTime = cleanString(body.endTime);
   const memo = cleanString(body.memo);
+  const operationId = cleanString(body.operationId);
   const salonId =
     authentication.principal.authenticationMode === "supabase"
       ? authentication.principal.salonId
@@ -163,6 +194,10 @@ export async function POST(request: NextRequest) {
 
   if (!validUuid(salonId) || !validUuid(staffId)) {
     return errorResponse("サロン・担当スタッフを確認してください。", 400);
+  }
+
+  if (operationId && !isExternalBlockOperationId(operationId)) {
+    return errorResponse("外部予定の登録操作を確認できません。", 400);
   }
 
   if (
@@ -214,6 +249,42 @@ export async function POST(request: NextRequest) {
 
     const startIso = startAt.toISOString();
     const endIso = endAt.toISOString();
+    const insertPayload: Record<string, string | null> = {
+      salon_id: salonId,
+      staff_id: staffId,
+      source,
+      title: title || null,
+      start_at: startIso,
+      end_at: endIso,
+      memo: memo || null,
+    };
+    const readExistingOperation = async () => {
+      if (!operationId) return null;
+
+      const result = await supabase
+        .from("external_calendar_blocks")
+        .select(
+          "id, salon_id, staff_id, source, title, start_at, end_at, memo",
+        )
+        .eq("id", operationId)
+        .eq("salon_id", salonId)
+        .maybeSingle();
+      if (result.error) throw new Error(result.error.message);
+      return (result.data || null) as ExistingBlock | null;
+    };
+
+    const existingOperation = await readExistingOperation();
+    if (existingOperation) {
+      if (!matchesSubmission(existingOperation, insertPayload)) {
+        return errorResponse("外部予定の登録操作の内容が一致しません。", 409);
+      }
+      return NextResponse.json({
+        ok: true,
+        id: existingOperation.id,
+        replayed: true,
+      });
+    }
+
     const [reservationsResult, blocksResult] = await Promise.all([
       supabase
         .from("reservations")
@@ -249,21 +320,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (operationId) insertPayload.id = operationId;
     const insertResult = await supabase
       .from("external_calendar_blocks")
-      .insert({
-        salon_id: salonId,
-        staff_id: staffId,
-        source,
-        title: title || null,
-        start_at: startIso,
-        end_at: endIso,
-        memo: memo || null,
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
 
     if (insertResult.error || !insertResult.data?.id) {
+      const reconciled = await readExistingOperation();
+      if (reconciled && matchesSubmission(reconciled, insertPayload)) {
+        return NextResponse.json({
+          ok: true,
+          id: reconciled.id,
+          replayed: true,
+        });
+      }
       return internalErrorResponse();
     }
 

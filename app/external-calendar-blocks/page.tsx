@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  buildExternalBlockFingerprint,
+  clearExternalBlockOperation,
+  getOrCreateExternalBlockOperationId,
+} from "@/lib/external-calendar-block-submission";
 
 type StaffRow = {
   id: string;
@@ -124,6 +129,24 @@ export default function ExternalCalendarBlocksPage() {
     submissionInFlightRef.current = true;
     setSaving(true);
     let resultUnknown = false;
+    const submission = {
+      source: isContractorBooking ? "業務委託" : source,
+      salonId: selectedStaff.salon_id,
+      staffId,
+      date,
+      startTime,
+      endTime,
+      title,
+      memo: isContractorBooking
+        ? `施術スタッフ：${contractorStaffName.trim()}`
+        : memo,
+    };
+    const fingerprint = buildExternalBlockFingerprint(submission);
+    const operationId = getOrCreateExternalBlockOperationId(
+      window.localStorage,
+      fingerprint,
+      () => crypto.randomUUID(),
+    );
 
     try {
       const res = await fetch("/api/external-calendar-blocks", {
@@ -131,18 +154,7 @@ export default function ExternalCalendarBlocksPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          source: isContractorBooking ? "業務委託" : source,
-          salonId: selectedStaff.salon_id,
-          staffId,
-          date,
-          startTime,
-          endTime,
-          title,
-          memo: isContractorBooking
-            ? `施術スタッフ：${contractorStaffName.trim()}`
-            : memo,
-        }),
+        body: JSON.stringify({ ...submission, operationId }),
       });
 
       const json = (await res.json().catch(() => null)) as {
@@ -157,10 +169,12 @@ export default function ExternalCalendarBlocksPage() {
       }
 
       if (!res.ok || !json.ok) {
+        clearExternalBlockOperation(window.localStorage, operationId);
         alert(json.error || "登録に失敗しました");
         return;
       }
 
+      clearExternalBlockOperation(window.localStorage, operationId);
       alert("外部予約ブロックを登録しました");
 
       setTitle("");

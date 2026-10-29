@@ -29,10 +29,24 @@ function compile(source) {
 
 const compiledCreate = compile(createSource);
 const compiledDelete = compile(deleteSource);
+const submissionExports = {};
+vm.runInNewContext(
+  compile(
+    readFileSync(
+      new URL(
+        "../lib/external-calendar-block-submission.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ),
+  { exports: submissionExports, JSON, RegExp },
+);
 
 const SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
 const OTHER_SALON_ID = "954e4418-4606-4932-8f03-87dfbe962967";
 const STAFF_ID = "e568f9c8-3c8f-4f6b-9aa4-e9ded5e126e9";
+const OPERATION_ID = "55555555-5555-4555-8555-555555555555";
 
 class MockResponse {
   constructor(body, status = 200) {
@@ -91,6 +105,7 @@ function executeCreate({ authentication, rows = {} }) {
   const calls = [];
   let authOptions = null;
   let clientCreated = false;
+  let existingOperationRead = 0;
 
   function resultFor(call, terminal) {
     if (call.operation === "insert") {
@@ -103,6 +118,18 @@ function executeCreate({ authentication, rows = {} }) {
           error: null,
         }
       );
+    }
+    if (
+      terminal === "maybeSingle" &&
+      call.table === "external_calendar_blocks" &&
+      call.filters.some(
+        (filter) => filter.column === "id" && filter.value === OPERATION_ID,
+      )
+    ) {
+      const configured = rows.existingOperations || [rows.existingOperation];
+      const value = configured[existingOperationRead] ?? null;
+      existingOperationRead += 1;
+      return { data: value, error: null };
     }
     return rows[call.table] || { data: [], error: null };
   }
@@ -183,6 +210,9 @@ function executeCreate({ authentication, rows = {} }) {
             return authentication;
           },
         };
+      }
+      if (name === "@/lib/external-calendar-block-submission") {
+        return submissionExports;
       }
       if (name === "@supabase/supabase-js") {
         return {
@@ -319,6 +349,118 @@ test("external block creation validates staff and both calendars before insertin
     end_at: "2026-10-20T02:30:00.000Z",
     memo: "受付番号123",
   });
+});
+
+test("external block creation stores the operation ID as the block ID", async () => {
+  const runtime = executeCreate({ authentication: principal() });
+  const response = await runtime.exports.POST(
+    request({ operationId: OPERATION_ID }),
+  );
+
+  assert.equal(response.status, 200);
+  const insert = runtime.calls.find(
+    (call) =>
+      call.table === "external_calendar_blocks" && call.operation === "insert",
+  );
+  assert.equal(insert.insert.id, OPERATION_ID);
+});
+
+test("external block creation replays an identical completed operation", async () => {
+  const existing = {
+    id: OPERATION_ID,
+    salon_id: SALON_ID,
+    staff_id: STAFF_ID,
+    source: "HPB",
+    title: "外部予約",
+    start_at: "2026-10-20T01:00:00.000Z",
+    end_at: "2026-10-20T02:30:00.000Z",
+    memo: "受付番号123",
+  };
+  const runtime = executeCreate({
+    authentication: principal(),
+    rows: { existingOperation: existing },
+  });
+  const response = await runtime.exports.POST(
+    request({ operationId: OPERATION_ID }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.id, OPERATION_ID);
+  assert.equal(body.replayed, true);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "insert"),
+    false,
+  );
+});
+
+test("external block creation rejects an operation ID reused for different content", async () => {
+  const runtime = executeCreate({
+    authentication: principal(),
+    rows: {
+      existingOperation: {
+        id: OPERATION_ID,
+        salon_id: SALON_ID,
+        staff_id: STAFF_ID,
+        source: "HPB",
+        title: "別の外部予約",
+        start_at: "2026-10-20T01:00:00.000Z",
+        end_at: "2026-10-20T02:30:00.000Z",
+        memo: "受付番号123",
+      },
+    },
+  });
+  const response = await runtime.exports.POST(
+    request({ operationId: OPERATION_ID }),
+  );
+
+  assert.equal(response.status, 409);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "insert"),
+    false,
+  );
+});
+
+test("external block creation converges after a concurrent insert wins", async () => {
+  const existing = {
+    id: OPERATION_ID,
+    salon_id: SALON_ID,
+    staff_id: STAFF_ID,
+    source: "HPB",
+    title: "外部予約",
+    start_at: "2026-10-20T01:00:00.000Z",
+    end_at: "2026-10-20T02:30:00.000Z",
+    memo: "受付番号123",
+  };
+  const runtime = executeCreate({
+    authentication: principal(),
+    rows: {
+      existingOperations: [null, existing],
+      insert: { data: null, error: { message: "duplicate key" } },
+    },
+  });
+  const response = await runtime.exports.POST(
+    request({ operationId: OPERATION_ID }),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.id, OPERATION_ID);
+  assert.equal(body.replayed, true);
+  assert.equal(
+    runtime.calls.filter((call) => call.operation === "insert").length,
+    1,
+  );
+});
+
+test("external block creation rejects an invalid operation ID", async () => {
+  const runtime = executeCreate({ authentication: principal() });
+  const response = await runtime.exports.POST(
+    request({ operationId: "not-an-operation-id" }),
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(runtime.clientCreated, false);
 });
 
 test("external block creation refuses a matching non-cancelled reservation", async () => {

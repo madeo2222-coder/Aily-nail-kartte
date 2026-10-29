@@ -8,6 +8,20 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const submissionExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL(
+        "../lib/external-calendar-block-submission.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText,
+  { exports: submissionExports, JSON, RegExp },
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/external-calendar-blocks/page.tsx", import.meta.url),
@@ -32,11 +46,28 @@ function findNode(node, predicate) {
   return null;
 }
 
+function makeStorage() {
+  const values = new Map();
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key) : null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
+
 async function mount({
   failure = false,
   rejection = false,
   empty = false,
   postMode = "success",
+  storage = makeStorage(),
+  operationId = "55555555-5555-4555-8555-555555555555",
 } = {}) {
   const states = [];
   let cursor = 0;
@@ -44,6 +75,7 @@ async function mount({
   let shouldFail = failure;
   let postCount = 0;
   const alerts = [];
+  const postBodies = [];
 
   const hooks = {
     useState(initial) {
@@ -92,6 +124,7 @@ async function mount({
       if (options.method !== "POST") return staffResponse();
 
       postCount += 1;
+      postBodies.push(JSON.parse(options.body));
       if (postMode === "network") throw new Error("offline");
       if (postMode === "body-loss") {
         return { ok: true, json: async () => { throw new Error("body lost"); } };
@@ -105,6 +138,8 @@ async function mount({
       return { ok: true, json: async () => ({ ok: true }) };
     },
     alert(message) { alerts.push(message); },
+    window: { localStorage: storage },
+    crypto: { randomUUID: () => operationId },
     require(name) {
       if (name === "react") return hooks;
       if (name === "react/jsx-runtime") return require(name);
@@ -114,6 +149,9 @@ async function mount({
           default: ({ href, children, ...props }) =>
             require("react").createElement("a", { ...props, href }, children),
         };
+      }
+      if (name === "@/lib/external-calendar-block-submission") {
+        return submissionExports;
       }
       throw new Error(`Unexpected import: ${name}`);
     },
@@ -182,6 +220,9 @@ async function mount({
     get alerts() {
       return alerts;
     },
+    get postBodies() {
+      return postBodies;
+    },
     async retrySaveAfterUnknown() {
       const button = findNode(
         tree(),
@@ -242,4 +283,27 @@ test("external calendar blocks keeps an explicit API failure retryable", async (
   assert.deepEqual(page.alerts, ["登録が競合しました"]);
   assert.doesNotMatch(page.html(), /登録結果を確認できませんでした/);
   assert.equal(page.hasSaveButton(), true);
+});
+
+test("external calendar blocks reuses its operation ID after a response-loss reload", async () => {
+  const storage = makeStorage();
+  const first = await mount({
+    postMode: "network",
+    storage,
+    operationId: "55555555-5555-4555-8555-555555555555",
+  });
+  await first.save();
+
+  const second = await mount({
+    postMode: "success",
+    storage,
+    operationId: "66666666-6666-4666-8666-666666666666",
+  });
+  await second.save();
+
+  assert.equal(
+    first.postBodies[0].operationId,
+    "55555555-5555-4555-8555-555555555555",
+  );
+  assert.equal(second.postBodies[0].operationId, first.postBodies[0].operationId);
 });
