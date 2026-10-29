@@ -691,7 +691,11 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     if (reservationResult.error) return internalErrorResponse();
     if (!reservationResult.data) {
-      return errorResponse("予約が見つかりません。", 404);
+      return NextResponse.json({
+        ok: true,
+        id: reservationId,
+        alreadyDeleted: true,
+      });
     }
 
     if (
@@ -760,6 +764,21 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 
     if (deleteResult.error) return internalErrorResponse();
     if (!deleteResult.data) {
+      const remainingReservation = await findReservation(
+        supabase,
+        reservationId,
+        salonId,
+      );
+
+      if (remainingReservation.error) return internalErrorResponse();
+      if (!remainingReservation.data) {
+        return NextResponse.json({
+          ok: true,
+          id: reservationId,
+          alreadyDeleted: true,
+        });
+      }
+
       return errorResponse(
         "予約内容が更新されています。最新の内容を読み込み直してください。",
         409,

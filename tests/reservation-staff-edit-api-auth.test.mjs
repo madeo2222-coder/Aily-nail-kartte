@@ -75,6 +75,7 @@ function executeRoute({ authentication, rows = {} }) {
   const calls = [];
   let authOptions = null;
   let clientCreated = false;
+  let reservationReadCount = 0;
 
   function resultFor(call, terminal) {
     if (call.operation === "update") {
@@ -85,6 +86,13 @@ function executeRoute({ authentication, rows = {} }) {
     }
     if (terminal === "maybeSingle") {
       if (call.table === "reservations") {
+        if (rows.reservationSingleSequence) {
+          const result =
+            rows.reservationSingleSequence[reservationReadCount] ||
+            rows.reservationSingleSequence.at(-1);
+          reservationReadCount += 1;
+          return result;
+        }
         return rows.reservationSingle || { data: reservation, error: null };
       }
       if (call.table === "staffs") {
@@ -930,6 +938,42 @@ test("staff delete reports a write-time sync race as a conflict", async () => {
 
   assert.equal(response.status, 409);
   assert.match(body.error, /最新の内容を読み込み直して/);
+});
+
+test("staff delete is idempotent when the reservation is already absent", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: { reservationSingle: { data: null, error: null } },
+  });
+  const response = await runtime.exports.DELETE(deleteRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.id, RESERVATION_ID);
+  assert.equal(body.alreadyDeleted, true);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "delete"),
+    false,
+  );
+});
+
+test("staff delete converges when another request removed the reservation", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingleSequence: [
+        { data: reservation, error: null },
+        { data: null, error: null },
+      ],
+      delete: { data: null, error: null },
+    },
+  });
+  const response = await runtime.exports.DELETE(deleteRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.id, RESERVATION_ID);
+  assert.equal(body.alreadyDeleted, true);
 });
 
 test("staff delete guards an originally empty status with IS NULL", async () => {
