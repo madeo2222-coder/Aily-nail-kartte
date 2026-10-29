@@ -174,6 +174,40 @@ function sameStoredDateTime(
   );
 }
 
+function matchesRequestedReservation(
+  reservation: {
+    salon_id: string | null;
+    customer_id: string | null;
+    staff_id: string | null;
+    menu: string | null;
+    start_at: string | null;
+    end_at: string | null;
+    status: string | null;
+    memo: string | null;
+  },
+  requested: {
+    salonId: string;
+    customerId: string | null;
+    staffId: string;
+    menu: string | null;
+    startAt: string;
+    endAt: string;
+    status: string;
+    memo: string | null;
+  },
+) {
+  return (
+    reservation.salon_id === requested.salonId &&
+    reservation.customer_id === requested.customerId &&
+    reservation.staff_id === requested.staffId &&
+    reservation.menu === requested.menu &&
+    sameStoredDateTime(reservation.start_at, requested.startAt) &&
+    sameStoredDateTime(reservation.end_at, requested.endAt) &&
+    reservation.status === requested.status &&
+    reservation.memo === requested.memo
+  );
+}
+
 async function authenticate() {
   return authenticateStaffApi({
     allowedRoles: ["owner", "staff"],
@@ -405,6 +439,24 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return errorResponse("予約が見つかりません。", 404);
     }
 
+    const requestedReservation = {
+      salonId,
+      customerId,
+      staffId,
+      menu: menu || null,
+      startAt,
+      endAt,
+      status,
+      memo: memo || null,
+    };
+
+    if (isExternalSyncedReservation(reservationResult.data)) {
+      return errorResponse(
+        "HPB・ミニモから同期された予約は、予約元で変更してください。",
+        409,
+      );
+    }
+
     if (
       reservationResult.data.customer_id !== expectedCustomerId ||
       reservationResult.data.staff_id !== expectedStaffId ||
@@ -417,15 +469,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       ) ||
       !sameStoredDateTime(reservationResult.data.end_at, expectedEndAt)
     ) {
+      if (
+        matchesRequestedReservation(
+          reservationResult.data,
+          requestedReservation,
+        )
+      ) {
+        return NextResponse.json({
+          ok: true,
+          id: reservationResult.data.id,
+          alreadyUpdated: true,
+        });
+      }
+
       return errorResponse(
         "予約内容が更新されています。最新の内容を読み込み直してください。",
-        409,
-      );
-    }
-
-    if (isExternalSyncedReservation(reservationResult.data)) {
-      return errorResponse(
-        "HPB・ミニモから同期された予約は、予約元で変更してください。",
         409,
       );
     }
@@ -594,6 +652,30 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     if (updateResult.error) return internalErrorResponse();
     if (!updateResult.data) {
+      const latestReservationResult = await findReservation(
+        supabase,
+        reservationId,
+        authentication.principal.authenticationMode === "supabase"
+          ? salonId
+          : null,
+      );
+
+      if (latestReservationResult.error) return internalErrorResponse();
+      if (
+        latestReservationResult.data &&
+        !isExternalSyncedReservation(latestReservationResult.data) &&
+        matchesRequestedReservation(
+          latestReservationResult.data,
+          requestedReservation,
+        )
+      ) {
+        return NextResponse.json({
+          ok: true,
+          id: latestReservationResult.data.id,
+          alreadyUpdated: true,
+        });
+      }
+
       return errorResponse(
         "予約内容が更新されています。最新の内容を読み込み直してください。",
         409,

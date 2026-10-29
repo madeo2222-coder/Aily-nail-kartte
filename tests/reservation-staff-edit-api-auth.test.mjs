@@ -35,6 +35,11 @@ const reservation = {
   source: "manual",
   memo: "確認メモ",
 };
+const updatedReservation = {
+  ...reservation,
+  status: "来店",
+  memo: "更新メモ",
+};
 
 class MockResponse {
   constructor(body, status = 200) {
@@ -470,6 +475,28 @@ test("staff edit validates membership, checks both calendars, and updates server
   }
 });
 
+test("staff edit retry succeeds when the requested update is already stored", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: { data: updatedReservation, error: null },
+    },
+  });
+  const response = await runtime.exports.PATCH(patchRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(body)), {
+    ok: true,
+    id: RESERVATION_ID,
+    alreadyUpdated: true,
+  });
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
 for (const [field, value] of [
   ["customer_id", "7fffd6d9-9388-4eb6-9334-eaba7c45d100"],
   ["staff_id", "3a0a80ec-9a09-42f7-8cc4-1673fd4c5e55"],
@@ -589,6 +616,27 @@ test("staff edit API rejects external synced reservation changes and deletes", a
   }
 });
 
+test("staff edit retry never treats an external synced reservation as an already applied update", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: {
+        data: { ...updatedReservation, source: "HPB" },
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.PATCH(patchRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /予約元で/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
 test("staff edit reports a write-time sync race as a conflict", async () => {
   const runtime = executeRoute({
     authentication: principal(),
@@ -599,6 +647,34 @@ test("staff edit reports a write-time sync race as a conflict", async () => {
 
   assert.equal(response.status, 409);
   assert.match(body.error, /最新の内容を読み込み直して/);
+});
+
+test("staff edit concurrent same update converges after the guarded write loses the race", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingleSequence: [
+        { data: reservation, error: null },
+        { data: updatedReservation, error: null },
+      ],
+      update: { data: null, error: null },
+    },
+  });
+  const response = await runtime.exports.PATCH(patchRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(body)), {
+    ok: true,
+    id: RESERVATION_ID,
+    alreadyUpdated: true,
+  });
+  assert.equal(
+    runtime.calls.filter(
+      (call) => call.table === "reservations" && call.operation === "read",
+    ).length,
+    3,
+  );
 });
 
 test("staff edit compares an originally empty memo with IS NULL", async () => {
