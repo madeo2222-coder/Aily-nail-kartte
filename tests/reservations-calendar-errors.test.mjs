@@ -57,6 +57,7 @@ async function mount({
   rejection = false,
   empty = false,
   reservationStatus = "confirmed",
+  hpbOutcomes = ["success"],
 } = {}) {
   const states = [];
   const effects = [];
@@ -64,6 +65,8 @@ async function mount({
   let cursor = 0;
   let collectEffects = true;
   let shouldFail = failure;
+  const alerts = [];
+  const pendingHpbOutcomes = [...hpbOutcomes];
 
   const hooks = {
     useState(initial) {
@@ -148,10 +151,30 @@ async function mount({
     Promise,
     Set,
     console: { error() {} },
-    alert() {},
+    alert(message) {
+      alerts.push(message);
+    },
     fetch: async (url, options) => {
       requests.push({ url, options });
       if (url !== "/api/reservations/calendar-data") {
+        const outcome = pendingHpbOutcomes.shift() || "success";
+        if (outcome === "networkFailure") throw new Error("offline");
+        if (outcome === "invalidJson") {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => {
+              throw new Error("response body lost");
+            },
+          };
+        }
+        if (outcome === "explicitFailure") {
+          return {
+            ok: false,
+            status: 502,
+            json: async () => ({ ok: false, error: "同期APIが失敗しました" }),
+          };
+        }
         return { ok: true, json: async () => ({ ok: true, count: 0 }) };
       }
       if (shouldFail && rejection) throw new Error("offline");
@@ -197,6 +220,19 @@ async function mount({
   return {
     html,
     requests,
+    alerts,
+    async syncOnce() {
+      const button = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          ["予約今すぐ同期", "同期結果を確認してください"].includes(
+            node.props.children,
+          ),
+      );
+      assert.ok(button, "Gmail sync button exists");
+      await button.props.onClick();
+    },
     async syncTwiceBeforeRerender() {
       const button = findNode(
         tree(),
@@ -287,5 +323,55 @@ test("reservation calendar ignores a second Gmail sync click before rerender", a
     page.requests.filter(request => request.url === "/api/hpb-gmail-sync")
       .length,
     1,
+  );
+});
+
+for (const outcome of ["networkFailure", "invalidJson"]) {
+  test(`reservation calendar locks a repeated Gmail sync after ${outcome}`, async () => {
+    const page = await mount({ hpbOutcomes: [outcome] });
+
+    await page.syncOnce();
+
+    assert.match(page.html(), /予約同期の結果を確認できませんでした/);
+    assert.match(page.html(), /同じ同期を繰り返さず/);
+    assert.match(page.html(), /href="\/hpb-mail-sync-test"/);
+    assert.match(page.html(), /同期結果を確認してください/);
+    assert.equal(
+      page.requests.filter(request => request.url === "/api/hpb-gmail-sync")
+        .length,
+      1,
+    );
+    assert.equal(
+      page.requests.filter(
+        request => request.url === "/api/reservations/calendar-data",
+      ).length,
+      2,
+    );
+    assert.match(page.alerts.at(-1), /予約同期センター/);
+
+    await page.syncOnce();
+
+    assert.equal(
+      page.requests.filter(request => request.url === "/api/hpb-gmail-sync")
+        .length,
+      1,
+    );
+  });
+}
+
+test("reservation calendar allows retry after an explicit Gmail sync failure", async () => {
+  const page = await mount({ hpbOutcomes: ["explicitFailure", "success"] });
+
+  await page.syncOnce();
+
+  assert.doesNotMatch(page.html(), /予約同期の結果を確認できませんでした/);
+  assert.match(page.alerts.at(-1), /同期APIが失敗しました/);
+
+  await page.syncOnce();
+
+  assert.equal(
+    page.requests.filter(request => request.url === "/api/hpb-gmail-sync")
+      .length,
+    2,
   );
 });

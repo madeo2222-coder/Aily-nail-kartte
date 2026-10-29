@@ -538,6 +538,7 @@ export default function ReservationsCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [syncingHpb, setSyncingHpb] = useState(false);
+  const [hpbSyncResultUnknown, setHpbSyncResultUnknown] = useState(false);
 
   async function fetchCalendarData() {
     const requestId = ++loadRequestIdRef.current;
@@ -582,9 +583,10 @@ export default function ReservationsCalendarPage() {
   }
 
   async function syncHpbNow() {
-    if (hpbSyncInFlightRef.current) return;
+    if (hpbSyncInFlightRef.current || hpbSyncResultUnknown) return;
 
     hpbSyncInFlightRef.current = true;
+    let canRetry = false;
 
     try {
       setSyncingHpb(true);
@@ -596,6 +598,7 @@ export default function ReservationsCalendarPage() {
       const json = await response.json();
 
       if (json.partial) {
+        canRetry = true;
         await fetchCalendarData();
         alert(
           `予約同期は一部失敗しました。成功 ${json.syncedCount ?? json.count ?? 0}件・失敗 ${json.failedCount ?? 0}件です。失敗内容を予約同期センターで確認し、再試行してください。`
@@ -604,9 +607,11 @@ export default function ReservationsCalendarPage() {
       }
 
       if (!response.ok || !json.ok) {
+        canRetry = true;
         throw new Error(json.error || "同期に失敗しました");
       }
 
+      canRetry = true;
       await fetchCalendarData();
 
       const syncedCount = json.syncedCount ?? json.count ?? 0;
@@ -624,9 +629,19 @@ export default function ReservationsCalendarPage() {
     } catch (error) {
       console.error(error);
 
-      alert(error instanceof Error ? error.message : "同期に失敗しました");
+      if (canRetry) {
+        alert(error instanceof Error ? error.message : "同期に失敗しました");
+      } else {
+        setHpbSyncResultUnknown(true);
+        await fetchCalendarData();
+        alert(
+          "予約同期の結果を確認できませんでした。カレンダーを再読込しました。同じ同期を繰り返さず、予約同期センターで未反映の予約を確認してください。",
+        );
+      }
     } finally {
-      hpbSyncInFlightRef.current = false;
+      if (canRetry) {
+        hpbSyncInFlightRef.current = false;
+      }
       setSyncingHpb(false);
     }
   }
@@ -1033,10 +1048,14 @@ export default function ReservationsCalendarPage() {
               <button
                 type="button"
                 onClick={syncHpbNow}
-                disabled={syncingHpb}
+                disabled={syncingHpb || hpbSyncResultUnknown}
                 className="col-span-2 inline-flex min-h-12 items-center justify-center rounded-2xl bg-white px-4 py-3 text-center text-sm font-bold text-orange-600 shadow disabled:opacity-60"
               >
-                {syncingHpb ? "予約同期中..." : "予約今すぐ同期"}
+                {syncingHpb
+                  ? "予約同期中..."
+                  : hpbSyncResultUnknown
+                    ? "同期結果を確認してください"
+                    : "予約今すぐ同期"}
               </button>
 
               <Link
@@ -1062,6 +1081,26 @@ export default function ReservationsCalendarPage() {
             </div>
           </div>
         </section>
+
+        {hpbSyncResultUnknown ? (
+          <section
+            role="alert"
+            className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 shadow-sm"
+          >
+            <div className="text-sm font-bold text-amber-800">
+              予約同期の結果を確認できませんでした
+            </div>
+            <div className="mt-2 text-sm leading-6 text-amber-800">
+              カレンダーを再読込しました。同じ同期を繰り返さず、未反映の予約だけを予約同期センターで確認してください。
+            </div>
+            <Link
+              href="/hpb-mail-sync-test"
+              className="mt-3 inline-flex min-h-11 items-center justify-center rounded-2xl bg-amber-700 px-4 py-2 text-sm font-bold text-white"
+            >
+              予約同期センターで確認
+            </Link>
+          </section>
+        ) : null}
 
         <section className="rounded-[28px] border border-rose-100 bg-white p-4 shadow-sm">
           <div className="text-sm font-bold text-slate-900">予約元の色分け</div>
