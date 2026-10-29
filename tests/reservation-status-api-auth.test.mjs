@@ -527,6 +527,81 @@ test("reservation status resumes an interrupted visit transition without rewriti
   );
 });
 
+test("reservation status resumes an interrupted completion without rewriting it", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    reservationResult: {
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "完了",
+      },
+      error: null,
+    },
+  });
+
+  const response = await runtime.exports.POST(
+    request("完了", "来店"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(body)), {
+    ok: true,
+    reservation: { id: "reservation-1", status: "完了" },
+  });
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
+test("reservation status does not treat an invalid direct completion as a replay", async () => {
+  const runtime = executeRoute({
+    authentication: {
+      ok: true,
+      principal: {
+        authenticationMode: "legacy",
+        staffId: null,
+        salonId: null,
+        role: "staff",
+        isActive: null,
+      },
+    },
+    reservationResult: {
+      data: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        status: "完了",
+      },
+      error: null,
+    },
+  });
+
+  const response = await runtime.exports.POST(
+    request("完了", "confirmed"),
+    context,
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /最新の内容を読み込み直して/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
 test("reservation status does not resume when the interrupted visit already exists", async () => {
   const runtime = executeRoute({
     authentication: {

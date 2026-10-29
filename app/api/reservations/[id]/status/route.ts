@@ -59,6 +59,23 @@ function canResumeVisitTransition({
   );
 }
 
+function canResumeCompletionTransition({
+  currentStatus,
+  expectedStatus,
+  nextStatus,
+}: {
+  currentStatus: string | null;
+  expectedStatus: string | null;
+  nextStatus: string;
+}) {
+  return (
+    nextStatus === "完了" &&
+    normalizeWorkflowStatus(currentStatus) ===
+      normalizeWorkflowStatus(nextStatus) &&
+    canTransitionReservationStatus(expectedStatus, nextStatus)
+  );
+}
+
 function canResumeVisitCompletion({
   currentStatus,
   expectedStatus,
@@ -204,10 +221,18 @@ export async function POST(
         expectedStatus,
         nextStatus: status,
       });
+    const resumesInterruptedCompletion =
+      reservationResult.data.status !== expectedStatus &&
+      canResumeCompletionTransition({
+        currentStatus: reservationResult.data.status,
+        expectedStatus,
+        nextStatus: status,
+      });
 
     if (
       reservationResult.data.status !== expectedStatus &&
-      !resumesInterruptedVisit
+      !resumesInterruptedVisit &&
+      !resumesInterruptedCompletion
     ) {
       return NextResponse.json(
         {
@@ -216,6 +241,16 @@ export async function POST(
         },
         { status: 409 },
       );
+    }
+
+    if (resumesInterruptedCompletion) {
+      return NextResponse.json({
+        ok: true,
+        reservation: {
+          id: reservationResult.data.id,
+          status: reservationResult.data.status,
+        },
+      });
     }
 
     if (
