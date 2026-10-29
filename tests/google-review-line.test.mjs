@@ -42,6 +42,8 @@ const baseVisit = {
   visit_date: "2099-10-02",
 };
 
+const AILY_SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
+
 function loadRoute({
   visits = [baseVisit],
   latestVisit = baseVisit,
@@ -55,6 +57,11 @@ function loadRoute({
     },
     error: null,
   },
+  cronSalonResult = {
+    data: { id: AILY_SALON_ID },
+    error: null,
+  },
+  cronSecret = "cron-secret",
 } = {}) {
   const authCalls = [];
   const queries = [];
@@ -80,7 +87,11 @@ function loadRoute({
         return { data: visits, error: null };
       },
       async maybeSingle() {
-        if (table === "salons") return salonResult;
+        if (table === "salons") {
+          return record.eq.some(([field]) => field === "status")
+            ? cronSalonResult
+            : salonResult;
+        }
         if (table === "line_notification_logs") return logCheck;
         if (table === "customers") {
           return {
@@ -122,6 +133,7 @@ function loadRoute({
     process: {
       env: {
         LINE_CHANNEL_ACCESS_TOKEN: "line-token",
+        CRON_SECRET: cronSecret,
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
         SUPABASE_SERVICE_ROLE_KEY: "service-role",
       },
@@ -176,7 +188,22 @@ function loadRoute({
     return { body: await response.json(), status: response.status };
   }
 
-  return { authCalls, clientCreated: () => clientCreated, lineCalls, logInserts, post, queries };
+  async function get({
+    authorization = "Bearer cron-secret",
+    targetDate = "2099-10-02",
+  } = {}) {
+    const headers = new Headers();
+    if (typeof authorization === "string" && authorization) {
+      headers.set("authorization", authorization);
+    }
+    const response = await exports.GET({
+      headers,
+      url: `https://example.test/api/send-google-review-line?targetDate=${encodeURIComponent(targetDate)}`,
+    });
+    return { body: await response.json(), status: response.status };
+  }
+
+  return { authCalls, clientCreated: () => clientCreated, get, lineCalls, logInserts, post, queries };
 }
 
 test("scopes review reads to the authenticated salon and sends that salon's URL", async () => {
@@ -216,6 +243,91 @@ test("scopes review reads to the authenticated salon and sends that salon's URL"
   assert.match(payload.messages[0].text, /example\.test\/review\/salon-1/);
   const retryKey = runtime.lineCalls[0].options.headers["X-Line-Retry-Key"];
   assert.match(retryKey, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test("allows a verified Cron request only for the known active Aily salon", async () => {
+  const cronVisit = {
+    ...baseVisit,
+    salon_id: AILY_SALON_ID,
+  };
+  const runtime = loadRoute({
+    visits: [cronVisit],
+    latestVisit: cronVisit,
+    salonResult: {
+      data: {
+        id: AILY_SALON_ID,
+        google_review_url: "https://example.test/review/aily",
+      },
+      error: null,
+    },
+  });
+  const response = await runtime.get();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.sentCount, 1);
+  assert.equal(runtime.authCalls.length, 0);
+  const cronSalonQuery = runtime.queries.find(
+    (query) => query.table === "salons" && query.eq.some(([field]) => field === "status")
+  );
+  assert.deepEqual(cronSalonQuery.eq, [
+    ["id", AILY_SALON_ID],
+    ["name", "Aily Nail Studio"],
+    ["status", "active"],
+  ]);
+  const visitQuery = runtime.queries.find(
+    (query) => query.table === "visits" && query.eq.some(([field]) => field === "visit_date")
+  );
+  assert.deepEqual(visitQuery.eq, [
+    ["salon_id", AILY_SALON_ID],
+    ["visit_date", "2099-10-02"],
+  ]);
+});
+
+test("rejects missing or wrong Cron credentials before creating a privileged client", async () => {
+  for (const authorization of [null, "Bearer wrong-secret", "cron-secret"]) {
+    const runtime = loadRoute();
+    const response = await runtime.get({ authorization });
+
+    assert.equal(response.status, 401);
+    assert.equal(response.body.ok, false);
+    assert.equal(runtime.clientCreated(), false);
+    assert.equal(runtime.lineCalls.length, 0);
+  }
+});
+
+test("rejects Cron requests when the server secret is empty", async () => {
+  const runtime = loadRoute({ cronSecret: "" });
+  const response = await runtime.get();
+
+  assert.equal(response.status, 401);
+  assert.equal(runtime.clientCreated(), false);
+  assert.equal(runtime.lineCalls.length, 0);
+});
+
+test("fails closed when the Cron target salon is not the verified active salon", async () => {
+  for (const cronSalonResult of [
+    { data: null, error: null },
+    { data: { id: "another-salon" }, error: null },
+    { data: null, error: { message: "private database detail" } },
+  ]) {
+    const runtime = loadRoute({ cronSalonResult });
+    const response = await runtime.get();
+
+    assert.equal(response.status, 503);
+    assert.equal(response.body.ok, false);
+    assert.equal(runtime.queries.some((query) => query.table === "visits"), false);
+    assert.equal(runtime.lineCalls.length, 0);
+  }
+});
+
+test("rejects an invalid Cron target date before creating a privileged client", async () => {
+  const runtime = loadRoute();
+  const response = await runtime.get({ targetDate: "2099-02-30" });
+
+  assert.equal(response.status, 400);
+  assert.equal(response.body.ok, false);
+  assert.equal(runtime.clientCreated(), false);
+  assert.equal(runtime.lineCalls.length, 0);
 });
 
 test("fails closed when the prior delivery log cannot be checked", async () => {

@@ -10,7 +10,7 @@ const routes = [
   {
     name: "Google review LINE",
     path: "send-google-review-line",
-    methods: ["POST", "GET"],
+    methods: ["POST"],
     authOptions: {
       allowedRoles: ["owner", "staff"],
       legacyAllowed: true,
