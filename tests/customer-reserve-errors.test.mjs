@@ -118,6 +118,15 @@ async function mount({
           },
         };
       }
+      if (reservationMode === "server-error") {
+        return {
+          ok: false,
+          status: 500,
+          async json() {
+            return { ok: false, error: "予約保存結果を確認できませんでした" };
+          },
+        };
+      }
       return response({ body: { ok: true, reservation: { id: "reservation-1" } } });
     }
 
@@ -145,6 +154,14 @@ async function mount({
         return { useSearchParams: () => new URLSearchParams() };
       }
       if (name === "../CustomerPhoto") return { default: () => null };
+      if (name === "@/lib/customer-reservation-submission") {
+        return {
+          buildCustomerReservationFingerprint: value => JSON.stringify(value),
+          getOrCreateCustomerReservationOperationId: () =>
+            "11111111-1111-4111-8111-111111111111",
+          clearCustomerReservationOperation() {},
+        };
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   }, { filename: "customer-reserve-page.js" });
@@ -313,6 +330,18 @@ test("customer reservation allows retry after an authoritative conflict", async 
 
   assert.match(page.html(), /選択した時間は埋まりました/);
   assert.doesNotMatch(page.html(), /マイページで予約を確認/);
+});
+
+test("customer reservation keeps the operation locked after a server-side unknown result", async () => {
+  const page = await mount({ reservationMode: "server-error" });
+  await page.selectMenuAndDate();
+  await page.submitReservation();
+
+  assert.match(page.html(), /予約申請の結果を確認できませんでした/);
+  assert.equal(page.requests.filter(request => request.url === "/api/reservations").length, 1);
+
+  await page.submitReservation();
+  assert.equal(page.requests.filter(request => request.url === "/api/reservations").length, 1);
 });
 
 test("customer reservation guards the request before React rerenders", () => {

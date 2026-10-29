@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import {
   getCustomerReservationAvailability,
   isValidCustomerBookingDate,
@@ -9,11 +10,26 @@ import {
   getSupabaseAdmin,
   requireCustomerLineSession,
 } from "@/lib/server/requireCustomerLineSession";
+import { isCustomerReservationOperationId } from "@/lib/customer-reservation-submission";
 
 type ReservationWriteRow = {
   outcome: string;
   reservation_id: string | null;
 };
+
+function isMissingIdempotentCreateRpc(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const candidate = error as Record<string, unknown>;
+  const code = typeof candidate.code === "string" ? candidate.code : "";
+  const message =
+    typeof candidate.message === "string" ? candidate.message.toLowerCase() : "";
+
+  return (
+    code === "PGRST202" ||
+    (message.includes("create_customer_requested_reservation_idempotent") &&
+      (message.includes("could not find") || message.includes("does not exist")))
+  );
+}
 
 function getReservationWriteRow(value: unknown): ReservationWriteRow | null {
   const row = Array.isArray(value) ? value[0] : value;
@@ -248,6 +264,8 @@ export async function POST(request: NextRequest) {
     const time = String(body.time || "").trim();
     const memo = String(body.memo || "").trim();
     const requestedStaffId = String(body.staffId || "").trim();
+    const requestedOperationId = String(body.operationId || "").trim();
+    const operationId = requestedOperationId || randomUUID();
     const durationMinutes = normalizeCustomerBookingDuration(
       body.durationMinutes
     );
@@ -255,6 +273,16 @@ export async function POST(request: NextRequest) {
     if (!menu) {
       return NextResponse.json(
         { ok: false, error: "メニューが未入力です" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      requestedOperationId &&
+      !isCustomerReservationOperationId(requestedOperationId)
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "予約申請操作を確認できません" },
         { status: 400 }
       );
     }
@@ -338,9 +366,10 @@ export async function POST(request: NextRequest) {
     const customerName = customer.name || "お客様";
     const staffName = assignedStaff.name || "担当者名未設定";
 
-    const { data: writeData, error } = await supabase.rpc(
-      "create_customer_requested_reservation",
+    let { data: writeData, error } = await supabase.rpc(
+      "create_customer_requested_reservation_idempotent",
       {
+        p_operation_id: operationId,
         p_salon_id: salonId,
         p_customer_id: customer.id,
         p_staff_id: assignedStaffId,
@@ -350,6 +379,26 @@ export async function POST(request: NextRequest) {
         p_memo: memo,
       }
     );
+
+    // The Aily DB is updated manually. Keep the current booking path working
+    // until the new RPC is applied, then switch to idempotent writes without a
+    // second application release.
+    if (isMissingIdempotentCreateRpc(error)) {
+      const fallback = await supabase.rpc(
+        "create_customer_requested_reservation",
+        {
+          p_salon_id: salonId,
+          p_customer_id: customer.id,
+          p_staff_id: assignedStaffId,
+          p_menu: menu,
+          p_start_at: startIso,
+          p_end_at: endIso,
+          p_memo: memo,
+        }
+      );
+      writeData = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) {
       console.error("customer reservation RPC failed", error.code);
@@ -386,8 +435,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (writeResult.outcome === "customer_unavailable") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "同じ時間帯にお客様の予約があります。予約一覧を確認してください",
+        },
+        { status: 409 }
+      );
+    }
+
+    if (writeResult.outcome === "idempotency_conflict") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "予約申請の内容が変わっています。画面を再読み込みしてください",
+        },
+        { status: 409 }
+      );
+    }
+
     if (
-      writeResult.outcome !== "created" ||
+      !["created", "already_created"].includes(writeResult.outcome) ||
       !writeResult.reservation_id
     ) {
       return NextResponse.json(
@@ -397,6 +466,15 @@ export async function POST(request: NextRequest) {
     }
 
     const reservationId = writeResult.reservation_id;
+
+    if (writeResult.outcome === "already_created") {
+      return NextResponse.json({
+        ok: true,
+        reservationId,
+        assignedStaffId,
+        alreadyCreated: true,
+      });
+    }
 
     try {
       await sendReservationNoticeMail({

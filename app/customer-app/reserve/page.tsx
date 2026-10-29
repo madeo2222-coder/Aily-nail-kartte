@@ -4,6 +4,11 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import CustomerPhoto from "../CustomerPhoto";
+import {
+  buildCustomerReservationFingerprint,
+  clearCustomerReservationOperation,
+  getOrCreateCustomerReservationOperationId,
+} from "@/lib/customer-reservation-submission";
 
 const customMenuId = "custom";
 
@@ -677,19 +682,27 @@ function ReservePageContent() {
         note.trim() ? `備考：${note.trim()}` : "",
       ].filter(Boolean);
 
+      const submission = {
+        menu: reservationMenu,
+        date: selectedDate,
+        time: selectedTime,
+        staffId: selectedStaffId,
+        durationMinutes: totalMinutes,
+        memo: memoLines.join("\n"),
+      };
+      const fingerprint = buildCustomerReservationFingerprint(submission);
+      const operationId = getOrCreateCustomerReservationOperationId(
+        window.localStorage,
+        fingerprint,
+        () => crypto.randomUUID(),
+      );
+
       const response = await fetch("/api/reservations", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          menu: reservationMenu,
-          date: selectedDate,
-          time: selectedTime,
-          staffId: selectedStaffId,
-          durationMinutes: totalMinutes,
-          memo: memoLines.join("\n"),
-        }),
+        body: JSON.stringify({ ...submission, operationId }),
       });
 
       const json = (await response.json().catch(() => null)) as {
@@ -706,6 +719,15 @@ function ReservePageContent() {
       }
 
       if (!response.ok || !json.ok) {
+        if (response.status >= 500) {
+          setReservationResultUnknown(true);
+          showMessage(
+            "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
+          );
+          return;
+        }
+
+        clearCustomerReservationOperation(window.localStorage, operationId);
         showMessage(json.error || "予約保存に失敗しました");
         if (response.status === 409) {
           setSelectedTime("");
@@ -715,6 +737,7 @@ function ReservePageContent() {
         return;
       }
 
+      clearCustomerReservationOperation(window.localStorage, operationId);
       showMessage("予約希望を受け付けました");
       setNote("");
       setCustomMenu("");

@@ -26,6 +26,10 @@ const normalizedStatusMigration = await readFile(
   `${root}/supabase/migrations/20261026200835_normalize_customer_requested_statuses.sql`,
   "utf8"
 );
+const idempotentCreateMigration = await readFile(
+  `${root}/supabase/migrations/20261030050000_idempotent_customer_reservation_requests.sql`,
+  "utf8"
+);
 const normalizedStatusPreflight = await readFile(
   `${root}/scripts/sql/aily-customer-requested-status-preflight.sql`,
   "utf8"
@@ -73,6 +77,7 @@ await db.exec(writeMigration);
 await db.exec(staffConfirmationMigration);
 await db.exec(confirmationDeliveryMigration);
 await db.exec(normalizedStatusMigration);
+await db.exec(idempotentCreateMigration);
 
 const preflight = (await db.query(normalizedStatusPreflight)).rows[0];
 assert.equal(preflight.create_rpc_exists, true);
@@ -102,8 +107,69 @@ INSERT INTO public.staffs VALUES (
   'staff',
   true
 );
+INSERT INTO public.staffs VALUES (
+  '00000000-0000-0000-0000-000000000004',
+  '00000000-0000-0000-0000-000000000001',
+  true,
+  'staff',
+  true
+);
 SET ROLE service_role;
 `);
+
+const createIdempotentReservation = async ({
+  operationId = "10000000-0000-4000-8000-000000000001",
+  staffId = "00000000-0000-0000-0000-000000000003",
+  menu = "マグネット",
+  startAt = "2026-10-09T01:00:00.000Z",
+  endAt = "2026-10-09T02:30:00.000Z",
+  memo = "再試行確認",
+} = {}) =>
+  (
+    await db.query(
+      `SELECT * FROM public.create_customer_requested_reservation_idempotent(
+        $1,
+        '00000000-0000-0000-0000-000000000001',
+        '00000000-0000-0000-0000-000000000002',
+        $2, $3, $4, $5, $6
+      )`,
+      [operationId, staffId, menu, startAt, endAt, memo]
+    )
+  ).rows[0];
+
+const idempotentCreated = await createIdempotentReservation();
+assert.equal(idempotentCreated.outcome, "created");
+assert.equal(
+  idempotentCreated.reservation_id,
+  "10000000-0000-4000-8000-000000000001"
+);
+
+const idempotentRetry = await createIdempotentReservation();
+assert.equal(idempotentRetry.outcome, "already_created");
+assert.equal(idempotentRetry.reservation_id, idempotentCreated.reservation_id);
+
+const operationConflict = await createIdempotentReservation({
+  menu: "異なるメニュー",
+});
+assert.equal(operationConflict.outcome, "idempotency_conflict");
+assert.equal(operationConflict.reservation_id, null);
+
+const samePayloadNewOperation = await createIdempotentReservation({
+  operationId: "10000000-0000-4000-8000-000000000002",
+});
+assert.equal(samePayloadNewOperation.outcome, "already_created");
+assert.equal(
+  samePayloadNewOperation.reservation_id,
+  idempotentCreated.reservation_id
+);
+
+const customerOverlap = await createIdempotentReservation({
+  operationId: "10000000-0000-4000-8000-000000000003",
+  staffId: "00000000-0000-0000-0000-000000000004",
+  menu: "別メニュー",
+});
+assert.equal(customerOverlap.outcome, "customer_unavailable");
+assert.equal(customerOverlap.reservation_id, null);
 
 const createReservation = async (startAt, endAt) =>
   (
@@ -273,6 +339,20 @@ await assert.rejects(
       'ジェル',
       '2026-10-13T01:00:00.000Z',
       '2026-10-13T02:30:00.000Z',
+      ''
+    )`),
+  /permission denied/
+);
+await assert.rejects(
+  () =>
+    db.query(`SELECT * FROM public.create_customer_requested_reservation_idempotent(
+      '10000000-0000-4000-8000-000000000004',
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-0000-0000-000000000002',
+      '00000000-0000-0000-0000-000000000003',
+      'ジェル',
+      '2026-10-14T01:00:00.000Z',
+      '2026-10-14T02:30:00.000Z',
       ''
     )`),
   /permission denied/
