@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
@@ -16,6 +17,11 @@ type ReservationRow = {
   end_at: string | null;
 };
 
+type ExistingReservationRow = ReservationRow & {
+  salon_id: string | null;
+  menu: string | null;
+};
+
 function normalizeDurationMinutes(value: unknown) {
   const minutes = Number(value);
   if (!Number.isFinite(minutes)) return 90;
@@ -30,6 +36,60 @@ function normalizeGuestCount(value: unknown) {
   if (count < 1) return 1;
   if (count > 2) return 2;
   return Math.round(count);
+}
+
+function buildSubmissionDigest(params: {
+  salonId: string;
+  customerEmail: string;
+  menu: string;
+  guestCount: number;
+  startIso: string;
+  endIso: string;
+}) {
+  return createHash("sha256")
+    .update(JSON.stringify({
+      salonId: params.salonId,
+      customerEmail: params.customerEmail.trim().toLowerCase(),
+      menu: params.menu,
+      guestCount: params.guestCount,
+      startIso: params.startIso,
+      endIso: params.endIso,
+    }))
+    .digest("hex");
+}
+
+function buildStableUuid(value: string) {
+  const hex = createHash("sha256").update(value).digest("hex");
+  const variant = ["8", "9", "a", "b"][Number.parseInt(hex[16], 16) % 4];
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
+}
+
+function matchesExistingSubmission(params: {
+  rows: ExistingReservationRow[];
+  reservationIds: string[];
+  salonId: string;
+  menu: string;
+  startIso: string;
+  endIso: string;
+}) {
+  if (params.rows.length !== params.reservationIds.length) return false;
+  const rowsById = new Map(params.rows.map((row) => [row.id, row]));
+  return params.reservationIds.every((id, index) => {
+    const row = rowsById.get(id);
+    return Boolean(
+      row &&
+      row.salon_id === params.salonId &&
+      row.menu === `${params.menu} / Guest ${index + 1}` &&
+      row.start_at === params.startIso &&
+      row.end_at === params.endIso
+    );
+  });
 }
 
 function formatDateTimeForMail(value: string) {
@@ -50,6 +110,7 @@ async function sendEmail(params: {
   to: string[];
   subject: string;
   text: string;
+  idempotencyKey: string;
 }) {
   const resendApiKey = process.env.RESEND_API_KEY;
   const fromEmail =
@@ -65,6 +126,7 @@ async function sendEmail(params: {
     headers: {
       Authorization: `Bearer ${resendApiKey}`,
       "Content-Type": "application/json",
+      "Idempotency-Key": params.idempotencyKey,
     },
     body: JSON.stringify({
       from: fromEmail,
@@ -89,6 +151,7 @@ async function sendAdminMail(params: {
   endIso: string;
   memo: string;
   durationMinutes: number;
+  submissionDigest: string;
 }) {
   const notifyEmail = process.env.RESERVATION_NOTIFY_EMAIL;
   if (!notifyEmail) return;
@@ -112,6 +175,7 @@ async function sendAdminMail(params: {
     to: [notifyEmail],
     subject: "【Aily Nail Studio】Inbound reservation request",
     text,
+    idempotencyKey: `inbound-reservation/${params.submissionDigest}/admin-email`,
   });
 }
 
@@ -123,6 +187,7 @@ async function sendCustomerConfirmationMail(params: {
   startIso: string;
   endIso: string;
   durationMinutes: number;
+  submissionDigest: string;
 }) {
   const text = [
     `Dear ${params.customerName},`,
@@ -150,6 +215,7 @@ async function sendCustomerConfirmationMail(params: {
     to: [params.customerEmail],
     subject: "Aily Nail Studio - Reservation request received",
     text,
+    idempotencyKey: `inbound-reservation/${params.submissionDigest}/customer-email`,
   });
 }
 
@@ -162,6 +228,7 @@ async function sendInboundReservationLine(params: {
   endIso: string;
   memo: string;
   durationMinutes: number;
+  submissionDigest: string;
 }) {
   const lineAccessToken = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   const adminUserId = process.env.LINE_ADMIN_USER_ID;
@@ -188,6 +255,9 @@ async function sendInboundReservationLine(params: {
     headers: {
       Authorization: `Bearer ${lineAccessToken}`,
       "Content-Type": "application/json",
+      "X-Line-Retry-Key": buildStableUuid(
+        `inbound-reservation/${params.submissionDigest}/admin-line`
+      ),
     },
     body: JSON.stringify({
       to: adminUserId,
@@ -230,6 +300,47 @@ export async function POST(request: Request) {
     const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
     const startIso = startAt.toISOString();
     const endIso = endAt.toISOString();
+    const submissionDigest = buildSubmissionDigest({
+      salonId,
+      customerEmail,
+      menu,
+      guestCount,
+      startIso,
+      endIso,
+    });
+    const reservationIds = Array.from(
+      { length: guestCount },
+      (_, index) => buildStableUuid(`inbound-reservation/${submissionDigest}/guest/${index + 1}`)
+    );
+
+    const { data: existingData, error: existingError } = await supabase
+      .from("reservations")
+      .select("id, salon_id, status, staff_id, start_at, end_at, menu")
+      .in("id", reservationIds);
+    if (existingError) {
+      return NextResponse.json({ ok: false, error: existingError.message }, { status: 500 });
+    }
+    const existingRows = (existingData || []) as ExistingReservationRow[];
+    if (existingRows.length > 0) {
+      if (!matchesExistingSubmission({
+        rows: existingRows,
+        reservationIds,
+        salonId,
+        menu,
+        startIso,
+        endIso,
+      })) {
+        return NextResponse.json(
+          { ok: false, error: "Reservation request key conflict." },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        replayed: true,
+        reservationIds,
+      });
+    }
 
     const { data: staffData, error: staffError } = await supabase
       .from("staffs")
@@ -281,6 +392,7 @@ export async function POST(request: Request) {
     const assignedStaffs = availableStaffs.slice(0, guestCount);
 
     const insertRows = assignedStaffs.map((staff, index) => ({
+      id: reservationIds[index],
       menu: `${menu} / Guest ${index + 1}`,
       start_at: startIso,
       end_at: endIso,
@@ -311,13 +423,14 @@ export async function POST(request: Request) {
     }
 
     await Promise.allSettled([
-      sendAdminMail({ customerName, customerEmail, menu, guestCount, startIso, endIso, memo, durationMinutes }),
-      sendCustomerConfirmationMail({ customerName, customerEmail, menu, guestCount, startIso, endIso, durationMinutes }),
-      sendInboundReservationLine({ customerName, customerEmail, menu, guestCount, startIso, endIso, memo, durationMinutes }),
+      sendAdminMail({ customerName, customerEmail, menu, guestCount, startIso, endIso, memo, durationMinutes, submissionDigest }),
+      sendCustomerConfirmationMail({ customerName, customerEmail, menu, guestCount, startIso, endIso, durationMinutes, submissionDigest }),
+      sendInboundReservationLine({ customerName, customerEmail, menu, guestCount, startIso, endIso, memo, durationMinutes, submissionDigest }),
     ]);
 
     return NextResponse.json({
       ok: true,
+      replayed: false,
       reservationIds: (insertedData || []).map((row) => row.id),
     });
   } catch (error) {
