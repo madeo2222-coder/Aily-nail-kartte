@@ -40,7 +40,7 @@ const routes = [
   {
     name: "reservation reminder LINE",
     path: "send-reservation-reminder-line",
-    methods: ["POST", "GET"],
+    methods: ["POST"],
     authOptions: {
       allowedRoles: ["owner", "staff"],
       legacyAllowed: true,

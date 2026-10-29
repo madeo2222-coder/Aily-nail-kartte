@@ -9,6 +9,8 @@ type AnyRow = Record<string, unknown>;
 
 const NOTIFICATION_TYPE = "reservation_reminder";
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
+const AILY_SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
+const AILY_SALON_NAME = "Aily Nail Studio";
 
 function getSupabaseAdmin() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -69,6 +71,29 @@ function isValidTargetDate(value: string) {
 function getTargetDateFromRequest(request: Request) {
   const url = new URL(request.url);
   return url.searchParams.get("targetDate")?.trim() || getTomorrowJstDate();
+}
+
+function isAuthorizedCronRequest(request: Request) {
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (!cronSecret) return false;
+  return request.headers.get("authorization") === `Bearer ${cronSecret}`;
+}
+
+async function getActiveCronSalonId() {
+  const supabaseAdmin = getSupabaseAdmin();
+  const { data, error } = await supabaseAdmin
+    .from("salons")
+    .select("id")
+    .eq("id", AILY_SALON_ID)
+    .eq("name", AILY_SALON_NAME)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error || getString((data || null) as AnyRow | null, ["id"]) !== AILY_SALON_ID) {
+    console.error("予約リマインド対象サロン確認エラー:", error);
+    return null;
+  }
+  return AILY_SALON_ID;
 }
 
 function formatDateTime(value: string | null) {
@@ -420,18 +445,10 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const authentication = await authenticateReminderRequest();
-  if (!authentication.ok) {
+  if (!isAuthorizedCronRequest(request)) {
     return NextResponse.json(
-      { ok: false, message: authentication.error },
-      { status: authentication.status }
-    );
-  }
-  const salonId = authentication.principal.salonId;
-  if (!salonId) {
-    return NextResponse.json(
-      { ok: false, message: "スタッフの所属サロンを確認できません。" },
-      { status: 403 }
+      { ok: false, message: "Cron認証が必要です。" },
+      { status: 401 }
     );
   }
 
@@ -441,6 +458,13 @@ export async function GET(request: Request) {
       return NextResponse.json(
         { ok: false, message: "対象日はYYYY-MM-DD形式で指定してください。" },
         { status: 400 }
+      );
+    }
+    const salonId = await getActiveCronSalonId();
+    if (!salonId) {
+      return NextResponse.json(
+        { ok: false, message: "予約リマインド対象サロンを確認できません。" },
+        { status: 503 }
       );
     }
     return await runReminder(targetDate, salonId);
