@@ -16,6 +16,116 @@ export type ConfirmationEmailNotice = {
 };
 
 const DEFAULT_RETRY_WINDOW_HOURS = 24;
+const STORAGE_KEY_PREFIX = "aily:confirmation-email-retry:v1:";
+
+type RetryNoticeStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+
+type StoredConfirmationEmailRetryNotice = {
+  version: 1;
+  savedAt: number;
+  message: string;
+  expiresAt: number;
+  actionLabel: NonNullable<ConfirmationEmailNotice["actionLabel"]>;
+};
+
+function getStorageKey(reservationId: string) {
+  return `${STORAGE_KEY_PREFIX}${reservationId}`;
+}
+
+function isActionLabel(
+  value: unknown
+): value is NonNullable<ConfirmationEmailNotice["actionLabel"]> {
+  return value === "確定メールを送信" || value === "確定メールを再試行";
+}
+
+export function readConfirmationEmailRetryNotice(
+  storage: RetryNoticeStorage,
+  reservationId: string,
+  now = Date.now()
+): ConfirmationEmailNotice | null {
+  const key = getStorageKey(reservationId);
+
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+
+    const stored = JSON.parse(raw) as Partial<StoredConfirmationEmailRetryNotice>;
+    const isValid =
+      stored.version === 1 &&
+      typeof stored.savedAt === "number" &&
+      Number.isFinite(stored.savedAt) &&
+      stored.savedAt <= now &&
+      typeof stored.message === "string" &&
+      stored.message.trim().length > 0 &&
+      typeof stored.expiresAt === "number" &&
+      Number.isFinite(stored.expiresAt) &&
+      now < stored.expiresAt &&
+      isActionLabel(stored.actionLabel);
+
+    if (!isValid) {
+      storage.removeItem(key);
+      return null;
+    }
+
+    const message = stored.message as string;
+    const expiresAt = stored.expiresAt as number;
+    const actionLabel = stored.actionLabel as NonNullable<
+      ConfirmationEmailNotice["actionLabel"]
+    >;
+    const retryWindowHours = Math.max(
+      1,
+      Math.ceil((expiresAt - now) / (60 * 60 * 1000))
+    );
+
+    return {
+      message,
+      canRetry: true,
+      completed: false,
+      retryWindowHours,
+      expiresAt,
+      actionLabel,
+    };
+  } catch {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Storage access can be unavailable in privacy-restricted browsers.
+    }
+    return null;
+  }
+}
+
+export function saveConfirmationEmailRetryNotice(
+  storage: RetryNoticeStorage,
+  reservationId: string,
+  notice: ConfirmationEmailNotice | null,
+  now = Date.now()
+) {
+  const key = getStorageKey(reservationId);
+
+  try {
+    if (
+      !notice?.canRetry ||
+      notice.expiresAt === null ||
+      notice.expiresAt <= now ||
+      !isActionLabel(notice.actionLabel)
+    ) {
+      storage.removeItem(key);
+      return;
+    }
+
+    const stored: StoredConfirmationEmailRetryNotice = {
+      version: 1,
+      savedAt: now,
+      message: notice.message,
+      expiresAt: notice.expiresAt,
+      actionLabel: notice.actionLabel,
+    };
+    storage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // The in-memory retry notice still protects the current screen.
+  }
+}
 
 export function getConfirmationEmailRecoveryNotice(
   now = Date.now(),

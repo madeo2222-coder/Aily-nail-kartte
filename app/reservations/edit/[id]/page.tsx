@@ -28,6 +28,8 @@ import {
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailRetryNotice,
+  saveConfirmationEmailRetryNotice,
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
 } from "@/lib/reservation-confirmation-email-retry";
@@ -479,6 +481,11 @@ export default function EditReservationPage() {
     );
     if (normalizedStatus !== "confirmed") {
       setConfirmationEmailRetryNotice(null);
+      saveConfirmationEmailRetryNotice(
+        window.localStorage,
+        reservationId,
+        null
+      );
     }
     setInitialCustomerId(reservation.customer_id);
     setInitialStaffId(reservation.staff_id);
@@ -507,6 +514,14 @@ export default function EditReservationPage() {
     setAlternativeLineRetryLock(
       reservationId
         ? readAlternativeLineRetryLock(window.localStorage, reservationId)
+        : null
+    );
+    setConfirmationEmailRetryNotice(
+      reservationId
+        ? readConfirmationEmailRetryNotice(
+            window.localStorage,
+            reservationId
+          )
         : null
     );
     loadPageData();
@@ -615,6 +630,7 @@ export default function EditReservationPage() {
         Date.now(),
         previousExpiresAt
       );
+      saveConfirmationEmailRetryNotice(window.localStorage, id, notice);
       setConfirmationEmailRetryNotice(notice.canRetry ? notice : null);
       return { ...notice, message: ` メール通知：${notice.message}` };
     } catch (error) {
@@ -625,6 +641,7 @@ export default function EditReservationPage() {
         Date.now(),
         previousExpiresAt
       );
+      saveConfirmationEmailRetryNotice(window.localStorage, id, notice);
       setConfirmationEmailRetryNotice(notice);
       return { ...notice, message: ` メール通知：${notice.message}` };
     }
@@ -678,10 +695,14 @@ export default function EditReservationPage() {
     } | null;
 
     if (!confirmation) {
-      setConfirmationEmailRetryNotice(
-        getConfirmationEmailRecoveryNotice(Date.now())
-      );
+      const notice = getConfirmationEmailRecoveryNotice(Date.now());
       setMutationResultUnknown(true);
+      saveConfirmationEmailRetryNotice(
+        window.localStorage,
+        reservationId,
+        notice
+      );
+      setConfirmationEmailRetryNotice(notice);
       setErrorMessage("");
       return;
     }
@@ -715,9 +736,13 @@ export default function EditReservationPage() {
     );
   } catch (error) {
     console.error("予約確定結果の確認エラー:", error);
-    setConfirmationEmailRetryNotice(
-      getConfirmationEmailRecoveryNotice(Date.now())
+    const notice = getConfirmationEmailRecoveryNotice(Date.now());
+    saveConfirmationEmailRetryNotice(
+      window.localStorage,
+      reservationId,
+      notice
     );
+    setConfirmationEmailRetryNotice(notice);
     setMutationResultUnknown(true);
     setErrorMessage("");
   } finally {
@@ -801,13 +826,22 @@ export default function EditReservationPage() {
   async function retryConfirmationEmail() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
-    const retryNotice = confirmationEmailRetryNotice;
+    const retryNotice =
+      readConfirmationEmailRetryNotice(
+        window.localStorage,
+        reservationId
+      ) || confirmationEmailRetryNotice;
     if (
       !isConfirmationEmailRetryActive(
         retryNotice,
         Date.now()
       )
     ) {
+      saveConfirmationEmailRetryNotice(
+        window.localStorage,
+        reservationId,
+        null
+      );
       const expiredNotice = getExpiredConfirmationEmailNotice(
         retryNotice?.actionLabel
       );

@@ -23,6 +23,8 @@ import {
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailRetryNotice,
+  saveConfirmationEmailRetryNotice,
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
 } from "@/lib/reservation-confirmation-email-retry";
@@ -559,6 +561,19 @@ export default function ReservationsPageClient() {
 
         return restored;
       });
+      setConfirmationEmailRetryNotices(() => {
+        const restored: Record<string, ConfirmationEmailNotice> = {};
+
+        for (const reservation of fetchedReservations) {
+          const notice = readConfirmationEmailRetryNotice(
+            window.localStorage,
+            reservation.id
+          );
+          if (notice) restored[reservation.id] = notice;
+        }
+
+        return restored;
+      });
     } catch (error) {
       if (requestId !== loadRequestIdRef.current) return;
       console.error("reservation page fetch error:", error);
@@ -830,6 +845,7 @@ export default function ReservationsPageClient() {
     id: string,
     notice: ConfirmationEmailNotice
   ) {
+    saveConfirmationEmailRetryNotice(window.localStorage, id, notice);
     setConfirmationEmailRetryNotices((current) => {
       if (notice.canRetry) return { ...current, [id]: notice };
       const next = { ...current };
@@ -875,7 +891,9 @@ export default function ReservationsPageClient() {
   async function handleRetryConfirmationEmail(id: string) {
     if (mutationRequestPendingIdsRef.current.has(id)) return;
 
-    const retryNotice = confirmationEmailRetryNotices[id];
+    const retryNotice =
+      readConfirmationEmailRetryNotice(window.localStorage, id) ||
+      confirmationEmailRetryNotices[id];
     if (!isConfirmationEmailRetryActive(retryNotice, Date.now())) {
       const expiredNotice = getExpiredConfirmationEmailNotice(
         retryNotice?.actionLabel
@@ -884,6 +902,7 @@ export default function ReservationsPageClient() {
         ...current,
         [id]: expiredNotice,
       }));
+      saveConfirmationEmailRetryNotice(window.localStorage, id, null);
       alert(expiredNotice.message);
       return;
     }

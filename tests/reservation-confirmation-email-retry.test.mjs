@@ -30,7 +30,24 @@ const {
   getConfirmationEmailNotice,
   getExpiredConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailRetryNotice,
+  saveConfirmationEmailRetryNotice,
 } = exports;
+
+function createMemoryStorage() {
+  const values = new Map();
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key) : null;
+    },
+    setItem(key, value) {
+      values.set(key, value);
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
 
 test("offers a bounded first email send after an unknown confirmation result", () => {
   const startedAt = 9_000;
@@ -138,4 +155,97 @@ test("expires an open-tab retry at the original provider deadline", () => {
   assert.match(expiredRecovery.message, /安全に送信できる期限/);
   assert.match(expiredRecovery.message, /送信せず/);
   assert.doesNotMatch(expiredRecovery.message, /再送せず/);
+});
+
+test("restores a safe email retry after reload without extending its deadline", () => {
+  const storage = createMemoryStorage();
+  const startedAt = 2_000_000;
+  const notice = getConfirmationEmailNotice(
+    false,
+    { ok: false, retryable: true, retryWindowHours: 24 },
+    startedAt
+  );
+
+  saveConfirmationEmailRetryNotice(
+    storage,
+    "reservation-1",
+    notice,
+    startedAt
+  );
+
+  const restored = readConfirmationEmailRetryNotice(
+    storage,
+    "reservation-1",
+    startedAt + 2 * 60 * 60 * 1000
+  );
+  assert.equal(restored?.canRetry, true);
+  assert.equal(restored?.actionLabel, "確定メールを再試行");
+  assert.equal(restored?.expiresAt, notice.expiresAt);
+  assert.equal(restored?.retryWindowHours, 22);
+});
+
+test("clears completed, expired, and malformed stored email retries", () => {
+  const storage = createMemoryStorage();
+  const startedAt = 3_000_000;
+  const notice = getConfirmationEmailRecoveryNotice(startedAt);
+
+  saveConfirmationEmailRetryNotice(
+    storage,
+    "reservation-2",
+    notice,
+    startedAt
+  );
+  assert.equal(
+    readConfirmationEmailRetryNotice(
+      storage,
+      "reservation-2",
+      notice.expiresAt
+    ),
+    null
+  );
+
+  saveConfirmationEmailRetryNotice(
+    storage,
+    "reservation-3",
+    notice,
+    startedAt
+  );
+  saveConfirmationEmailRetryNotice(storage, "reservation-3", null, startedAt);
+  assert.equal(
+    readConfirmationEmailRetryNotice(storage, "reservation-3", startedAt),
+    null
+  );
+
+  storage.setItem(
+    "aily:confirmation-email-retry:v1:reservation-4",
+    "not-json"
+  );
+  assert.equal(
+    readConfirmationEmailRetryNotice(storage, "reservation-4", startedAt),
+    null
+  );
+});
+
+test("reservation screens restore and persist email retry recovery", () => {
+  const listSource = readFileSync(
+    new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
+    "utf8"
+  );
+  const editSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  for (const source of [listSource, editSource]) {
+    assert.match(source, /readConfirmationEmailRetryNotice\(/);
+    assert.match(source, /saveConfirmationEmailRetryNotice\(/);
+  }
+  assert.match(
+    listSource,
+    /for \(const reservation of fetchedReservations\)[\s\S]{0,260}readConfirmationEmailRetryNotice/
+  );
+  assert.match(
+    editSource,
+    /setConfirmationEmailRetryNotice\([\s\S]{0,220}readConfirmationEmailRetryNotice/
+  );
 });
