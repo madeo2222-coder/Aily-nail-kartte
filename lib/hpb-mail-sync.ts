@@ -502,6 +502,26 @@ function parseReservationMail(
       : parseHpbMail(text, mailSubject);
   }
 
+  const bodyHasHpbReservationNumber =
+    /(?:^|\n)[^\S\r\n]*(?:■[^\S\r\n]*)?予約番号[^\S\r\n]*(?:\n[^\S\r\n]*|[:：][^\S\r\n]*)[A-Z]{1,4}\d{6,}/im.test(
+      text
+    );
+  const bodyHasMinimoReservationId =
+    /(?:^|\n)[^\S\r\n]*(?:■[^\S\r\n]*)?予約ID[^\S\r\n]*(?:\n[^\S\r\n]*|[:：][^\S\r\n]*)[^\r\n]+/im.test(
+      text
+    );
+
+  // The provider's structured identifier is stronger than free-form body
+  // text when the subject is generic. For example, an HPB customer request
+  // can mention a design seen on ミニモ while the mail itself still carries
+  // an HPB 予約番号. Treating that note as the provider makes the parser look
+  // for 予約ID and leaves the actual reservation unsynchronised.
+  if (bodyHasHpbReservationNumber !== bodyHasMinimoReservationId) {
+    return bodyHasMinimoReservationId
+      ? parseMinimoMail(text, mailSubject)
+      : parseHpbMail(text, mailSubject);
+  }
+
   const sourceText = `${normalizedSubject}\n${text}`;
   const normalizedSourceText = sourceText.toLowerCase();
   const hasExplicitMinimoMarker =

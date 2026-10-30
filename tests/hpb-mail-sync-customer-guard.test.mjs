@@ -394,6 +394,25 @@ test("HPB subject keeps customer notes mentioning minimo from changing the provi
   assert.doesNotMatch(runtime.writes[0].payload.memo, /^ミニモ予約ID/m);
 });
 
+test("HPB reservation number keeps a generic subject and minimo customer note on HPB", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    `予約番号：A123456
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+所要時間目安：90分
+ご要望：ミニモで見たデザインを希望`,
+    "ご予約内容のお知らせ"
+  );
+
+  assert.equal(result.parsed.source, "hpb");
+  assert.equal(result.parsed.reservationNumber, "A123456");
+  assert.equal(result.result.mode, "updated");
+  assert.match(runtime.writes[0].payload.memo, /^HPB予約番号：A123456/m);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /^ミニモ予約ID/m);
+});
+
 for (const subject of [
   "【サロンボード】ご予約内容のお知らせ",
   "【ホットペッパービューティー】ご予約内容のお知らせ",
@@ -432,6 +451,28 @@ test("minimo subject keeps menu text mentioning HPB from changing the provider",
 施術時間：90分
 メニュー：HOT PEPPER Beauty掲載デザイン`,
     "【ミニモ】新しい予約を受け付けました"
+  );
+
+  assert.equal(result.parsed.source, "minimo");
+  assert.equal(result.parsed.reservationNumber, "MINIMO-123");
+  assert.equal(result.result.mode, "updated");
+  assert.match(runtime.writes[0].payload.memo, /^ミニモ予約ID：MINIMO-123/m);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /^HPB予約番号/m);
+});
+
+test("minimo reservation ID keeps a generic subject and HPB menu text on minimo", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "ミニモ予約ID：MINIMO-123",
+  });
+  const result = await runtime.sync(
+    `予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+施術時間：90分
+メニュー：HOT PEPPER Beauty掲載デザイン`,
+    "ご予約内容のお知らせ"
   );
 
   assert.equal(result.parsed.source, "minimo");
