@@ -42,6 +42,7 @@ async function mount({
   rejectAuth = false,
   availabilityMode = "success",
   reservationMode = "success",
+  storedNotificationRetry = null,
 } = {}) {
   const states = [];
   const effects = [];
@@ -162,7 +163,11 @@ async function mount({
     Number,
     Promise,
     URLSearchParams,
-    window: { setTimeout() {}, location: { origin: "https://example.test" } },
+    window: {
+      setTimeout() {},
+      location: { origin: "https://example.test" },
+      localStorage: {},
+    },
     console: { error() {} },
     fetch,
     require(name) {
@@ -178,6 +183,9 @@ async function mount({
           buildCustomerReservationFingerprint: value => JSON.stringify(value),
           getOrCreateCustomerReservationOperationId: () =>
             "11111111-1111-4111-8111-111111111111",
+          getCustomerReservationNotificationRetry: () =>
+            storedNotificationRetry,
+          markCustomerReservationNotificationRetryable() {},
           clearCustomerReservationOperation() {},
         };
       }
@@ -230,6 +238,23 @@ async function mount({
     html,
     requests,
     selectMenuAndDate,
+    async restoreNotificationRetry() {
+      tree();
+      const currentEffects = [...effects];
+      currentEffects[3]();
+      await setImmediate();
+    },
+    async clickPrimarySubmit() {
+      const submitButton = findNode(
+        tree(),
+        node =>
+          node.type === "button" &&
+          String(node.props.className || "").includes("mt-4 w-full"),
+      );
+      assert.ok(submitButton);
+      await submitButton.props.onClick();
+      await setImmediate();
+    },
     async submitReservation() {
       const currentTree = tree();
       const timeSelect = findNode(
@@ -243,15 +268,7 @@ async function mount({
       assert.ok(timeSelect);
       timeSelect.props.onChange({ target: { value: "10:00" } });
 
-      const submitButton = findNode(
-        tree(),
-        node =>
-          node.type === "button" &&
-          String(node.props.className || "").includes("mt-4 w-full"),
-      );
-      assert.ok(submitButton);
-      await submitButton.props.onClick();
-      await setImmediate();
+      await this.clickPrimarySubmit();
     },
     async recoverAvailability() {
       const retryButton = findNode(
@@ -388,6 +405,36 @@ test("customer reservation retries a known notification failure with the saved o
   );
   assert.doesNotMatch(page.html(), /店舗への通知を再試行/);
   assert.match(page.html(), /この内容で予約希望を送る/);
+});
+
+test("customer reservation restores a notification retry after a page reload", async () => {
+  const submission = {
+    menu: "ワンカラー",
+    date: "2026-11-01",
+    time: "10:00",
+    staffId: "staff-1",
+    durationMinutes: 90,
+    memo: "保存済み予約",
+  };
+  const operationId = "11111111-1111-4111-8111-111111111111";
+  const page = await mount({
+    storedNotificationRetry: { submission, operationId },
+  });
+
+  await page.restoreNotificationRetry();
+  assert.match(page.html(), /ページを再読み込みしても24時間以内/);
+  assert.match(page.html(), /店舗への通知を再試行/);
+
+  await page.clickPrimarySubmit();
+  const reservationRequests = page.requests.filter(
+    request => request.url === "/api/reservations",
+  );
+  assert.equal(reservationRequests.length, 1);
+  assert.deepEqual(JSON.parse(reservationRequests[0].options.body), {
+    ...submission,
+    operationId,
+  });
+  assert.doesNotMatch(page.html(), /店舗への通知を再試行/);
 });
 
 test("customer reservation guards the request before React rerenders", () => {

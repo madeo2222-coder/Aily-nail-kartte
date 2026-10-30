@@ -7,7 +7,9 @@ import CustomerPhoto from "../CustomerPhoto";
 import {
   buildCustomerReservationFingerprint,
   clearCustomerReservationOperation,
+  getCustomerReservationNotificationRetry,
   getOrCreateCustomerReservationOperationId,
+  markCustomerReservationNotificationRetryable,
   type CustomerReservationSubmission,
 } from "@/lib/customer-reservation-submission";
 
@@ -184,6 +186,7 @@ function ReservePageContent() {
   const [reservationNotificationRetryable, setReservationNotificationRetryable] =
     useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [customerId, setCustomerId] = useState("");
   const [authError, setAuthError] = useState("");
   const [authAttempt, setAuthAttempt] = useState(0);
   const [staffs, setStaffs] = useState<StaffRow[]>([]);
@@ -227,6 +230,7 @@ function ReservePageContent() {
       setLoading(true);
       setAuthError("");
       setIsLoggedIn(false);
+      setCustomerId("");
 
       try {
         const res = await fetch("/api/line-login/me", { cache: "no-store" });
@@ -237,7 +241,13 @@ function ReservePageContent() {
           return;
         }
 
-        setIsLoggedIn(!!json.authenticated);
+        const authenticated = Boolean(json.authenticated);
+        setIsLoggedIn(authenticated);
+        setCustomerId(
+          authenticated && typeof json.customer?.id === "string"
+            ? json.customer.id
+            : "",
+        );
       } catch {
         setAuthError("ログイン状態の確認に失敗しました");
         setStaffs([]);
@@ -474,6 +484,19 @@ function ReservePageContent() {
     totalMinutes,
     availabilityAttempt,
   ]);
+
+  useEffect(() => {
+    if (!isLoggedIn || !customerId) return;
+
+    const retryRequest = getCustomerReservationNotificationRetry(
+      window.localStorage,
+      customerId,
+    );
+    if (!retryRequest) return;
+
+    notificationRetryRequest.current = retryRequest;
+    setReservationNotificationRetryable(true);
+  }, [isLoggedIn, customerId]);
 
   const availableTimeOptions = useMemo(() => {
     return availabilitySlots.map((slot) => slot.time);
@@ -742,6 +765,11 @@ function ReservePageContent() {
 
       if (!response.ok || !json.ok) {
         if (json.reservationSaved && json.notificationRetryable) {
+          markCustomerReservationNotificationRetryable(
+            window.localStorage,
+            operationId,
+            customerId,
+          );
           setReservationNotificationRetryable(true);
           showMessage(
             json.error ||
@@ -1338,7 +1366,7 @@ function ReservePageContent() {
               role="alert"
               className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900"
             >
-              予約は保存されています。店舗への通知だけを同じ予約番号で再試行できます。
+              予約は保存されています。店舗への通知だけを同じ予約番号で再試行できます。ページを再読み込みしても24時間以内は続けられます。
             </div>
           ) : null}
 
@@ -1348,10 +1376,11 @@ function ReservePageContent() {
             disabled={
               sending ||
               reservationResultUnknown ||
-              availabilityLoading ||
-              Boolean(availabilityError) ||
-              !selectedTime ||
-              !hasSelectedMenu
+              (!reservationNotificationRetryable &&
+                (availabilityLoading ||
+                  Boolean(availabilityError) ||
+                  !selectedTime ||
+                  !hasSelectedMenu))
             }
             className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >

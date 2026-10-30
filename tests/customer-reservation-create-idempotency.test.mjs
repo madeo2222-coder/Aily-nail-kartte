@@ -152,7 +152,7 @@ test("customer booking page persists one operation ID until a known result", () 
   );
   assert.match(
     page,
-    /if \(!response\.ok \|\| !json\.ok\)[\s\S]{0,500}clearCustomerReservationOperation/,
+    /if \(!response\.ok \|\| !json\.ok\)[\s\S]{0,900}clearCustomerReservationOperation/,
   );
 });
 
