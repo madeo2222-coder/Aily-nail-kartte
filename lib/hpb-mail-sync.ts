@@ -12,6 +12,7 @@ import {
   normalizeExternalReservationNumber,
   readSyncedManualMemo,
   type MailSyncSource,
+  type ManualReservationCandidate,
 } from "@/lib/hpb-mail-sync-reconciliation";
 import { isProgressedReservationStatus } from "@/lib/reservation-status";
 
@@ -693,7 +694,12 @@ async function preserveExistingReservationCustomer(
 
 async function findOrCreateCustomer(
   parsed: ParsedHpbMail,
-  context: SyncContext
+  context: SyncContext,
+  {
+    createIfMissing = true,
+  }: {
+    createIfMissing?: boolean;
+  } = {}
 ) {
   const existingExternalCustomer = await findExistingExternalCustomer(
     parsed,
@@ -824,7 +830,7 @@ async function findOrCreateCustomer(
     };
   }
 
-  if (parsed.action === "reservation") {
+  if (parsed.action === "reservation" && createIfMissing) {
     return await createCustomerFromReservation(parsed, context);
   }
 
@@ -1088,8 +1094,34 @@ async function upsertReservation(
   const preservedExistingCustomer = existing
     ? await preserveExistingReservationCustomer(existing, context)
     : null;
-  const customerMatch =
-    preservedExistingCustomer || (await findOrCreateCustomer(parsed, context));
+  let customerMatch =
+    preservedExistingCustomer ||
+    (await findOrCreateCustomer(parsed, context, { createIfMissing: false }));
+  let preflightDelayedManualEntry: ManualReservationCandidate | null = null;
+  let checkedManualEntryBeforeCustomerCreation = false;
+
+  // When no existing customer can be reused, inspect the manual-booking
+  // window before inserting the deterministic external customer. Previously,
+  // an ambiguous or differently linked manual row was discovered only after
+  // the customer insert, leaving an unused customer even though reservation
+  // sync stopped. Requiring an exact (currently unlinked) manual candidate
+  // keeps the same fail-closed rules while ensuring those conflicts cause no
+  // write at all.
+  if (
+    !preservedExistingCustomer &&
+    parsed.action === "reservation" &&
+    !customerMatch.customerId &&
+    customerMatch.matchStatus === "not_found"
+  ) {
+    preflightDelayedManualEntry = await findDelayedManualEntry(
+      parsed,
+      context,
+      null,
+      { requireExactCustomerMatch: true }
+    );
+    checkedManualEntryBeforeCustomerCreation = true;
+    customerMatch = await createCustomerFromReservation(parsed, context);
+  }
   if (parsed.action === "reservation" && !customerMatch.customerId) {
     throw new Error(
       `顧客候補を一意に特定できません（${customerMatch.matchStatus}: ${customerMatch.matchedCount}件）。誤紐付けを避けるため予約保存を停止しました。`
@@ -1107,11 +1139,13 @@ async function upsertReservation(
   const delayedManualEntry =
     existing || !customerMatch.customerId
       ? null
-      : await findDelayedManualEntry(
-          parsed,
-          context,
-          customerMatch.customerId
-        );
+      : checkedManualEntryBeforeCustomerCreation
+        ? preflightDelayedManualEntry
+        : await findDelayedManualEntry(
+            parsed,
+            context,
+            customerMatch.customerId
+          );
   const preservedManualMemo = delayedManualEntry
     ? delayedManualEntry.memo?.trim() || ""
     : readSyncedManualMemo(existing?.memo, sourceLabel);

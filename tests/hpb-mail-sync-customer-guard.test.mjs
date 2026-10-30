@@ -1906,6 +1906,91 @@ test("a new external booking inserts a deterministic customer instead of upserti
   assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
 });
 
+test("a new booking checks ambiguous manual rows before creating its customer", async () => {
+  const manualReservationRows = ["manual-one", "manual-two"].map((id) => ({
+    id,
+    customer_id: null,
+    staff_id: null,
+    salon_id: "salon-1",
+    menu: "HPB予約",
+    memo: "HPBから電話で先に登録",
+    status: "confirmed",
+    start_at: "2099-10-20T01:00:00.000Z",
+    end_at: "2099-10-20T02:30:00.000Z",
+  }));
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    customerRows: [],
+    manualReservationRows,
+  });
+
+  await assert.rejects(
+    runtime.sync(mail),
+    /同時刻に未照合の外部予約が複数あります/
+  );
+
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("a new booking checks a differently linked manual row before creating its customer", async () => {
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    customerRows: [],
+    manualReservationRows: [
+      {
+        id: "other-customer-manual",
+        customer_id: "other-customer",
+        staff_id: null,
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "HPBから電話で先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+    ],
+  });
+
+  await assert.rejects(runtime.sync(mail), /手入力予約とメールの顧客が一致しません/);
+
+  assert.equal(runtime.writes.length, 0);
+});
+
+test("a new booking creates its customer and reuses one unlinked manual row", async () => {
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    customerRows: [],
+    manualReservationRows: [
+      {
+        id: "unlinked-manual",
+        customer_id: null,
+        staff_id: null,
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "HPBから電話で先に登録",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(result.result.reservationId, "unlinked-manual");
+  assert.equal(runtime.writes.length, 2);
+  assert.equal(runtime.writes[0].table, "customers");
+  assert.equal(runtime.writes[0].operation, "insert");
+  assert.equal(runtime.writes[1].table, "reservations");
+  assert.equal(runtime.writes[1].operation, "update");
+  assert.equal(runtime.writes[1].payload.customer_id, autoCustomerId);
+});
+
 test("a new booking does not attach to a same-name customer with a different phone", async () => {
   const runtime = loadSync(null, {
     missingReservation: true,
