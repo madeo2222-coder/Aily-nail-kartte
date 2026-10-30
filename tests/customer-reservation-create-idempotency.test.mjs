@@ -148,8 +148,9 @@ test("customer booking page persists one operation ID until a known result", () 
   assert.match(page, /JSON\.stringify\(\{ \.\.\.submission, operationId \}\)/);
   assert.match(
     page,
-    /if \(!json\)[\s\S]{0,300}setReservationResultUnknown\(true\)/,
+    /const handleUnknownResult = \(\) => \{[\s\S]{0,500}if \(retryRequest\)[\s\S]{0,500}setReservationResultUnknown\(true\)/,
   );
+  assert.match(page, /if \(!json\) \{\s*handleUnknownResult\(\)/);
   assert.match(
     page,
     /if \(!response\.ok \|\| !json\.ok\)[\s\S]{0,900}clearCustomerReservationOperation/,

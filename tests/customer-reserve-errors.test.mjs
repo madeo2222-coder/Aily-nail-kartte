@@ -131,7 +131,7 @@ async function mount({
         };
       }
       if (
-        reservationMode === "notification-failure-then-success" &&
+        reservationMode.startsWith("notification-failure-then-") &&
         reservationAttempts === 1
       ) {
         return {
@@ -144,6 +144,35 @@ async function mount({
               reservationSaved: true,
               notificationRetryable: true,
             };
+          },
+        };
+      }
+      if (
+        reservationMode === "notification-failure-then-reject-then-success" &&
+        reservationAttempts === 2
+      ) {
+        throw new Error("notification retry response lost");
+      }
+      if (
+        reservationMode === "notification-failure-then-unknown-json-then-success" &&
+        reservationAttempts === 2
+      ) {
+        return {
+          ok: true,
+          async json() {
+            throw new Error("notification retry response lost");
+          },
+        };
+      }
+      if (
+        reservationMode === "notification-failure-then-server-error-then-success" &&
+        reservationAttempts === 2
+      ) {
+        return {
+          ok: false,
+          status: 500,
+          async json() {
+            return { ok: false, error: "通知結果を確認できませんでした" };
           },
         };
       }
@@ -436,6 +465,35 @@ test("customer reservation restores a notification retry after a page reload", a
   });
   assert.doesNotMatch(page.html(), /店舗への通知を再試行/);
 });
+
+for (const reservationMode of [
+  "notification-failure-then-reject-then-success",
+  "notification-failure-then-unknown-json-then-success",
+  "notification-failure-then-server-error-then-success",
+]) {
+  test(`customer reservation keeps the saved notification retry after ${reservationMode}`, async () => {
+    const page = await mount({ reservationMode });
+    await page.selectMenuAndDate();
+    await page.submitReservation();
+
+    await page.submitReservation();
+    assert.match(page.html(), /予約は保存済みです/);
+    assert.match(page.html(), /店舗通知の結果を確認できなかった/);
+    assert.match(page.html(), /店舗への通知を再試行/);
+    assert.doesNotMatch(page.html(), /マイページで予約を確認してください/);
+
+    await page.submitReservation();
+    const reservationRequests = page.requests.filter(
+      request => request.url === "/api/reservations",
+    );
+    assert.equal(reservationRequests.length, 3);
+    assert.deepEqual(
+      JSON.parse(reservationRequests[2].options.body),
+      JSON.parse(reservationRequests[0].options.body),
+    );
+    assert.doesNotMatch(page.html(), /店舗への通知を再試行/);
+  });
+}
 
 test("customer reservation guards the request before React rerenders", () => {
   assert.match(

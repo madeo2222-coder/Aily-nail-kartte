@@ -659,6 +659,21 @@ function ReservePageContent() {
       ? notificationRetryRequest.current
       : null;
 
+    const handleUnknownResult = () => {
+      if (retryRequest) {
+        setReservationNotificationRetryable(true);
+        showMessage(
+          "予約は保存済みです。店舗通知の結果を確認できなかったため、同じ通知を再試行できます"
+        );
+        return;
+      }
+
+      setReservationResultUnknown(true);
+      showMessage(
+        "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
+      );
+    };
+
     if (!retryRequest && !reservationMenu) {
       showMessage("メニューを選択してください");
       return;
@@ -756,10 +771,7 @@ function ReservePageContent() {
       } | null;
 
       if (!json) {
-        setReservationResultUnknown(true);
-        showMessage(
-          "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
-        );
+        handleUnknownResult();
         return;
       }
 
@@ -779,10 +791,7 @@ function ReservePageContent() {
         }
 
         if (response.status >= 500) {
-          setReservationResultUnknown(true);
-          showMessage(
-            "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
-          );
+          handleUnknownResult();
           return;
         }
 
@@ -810,10 +819,7 @@ function ReservePageContent() {
       setSelectedTime("");
     } catch (error) {
       console.error(error);
-      setReservationResultUnknown(true);
-      showMessage(
-        "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
-      );
+      handleUnknownResult();
     } finally {
       submissionInFlight.current = false;
       setSending(false);
