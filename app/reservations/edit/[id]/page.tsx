@@ -613,13 +613,17 @@ export default function EditReservationPage() {
 
   async function sendConfirmationEmailNotice(
     id: string,
-    previousExpiresAt: number | null = null
+    previousExpiresAt: number | null = null,
+    retryToken?: string
   ): Promise<ConfirmationEmailNotice> {
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservationId: id }),
+        body: JSON.stringify({
+          reservationId: id,
+          ...(retryToken ? { expectedIdempotencyKey: retryToken } : {}),
+        }),
       });
       const result = (await response.json().catch(
         () => null
@@ -864,7 +868,8 @@ export default function EditReservationPage() {
     try {
       const notice = await sendConfirmationEmailNotice(
         reservationId,
-        retryNotice?.expiresAt ?? null
+        retryNotice?.expiresAt ?? null,
+        retryNotice?.retryToken
       );
       if (!notice.completed) {
         setErrorMessage(notice.message.trim());

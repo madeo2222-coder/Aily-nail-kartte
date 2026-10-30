@@ -6,7 +6,10 @@ import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 export const dynamic = "force-dynamic";
 
-type SendReservationConfirmedEmailBody = { reservationId?: string };
+type SendReservationConfirmedEmailBody = {
+  reservationId?: string;
+  expectedIdempotencyKey?: string;
+};
 type ReservationRow = {
   id: string;
   salon_id: string | null;
@@ -300,6 +303,19 @@ export async function POST(request: Request) {
     );
   }
   const reservationId = body.reservationId.trim();
+  const expectedIdempotencyKey = body.expectedIdempotencyKey;
+  if (
+    expectedIdempotencyKey !== undefined &&
+    (typeof expectedIdempotencyKey !== "string" ||
+      !/^reservation-confirmed-email\/[^/\s]+\/[a-f0-9]{32}$/.test(
+        expectedIdempotencyKey
+      ))
+  ) {
+    return NextResponse.json(
+      { ok: false, sent: false, message: "メール再試行情報が正しくありません。" },
+      { status: 400 }
+    );
+  }
 
   try {
     const apiKey = process.env.RESEND_API_KEY;
@@ -475,6 +491,21 @@ export async function POST(request: Request) {
     }
 
     const idempotencyKey = buildIdempotencyKey(reservation.id, mailPayload);
+    if (
+      expectedIdempotencyKey !== undefined &&
+      expectedIdempotencyKey !== idempotencyKey
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          sent: false,
+          retryable: false,
+          message:
+            "予約内容または送信先が更新されています。再送せず、最新の内容を確認してください。",
+        },
+        { status: 409 }
+      );
+    }
     const resend = new Resend(apiKey);
     let sendResult: Awaited<ReturnType<typeof resend.emails.send>>;
     try {
@@ -486,6 +517,7 @@ export async function POST(request: Request) {
           sent: false,
           retryable: true,
           retryWindowHours: 24,
+          retryToken: idempotencyKey,
           message: "メール送信結果を確認できませんでした。同じ予約内容なら24時間以内に安全に再試行できます。",
         },
         { status: 502 }
@@ -500,6 +532,7 @@ export async function POST(request: Request) {
           sent: false,
           retryable,
           ...(retryable ? { retryWindowHours: 24 } : {}),
+          ...(retryable ? { retryToken: idempotencyKey } : {}),
           message: retryable
             ? "予約確定メールの送信に失敗しました。同じ予約内容なら24時間以内に再試行できます。"
             : "予約確定メールを送信できませんでした。顧客メールアドレスと送信設定を確認してください。",

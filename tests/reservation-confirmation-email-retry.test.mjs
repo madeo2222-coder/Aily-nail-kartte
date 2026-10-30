@@ -83,6 +83,7 @@ test("keeps the API retry window for a transient provider failure", () => {
     sent: false,
     retryable: true,
     retryWindowHours: 12,
+    retryToken: "reservation-confirmed-email/reservation-1/0123456789abcdef0123456789abcdef",
     message: "12時間以内に再試行できます。",
   });
 
@@ -90,6 +91,7 @@ test("keeps the API retry window for a transient provider failure", () => {
   assert.equal(notice.completed, false);
   assert.equal(notice.retryWindowHours, 12);
   assert.equal(notice.message, "12時間以内に再試行できます。");
+  assert.match(notice.retryToken, /^reservation-confirmed-email\//);
 });
 
 test("clears retry after a successful send or intentional skip", () => {
@@ -124,7 +126,12 @@ test("expires an open-tab retry at the original provider deadline", () => {
   const startedAt = 1_000_000;
   const initial = getConfirmationEmailNotice(
     false,
-    { ok: false, retryable: true, retryWindowHours: 24 },
+    {
+      ok: false,
+      retryable: true,
+      retryWindowHours: 24,
+      retryToken: "reservation-confirmed-email/reservation-1/0123456789abcdef0123456789abcdef",
+    },
     startedAt
   );
 
@@ -182,6 +189,7 @@ test("restores a safe email retry after reload without extending its deadline", 
   assert.equal(restored?.actionLabel, "確定メールを再試行");
   assert.equal(restored?.expiresAt, notice.expiresAt);
   assert.equal(restored?.retryWindowHours, 22);
+  assert.equal(restored?.retryToken, notice.retryToken);
 });
 
 test("clears completed, expired, and malformed stored email retries", () => {
@@ -239,6 +247,8 @@ test("reservation screens restore and persist email retry recovery", () => {
   for (const source of [listSource, editSource]) {
     assert.match(source, /readConfirmationEmailRetryNotice\(/);
     assert.match(source, /saveConfirmationEmailRetryNotice\(/);
+    assert.match(source, /expectedIdempotencyKey: retryToken/);
+    assert.match(source, /retryNotice(?:\?|)\.retryToken/);
   }
   assert.match(
     listSource,

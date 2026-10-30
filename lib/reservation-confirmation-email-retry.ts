@@ -3,6 +3,7 @@ export type ConfirmationEmailApiResult = {
   sent?: boolean;
   retryable?: boolean;
   retryWindowHours?: number;
+  retryToken?: string;
   message?: string;
 };
 
@@ -12,6 +13,7 @@ export type ConfirmationEmailNotice = {
   completed: boolean;
   retryWindowHours: number | null;
   expiresAt: number | null;
+  retryToken?: string;
   actionLabel?: "確定メールを送信" | "確定メールを再試行";
 };
 
@@ -26,6 +28,7 @@ type StoredConfirmationEmailRetryNotice = {
   message: string;
   expiresAt: number;
   actionLabel: NonNullable<ConfirmationEmailNotice["actionLabel"]>;
+  retryToken?: string;
 };
 
 function getStorageKey(reservationId: string) {
@@ -61,6 +64,10 @@ export function readConfirmationEmailRetryNotice(
       Number.isFinite(stored.expiresAt) &&
       now < stored.expiresAt &&
       isActionLabel(stored.actionLabel);
+    const retryToken =
+      typeof stored.retryToken === "string" && stored.retryToken.trim()
+        ? stored.retryToken.trim()
+        : undefined;
 
     if (!isValid) {
       storage.removeItem(key);
@@ -84,6 +91,7 @@ export function readConfirmationEmailRetryNotice(
       retryWindowHours,
       expiresAt,
       actionLabel,
+      retryToken,
     };
   } catch {
     try {
@@ -120,6 +128,7 @@ export function saveConfirmationEmailRetryNotice(
       message: notice.message,
       expiresAt: notice.expiresAt,
       actionLabel: notice.actionLabel,
+      ...(notice.retryToken ? { retryToken: notice.retryToken } : {}),
     };
     storage.setItem(key, JSON.stringify(stored));
   } catch {
@@ -206,6 +215,10 @@ export function getConfirmationEmailNotice(
     retryWindowHours,
     expiresAt,
     actionLabel: canRetry ? "確定メールを再試行" : undefined,
+    retryToken:
+      canRetry && typeof result.retryToken === "string"
+        ? result.retryToken
+        : undefined,
   };
 }
 

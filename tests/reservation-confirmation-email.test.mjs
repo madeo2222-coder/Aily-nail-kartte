@@ -214,6 +214,8 @@ test("rejects malformed confirmation email requests before privileged clients ar
     { requestBody: [] },
     { requestBody: { reservationId: 123 } },
     { requestBody: { reservationId: "   " } },
+    { requestBody: { reservationId: "reservation-1", expectedIdempotencyKey: 123 } },
+    { requestBody: { reservationId: "reservation-1", expectedIdempotencyKey: "invalid" } },
   ]) {
     const runtime = loadRoute(options);
     const response = await runtime.post();
@@ -415,6 +417,10 @@ test("marks a lost Resend response as safely retryable within the provider windo
   assert.equal(response.body.sent, false);
   assert.equal(response.body.retryable, true);
   assert.equal(response.body.retryWindowHours, 24);
+  assert.equal(
+    response.body.retryToken,
+    runtime.sendCalls[0].options.idempotencyKey
+  );
   assert.match(response.body.message, /24時間以内/);
   assert.doesNotMatch(response.body.message, /private/);
 });
@@ -433,8 +439,68 @@ test("only recommends retry for transient Resend errors", async () => {
     assert.equal(response.status, 502);
     assert.equal(response.body.sent, false);
     assert.equal(response.body.retryable, retryable);
+    assert.equal(
+      typeof response.body.retryToken,
+      retryable ? "string" : "undefined"
+    );
     assert.doesNotMatch(response.body.message, /private|provider/);
   }
+});
+
+test("rejects a retry when the original email payload has changed", async () => {
+  const firstRuntime = loadRoute({
+    sendResponses: [
+      {
+        data: null,
+        error: { name: "rate_limit_exceeded", message: "temporary" },
+      },
+    ],
+  });
+  const firstResponse = await firstRuntime.post();
+  assert.equal(firstResponse.status, 502);
+
+  const retryRuntime = loadRoute({
+    requestBody: {
+      reservationId: "reservation-1",
+      expectedIdempotencyKey: firstResponse.body.retryToken,
+    },
+    customer: {
+      id: "customer-1",
+      salon_id: "salon-1",
+      name: "顧客 一郎",
+      email: "changed@example.test",
+    },
+  });
+  const retryResponse = await retryRuntime.post();
+
+  assert.equal(retryResponse.status, 409);
+  assert.equal(retryResponse.body.retryable, false);
+  assert.match(retryResponse.body.message, /更新/);
+  assert.equal(retryRuntime.resendCreated, 0);
+  assert.equal(retryRuntime.sendCalls.length, 0);
+});
+
+test("reuses the original provider key when the retry payload is unchanged", async () => {
+  const firstRuntime = loadRoute({
+    sendResponses: [new Error("response lost")],
+  });
+  const firstResponse = await firstRuntime.post();
+
+  const retryRuntime = loadRoute({
+    requestBody: {
+      reservationId: "reservation-1",
+      expectedIdempotencyKey: firstResponse.body.retryToken,
+    },
+  });
+  const retryResponse = await retryRuntime.post();
+
+  assert.equal(retryResponse.status, 200);
+  assert.equal(retryResponse.body.sent, true);
+  assert.equal(retryRuntime.sendCalls.length, 1);
+  assert.equal(
+    retryRuntime.sendCalls[0].options.idempotencyKey,
+    firstResponse.body.retryToken
+  );
 });
 
 test("fails closed when scoped customer data cannot be confirmed", async () => {
@@ -479,7 +545,7 @@ test("both staff confirmation screens invoke the guarded email API only after co
     /async function sendConfirmationEmailNotice[\s\S]{0,240}\/api\/send-reservation-confirmed-email/
   );
   for (const page of [listPage, editPage]) {
-    assert.match(page, /body: JSON\.stringify\(\{ reservationId(?:: id)? \}\)/);
+    assert.match(page, /expectedIdempotencyKey: retryToken/);
     assert.match(page, /確定メールを再試行/);
   }
   assert.match(
