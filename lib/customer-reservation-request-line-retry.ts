@@ -24,6 +24,13 @@ export type CustomerReservationRequestRetry = {
 type RetryLockStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 type StoredCustomerReservationRequestLineLock = {
+  version: 2;
+  savedAt: number;
+  kind: CustomerReservationRequestLineLock["kind"];
+  reservationRevision: string;
+};
+
+type LegacyStoredCustomerReservationRequestLineLock = {
   version: 1;
   savedAt: number;
   kind?: CustomerReservationRequestLineLock["kind"];
@@ -39,15 +46,18 @@ type StoredCustomerReservationRequestRetry = {
 export const CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS =
   23 * 60 * 60 * 1000;
 
-const STORAGE_KEY_PREFIX = "aily:customer-reservation-request-line:v1:";
+const STORAGE_KEY_PREFIX = "aily:customer-reservation-request-line:v2:";
+const LEGACY_STORAGE_KEY_PREFIX =
+  "aily:customer-reservation-request-line:v1:";
 const RETRY_STORAGE_KEY_PREFIX =
   "aily:customer-reservation-request-line-retry:v2:";
 
 function getStorageKey(
+  prefix: string,
   reservationId: string,
   action: CustomerReservationRequestAction
 ) {
-  return `${STORAGE_KEY_PREFIX}${reservationId}:${action}`;
+  return `${prefix}${reservationId}:${action}`;
 }
 
 function getStoredMessage(
@@ -67,24 +77,71 @@ export function readCustomerReservationRequestLineLock(
   storage: RetryLockStorage,
   reservationId: string,
   action: CustomerReservationRequestAction,
+  reservationRevision: string,
   now = Date.now()
 ): CustomerReservationRequestLineLock | null {
-  const key = getStorageKey(reservationId, action);
+  const key = getStorageKey(STORAGE_KEY_PREFIX, reservationId, action);
+  const legacyKey = getStorageKey(
+    LEGACY_STORAGE_KEY_PREFIX,
+    reservationId,
+    action
+  );
 
   try {
     const raw = storage.getItem(key);
-    if (!raw) return null;
+    if (!raw) {
+      const legacyRaw = storage.getItem(legacyKey);
+      if (!legacyRaw) return null;
+
+      const legacy = JSON.parse(
+        legacyRaw
+      ) as Partial<LegacyStoredCustomerReservationRequestLineLock>;
+      const legacyValid =
+        legacy.version === 1 &&
+        typeof legacy.savedAt === "number" &&
+        Number.isFinite(legacy.savedAt) &&
+        legacy.savedAt <= now &&
+        now - legacy.savedAt <
+          CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS &&
+        Boolean(reservationRevision);
+
+      if (!legacyValid || legacy.savedAt === undefined) {
+        storage.removeItem(legacyKey);
+        return null;
+      }
+
+      const kind =
+        legacy.kind === "history_check" ? "history_check" : "sent";
+      const migrated: StoredCustomerReservationRequestLineLock = {
+        version: 2,
+        savedAt: legacy.savedAt,
+        kind,
+        reservationRevision,
+      };
+      storage.setItem(key, JSON.stringify(migrated));
+      storage.removeItem(legacyKey);
+
+      return {
+        action,
+        kind,
+        message: getStoredMessage(action, kind),
+      };
+    }
 
     const stored = JSON.parse(
       raw
     ) as Partial<StoredCustomerReservationRequestLineLock>;
     const valid =
-      stored.version === 1 &&
+      stored.version === 2 &&
       typeof stored.savedAt === "number" &&
       Number.isFinite(stored.savedAt) &&
       stored.savedAt <= now &&
       now - stored.savedAt <
-        CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS;
+        CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS &&
+      (stored.kind === "sent" || stored.kind === "history_check") &&
+      typeof stored.reservationRevision === "string" &&
+      Boolean(stored.reservationRevision) &&
+      stored.reservationRevision === reservationRevision;
 
     if (!valid) {
       storage.removeItem(key);
@@ -112,17 +169,19 @@ export function saveCustomerReservationRequestLineLock(
   storage: RetryLockStorage,
   reservationId: string,
   lock: CustomerReservationRequestLineLock | null,
+  reservationRevision: string,
   now = Date.now()
 ) {
-  if (!lock) return;
+  if (!lock || !reservationRevision) return;
 
-  const key = getStorageKey(reservationId, lock.action);
+  const key = getStorageKey(STORAGE_KEY_PREFIX, reservationId, lock.action);
 
   try {
     const stored: StoredCustomerReservationRequestLineLock = {
-      version: 1,
+      version: 2,
       savedAt: now,
       kind: lock.kind,
+      reservationRevision,
     };
     storage.setItem(key, JSON.stringify(stored));
   } catch {

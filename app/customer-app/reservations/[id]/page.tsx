@@ -328,7 +328,7 @@ export default function CustomerReservationDetailPage() {
   }, [reservationId, fetchReservation]);
 
   useEffect(() => {
-    if (!reservationId) return;
+    if (!reservationId || !reservation?.requestRevision) return;
 
     const nextLocks: Partial<
       Record<
@@ -347,7 +347,8 @@ export default function CustomerReservationDetailPage() {
       const lock = readCustomerReservationRequestLineLock(
         window.localStorage,
         reservationId,
-        action
+        action,
+        reservation.requestRevision
       );
       if (lock) nextLocks[action] = lock;
       const retry = readCustomerReservationRequestRetry(
@@ -364,7 +365,7 @@ export default function CustomerReservationDetailPage() {
       nextRetries.request_change?.requestMessage ??
       nextRetries.request_cancel?.requestMessage;
     if (retryMessage !== undefined) setRequestMessage(retryMessage);
-  }, [reservationId]);
+  }, [reservationId, reservation?.requestRevision]);
 
   async function runAction(body: Record<string, unknown>) {
     if (actionPendingRef.current) return;
@@ -432,7 +433,8 @@ export default function CustomerReservationDetailPage() {
           saveCustomerReservationRequestLineLock(
             window.localStorage,
             reservationId,
-            lock
+            lock,
+            requestRetry?.expectedRequestRevision || ""
           );
           setRequestLineLocks((current) => ({
             ...current,
@@ -482,7 +484,8 @@ export default function CustomerReservationDetailPage() {
         saveCustomerReservationRequestLineLock(
           window.localStorage,
           reservationId,
-          lock
+          lock,
+          requestRetry?.expectedRequestRevision || ""
         );
         setRequestLineLocks((current) => ({
           ...current,
@@ -527,10 +530,13 @@ export default function CustomerReservationDetailPage() {
   function restoreRequestLineLock(
     action: CustomerReservationRequestAction
   ) {
+    if (!reservation?.requestRevision) return false;
+
     const lock = readCustomerReservationRequestLineLock(
       window.localStorage,
       reservationId,
-      action
+      action,
+      reservation.requestRevision
     );
 
     if (!lock) return false;

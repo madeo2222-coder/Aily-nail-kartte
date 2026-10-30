@@ -736,6 +736,7 @@ test("successful customer LINE requests stay locked after a page reload", () => 
       storage,
       "reservation-1",
       lock,
+      "revision-1",
       1_000
     );
 
@@ -743,6 +744,7 @@ test("successful customer LINE requests stay locked after a page reload", () => 
       storage,
       "reservation-1",
       action,
+      "revision-1",
       2_000
     );
     assert.equal(restored.action, action);
@@ -754,11 +756,50 @@ test("successful customer LINE requests stay locked after a page reload", () => 
         storage,
         "reservation-1",
         action,
+        "revision-1",
         1_000 + CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS
       ),
       null
     );
   }
+});
+
+test("customer LINE send locks clear after the reservation revision changes", () => {
+  const {
+    getCustomerReservationRequestLineLock,
+    readCustomerReservationRequestLineLock,
+    saveCustomerReservationRequestLineLock,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+  const lock = getCustomerReservationRequestLineLock(
+    { ok: true, message: "店舗へ送りました" },
+    "request_change"
+  );
+
+  saveCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    lock,
+    "revision-1",
+    1_000
+  );
+
+  assert.equal(
+    readCustomerReservationRequestLineLock(
+      storage,
+      "reservation-1",
+      "request_change",
+      "revision-2",
+      2_000
+    ),
+    null
+  );
+  assert.equal(
+    storage.getItem(
+      "aily:customer-reservation-request-line:v2:reservation-1:request_change"
+    ),
+    null
+  );
 });
 
 test("explicitly failed customer LINE requests remain safely retryable", () => {
@@ -922,11 +963,24 @@ test("legacy customer LINE locks restore as sent locks", () => {
     storage,
     "reservation-1",
     "request_cancel",
+    "revision-1",
     2_000
   );
 
   assert.equal(restored.kind, "sent");
   assert.match(restored.message, /送信済み/);
+  assert.equal(
+    storage.getItem(
+      "aily:customer-reservation-request-line:v1:reservation-1:request_cancel"
+    ),
+    null
+  );
+  assert.match(
+    storage.getItem(
+      "aily:customer-reservation-request-line:v2:reservation-1:request_cancel"
+    ),
+    /"reservationRevision":"revision-1"/
+  );
 });
 
 test("customer reservation page restores separate change and cancel send locks", () => {
@@ -935,6 +989,7 @@ test("customer reservation page restores separate change and cancel send locks",
     /readCustomerReservationRequestLineLock\([\s\S]{0,100}window\.localStorage/
   );
   assert.match(pageSource, /saveCustomerReservationRequestLineLock\(/);
+  assert.match(pageSource, /reservation\.requestRevision/);
   assert.match(
     pageSource,
     /getCustomerReservationRequestLineLock\([\s\S]{0,80}null,[\s\S]{0,80}requestAction/
