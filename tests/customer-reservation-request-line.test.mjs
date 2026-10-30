@@ -1,5 +1,6 @@
 // Run: node --test tests/customer-reservation-request-line.test.mjs
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -118,6 +119,25 @@ function loadRoute({
     source: "customer-app",
     memo: "",
   };
+  const activeReservation = reservation ?? defaultReservation;
+  const revisionPart = (value) =>
+    typeof value === "string" ? value.trim() : "";
+  const requestRevision = createHash("sha256")
+    .update(
+      [
+        revisionPart(activeReservation.id),
+        "customer-1",
+        "テスト顧客",
+        revisionPart(activeReservation.status),
+        revisionPart(activeReservation.start_at),
+        revisionPart(activeReservation.end_at),
+        revisionPart(activeReservation.menu || activeReservation.menu_name),
+        revisionPart(activeReservation.staff_id),
+        revisionPart(activeReservation.salon_id),
+        revisionPart(activeReservation.updated_at),
+      ].join("\u001f")
+    )
+    .digest("base64url");
   const supabaseAdmin = {
     from(table) {
       if (table === "customers") {
@@ -131,7 +151,7 @@ function loadRoute({
       }
       if (table === "reservations") {
         return createReadQuery(
-          reservation ?? defaultReservation,
+          activeReservation,
           reservationReadError
         );
       }
@@ -234,15 +254,23 @@ function loadRoute({
   });
 
   async function patch(body = {}) {
+    const requestBody = {
+      action: "request_change",
+      requestMessage: "10月3日の午後へ変更希望です",
+      ...body,
+    };
+    if (
+      (requestBody.action === "request_change" ||
+        requestBody.action === "request_cancel") &&
+      !Object.prototype.hasOwnProperty.call(body, "expectedRequestRevision")
+    ) {
+      requestBody.expectedRequestRevision = requestRevision;
+    }
     const response = await exports.PATCH(
       {
         cookies: { get: () => ({ value: "signed-session" }) },
         async json() {
-          return {
-            action: "request_change",
-            requestMessage: "10月3日の午後へ変更希望です",
-            ...body,
-          };
+          return requestBody;
         },
       },
       { params: Promise.resolve({ id: "reservation-1" }) }
@@ -297,7 +325,10 @@ test("legacy full-width HPB reservations keep customer edits disabled", async ()
 
 test("confirmed change request succeeds only after LINE accepts it", async () => {
   const runtime = loadRoute();
-  const response = await runtime.patch();
+  const detail = await runtime.get();
+  const response = await runtime.patch({
+    expectedRequestRevision: detail.body.reservation.requestRevision,
+  });
 
   assert.equal(response.status, 200);
   assert.equal(response.body.ok, true);
@@ -308,6 +339,38 @@ test("confirmed change request succeeds only after LINE accepts it", async () =>
     /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
   );
   assert.equal(runtime.lineCalls[0].options.signal.aborted, false);
+});
+
+test("stale confirmed request content stops before LINE delivery", async () => {
+  const runtime = loadRoute();
+  const detail = await runtime.get();
+
+  assert.equal(detail.status, 200);
+  assert.match(
+    detail.body.reservation.requestRevision,
+    /^[A-Za-z0-9_-]{43}$/
+  );
+
+  const response = await runtime.patch({
+    expectedRequestRevision: `${detail.body.reservation.requestRevision}stale`,
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.retryable, false);
+  assert.equal(response.body.deliveryStatus, "not_sent");
+  assert.match(response.body.error, /予約内容が更新/);
+  assert.equal(runtime.lineCalls.length, 0);
+});
+
+test("confirmed request without a revision fails closed before LINE", async () => {
+  const runtime = loadRoute();
+  const response = await runtime.patch({ expectedRequestRevision: null });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.retryable, false);
+  assert.match(response.body.error, /予約内容が更新/);
+  assert.equal(runtime.lineCalls.length, 0);
 });
 
 test("over-limit customer request stops before calling LINE", async () => {
@@ -751,6 +814,7 @@ test("an unobservable customer LINE result preserves the exact request for retry
     {
       action: "request_change",
       requestMessage: "7月20日の14時へ変更希望です",
+      expectedRequestRevision: "revision-1",
     },
     "request_change",
     1_000
@@ -764,6 +828,7 @@ test("an unobservable customer LINE result preserves the exact request for retry
 
   assert.equal(restored.action, "request_change");
   assert.equal(restored.requestMessage, "7月20日の14時へ変更希望です");
+  assert.equal(restored.expectedRequestRevision, "revision-1");
 
   saveCustomerReservationRequestRetry(
     storage,
@@ -794,7 +859,11 @@ test("customer request retry expires and rejects malformed storage", () => {
   saveCustomerReservationRequestRetry(
     storage,
     "reservation-1",
-    { action: "request_cancel", requestMessage: "仕事の都合です" },
+    {
+      action: "request_cancel",
+      requestMessage: "仕事の都合です",
+      expectedRequestRevision: "revision-1",
+    },
     "request_cancel",
     1_000
   );
@@ -809,7 +878,7 @@ test("customer request retry expires and rejects malformed storage", () => {
   );
 
   storage.setItem(
-    "aily:customer-reservation-request-line-retry:v1:reservation-2:request_change",
+    "aily:customer-reservation-request-line-retry:v2:reservation-2:request_change",
     "not-json"
   );
   assert.equal(
@@ -828,6 +897,12 @@ test("customer page retries only the persisted LINE request after response loss"
   assert.match(pageSource, /readCustomerReservationRequestRetry\(/);
   assert.match(pageSource, /shouldKeepCustomerReservationRequestRetry\(json\)/);
   assert.match(pageSource, /retry\?\.requestMessage \?\? requestMessage\.trim\(\)/);
+  assert.match(pageSource, /expectedRequestRevision/);
+  assert.match(
+    pageSource,
+    /retry\.expectedRequestRevision !== reservation\.requestRevision/
+  );
+  assert.match(pageSource, /予約内容が更新されています/);
   assert.match(pageSource, /保存した同じ内容で安全に再試行できます/);
   assert.match(pageSource, /同じ変更希望を再試行/);
   assert.match(pageSource, /同じキャンセル希望を再試行/);

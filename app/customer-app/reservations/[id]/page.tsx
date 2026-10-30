@@ -28,6 +28,7 @@ type ReservationDetail = {
   source: string;
   startAt: string;
   endAt: string;
+  requestRevision: string;
   externalReservation: boolean;
   canDirectEdit: boolean;
   canDirectCancel: boolean;
@@ -381,6 +382,9 @@ export default function CustomerReservationDetailPage() {
       ? {
           action: requestAction,
           requestMessage: String(body.requestMessage || "").trim(),
+          expectedRequestRevision: String(
+            body.expectedRequestRevision || ""
+          ).trim(),
         }
       : null;
 
@@ -560,16 +564,44 @@ export default function CustomerReservationDetailPage() {
         reservationId,
         "request_change"
       ) || requestLineRetries.request_change;
+    if (
+      retry &&
+      reservation &&
+      retry.expectedRequestRevision !== reservation.requestRevision
+    ) {
+      saveCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        null,
+        "request_change"
+      );
+      setRequestLineRetries((current) => {
+        const next = { ...current };
+        delete next.request_change;
+        return next;
+      });
+      setErrorMessage(
+        "予約内容が更新されています。最新の内容を確認してから変更希望を入力してください。"
+      );
+      return;
+    }
     const nextRequestMessage = retry?.requestMessage ?? requestMessage.trim();
+    const expectedRequestRevision =
+      retry?.expectedRequestRevision ?? reservation?.requestRevision;
 
     if (!nextRequestMessage) {
       setErrorMessage("変更したい内容を入力してください");
+      return;
+    }
+    if (!expectedRequestRevision) {
+      setErrorMessage("予約内容を確認できません。最新情報を再読み込みしてください");
       return;
     }
 
     await runAction({
       action: "request_change",
       requestMessage: nextRequestMessage,
+      expectedRequestRevision,
     });
   }
 
@@ -594,6 +626,34 @@ export default function CustomerReservationDetailPage() {
         reservationId,
         "request_cancel"
       ) || requestLineRetries.request_cancel;
+    if (
+      retry &&
+      reservation &&
+      retry.expectedRequestRevision !== reservation.requestRevision
+    ) {
+      saveCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        null,
+        "request_cancel"
+      );
+      setRequestLineRetries((current) => {
+        const next = { ...current };
+        delete next.request_cancel;
+        return next;
+      });
+      setErrorMessage(
+        "予約内容が更新されています。最新の内容を確認してからキャンセル希望を入力してください。"
+      );
+      return;
+    }
+    const expectedRequestRevision =
+      retry?.expectedRequestRevision ?? reservation?.requestRevision;
+
+    if (!expectedRequestRevision) {
+      setErrorMessage("予約内容を確認できません。最新情報を再読み込みしてください");
+      return;
+    }
 
     const confirmed = window.confirm(
       retry
@@ -606,6 +666,7 @@ export default function CustomerReservationDetailPage() {
     await runAction({
       action: "request_cancel",
       requestMessage: retry?.requestMessage ?? requestMessage.trim(),
+      expectedRequestRevision,
     });
   }
 

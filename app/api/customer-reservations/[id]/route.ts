@@ -24,6 +24,7 @@ type UpdateRequestBody = {
   memo?: string;
   durationMinutes?: number;
   requestMessage?: string;
+  expectedRequestRevision?: string;
 };
 
 type ReservationWriteRow = {
@@ -209,6 +210,29 @@ function createAdminLineRetryKey(parts: string[]) {
   ].join("-");
 }
 
+function createCustomerRequestRevision(params: {
+  reservation: AnyRow;
+  customerId: string;
+  customerName: string;
+}) {
+  return createHash("sha256")
+    .update(
+      [
+        getString(params.reservation, ["id"]),
+        params.customerId,
+        params.customerName,
+        getString(params.reservation, ["status"]),
+        getString(params.reservation, ["start_at"]),
+        getString(params.reservation, ["end_at"]),
+        getString(params.reservation, ["menu", "menu_name"]),
+        getString(params.reservation, ["staff_id"]),
+        getString(params.reservation, ["salon_id"]),
+        getString(params.reservation, ["updated_at"]),
+      ].join("\u001f")
+    )
+    .digest("base64url");
+}
+
 async function sendAdminLineMessage(
   text: string,
   retryKey?: string
@@ -376,6 +400,7 @@ export async function GET(
 
     const status = getString(reservation, ["status"]) || "requested";
     const externalReservation = isExternalReservation(reservation);
+    const customerName = getString(customer, ["name"]) || "お客様";
 
     return NextResponse.json({
       ok: true,
@@ -391,6 +416,11 @@ export async function GET(
         source: getString(reservation, ["source"]) || "customer-app",
         startAt: getString(reservation, ["start_at"]),
         endAt: getString(reservation, ["end_at"]),
+        requestRevision: createCustomerRequestRevision({
+          reservation,
+          customerId,
+          customerName,
+        }),
         externalReservation,
         canDirectEdit: isRequestedStatus(status) && !externalReservation,
         canDirectCancel: isRequestedStatus(status) && !externalReservation,
@@ -572,6 +602,27 @@ export async function PATCH(
       }
 
       const requestMessage = String(body.requestMessage || "").trim();
+      const expectedRequestRevision = String(
+        body.expectedRequestRevision || ""
+      ).trim();
+      const currentRequestRevision = createCustomerRequestRevision({
+        reservation,
+        customerId,
+        customerName,
+      });
+
+      if (expectedRequestRevision !== currentRequestRevision) {
+        return NextResponse.json(
+          {
+            ok: false,
+            error:
+              "予約内容が更新されています。最新の内容を読み込み直してから依頼してください",
+            retryable: false,
+            deliveryStatus: "not_sent",
+          },
+          { status: 409 }
+        );
+      }
 
       const title =
         action === "request_cancel"
@@ -599,8 +650,7 @@ export async function PATCH(
         id,
         customerId,
         currentStatus,
-        getString(reservation, ["start_at"]),
-        getString(reservation, ["updated_at"]),
+        currentRequestRevision,
         action,
         requestMessage,
       ]);

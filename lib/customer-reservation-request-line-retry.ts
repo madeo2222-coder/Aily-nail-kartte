@@ -18,6 +18,7 @@ export type CustomerReservationRequestLineLock = {
 export type CustomerReservationRequestRetry = {
   action: CustomerReservationRequestAction;
   requestMessage: string;
+  expectedRequestRevision: string;
 };
 
 type RetryLockStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -29,9 +30,10 @@ type StoredCustomerReservationRequestLineLock = {
 };
 
 type StoredCustomerReservationRequestRetry = {
-  version: 1;
+  version: 2;
   savedAt: number;
   requestMessage: string;
+  expectedRequestRevision: string;
 };
 
 export const CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS =
@@ -39,7 +41,7 @@ export const CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS =
 
 const STORAGE_KEY_PREFIX = "aily:customer-reservation-request-line:v1:";
 const RETRY_STORAGE_KEY_PREFIX =
-  "aily:customer-reservation-request-line-retry:v1:";
+  "aily:customer-reservation-request-line-retry:v2:";
 
 function getStorageKey(
   reservationId: string,
@@ -142,12 +144,14 @@ export function readCustomerReservationRequestRetry(
 
     const stored = JSON.parse(raw) as Partial<StoredCustomerReservationRequestRetry>;
     const valid =
-      stored.version === 1 &&
+      stored.version === 2 &&
       typeof stored.savedAt === "number" &&
       Number.isFinite(stored.savedAt) &&
       stored.savedAt <= now &&
       now - stored.savedAt < CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS &&
-      typeof stored.requestMessage === "string";
+      typeof stored.requestMessage === "string" &&
+      typeof stored.expectedRequestRevision === "string" &&
+      Boolean(stored.expectedRequestRevision);
 
     if (!valid) {
       storage.removeItem(key);
@@ -157,6 +161,7 @@ export function readCustomerReservationRequestRetry(
     return {
       action,
       requestMessage: stored.requestMessage || "",
+      expectedRequestRevision: stored.expectedRequestRevision || "",
     };
   } catch {
     try {
@@ -184,9 +189,10 @@ export function saveCustomerReservationRequestRetry(
     }
 
     const stored: StoredCustomerReservationRequestRetry = {
-      version: 1,
+      version: 2,
       savedAt: now,
       requestMessage: retry.requestMessage,
+      expectedRequestRevision: retry.expectedRequestRevision,
     };
     storage.setItem(key, JSON.stringify(stored));
   } catch {
