@@ -216,6 +216,8 @@ test("rejects malformed confirmation email requests before privileged clients ar
     { requestBody: { reservationId: "   " } },
     { requestBody: { reservationId: "reservation-1", expectedIdempotencyKey: 123 } },
     { requestBody: { reservationId: "reservation-1", expectedIdempotencyKey: "invalid" } },
+    { requestBody: { reservationId: "reservation-1", attemptId: 123 } },
+    { requestBody: { reservationId: "reservation-1", attemptId: "invalid" } },
   ]) {
     const runtime = loadRoute(options);
     const response = await runtime.post();
@@ -448,7 +450,9 @@ test("only recommends retry for transient Resend errors", async () => {
 });
 
 test("rejects a retry when the original email payload has changed", async () => {
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
   const firstRuntime = loadRoute({
+    requestBody: { reservationId: "reservation-1", attemptId },
     sendResponses: [
       {
         data: null,
@@ -463,6 +467,7 @@ test("rejects a retry when the original email payload has changed", async () => 
     requestBody: {
       reservationId: "reservation-1",
       expectedIdempotencyKey: firstResponse.body.retryToken,
+      attemptId,
     },
     customer: {
       id: "customer-1",
@@ -481,7 +486,9 @@ test("rejects a retry when the original email payload has changed", async () => 
 });
 
 test("reuses the original provider key when the retry payload is unchanged", async () => {
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
   const firstRuntime = loadRoute({
+    requestBody: { reservationId: "reservation-1", attemptId },
     sendResponses: [new Error("response lost")],
   });
   const firstResponse = await firstRuntime.post();
@@ -490,6 +497,7 @@ test("reuses the original provider key when the retry payload is unchanged", asy
     requestBody: {
       reservationId: "reservation-1",
       expectedIdempotencyKey: firstResponse.body.retryToken,
+      attemptId,
     },
   });
   const retryResponse = await retryRuntime.post();
@@ -499,7 +507,40 @@ test("reuses the original provider key when the retry payload is unchanged", asy
   assert.equal(retryRuntime.sendCalls.length, 1);
   assert.equal(
     retryRuntime.sendCalls[0].options.idempotencyKey,
-    firstResponse.body.retryToken
+    firstRuntime.sendCalls[0].options.idempotencyKey
+  );
+});
+
+test("keeps the provider key after a browser response loss even if the payload changes", async () => {
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
+  const firstRuntime = loadRoute({
+    requestBody: { reservationId: "reservation-1", attemptId },
+    sendResponses: [new Error("browser response lost")],
+  });
+  const firstResponse = await firstRuntime.post();
+  assert.equal(firstResponse.status, 502);
+
+  const retryRuntime = loadRoute({
+    requestBody: { reservationId: "reservation-1", attemptId },
+    customer: {
+      id: "customer-1",
+      salon_id: "salon-1",
+      name: "顧客 一郎",
+      email: "changed@example.test",
+    },
+  });
+  const retryResponse = await retryRuntime.post();
+
+  assert.equal(retryResponse.status, 200);
+  assert.equal(firstRuntime.sendCalls.length, 1);
+  assert.equal(retryRuntime.sendCalls.length, 1);
+  assert.notDeepEqual(
+    firstRuntime.sendCalls[0].payload,
+    retryRuntime.sendCalls[0].payload
+  );
+  assert.equal(
+    retryRuntime.sendCalls[0].options.idempotencyKey,
+    firstRuntime.sendCalls[0].options.idempotencyKey
   );
 });
 
@@ -534,7 +575,7 @@ test("both staff confirmation screens invoke the guarded email API only after co
   );
   assert.match(
     listPage,
-    /async function sendReservationConfirmedEmail[\s\S]{0,240}\/api\/send-reservation-confirmed-email/
+    /async function sendReservationConfirmedEmail[\s\S]{0,360}\/api\/send-reservation-confirmed-email/
   );
   assert.match(
     editPage,
@@ -542,7 +583,7 @@ test("both staff confirmation screens invoke the guarded email API only after co
   );
   assert.match(
     editPage,
-    /async function sendConfirmationEmailNotice[\s\S]{0,240}\/api\/send-reservation-confirmed-email/
+    /async function sendConfirmationEmailNotice[\s\S]{0,360}\/api\/send-reservation-confirmed-email/
   );
   for (const page of [listPage, editPage]) {
     assert.match(page, /expectedIdempotencyKey: retryToken/);

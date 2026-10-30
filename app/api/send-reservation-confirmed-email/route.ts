@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 type SendReservationConfirmedEmailBody = {
   reservationId?: string;
   expectedIdempotencyKey?: string;
+  attemptId?: string;
 };
 type ReservationRow = {
   id: string;
@@ -244,9 +245,13 @@ function reservationSnapshot(reservation: ReservationRow) {
   ]);
 }
 
-function buildIdempotencyKey(reservationId: string, payload: object) {
+function buildIdempotencyKey(
+  reservationId: string,
+  payload: object,
+  attemptId?: string
+) {
   const digest = createHash("sha256")
-    .update(JSON.stringify(payload))
+    .update(attemptId || JSON.stringify(payload))
     .digest("hex")
     .slice(0, 32);
   return `reservation-confirmed-email/${reservationId}/${digest}`;
@@ -303,6 +308,19 @@ export async function POST(request: Request) {
     );
   }
   const reservationId = body.reservationId.trim();
+  if (
+    body.attemptId !== undefined &&
+    (typeof body.attemptId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        body.attemptId.trim()
+      ))
+  ) {
+    return NextResponse.json(
+      { ok: false, sent: false, message: "メール送信要求が正しくありません。" },
+      { status: 400 }
+    );
+  }
+  const attemptId = body.attemptId?.trim().toLowerCase();
   const expectedIdempotencyKey = body.expectedIdempotencyKey;
   if (
     expectedIdempotencyKey !== undefined &&
@@ -490,10 +508,18 @@ export async function POST(request: Request) {
       );
     }
 
-    const idempotencyKey = buildIdempotencyKey(reservation.id, mailPayload);
+    const payloadIdempotencyKey = buildIdempotencyKey(
+      reservation.id,
+      mailPayload
+    );
+    const providerIdempotencyKey = buildIdempotencyKey(
+      reservation.id,
+      mailPayload,
+      attemptId
+    );
     if (
       expectedIdempotencyKey !== undefined &&
-      expectedIdempotencyKey !== idempotencyKey
+      expectedIdempotencyKey !== payloadIdempotencyKey
     ) {
       return NextResponse.json(
         {
@@ -509,7 +535,9 @@ export async function POST(request: Request) {
     const resend = new Resend(apiKey);
     let sendResult: Awaited<ReturnType<typeof resend.emails.send>>;
     try {
-      sendResult = await resend.emails.send(mailPayload, { idempotencyKey });
+      sendResult = await resend.emails.send(mailPayload, {
+        idempotencyKey: providerIdempotencyKey,
+      });
     } catch {
       return NextResponse.json(
         {
@@ -517,7 +545,7 @@ export async function POST(request: Request) {
           sent: false,
           retryable: true,
           retryWindowHours: 24,
-          retryToken: idempotencyKey,
+          retryToken: payloadIdempotencyKey,
           message: "メール送信結果を確認できませんでした。同じ予約内容なら24時間以内に安全に再試行できます。",
         },
         { status: 502 }
@@ -532,7 +560,7 @@ export async function POST(request: Request) {
           sent: false,
           retryable,
           ...(retryable ? { retryWindowHours: 24 } : {}),
-          ...(retryable ? { retryToken: idempotencyKey } : {}),
+          ...(retryable ? { retryToken: payloadIdempotencyKey } : {}),
           message: retryable
             ? "予約確定メールの送信に失敗しました。同じ予約内容なら24時間以内に再試行できます。"
             : "予約確定メールを送信できませんでした。顧客メールアドレスと送信設定を確認してください。",

@@ -18,6 +18,7 @@ import type {
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import {
+  createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
   getExpiredConfirmationEmailNotice,
   getConfirmationEmailRecoveryNotice,
@@ -857,14 +858,18 @@ export default function ReservationsPageClient() {
   async function sendReservationConfirmedEmail(
     id: string,
     previousExpiresAt: number | null = null,
-    retryToken?: string
+    retryToken?: string,
+    previousAttemptId?: string
   ): Promise<ConfirmationEmailNotice> {
+    const attemptId =
+      previousAttemptId || createConfirmationEmailAttemptId();
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reservationId: id,
+          attemptId,
           ...(retryToken ? { expectedIdempotencyKey: retryToken } : {}),
         }),
       });
@@ -875,7 +880,8 @@ export default function ReservationsPageClient() {
         response.ok,
         result,
         Date.now(),
-        previousExpiresAt
+        previousExpiresAt,
+        attemptId
       );
       updateConfirmationEmailRetryState(id, notice);
       return notice;
@@ -885,7 +891,8 @@ export default function ReservationsPageClient() {
         false,
         null,
         Date.now(),
-        previousExpiresAt
+        previousExpiresAt,
+        attemptId
       );
       updateConfirmationEmailRetryState(id, notice);
       return notice;
@@ -922,7 +929,8 @@ export default function ReservationsPageClient() {
       const notice = await sendReservationConfirmedEmail(
         id,
         retryNotice.expiresAt,
-        retryNotice.retryToken
+        retryNotice.retryToken,
+        retryNotice.attemptId
       );
       alert(notice.message);
     } finally {

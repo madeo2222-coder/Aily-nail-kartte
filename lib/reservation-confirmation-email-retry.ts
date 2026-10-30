@@ -14,6 +14,7 @@ export type ConfirmationEmailNotice = {
   retryWindowHours: number | null;
   expiresAt: number | null;
   retryToken?: string;
+  attemptId?: string;
   actionLabel?: "確定メールを送信" | "確定メールを再試行";
 };
 
@@ -29,7 +30,11 @@ type StoredConfirmationEmailRetryNotice = {
   expiresAt: number;
   actionLabel: NonNullable<ConfirmationEmailNotice["actionLabel"]>;
   retryToken?: string;
+  attemptId?: string;
 };
+
+const CONFIRMATION_EMAIL_ATTEMPT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function getStorageKey(reservationId: string) {
   return `${STORAGE_KEY_PREFIX}${reservationId}`;
@@ -39,6 +44,41 @@ function isActionLabel(
   value: unknown
 ): value is NonNullable<ConfirmationEmailNotice["actionLabel"]> {
   return value === "確定メールを送信" || value === "確定メールを再試行";
+}
+
+function normalizeAttemptId(value: unknown) {
+  return typeof value === "string" &&
+    CONFIRMATION_EMAIL_ATTEMPT_ID_PATTERN.test(value.trim())
+    ? value.trim().toLowerCase()
+    : undefined;
+}
+
+export function createConfirmationEmailAttemptId(
+  cryptoApi: Pick<Crypto, "randomUUID" | "getRandomValues"> | undefined =
+    globalThis.crypto
+) {
+  if (typeof cryptoApi?.randomUUID === "function") {
+    return cryptoApi.randomUUID().toLowerCase();
+  }
+
+  const bytes = new Uint8Array(16);
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) =>
+    value.toString(16).padStart(2, "0")
+  ).join("");
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
+    12,
+    16
+  )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function readConfirmationEmailRetryNotice(
@@ -68,6 +108,7 @@ export function readConfirmationEmailRetryNotice(
       typeof stored.retryToken === "string" && stored.retryToken.trim()
         ? stored.retryToken.trim()
         : undefined;
+    const attemptId = normalizeAttemptId(stored.attemptId);
 
     if (!isValid) {
       storage.removeItem(key);
@@ -92,6 +133,7 @@ export function readConfirmationEmailRetryNotice(
       expiresAt,
       actionLabel,
       retryToken,
+      attemptId,
     };
   } catch {
     try {
@@ -122,6 +164,7 @@ export function saveConfirmationEmailRetryNotice(
       return;
     }
 
+    const attemptId = normalizeAttemptId(notice.attemptId);
     const stored: StoredConfirmationEmailRetryNotice = {
       version: 1,
       savedAt: now,
@@ -129,6 +172,7 @@ export function saveConfirmationEmailRetryNotice(
       expiresAt: notice.expiresAt,
       actionLabel: notice.actionLabel,
       ...(notice.retryToken ? { retryToken: notice.retryToken } : {}),
+      ...(attemptId ? { attemptId } : {}),
     };
     storage.setItem(key, JSON.stringify(stored));
   } catch {
@@ -159,8 +203,11 @@ export function getConfirmationEmailNotice(
   responseOk: boolean,
   result: ConfirmationEmailApiResult | null,
   now = Date.now(),
-  previousExpiresAt: number | null = null
+  previousExpiresAt: number | null = null,
+  attemptId?: string
 ): ConfirmationEmailNotice {
+  const normalizedAttemptId = normalizeAttemptId(attemptId);
+
   if (!result) {
     const expiresAt = getRetryExpiresAt(
       now,
@@ -175,6 +222,7 @@ export function getConfirmationEmailNotice(
       retryWindowHours: DEFAULT_RETRY_WINDOW_HOURS,
       expiresAt,
       actionLabel: "確定メールを再試行",
+      attemptId: normalizedAttemptId,
     };
   }
 
@@ -219,6 +267,7 @@ export function getConfirmationEmailNotice(
       canRetry && typeof result.retryToken === "string"
         ? result.retryToken
         : undefined,
+    attemptId: canRetry ? normalizedAttemptId : undefined,
   };
 }
 

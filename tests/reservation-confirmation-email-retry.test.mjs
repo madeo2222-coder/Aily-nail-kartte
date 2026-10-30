@@ -25,6 +25,7 @@ vm.runInNewContext(
 );
 
 const {
+  createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
@@ -67,12 +68,20 @@ test("offers a bounded first email send after an unknown confirmation result", (
 
 test("enables a same-screen retry when the confirmation email response is lost", () => {
   const startedAt = 12_345;
-  const notice = getConfirmationEmailNotice(false, null, startedAt);
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
+  const notice = getConfirmationEmailNotice(
+    false,
+    null,
+    startedAt,
+    null,
+    attemptId
+  );
 
   assert.equal(notice.canRetry, true);
   assert.equal(notice.completed, false);
   assert.equal(notice.retryWindowHours, 24);
   assert.equal(notice.expiresAt, startedAt + 24 * 60 * 60 * 1000);
+  assert.equal(notice.attemptId, attemptId);
   assert.match(notice.message, /24時間以内/);
   assert.match(getConfirmationEmailActionPrompt(notice), /再試行/);
 });
@@ -170,7 +179,9 @@ test("restores a safe email retry after reload without extending its deadline", 
   const notice = getConfirmationEmailNotice(
     false,
     { ok: false, retryable: true, retryWindowHours: 24 },
-    startedAt
+    startedAt,
+    null,
+    "123e4567-e89b-42d3-a456-426614174000"
   );
 
   saveConfirmationEmailRetryNotice(
@@ -190,6 +201,29 @@ test("restores a safe email retry after reload without extending its deadline", 
   assert.equal(restored?.expiresAt, notice.expiresAt);
   assert.equal(restored?.retryWindowHours, 22);
   assert.equal(restored?.retryToken, notice.retryToken);
+  assert.equal(restored?.attemptId, notice.attemptId);
+});
+
+test("creates a lowercase UUID for one browser email attempt", () => {
+  const attemptId = createConfirmationEmailAttemptId({
+    randomUUID() {
+      return "123E4567-E89B-42D3-A456-426614174000";
+    },
+    getRandomValues() {
+      throw new Error("randomUUID should be preferred");
+    },
+  });
+
+  assert.equal(attemptId, "123e4567-e89b-42d3-a456-426614174000");
+});
+
+test("creates a valid UUID when randomUUID is unavailable", () => {
+  const attemptId = createConfirmationEmailAttemptId(undefined);
+
+  assert.match(
+    attemptId,
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+  );
 });
 
 test("clears completed, expired, and malformed stored email retries", () => {
@@ -249,6 +283,9 @@ test("reservation screens restore and persist email retry recovery", () => {
     assert.match(source, /saveConfirmationEmailRetryNotice\(/);
     assert.match(source, /expectedIdempotencyKey: retryToken/);
     assert.match(source, /retryNotice(?:\?|)\.retryToken/);
+    assert.match(source, /createConfirmationEmailAttemptId\(\)/);
+    assert.match(source, /retryNotice(?:\?|)\.attemptId/);
+    assert.match(source, /attemptId,/);
   }
   assert.match(
     listSource,

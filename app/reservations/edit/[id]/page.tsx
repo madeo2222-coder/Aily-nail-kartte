@@ -23,6 +23,7 @@ import type {
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import {
+  createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
   getExpiredConfirmationEmailNotice,
   getConfirmationEmailRecoveryNotice,
@@ -614,14 +615,18 @@ export default function EditReservationPage() {
   async function sendConfirmationEmailNotice(
     id: string,
     previousExpiresAt: number | null = null,
-    retryToken?: string
+    retryToken?: string,
+    previousAttemptId?: string
   ): Promise<ConfirmationEmailNotice> {
+    const attemptId =
+      previousAttemptId || createConfirmationEmailAttemptId();
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           reservationId: id,
+          attemptId,
           ...(retryToken ? { expectedIdempotencyKey: retryToken } : {}),
         }),
       });
@@ -632,7 +637,8 @@ export default function EditReservationPage() {
         response.ok,
         result,
         Date.now(),
-        previousExpiresAt
+        previousExpiresAt,
+        attemptId
       );
       saveConfirmationEmailRetryNotice(window.localStorage, id, notice);
       setConfirmationEmailRetryNotice(notice.canRetry ? notice : null);
@@ -643,7 +649,8 @@ export default function EditReservationPage() {
         false,
         null,
         Date.now(),
-        previousExpiresAt
+        previousExpiresAt,
+        attemptId
       );
       saveConfirmationEmailRetryNotice(window.localStorage, id, notice);
       setConfirmationEmailRetryNotice(notice);
@@ -869,7 +876,8 @@ export default function EditReservationPage() {
       const notice = await sendConfirmationEmailNotice(
         reservationId,
         retryNotice?.expiresAt ?? null,
-        retryNotice?.retryToken
+        retryNotice?.retryToken,
+        retryNotice?.attemptId
       );
       if (!notice.completed) {
         setErrorMessage(notice.message.trim());
