@@ -213,6 +213,18 @@ export default function CustomerReservationDetailPage() {
       Record<CustomerReservationRequestAction, CustomerReservationRequestRetry>
     >
   >({});
+  const currentRequestLineRetries = useMemo(() => {
+    const revision = reservation?.requestRevision;
+    if (!revision) return {};
+
+    return Object.fromEntries(
+      Object.entries(requestLineRetries).filter(
+        ([, retry]) => retry?.expectedRequestRevision === revision
+      )
+    ) as Partial<
+      Record<CustomerReservationRequestAction, CustomerReservationRequestRetry>
+    >;
+  }, [requestLineRetries, reservation?.requestRevision]);
 
   const todayText = useMemo(() => getTodayText(), []);
   const maxDateText = useMemo(() => addDaysText(todayText, 30), [todayText]);
@@ -354,7 +366,8 @@ export default function CustomerReservationDetailPage() {
       const retry = readCustomerReservationRequestRetry(
         window.localStorage,
         reservationId,
-        action
+        action,
+        reservation.requestRevision
       );
       if (retry) nextRetries[action] = retry;
     }
@@ -364,7 +377,7 @@ export default function CustomerReservationDetailPage() {
     const retryMessage =
       nextRetries.request_change?.requestMessage ??
       nextRetries.request_cancel?.requestMessage;
-    if (retryMessage !== undefined) setRequestMessage(retryMessage);
+    setRequestMessage(retryMessage ?? "");
   }, [reservationId, reservation?.requestRevision]);
 
   async function runAction(body: Record<string, unknown>) {
@@ -551,12 +564,18 @@ export default function CustomerReservationDetailPage() {
 
   async function handleRequestChange() {
     if (restoreRequestLineLock("request_change")) return;
+    const requestRevision = reservation?.requestRevision;
+    if (!requestRevision) {
+      setErrorMessage("予約内容を確認できません。最新情報を再読み込みしてください");
+      return;
+    }
     if (
       readCustomerReservationRequestRetry(
         window.localStorage,
         reservationId,
-        "request_cancel"
-      ) || requestLineRetries.request_cancel
+        "request_cancel",
+        requestRevision
+      ) || currentRequestLineRetries.request_cancel
     ) {
       setErrorMessage(
         "先に保存済みのキャンセル希望を再試行してください。別の依頼内容は送信していません。"
@@ -568,32 +587,12 @@ export default function CustomerReservationDetailPage() {
       readCustomerReservationRequestRetry(
         window.localStorage,
         reservationId,
-        "request_change"
-      ) || requestLineRetries.request_change;
-    if (
-      retry &&
-      reservation &&
-      retry.expectedRequestRevision !== reservation.requestRevision
-    ) {
-      saveCustomerReservationRequestRetry(
-        window.localStorage,
-        reservationId,
-        null,
-        "request_change"
-      );
-      setRequestLineRetries((current) => {
-        const next = { ...current };
-        delete next.request_change;
-        return next;
-      });
-      setErrorMessage(
-        "予約内容が更新されています。最新の内容を確認してから変更希望を入力してください。"
-      );
-      return;
-    }
+        "request_change",
+        requestRevision
+      ) || currentRequestLineRetries.request_change;
     const nextRequestMessage = retry?.requestMessage ?? requestMessage.trim();
     const expectedRequestRevision =
-      retry?.expectedRequestRevision ?? reservation?.requestRevision;
+      retry?.expectedRequestRevision ?? requestRevision;
 
     if (!nextRequestMessage) {
       setErrorMessage("変更したい内容を入力してください");
@@ -613,12 +612,18 @@ export default function CustomerReservationDetailPage() {
 
   async function handleRequestCancel() {
     if (restoreRequestLineLock("request_cancel")) return;
+    const requestRevision = reservation?.requestRevision;
+    if (!requestRevision) {
+      setErrorMessage("予約内容を確認できません。最新情報を再読み込みしてください");
+      return;
+    }
     if (
       readCustomerReservationRequestRetry(
         window.localStorage,
         reservationId,
-        "request_change"
-      ) || requestLineRetries.request_change
+        "request_change",
+        requestRevision
+      ) || currentRequestLineRetries.request_change
     ) {
       setErrorMessage(
         "先に保存済みの変更希望を再試行してください。別の依頼内容は送信していません。"
@@ -630,31 +635,11 @@ export default function CustomerReservationDetailPage() {
       readCustomerReservationRequestRetry(
         window.localStorage,
         reservationId,
-        "request_cancel"
-      ) || requestLineRetries.request_cancel;
-    if (
-      retry &&
-      reservation &&
-      retry.expectedRequestRevision !== reservation.requestRevision
-    ) {
-      saveCustomerReservationRequestRetry(
-        window.localStorage,
-        reservationId,
-        null,
-        "request_cancel"
-      );
-      setRequestLineRetries((current) => {
-        const next = { ...current };
-        delete next.request_cancel;
-        return next;
-      });
-      setErrorMessage(
-        "予約内容が更新されています。最新の内容を確認してからキャンセル希望を入力してください。"
-      );
-      return;
-    }
+        "request_cancel",
+        requestRevision
+      ) || currentRequestLineRetries.request_cancel;
     const expectedRequestRevision =
-      retry?.expectedRequestRevision ?? reservation?.requestRevision;
+      retry?.expectedRequestRevision ?? requestRevision;
 
     if (!expectedRequestRevision) {
       setErrorMessage("予約内容を確認できません。最新情報を再読み込みしてください");
@@ -980,16 +965,16 @@ export default function CustomerReservationDetailPage() {
               value={requestMessage}
               onChange={(event) => setRequestMessage(event.target.value)}
               disabled={Boolean(
-                requestLineRetries.request_change ||
-                  requestLineRetries.request_cancel
+                currentRequestLineRetries.request_change ||
+                  currentRequestLineRetries.request_cancel
               )}
               rows={5}
               placeholder="例：7月20日の14時へ変更希望です"
               className="mt-4 w-full rounded-2xl border px-4 py-3 text-sm"
             />
 
-            {requestLineRetries.request_change ||
-            requestLineRetries.request_cancel ? (
+            {currentRequestLineRetries.request_change ||
+            currentRequestLineRetries.request_cancel ? (
               <p className="mt-2 text-sm font-bold text-amber-700">
                 前回の送信結果を確認できなかったため、再試行では保存済みの同じ内容を使用します。
               </p>
@@ -1013,13 +998,13 @@ export default function CustomerReservationDetailPage() {
                     onClick={handleRequestChange}
                     disabled={
                       saving ||
-                      Boolean(requestLineRetries.request_cancel) ||
+                      Boolean(currentRequestLineRetries.request_cancel) ||
                       (Boolean(refreshErrorMessage) &&
-                        !requestLineRetries.request_change)
+                        !currentRequestLineRetries.request_change)
                     }
                     className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
-                    {requestLineRetries.request_change
+                    {currentRequestLineRetries.request_change
                       ? "同じ変更希望を再試行"
                       : "変更希望を店舗へ送る"}
                   </button>
@@ -1043,13 +1028,13 @@ export default function CustomerReservationDetailPage() {
                     onClick={handleRequestCancel}
                     disabled={
                       saving ||
-                      Boolean(requestLineRetries.request_change) ||
+                      Boolean(currentRequestLineRetries.request_change) ||
                       (Boolean(refreshErrorMessage) &&
-                        !requestLineRetries.request_cancel)
+                        !currentRequestLineRetries.request_cancel)
                     }
                     className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 disabled:opacity-50"
                   >
-                    {requestLineRetries.request_cancel
+                    {currentRequestLineRetries.request_cancel
                       ? "同じキャンセル希望を再試行"
                       : "キャンセル希望を店舗へ送る"}
                   </button>

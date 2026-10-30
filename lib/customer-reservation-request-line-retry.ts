@@ -193,6 +193,7 @@ export function readCustomerReservationRequestRetry(
   storage: RetryLockStorage,
   reservationId: string,
   action: CustomerReservationRequestAction,
+  reservationRevision: string,
   now = Date.now()
 ): CustomerReservationRequestRetry | null {
   const key = `${RETRY_STORAGE_KEY_PREFIX}${reservationId}:${action}`;
@@ -210,7 +211,9 @@ export function readCustomerReservationRequestRetry(
       now - stored.savedAt < CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS &&
       typeof stored.requestMessage === "string" &&
       typeof stored.expectedRequestRevision === "string" &&
-      Boolean(stored.expectedRequestRevision);
+      Boolean(stored.expectedRequestRevision) &&
+      Boolean(reservationRevision) &&
+      stored.expectedRequestRevision === reservationRevision;
 
     if (!valid) {
       storage.removeItem(key);

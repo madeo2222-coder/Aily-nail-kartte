@@ -864,6 +864,7 @@ test("an unobservable customer LINE result preserves the exact request for retry
     storage,
     "reservation-1",
     "request_change",
+    "revision-1",
     2_000
   );
 
@@ -883,6 +884,7 @@ test("an unobservable customer LINE result preserves the exact request for retry
       storage,
       "reservation-1",
       "request_change",
+      "revision-1",
       4_000
     ),
     null
@@ -913,6 +915,7 @@ test("customer request retry expires and rejects malformed storage", () => {
       storage,
       "reservation-1",
       "request_cancel",
+      "revision-1",
       1_000 + CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS
     ),
     null
@@ -927,7 +930,45 @@ test("customer request retry expires and rejects malformed storage", () => {
       storage,
       "reservation-2",
       "request_change",
+      "revision-1",
       2_000
+    ),
+    null
+  );
+});
+
+test("customer request retry is discarded after the reservation revision changes", () => {
+  const {
+    readCustomerReservationRequestRetry,
+    saveCustomerReservationRequestRetry,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+
+  saveCustomerReservationRequestRetry(
+    storage,
+    "reservation-1",
+    {
+      action: "request_cancel",
+      requestMessage: "予定が変わりました",
+      expectedRequestRevision: "revision-1",
+    },
+    "request_cancel",
+    1_000
+  );
+
+  assert.equal(
+    readCustomerReservationRequestRetry(
+      storage,
+      "reservation-1",
+      "request_cancel",
+      "revision-2",
+      2_000
+    ),
+    null
+  );
+  assert.equal(
+    storage.getItem(
+      "aily:customer-reservation-request-line-retry:v2:reservation-1:request_cancel"
     ),
     null
   );
@@ -941,9 +982,9 @@ test("customer page retries only the persisted LINE request after response loss"
   assert.match(pageSource, /expectedRequestRevision/);
   assert.match(
     pageSource,
-    /retry\.expectedRequestRevision !== reservation\.requestRevision/
+    /retry\?\.expectedRequestRevision === revision/
   );
-  assert.match(pageSource, /予約内容が更新されています/);
+  assert.match(pageSource, /currentRequestLineRetries/);
   assert.match(pageSource, /保存した同じ内容で安全に再試行できます/);
   assert.match(pageSource, /同じ変更希望を再試行/);
   assert.match(pageSource, /同じキャンセル希望を再試行/);
