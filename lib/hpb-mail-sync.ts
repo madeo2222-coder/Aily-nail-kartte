@@ -480,12 +480,18 @@ function parseReservationMail(
   const text = normalizeProviderText(rawText);
   const sourceText = `${normalizeProviderText(mailSubject)}\n${text}`;
   const normalizedSourceText = sourceText.toLowerCase();
-
-  if (
+  const hasExplicitMinimoMarker =
     sourceText.includes("ミニモ") ||
     normalizedSourceText.includes("minimo") ||
-    sourceText.includes("ミニモサロンツール") ||
-    sourceText.includes("予約ID")
+    sourceText.includes("ミニモサロンツール");
+  const hasExplicitHpbMarker =
+    normalizedSourceText.includes("salon board") ||
+    normalizedSourceText.includes("hot pepper beauty") ||
+    sourceText.includes("予約番号");
+
+  if (
+    hasExplicitMinimoMarker ||
+    (!hasExplicitHpbMarker && sourceText.includes("予約ID"))
   ) {
     return parseMinimoMail(text, mailSubject);
   }
