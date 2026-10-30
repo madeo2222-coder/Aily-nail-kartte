@@ -299,6 +299,16 @@ function isCancellationSubject(subject: string) {
   return normalized.includes("キャンセル") || normalized.includes("cancel");
 }
 
+function isReservationSubject(subject: string) {
+  if (isCancellationSubject(subject)) return false;
+
+  const normalized = subject.normalize("NFKC").toLowerCase();
+  return (
+    normalized.includes("ご予約内容のお知らせ") ||
+    normalized.includes("新しい予約を受け付けました")
+  );
+}
+
 function parseHpbMail(
   rawText: string,
   mailSubject = ""
@@ -307,9 +317,10 @@ function parseHpbMail(
 
   const action: ParsedHpbMail["action"] =
     isCancellationSubject(mailSubject) ||
-    text.includes("キャンセル連絡") ||
-    text.includes("キャンセルがありました") ||
-    text.includes("ご予約のキャンセル")
+    (!isReservationSubject(mailSubject) &&
+      (text.includes("キャンセル連絡") ||
+        text.includes("キャンセルがありました") ||
+        text.includes("ご予約のキャンセル")))
       ? "cancel"
       : "reservation";
 
@@ -396,11 +407,12 @@ function parseMinimoMail(
 
   const action: ParsedHpbMail["action"] =
     isCancellationSubject(mailSubject) ||
-    text.includes("下記の予約がキャンセルされました") ||
-    text.includes("キャンセル理由") ||
-    text.includes("キャンセルされました") ||
-    text.includes("予約がキャンセル") ||
-    text.includes("キャンセルになりました")
+    (!isReservationSubject(mailSubject) &&
+      (text.includes("下記の予約がキャンセルされました") ||
+        text.includes("キャンセル理由") ||
+        text.includes("キャンセルされました") ||
+        text.includes("予約がキャンセル") ||
+        text.includes("キャンセルになりました")))
       ? "cancel"
       : "reservation";
 

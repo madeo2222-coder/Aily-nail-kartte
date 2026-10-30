@@ -355,6 +355,45 @@ test("minimo cancellation in the Gmail subject is not replayed as a booking", as
   assert.doesNotMatch(runtime.writes[0].payload.memo, /予約キャンセルのお知らせ/);
 });
 
+test("HPB reservation subject keeps a customer cancellation note from cancelling the booking", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    `予約番号：A123456
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+所要時間目安：90分
+ご要望：前回のご予約のキャンセルについて相談したい`,
+    "【SALON BOARD】ご予約内容のお知らせ"
+  );
+
+  assert.equal(result.parsed.source, "hpb");
+  assert.equal(result.parsed.action, "reservation");
+  assert.equal(result.result.mode, "updated");
+  assert.equal(runtime.writes[0].payload.status, "confirmed");
+});
+
+test("minimo reservation subject keeps cancellation wording in the menu from cancelling the booking", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "ミニモ予約ID：MINIMO-123",
+  });
+  const result = await runtime.sync(
+    `予約ID：MINIMO-123
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+施術時間：90分
+メニュー：キャンセル理由相談つきネイル`,
+    "【ミニモ】新しい予約を受け付けました"
+  );
+
+  assert.equal(result.parsed.source, "minimo");
+  assert.equal(result.parsed.action, "reservation");
+  assert.equal(result.result.mode, "updated");
+  assert.equal(runtime.writes[0].payload.status, "confirmed");
+});
+
 test("HPB source markers take priority over an unrelated reservation ID field", async () => {
   const runtime = loadSync("mail-customer", { existing: true });
   const result = await runtime.sync(
