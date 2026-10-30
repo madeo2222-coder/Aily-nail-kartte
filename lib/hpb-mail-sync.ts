@@ -486,7 +486,10 @@ function parseReservationMail(
     normalizedSubject.includes("ミニモサロンツール");
   const subjectHasHpbMarker =
     normalizedSubjectLower.includes("salon board") ||
-    normalizedSubjectLower.includes("hot pepper beauty");
+    normalizedSubjectLower.includes("hot pepper beauty") ||
+    normalizedSubject.includes("サロンボード") ||
+    normalizedSubject.includes("ホットペッパービューティー") ||
+    normalizedSubject.includes("ホットペッパーBeauty");
 
   // Provider-generated subjects are a stronger source signal than free-form
   // fields in the body. A customer can write "ミニモで見たデザイン" in an
