@@ -478,7 +478,28 @@ function parseReservationMail(
   mailSubject = ""
 ): ParsedHpbMail {
   const text = normalizeProviderText(rawText);
-  const sourceText = `${normalizeProviderText(mailSubject)}\n${text}`;
+  const normalizedSubject = normalizeProviderText(mailSubject);
+  const normalizedSubjectLower = normalizedSubject.toLowerCase();
+  const subjectHasMinimoMarker =
+    normalizedSubject.includes("ミニモ") ||
+    normalizedSubjectLower.includes("minimo") ||
+    normalizedSubject.includes("ミニモサロンツール");
+  const subjectHasHpbMarker =
+    normalizedSubjectLower.includes("salon board") ||
+    normalizedSubjectLower.includes("hot pepper beauty");
+
+  // Provider-generated subjects are a stronger source signal than free-form
+  // fields in the body. A customer can write "ミニモで見たデザイン" in an
+  // HPB note (or the reverse) without changing the booking provider. Letting
+  // that incidental word win makes the parser look for the wrong external ID
+  // and leaves the real booking unsynchronised.
+  if (subjectHasMinimoMarker !== subjectHasHpbMarker) {
+    return subjectHasMinimoMarker
+      ? parseMinimoMail(text, mailSubject)
+      : parseHpbMail(text, mailSubject);
+  }
+
+  const sourceText = `${normalizedSubject}\n${text}`;
   const normalizedSourceText = sourceText.toLowerCase();
   const hasExplicitMinimoMarker =
     sourceText.includes("ミニモ") ||
