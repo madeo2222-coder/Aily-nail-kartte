@@ -984,8 +984,13 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
   );
   assert.match(
     alternativeFunctionSource,
-    /readAlternativeLineRetryLock\([\s\S]{0,220}initialUpdatedAt[\s\S]{0,160}if \(storedLock\) \{[\s\S]{0,220}return;/,
+    /readAlternativeLineRetryLock\([\s\S]{0,220}initialAlternativeRevision[\s\S]{0,160}if \(storedLock\) \{[\s\S]{0,220}return;/,
     "alternative request rechecks a lock written by another tab"
+  );
+  assert.match(
+    pageSource,
+    /createAlternativeLineReservationRevision\(\{[\s\S]{0,500}customerId:[\s\S]{0,500}memo:/,
+    "alternative retry revision follows the guarded reservation snapshot"
   );
   assert.match(
     pageSource,

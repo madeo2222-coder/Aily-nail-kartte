@@ -17,6 +17,16 @@ export type ConfirmationLineRetryLock = {
 export type AlternativeLineApiResult = ConfirmationLineApiResult;
 export type AlternativeLineRetryLock = ConfirmationLineRetryLock;
 
+export type AlternativeLineReservationSnapshot = {
+  customerId: string | null;
+  staffId: string | null;
+  menu: string | null;
+  startAt: string | null;
+  endAt: string | null;
+  status: string | null;
+  memo: string | null;
+};
+
 type RetryLockStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 type StoredConfirmationLineRetryLock = {
@@ -65,6 +75,36 @@ function isRetryLockKind(
   value: unknown
 ): value is ConfirmationLineRetryLock["kind"] {
   return value === "sent" || value === "history_check";
+}
+
+function hashRevisionPart(value: string, seed: number) {
+  let hash = seed >>> 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+export function createAlternativeLineReservationRevision(
+  snapshot: AlternativeLineReservationSnapshot
+) {
+  const serialized = JSON.stringify([
+    snapshot.customerId,
+    snapshot.staffId,
+    snapshot.menu,
+    snapshot.startAt,
+    snapshot.endAt,
+    snapshot.status,
+    snapshot.memo,
+  ]);
+
+  return `v1:${serialized.length}:${hashRevisionPart(
+    serialized,
+    2166136261
+  )}${hashRevisionPart(serialized, 2654435769)}`;
 }
 
 export function readConfirmationLineRetryLock(

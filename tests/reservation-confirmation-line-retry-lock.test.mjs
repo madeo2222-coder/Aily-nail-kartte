@@ -26,6 +26,7 @@ function loadRetryLockModule() {
 const {
   ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS,
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
+  createAlternativeLineReservationRevision,
   getAlternativeLineRetryLock,
   getConfirmationLineRetryLock,
   readAlternativeLineRetryLock,
@@ -33,6 +34,19 @@ const {
   saveAlternativeLineRetryLock,
   saveConfirmationLineRetryLock,
 } = loadRetryLockModule();
+
+function createAlternativeSnapshot(overrides = {}) {
+  return {
+    customerId: "customer-1",
+    staffId: "staff-1",
+    menu: "ワンカラー",
+    startAt: "2026-11-01T01:00:00.000Z",
+    endAt: "2026-11-01T02:30:00.000Z",
+    status: "requested",
+    memo: "お客様メモ",
+    ...overrides,
+  };
+}
 
 function createMemoryStorage() {
   const entries = new Map();
@@ -261,6 +275,62 @@ test("alternative-time LINE lock clears when the reservation revision changes", 
   assert.equal(storage.entries.size, 0);
 });
 
+test("alternative-time revision follows every guarded reservation field", () => {
+  const original = createAlternativeSnapshot();
+  const revision = createAlternativeLineReservationRevision(original);
+
+  assert.equal(
+    createAlternativeLineReservationRevision({ ...original }),
+    revision
+  );
+  for (const [field, value] of [
+    ["customerId", "customer-2"],
+    ["staffId", "staff-2"],
+    ["menu", "フレンチ"],
+    ["startAt", "2026-11-01T03:00:00.000Z"],
+    ["endAt", "2026-11-01T04:30:00.000Z"],
+    ["status", "confirmed"],
+    ["memo", "更新後メモ"],
+  ]) {
+    assert.notEqual(
+      createAlternativeLineReservationRevision(
+        createAlternativeSnapshot({ [field]: value })
+      ),
+      revision,
+      field
+    );
+  }
+  assert.doesNotMatch(revision, /customer-1|お客様メモ/);
+});
+
+test("alternative-time lock clears after a guarded field changes even without an updated-at change", () => {
+  const storage = createMemoryStorage();
+  const beforeRevision = createAlternativeLineReservationRevision(
+    createAlternativeSnapshot()
+  );
+  const afterRevision = createAlternativeLineReservationRevision(
+    createAlternativeSnapshot({ menu: "フレンチ" })
+  );
+
+  saveAlternativeLineRetryLock(
+    storage,
+    "reservation-1",
+    beforeRevision,
+    getAlternativeLineRetryLock({ ok: true, sent: true }),
+    1_000
+  );
+
+  assert.equal(
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-1",
+      afterRevision,
+      2_000
+    ),
+    null
+  );
+});
+
 test("alternative-time LINE conservatively migrates the legacy lock", () => {
   const storage = createMemoryStorage();
   storage.setItem(
@@ -347,7 +417,12 @@ test("staff edit screen blocks unsafe alternative-time LINE repeats across reloa
   assert.match(editPage, /getAlternativeLineRetryLock\(result|null\)/);
   assert.match(
     editPage,
-    /readAlternativeLineRetryLock\([\s\S]{0,120}window\.localStorage,[\s\S]{0,80}reservationId,[\s\S]{0,80}initialUpdatedAt/
+    /readAlternativeLineRetryLock\([\s\S]{0,120}window\.localStorage,[\s\S]{0,80}reservationId,[\s\S]{0,80}initialAlternativeRevision/
+  );
+  assert.match(editPage, /createAlternativeLineReservationRevision\(/);
+  assert.doesNotMatch(
+    editPage,
+    /readAlternativeLineRetryLock\([\s\S]{0,120}reservation\.updated_at/
   );
   assert.match(editPage, /saveAlternativeLineRetryLock\(/);
   assert.match(
