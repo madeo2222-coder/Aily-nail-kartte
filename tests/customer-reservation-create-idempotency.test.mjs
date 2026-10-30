@@ -43,7 +43,30 @@ test("customer booking API uses the idempotent RPC with a safe legacy fallback",
   assert.match(api, /\["created", "already_created"\]/);
   assert.match(
     api,
-    /if \(writeResult\.outcome === "already_created"\)[\s\S]{0,260}alreadyCreated: true/,
+    /excludeReservationId: requestedOperationId \|\| undefined/,
+  );
+  assert.match(
+    api,
+    /sendReservationNoticeMail\(\{[\s\S]{0,100}reservationId/,
+  );
+  assert.match(
+    api,
+    /alreadyCreated: writeResult\.outcome === "already_created" \|\| undefined/,
+  );
+});
+
+test("customer booking notification retries reuse provider idempotency keys", () => {
+  assert.match(
+    api,
+    /"Idempotency-Key": `customer-reservation-request-\$\{reservationId\}`/,
+  );
+  assert.match(
+    api,
+    /"X-Line-Retry-Key": createReservationNoticeLineRetryKey\(reservationId\)/,
+  );
+  assert.match(
+    api,
+    /createHash\("sha256"\)[\s\S]{0,180}customer-reservation-request/,
   );
 });
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   getCustomerReservationAvailability,
   isValidCustomerBookingDate,
@@ -65,7 +65,23 @@ function formatDateTimeForMail(value: string) {
   });
 }
 
+function createReservationNoticeLineRetryKey(reservationId: string) {
+  const hex = createHash("sha256")
+    .update(`customer-reservation-request\u001f${reservationId}`)
+    .digest("hex");
+  const variant = ["8", "9", "a", "b"][Number.parseInt(hex[16], 16) % 4];
+
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    `4${hex.slice(13, 16)}`,
+    `${variant}${hex.slice(17, 20)}`,
+    hex.slice(20, 32),
+  ].join("-");
+}
+
 async function sendReservationNoticeMail({
+  reservationId,
   customerName,
   menu,
   startIso,
@@ -74,6 +90,7 @@ async function sendReservationNoticeMail({
   memo,
   durationMinutes,
 }: {
+  reservationId: string;
   customerName: string;
   menu: string;
   startIso: string;
@@ -140,6 +157,7 @@ async function sendReservationNoticeMail({
     headers: {
       Authorization: `Bearer ${resendApiKey}`,
       "Content-Type": "application/json",
+      "Idempotency-Key": `customer-reservation-request-${reservationId}`,
     },
     body: JSON.stringify({
       from: fromEmail,
@@ -226,6 +244,7 @@ async function sendReservationNoticeLine({
     headers: {
       Authorization: `Bearer ${lineAccessToken}`,
       "Content-Type": "application/json",
+      "X-Line-Retry-Key": createReservationNoticeLineRetryKey(reservationId),
     },
     body: JSON.stringify({
       to: adminUserId,
@@ -326,6 +345,10 @@ export async function POST(request: NextRequest) {
       salonId,
       date,
       durationMinutes,
+      // The idempotent RPC stores the browser operation ID as the reservation
+      // ID. Excluding it lets an HTTP-response-loss retry reach the RPC instead
+      // of treating its own saved reservation as a new collision.
+      excludeReservationId: requestedOperationId || undefined,
     });
     const selectedSlot = availability.slots.find(
       (slot) => slot.time === time
@@ -467,17 +490,9 @@ export async function POST(request: NextRequest) {
 
     const reservationId = writeResult.reservation_id;
 
-    if (writeResult.outcome === "already_created") {
-      return NextResponse.json({
-        ok: true,
-        reservationId,
-        assignedStaffId,
-        alreadyCreated: true,
-      });
-    }
-
     try {
       await sendReservationNoticeMail({
+        reservationId,
         customerName,
         menu,
         startIso,
@@ -509,6 +524,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       reservationId,
       assignedStaffId,
+      alreadyCreated: writeResult.outcome === "already_created" || undefined,
     });
   } catch (error) {
     console.error(
