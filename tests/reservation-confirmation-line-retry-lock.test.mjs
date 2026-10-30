@@ -190,27 +190,100 @@ test("alternative-time LINE delivery persists sent and unknown-result locks", ()
   const sentLock = getAlternativeLineRetryLock({ ok: true, sent: true });
   assert.equal(sentLock.kind, "sent");
   assert.match(sentLock.message, /別日時入力のLINEを送信/);
-  saveAlternativeLineRetryLock(storage, "reservation-1", sentLock, 1_000);
+  saveAlternativeLineRetryLock(
+    storage,
+    "reservation-1",
+    "revision-1",
+    sentLock,
+    1_000
+  );
   assert.equal(
-    readAlternativeLineRetryLock(storage, "reservation-1", 2_000).kind,
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-1",
+      "revision-1",
+      2_000
+    ).kind,
     "sent"
   );
 
   const unknownLock = getAlternativeLineRetryLock(null);
   assert.equal(unknownLock.kind, "history_check");
   assert.match(unknownLock.message, /同じ送信を繰り返さず/);
-  saveAlternativeLineRetryLock(storage, "reservation-2", unknownLock, 1_000);
+  saveAlternativeLineRetryLock(
+    storage,
+    "reservation-2",
+    "revision-2",
+    unknownLock,
+    1_000
+  );
   assert.equal(
-    readAlternativeLineRetryLock(storage, "reservation-2", 2_000).kind,
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-2",
+      "revision-2",
+      2_000
+    ).kind,
     "history_check"
   );
   assert.equal(
     readAlternativeLineRetryLock(
       storage,
       "reservation-2",
+      "revision-2",
       1_000 + ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS
     ),
     null
+  );
+});
+
+test("alternative-time LINE lock clears when the reservation revision changes", () => {
+  const storage = createMemoryStorage();
+  const lock = getAlternativeLineRetryLock({ ok: true, sent: true });
+
+  saveAlternativeLineRetryLock(
+    storage,
+    "reservation-1",
+    "revision-before-customer-change",
+    lock,
+    1_000
+  );
+
+  assert.equal(
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-1",
+      "revision-after-customer-change",
+      2_000
+    ),
+    null
+  );
+  assert.equal(storage.entries.size, 0);
+});
+
+test("alternative-time LINE conservatively migrates the legacy lock", () => {
+  const storage = createMemoryStorage();
+  storage.setItem(
+    "aily:alternative-line-retry-lock:v1:reservation-1",
+    JSON.stringify({ version: 1, savedAt: 1_000, kind: "sent" })
+  );
+
+  assert.equal(
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-1",
+      "revision-1",
+      2_000
+    ).kind,
+    "sent"
+  );
+  assert.equal(storage.entries.size, 1);
+  assert.ok(
+    storage.entries.has("aily:alternative-line-retry-lock:v2:reservation-1")
+  );
+  assert.equal(
+    storage.entries.has("aily:alternative-line-retry-lock:v1:reservation-1"),
+    false
   );
 });
 
@@ -274,7 +347,7 @@ test("staff edit screen blocks unsafe alternative-time LINE repeats across reloa
   assert.match(editPage, /getAlternativeLineRetryLock\(result|null\)/);
   assert.match(
     editPage,
-    /readAlternativeLineRetryLock\(window\.localStorage, reservationId\)/
+    /readAlternativeLineRetryLock\([\s\S]{0,120}window\.localStorage,[\s\S]{0,80}reservationId,[\s\S]{0,80}initialUpdatedAt/
   );
   assert.match(editPage, /saveAlternativeLineRetryLock\(/);
   assert.match(

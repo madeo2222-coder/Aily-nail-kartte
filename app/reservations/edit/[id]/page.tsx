@@ -67,6 +67,7 @@ type ReservationDetail = {
   status: string | null;
   source: string | null;
   memo: string | null;
+  updated_at: string;
 };
 
 type GalleryReference = {
@@ -400,6 +401,7 @@ export default function EditReservationPage() {
   const [initialMemo, setInitialMemo] = useState<string | null>(null);
   const [initialStartAt, setInitialStartAt] = useState<string | null>(null);
   const [initialEndAt, setInitialEndAt] = useState<string | null>(null);
+  const [initialUpdatedAt, setInitialUpdatedAt] = useState("");
   const [sendCancellationLine, setSendCancellationLine] = useState(false);
   const [cancellationReason, setCancellationReason] =
     useState<CancellationReason>("overlap");
@@ -497,9 +499,17 @@ export default function EditReservationPage() {
     setInitialMemo(reservation.memo);
     setInitialStartAt(reservation.start_at);
     setInitialEndAt(reservation.end_at);
+    setInitialUpdatedAt(reservation.updated_at);
     setGalleryReference(nextGalleryReference);
     setMemo(editableMemo.displayMemo);
     setSyncedMemo(editableMemo.syncedMemo);
+    setAlternativeLineRetryLock(
+      readAlternativeLineRetryLock(
+        window.localStorage,
+        reservationId,
+        reservation.updated_at
+      )
+    );
 
     setMutationResultUnknown(false);
     setPageDataLoaded(true);
@@ -512,11 +522,7 @@ export default function EditReservationPage() {
         ? readConfirmationLineRetryLock(window.localStorage, reservationId)
         : null
     );
-    setAlternativeLineRetryLock(
-      reservationId
-        ? readAlternativeLineRetryLock(window.localStorage, reservationId)
-        : null
-    );
+    setAlternativeLineRetryLock(null);
     setConfirmationEmailRetryNotice(
       reservationId
         ? readConfirmationEmailRetryNotice(
@@ -895,7 +901,8 @@ export default function EditReservationPage() {
 
     const storedLock = readAlternativeLineRetryLock(
       window.localStorage,
-      reservationId
+      reservationId,
+      initialUpdatedAt
     );
     if (storedLock) {
       setAlternativeLineRetryLock(storedLock);
@@ -939,6 +946,7 @@ export default function EditReservationPage() {
       saveAlternativeLineRetryLock(
         window.localStorage,
         reservationId,
+        initialUpdatedAt,
         retryLock
       );
       setAlternativeLineRetryLock(retryLock);
@@ -968,6 +976,7 @@ export default function EditReservationPage() {
       saveAlternativeLineRetryLock(
         window.localStorage,
         reservationId,
+        initialUpdatedAt,
         retryLock
       );
       setAlternativeLineRetryLock(retryLock);

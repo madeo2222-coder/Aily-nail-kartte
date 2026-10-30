@@ -25,12 +25,21 @@ type StoredConfirmationLineRetryLock = {
   kind: ConfirmationLineRetryLock["kind"];
 };
 
+type StoredAlternativeLineRetryLock = {
+  version: 2;
+  savedAt: number;
+  kind: AlternativeLineRetryLock["kind"];
+  reservationRevision: string;
+};
+
 export const CONFIRMATION_LINE_RETRY_LOCK_TTL_MS = 23 * 60 * 60 * 1000;
 export const ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS =
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS;
 
 const STORAGE_KEY_PREFIX = "aily:confirmation-line-retry-lock:v1:";
 const ALTERNATIVE_STORAGE_KEY_PREFIX =
+  "aily:alternative-line-retry-lock:v2:";
+const LEGACY_ALTERNATIVE_STORAGE_KEY_PREFIX =
   "aily:alternative-line-retry-lock:v1:";
 const STORED_LOCK_MESSAGES: Record<
   ConfirmationLineRetryLock["kind"],
@@ -197,30 +206,113 @@ const ALTERNATIVE_STORED_LOCK_MESSAGES: Record<
 export function readAlternativeLineRetryLock(
   storage: RetryLockStorage,
   reservationId: string,
+  reservationRevision: string,
   now = Date.now()
 ): AlternativeLineRetryLock | null {
-  return readLineRetryLock(
-    storage,
-    ALTERNATIVE_STORAGE_KEY_PREFIX,
-    ALTERNATIVE_STORED_LOCK_MESSAGES,
-    reservationId,
-    now
+  const key = getStorageKey(ALTERNATIVE_STORAGE_KEY_PREFIX, reservationId);
+  const legacyKey = getStorageKey(
+    LEGACY_ALTERNATIVE_STORAGE_KEY_PREFIX,
+    reservationId
   );
+
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) {
+      const legacyRaw = storage.getItem(legacyKey);
+      if (!legacyRaw) return null;
+
+      const legacy = JSON.parse(
+        legacyRaw
+      ) as Partial<StoredConfirmationLineRetryLock>;
+      const legacyIsValid =
+        legacy.version === 1 &&
+        typeof legacy.savedAt === "number" &&
+        Number.isFinite(legacy.savedAt) &&
+        legacy.savedAt <= now &&
+        now - legacy.savedAt < ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS &&
+        isRetryLockKind(legacy.kind) &&
+        Boolean(reservationRevision);
+
+      if (!legacyIsValid || !legacy.kind || legacy.savedAt === undefined) {
+        storage.removeItem(legacyKey);
+        return null;
+      }
+
+      const migrated: StoredAlternativeLineRetryLock = {
+        version: 2,
+        savedAt: legacy.savedAt,
+        kind: legacy.kind,
+        reservationRevision,
+      };
+      storage.setItem(key, JSON.stringify(migrated));
+      storage.removeItem(legacyKey);
+      return {
+        kind: legacy.kind,
+        message: ALTERNATIVE_STORED_LOCK_MESSAGES[legacy.kind],
+      };
+    }
+
+    const stored = JSON.parse(raw) as Partial<StoredAlternativeLineRetryLock>;
+    const isValid =
+      stored.version === 2 &&
+      typeof stored.savedAt === "number" &&
+      Number.isFinite(stored.savedAt) &&
+      stored.savedAt <= now &&
+      now - stored.savedAt < ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS &&
+      isRetryLockKind(stored.kind) &&
+      typeof stored.reservationRevision === "string" &&
+      Boolean(reservationRevision) &&
+      stored.reservationRevision === reservationRevision;
+
+    if (!isValid) {
+      storage.removeItem(key);
+      return null;
+    }
+
+    return stored.kind
+      ? {
+          kind: stored.kind,
+          message: ALTERNATIVE_STORED_LOCK_MESSAGES[stored.kind],
+        }
+      : null;
+  } catch {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Storage access can be unavailable in privacy-restricted browsers.
+    }
+    return null;
+  }
 }
 
 export function saveAlternativeLineRetryLock(
   storage: RetryLockStorage,
   reservationId: string,
+  reservationRevision: string,
   lock: AlternativeLineRetryLock | null,
   now = Date.now()
 ) {
-  saveLineRetryLock(
-    storage,
-    ALTERNATIVE_STORAGE_KEY_PREFIX,
-    reservationId,
-    lock,
-    now
-  );
+  const key = getStorageKey(ALTERNATIVE_STORAGE_KEY_PREFIX, reservationId);
+
+  try {
+    storage.removeItem(
+      getStorageKey(LEGACY_ALTERNATIVE_STORAGE_KEY_PREFIX, reservationId)
+    );
+    if (!lock || !reservationRevision) {
+      storage.removeItem(key);
+      return;
+    }
+
+    const stored: StoredAlternativeLineRetryLock = {
+      version: 2,
+      savedAt: now,
+      kind: lock.kind,
+      reservationRevision,
+    };
+    storage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // The in-memory lock still protects the current screen when storage fails.
+  }
 }
 
 export function getAlternativeLineRetryLock(

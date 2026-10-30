@@ -34,6 +34,7 @@ const reservation = {
   status: "予約",
   source: "manual",
   memo: "確認メモ",
+  updated_at: "2099-10-18T00:00:00.000Z",
 };
 const updatedReservation = {
   ...reservation,
@@ -323,6 +324,7 @@ test("individual staff edit data is scoped to the authenticated salon", async ()
 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
+  assert.equal(body.reservation.updated_at, reservation.updated_at);
   const reservationRead = runtime.calls.find(
     (call) => call.table === "reservations" && call.operation === "read",
   );
@@ -331,6 +333,7 @@ test("individual staff edit data is scoped to the authenticated salon", async ()
       (filter) => filter.column === "salon_id" && filter.value === SALON_ID,
     ),
   );
+  assert.match(reservationRead.selects[0], /updated_at/);
   for (const table of ["salons", "staffs"]) {
     const read = runtime.calls.find((call) => call.table === table);
     assert.ok(
