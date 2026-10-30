@@ -5,12 +5,19 @@ export type CustomerReservationRequestAction =
 export type CustomerReservationRequestLineResult = {
   ok?: boolean;
   message?: string;
+  retryable?: boolean;
+  deliveryStatus?: string;
 };
 
 export type CustomerReservationRequestLineLock = {
   action: CustomerReservationRequestAction;
   kind: "sent" | "history_check";
   message: string;
+};
+
+export type CustomerReservationRequestRetry = {
+  action: CustomerReservationRequestAction;
+  requestMessage: string;
 };
 
 type RetryLockStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -21,10 +28,18 @@ type StoredCustomerReservationRequestLineLock = {
   kind?: CustomerReservationRequestLineLock["kind"];
 };
 
+type StoredCustomerReservationRequestRetry = {
+  version: 1;
+  savedAt: number;
+  requestMessage: string;
+};
+
 export const CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS =
   23 * 60 * 60 * 1000;
 
 const STORAGE_KEY_PREFIX = "aily:customer-reservation-request-line:v1:";
+const RETRY_STORAGE_KEY_PREFIX =
+  "aily:customer-reservation-request-line-retry:v1:";
 
 function getStorageKey(
   reservationId: string,
@@ -113,16 +128,89 @@ export function saveCustomerReservationRequestLineLock(
   }
 }
 
+export function readCustomerReservationRequestRetry(
+  storage: RetryLockStorage,
+  reservationId: string,
+  action: CustomerReservationRequestAction,
+  now = Date.now()
+): CustomerReservationRequestRetry | null {
+  const key = `${RETRY_STORAGE_KEY_PREFIX}${reservationId}:${action}`;
+
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+
+    const stored = JSON.parse(raw) as Partial<StoredCustomerReservationRequestRetry>;
+    const valid =
+      stored.version === 1 &&
+      typeof stored.savedAt === "number" &&
+      Number.isFinite(stored.savedAt) &&
+      stored.savedAt <= now &&
+      now - stored.savedAt < CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS &&
+      typeof stored.requestMessage === "string";
+
+    if (!valid) {
+      storage.removeItem(key);
+      return null;
+    }
+
+    return {
+      action,
+      requestMessage: stored.requestMessage || "",
+    };
+  } catch {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Storage access can be unavailable in privacy-restricted browsers.
+    }
+    return null;
+  }
+}
+
+export function saveCustomerReservationRequestRetry(
+  storage: RetryLockStorage,
+  reservationId: string,
+  retry: CustomerReservationRequestRetry | null,
+  action: CustomerReservationRequestAction,
+  now = Date.now()
+) {
+  const key = `${RETRY_STORAGE_KEY_PREFIX}${reservationId}:${action}`;
+
+  try {
+    if (!retry) {
+      storage.removeItem(key);
+      return;
+    }
+
+    const stored: StoredCustomerReservationRequestRetry = {
+      version: 1,
+      savedAt: now,
+      requestMessage: retry.requestMessage,
+    };
+    storage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // The in-memory retry still protects the current screen when storage fails.
+  }
+}
+
+export function shouldKeepCustomerReservationRequestRetry(
+  result: CustomerReservationRequestLineResult | null
+) {
+  if (!result) return true;
+  return (
+    result.ok !== true &&
+    result.retryable === true &&
+    (result.deliveryStatus === "failed" || result.deliveryStatus === "unknown")
+  );
+}
+
 export function getCustomerReservationRequestLineLock(
   result: CustomerReservationRequestLineResult | null,
   action: CustomerReservationRequestAction
 ): CustomerReservationRequestLineLock | null {
   if (!result) {
-    return {
-      action,
-      kind: "history_check",
-      message: getStoredMessage(action, "history_check"),
-    };
+    return null;
   }
 
   if (!result.ok) return null;

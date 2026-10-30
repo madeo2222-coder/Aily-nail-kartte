@@ -699,7 +699,10 @@ test("successful customer LINE requests stay locked after a page reload", () => 
 });
 
 test("explicitly failed customer LINE requests remain safely retryable", () => {
-  const { getCustomerReservationRequestLineLock } = loadRetryLockModule();
+  const {
+    getCustomerReservationRequestLineLock,
+    shouldKeepCustomerReservationRequestRetry,
+  } = loadRetryLockModule();
 
   assert.equal(
     getCustomerReservationRequestLineLock(
@@ -708,13 +711,30 @@ test("explicitly failed customer LINE requests remain safely retryable", () => {
     ),
     null
   );
+  assert.equal(
+    shouldKeepCustomerReservationRequestRetry({
+      ok: false,
+      retryable: true,
+      deliveryStatus: "failed",
+    }),
+    true
+  );
+  assert.equal(
+    shouldKeepCustomerReservationRequestRetry({
+      ok: false,
+      retryable: true,
+      deliveryStatus: "not_sent",
+    }),
+    false
+  );
 });
 
-test("an unobservable customer LINE result stays locked for history confirmation", () => {
+test("an unobservable customer LINE result preserves the exact request for retry", () => {
   const {
     getCustomerReservationRequestLineLock,
-    readCustomerReservationRequestLineLock,
-    saveCustomerReservationRequestLineLock,
+    readCustomerReservationRequestRetry,
+    saveCustomerReservationRequestRetry,
+    shouldKeepCustomerReservationRequestRetry,
   } = loadRetryLockModule();
   const storage = createMemoryStorage();
   const lock = getCustomerReservationRequestLineLock(
@@ -722,25 +742,97 @@ test("an unobservable customer LINE result stays locked for history confirmation
     "request_change"
   );
 
-  assert.equal(lock.action, "request_change");
-  assert.equal(lock.kind, "history_check");
-  assert.match(lock.message, /同じ依頼を繰り返さず/);
+  assert.equal(lock, null);
+  assert.equal(shouldKeepCustomerReservationRequestRetry(null), true);
 
-  saveCustomerReservationRequestLineLock(
+  saveCustomerReservationRequestRetry(
     storage,
     "reservation-1",
-    lock,
+    {
+      action: "request_change",
+      requestMessage: "7月20日の14時へ変更希望です",
+    },
+    "request_change",
     1_000
   );
-  const restored = readCustomerReservationRequestLineLock(
+  const restored = readCustomerReservationRequestRetry(
     storage,
     "reservation-1",
     "request_change",
     2_000
   );
 
-  assert.equal(restored.kind, "history_check");
-  assert.match(restored.message, /送信状況を確認/);
+  assert.equal(restored.action, "request_change");
+  assert.equal(restored.requestMessage, "7月20日の14時へ変更希望です");
+
+  saveCustomerReservationRequestRetry(
+    storage,
+    "reservation-1",
+    null,
+    "request_change",
+    3_000
+  );
+  assert.equal(
+    readCustomerReservationRequestRetry(
+      storage,
+      "reservation-1",
+      "request_change",
+      4_000
+    ),
+    null
+  );
+});
+
+test("customer request retry expires and rejects malformed storage", () => {
+  const {
+    CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS,
+    readCustomerReservationRequestRetry,
+    saveCustomerReservationRequestRetry,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+
+  saveCustomerReservationRequestRetry(
+    storage,
+    "reservation-1",
+    { action: "request_cancel", requestMessage: "仕事の都合です" },
+    "request_cancel",
+    1_000
+  );
+  assert.equal(
+    readCustomerReservationRequestRetry(
+      storage,
+      "reservation-1",
+      "request_cancel",
+      1_000 + CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS
+    ),
+    null
+  );
+
+  storage.setItem(
+    "aily:customer-reservation-request-line-retry:v1:reservation-2:request_change",
+    "not-json"
+  );
+  assert.equal(
+    readCustomerReservationRequestRetry(
+      storage,
+      "reservation-2",
+      "request_change",
+      2_000
+    ),
+    null
+  );
+});
+
+test("customer page retries only the persisted LINE request after response loss", () => {
+  assert.match(pageSource, /saveCustomerReservationRequestRetry\(/);
+  assert.match(pageSource, /readCustomerReservationRequestRetry\(/);
+  assert.match(pageSource, /shouldKeepCustomerReservationRequestRetry\(json\)/);
+  assert.match(pageSource, /retry\?\.requestMessage \?\? requestMessage\.trim\(\)/);
+  assert.match(pageSource, /保存した同じ内容で安全に再試行できます/);
+  assert.match(pageSource, /同じ変更希望を再試行/);
+  assert.match(pageSource, /同じキャンセル希望を再試行/);
+  assert.match(pageSource, /先に保存済みのキャンセル希望を再試行してください/);
+  assert.match(pageSource, /先に保存済みの変更希望を再試行してください/);
 });
 
 test("legacy customer LINE locks restore as sent locks", () => {

@@ -6,10 +6,14 @@ import { useParams } from "next/navigation";
 import { getReservationStatusLabel } from "@/lib/reservation-status";
 import {
   getCustomerReservationRequestLineLock,
+  readCustomerReservationRequestRetry,
   readCustomerReservationRequestLineLock,
+  saveCustomerReservationRequestRetry,
   saveCustomerReservationRequestLineLock,
+  shouldKeepCustomerReservationRequestRetry,
   type CustomerReservationRequestAction,
   type CustomerReservationRequestLineLock,
+  type CustomerReservationRequestRetry,
 } from "@/lib/customer-reservation-request-line-retry";
 
 type ReservationDetail = {
@@ -203,6 +207,11 @@ export default function CustomerReservationDetailPage() {
       >
     >
   >({});
+  const [requestLineRetries, setRequestLineRetries] = useState<
+    Partial<
+      Record<CustomerReservationRequestAction, CustomerReservationRequestRetry>
+    >
+  >({});
 
   const todayText = useMemo(() => getTodayText(), []);
   const maxDateText = useMemo(() => addDaysText(todayText, 30), [todayText]);
@@ -326,6 +335,9 @@ export default function CustomerReservationDetailPage() {
         CustomerReservationRequestLineLock
       >
     > = {};
+    const nextRetries: Partial<
+      Record<CustomerReservationRequestAction, CustomerReservationRequestRetry>
+    > = {};
 
     for (const action of [
       "request_change",
@@ -337,9 +349,20 @@ export default function CustomerReservationDetailPage() {
         action
       );
       if (lock) nextLocks[action] = lock;
+      const retry = readCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        action
+      );
+      if (retry) nextRetries[action] = retry;
     }
 
     setRequestLineLocks(nextLocks);
+    setRequestLineRetries(nextRetries);
+    const retryMessage =
+      nextRetries.request_change?.requestMessage ??
+      nextRetries.request_cancel?.requestMessage;
+    if (retryMessage !== undefined) setRequestMessage(retryMessage);
   }, [reservationId]);
 
   async function runAction(body: Record<string, unknown>) {
@@ -350,10 +373,29 @@ export default function CustomerReservationDetailPage() {
     setWarningMessage("");
     setRefreshErrorMessage("");
     setErrorMessage("");
-    const requestAction =
+    const requestAction: CustomerReservationRequestAction | null =
       body.action === "request_change" || body.action === "request_cancel"
         ? body.action
         : null;
+    const requestRetry = requestAction
+      ? {
+          action: requestAction,
+          requestMessage: String(body.requestMessage || "").trim(),
+        }
+      : null;
+
+    if (requestAction && requestRetry) {
+      saveCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        requestRetry,
+        requestAction
+      );
+      setRequestLineRetries((current) => ({
+        ...current,
+        [requestAction]: requestRetry,
+      }));
+    }
 
     try {
       const response = await fetch(
@@ -372,9 +414,11 @@ export default function CustomerReservationDetailPage() {
         message?: string;
         error?: string;
         notificationWarning?: string;
+        retryable?: boolean;
+        deliveryStatus?: string;
       } | null;
 
-      if (requestAction) {
+      if (requestAction && json) {
         const lock = getCustomerReservationRequestLineLock(
           json,
           requestAction
@@ -391,12 +435,26 @@ export default function CustomerReservationDetailPage() {
             [requestAction]: lock,
           }));
         }
+
+        if (!shouldKeepCustomerReservationRequestRetry(json)) {
+          saveCustomerReservationRequestRetry(
+            window.localStorage,
+            reservationId,
+            null,
+            requestAction
+          );
+          setRequestLineRetries((current) => {
+            const next = { ...current };
+            delete next[requestAction];
+            return next;
+          });
+        }
       }
 
       if (!json) {
         setRefreshErrorMessage(
           requestAction
-            ? "店舗へのLINE送信結果を確認できませんでした。同じ依頼を繰り返さず、店舗へ送信状況を確認してください。"
+            ? "店舗へのLINE送信結果を確認できませんでした。保存した同じ内容で安全に再試行できます。"
             : "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
         );
         return;
@@ -429,7 +487,7 @@ export default function CustomerReservationDetailPage() {
       }
       setRefreshErrorMessage(
         requestAction
-          ? "店舗へのLINE送信結果を確認できませんでした。同じ依頼を繰り返さず、店舗へ送信状況を確認してください。"
+          ? "店舗へのLINE送信結果を確認できませんでした。保存した同じ内容で安全に再試行できます。"
           : "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
       );
     } finally {
@@ -483,30 +541,71 @@ export default function CustomerReservationDetailPage() {
 
   async function handleRequestChange() {
     if (restoreRequestLineLock("request_change")) return;
+    if (
+      readCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        "request_cancel"
+      ) || requestLineRetries.request_cancel
+    ) {
+      setErrorMessage(
+        "先に保存済みのキャンセル希望を再試行してください。別の依頼内容は送信していません。"
+      );
+      return;
+    }
 
-    if (!requestMessage.trim()) {
+    const retry =
+      readCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        "request_change"
+      ) || requestLineRetries.request_change;
+    const nextRequestMessage = retry?.requestMessage ?? requestMessage.trim();
+
+    if (!nextRequestMessage) {
       setErrorMessage("変更したい内容を入力してください");
       return;
     }
 
     await runAction({
       action: "request_change",
-      requestMessage,
+      requestMessage: nextRequestMessage,
     });
   }
 
   async function handleRequestCancel() {
     if (restoreRequestLineLock("request_cancel")) return;
+    if (
+      readCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        "request_change"
+      ) || requestLineRetries.request_change
+    ) {
+      setErrorMessage(
+        "先に保存済みの変更希望を再試行してください。別の依頼内容は送信していません。"
+      );
+      return;
+    }
+
+    const retry =
+      readCustomerReservationRequestRetry(
+        window.localStorage,
+        reservationId,
+        "request_cancel"
+      ) || requestLineRetries.request_cancel;
 
     const confirmed = window.confirm(
-      "店舗へキャンセル希望を送りますか？"
+      retry
+        ? "保存済みの同じキャンセル希望を再試行しますか？"
+        : "店舗へキャンセル希望を送りますか？"
     );
 
     if (!confirmed) return;
 
     await runAction({
       action: "request_cancel",
-      requestMessage,
+      requestMessage: retry?.requestMessage ?? requestMessage.trim(),
     });
   }
 
@@ -813,10 +912,21 @@ export default function CustomerReservationDetailPage() {
             <textarea
               value={requestMessage}
               onChange={(event) => setRequestMessage(event.target.value)}
+              disabled={Boolean(
+                requestLineRetries.request_change ||
+                  requestLineRetries.request_cancel
+              )}
               rows={5}
               placeholder="例：7月20日の14時へ変更希望です"
               className="mt-4 w-full rounded-2xl border px-4 py-3 text-sm"
             />
+
+            {requestLineRetries.request_change ||
+            requestLineRetries.request_cancel ? (
+              <p className="mt-2 text-sm font-bold text-amber-700">
+                前回の送信結果を確認できなかったため、再試行では保存済みの同じ内容を使用します。
+              </p>
+            ) : null}
 
             <div className="mt-3 grid grid-cols-1 gap-2">
               {reservation.canRequestChange ? (
@@ -834,10 +944,17 @@ export default function CustomerReservationDetailPage() {
                   <button
                     type="button"
                     onClick={handleRequestChange}
-                    disabled={saving || Boolean(refreshErrorMessage)}
+                    disabled={
+                      saving ||
+                      Boolean(requestLineRetries.request_cancel) ||
+                      (Boolean(refreshErrorMessage) &&
+                        !requestLineRetries.request_change)
+                    }
                     className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
-                    変更希望を店舗へ送る
+                    {requestLineRetries.request_change
+                      ? "同じ変更希望を再試行"
+                      : "変更希望を店舗へ送る"}
                   </button>
                 )
               ) : null}
@@ -857,10 +974,17 @@ export default function CustomerReservationDetailPage() {
                   <button
                     type="button"
                     onClick={handleRequestCancel}
-                    disabled={saving || Boolean(refreshErrorMessage)}
+                    disabled={
+                      saving ||
+                      Boolean(requestLineRetries.request_change) ||
+                      (Boolean(refreshErrorMessage) &&
+                        !requestLineRetries.request_cancel)
+                    }
                     className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 disabled:opacity-50"
                   >
-                    キャンセル希望を店舗へ送る
+                    {requestLineRetries.request_cancel
+                      ? "同じキャンセル希望を再試行"
+                      : "キャンセル希望を店舗へ送る"}
                   </button>
                 )
               ) : null}
