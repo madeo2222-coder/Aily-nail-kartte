@@ -309,6 +309,28 @@ function isReservationSubject(subject: string) {
   );
 }
 
+function hasCancellationBodyMarker(text: string, markers: string[]) {
+  return text.split("\n").some((rawLine) => {
+    const line = rawLine.trim();
+
+    // These fields contain customer-selected or customer-written text. A
+    // normal booking can legitimately include a menu such as
+    // "キャンセル理由相談つきネイル" or a request about cancelling a
+    // previous visit. Those values must not turn the current booking into a
+    // cancellation when forwarding has replaced the provider subject with a
+    // generic one.
+    if (
+      /^(?:[■□・]\s*)?(?:ご要望|要望|メニュー|備考|コメント|お客様(?:から)?の(?:ご要望|要望|メッセージ))\s*[:：]/.test(
+        line
+      )
+    ) {
+      return false;
+    }
+
+    return markers.some((marker) => line.includes(marker));
+  });
+}
+
 function parseHpbMail(
   rawText: string,
   mailSubject = ""
@@ -318,9 +340,11 @@ function parseHpbMail(
   const action: ParsedHpbMail["action"] =
     isCancellationSubject(mailSubject) ||
     (!isReservationSubject(mailSubject) &&
-      (text.includes("キャンセル連絡") ||
-        text.includes("キャンセルがありました") ||
-        text.includes("ご予約のキャンセル")))
+      hasCancellationBodyMarker(text, [
+        "キャンセル連絡",
+        "キャンセルがありました",
+        "ご予約のキャンセル",
+      ]))
       ? "cancel"
       : "reservation";
 
@@ -408,11 +432,13 @@ function parseMinimoMail(
   const action: ParsedHpbMail["action"] =
     isCancellationSubject(mailSubject) ||
     (!isReservationSubject(mailSubject) &&
-      (text.includes("下記の予約がキャンセルされました") ||
-        text.includes("キャンセル理由") ||
-        text.includes("キャンセルされました") ||
-        text.includes("予約がキャンセル") ||
-        text.includes("キャンセルになりました")))
+      hasCancellationBodyMarker(text, [
+        "下記の予約がキャンセルされました",
+        "キャンセル理由",
+        "キャンセルされました",
+        "予約がキャンセル",
+        "キャンセルになりました",
+      ]))
       ? "cancel"
       : "reservation";
 
