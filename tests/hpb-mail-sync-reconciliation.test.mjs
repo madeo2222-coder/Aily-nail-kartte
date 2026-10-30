@@ -508,6 +508,70 @@ test("multiple linked source bookings for the resolved customer still stop", () 
   );
 });
 
+test("provider end time disambiguates nearby linked source bookings", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: null,
+    customerId: "customer-1",
+    expectedEndAt: "2099-10-20T02:30:00.000Z",
+    candidates: [
+      {
+        id: "shorter-booking",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "ホットペッパー予約",
+        memo: null,
+        status: "予約確定",
+        end_at: "2099-10-20T02:00:00.000Z",
+      },
+      {
+        id: "matching-booking",
+        customer_id: "customer-1",
+        staff_id: null,
+        menu: "ホットペッパー予約",
+        memo: null,
+        status: "予約確定",
+        end_at: "2099-10-20T02:32:00.000Z",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "matching-booking");
+});
+
+test("provider end time keeps multiple aligned bookings fail closed", () => {
+  assert.throws(
+    () =>
+      reconciliation.findManualReservationCandidate({
+        source: "minimo",
+        staffId: null,
+        customerId: "customer-1",
+        expectedEndAt: "2099-10-20T02:30:00.000Z",
+        candidates: [
+          {
+            id: "first-aligned-booking",
+            customer_id: "customer-1",
+            staff_id: null,
+            menu: "ミニモ予約",
+            memo: null,
+            status: "予約確定",
+            end_at: "2099-10-20T02:29:00.000Z",
+          },
+          {
+            id: "second-aligned-booking",
+            customer_id: "customer-1",
+            staff_id: null,
+            menu: "ミニモ予約",
+            memo: null,
+            status: "予約確定",
+            end_at: "2099-10-20T02:31:00.000Z",
+          },
+        ],
+      }),
+    /同期を停止/
+  );
+});
+
 test("a source-marked booking for another resolved customer remains a hard conflict", () => {
   assert.throws(
     () =>

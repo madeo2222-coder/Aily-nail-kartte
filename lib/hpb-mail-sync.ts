@@ -987,6 +987,7 @@ async function findDelayedManualEntry(
     source: parsed.source,
     staffId: context.staffId,
     customerId,
+    expectedEndAt: parsed.endAt,
     requireExactCustomerMatch,
     allowStaffMismatchForExactCustomer,
   });

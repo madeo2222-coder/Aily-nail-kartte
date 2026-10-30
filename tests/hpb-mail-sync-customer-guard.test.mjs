@@ -2263,6 +2263,44 @@ test("delayed mail uses the resolved customer when source-marked bookings share 
   assert.doesNotMatch(runtime.writes[0].payload.memo, /別のお客様を先に登録/);
 });
 
+test("delayed mail uses provider end time when the same customer has nearby manual bookings", async () => {
+  const runtime = loadSync(null, {
+    manualReservationRows: [
+      {
+        id: "shorter-manual-reservation",
+        customer_id: "mail-customer",
+        staff_id: null,
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "短い別予約",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:00:00.000Z",
+      },
+      {
+        id: "matching-manual-reservation",
+        customer_id: "mail-customer",
+        staff_id: null,
+        salon_id: "salon-1",
+        menu: "HPB予約",
+        memo: "同期対象の予約",
+        status: "confirmed",
+        start_at: "2099-10-20T01:03:00.000Z",
+        end_at: "2099-10-20T02:32:00.000Z",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.reservationId, "matching-manual-reservation");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.match(runtime.writes[0].payload.memo, /同期対象の予約/);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /短い別予約/);
+});
+
 test("a changed external booking preserves the staff-corrected customer link", async () => {
   const runtime = loadSync("staff-corrected-customer", {
     existing: true,

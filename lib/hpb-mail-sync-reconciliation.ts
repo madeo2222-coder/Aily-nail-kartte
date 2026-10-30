@@ -201,6 +201,7 @@ export function findManualReservationCandidate({
   source,
   staffId,
   customerId = null,
+  expectedEndAt = null,
   requireExactCustomerMatch = false,
   allowStaffMismatchForExactCustomer = false,
 }: {
@@ -208,6 +209,7 @@ export function findManualReservationCandidate({
   source: MailSyncSource;
   staffId: string | null;
   customerId?: string | null;
+  expectedEndAt?: string | null;
   requireExactCustomerMatch?: boolean;
   allowStaffMismatchForExactCustomer?: boolean;
 }) {
@@ -298,17 +300,47 @@ export function findManualReservationCandidate({
       ? exactCustomerSourceMatches
       : matches;
 
-  if (preferredMatches.length > 1) {
+  // Staff can enter two nearby bookings for the same customer before the
+  // provider mail arrives (for example, a correction beside the original
+  // row). The start-time query intentionally allows a five-minute input
+  // difference, so use the provider's end time as an additional safe
+  // discriminator only when the customer/source rules still leave multiple
+  // candidates. A missing or invalid end time never weakens the existing
+  // fail-closed behavior.
+  let finalMatches = preferredMatches;
+  if (preferredMatches.length > 1 && expectedEndAt) {
+    const expectedEndMilliseconds = new Date(expectedEndAt).getTime();
+    if (Number.isFinite(expectedEndMilliseconds)) {
+      const toleranceMilliseconds =
+        MANUAL_RESERVATION_TIME_TOLERANCE_MINUTES * 60 * 1000;
+      const endAlignedMatches = preferredMatches.filter((candidate) => {
+        const candidateEndMilliseconds = new Date(
+          candidate.end_at || ""
+        ).getTime();
+        return (
+          Number.isFinite(candidateEndMilliseconds) &&
+          Math.abs(candidateEndMilliseconds - expectedEndMilliseconds) <=
+            toleranceMilliseconds
+        );
+      });
+
+      if (endAlignedMatches.length > 0) {
+        finalMatches = endAlignedMatches;
+      }
+    }
+  }
+
+  if (finalMatches.length > 1) {
     throw new Error(
       "同時刻に未照合の外部予約が複数あります。重複作成を避けるため同期を停止しました。"
     );
   }
 
-  if (preferredMatches.length === 0 && hasConflictingSourceCandidate) {
+  if (finalMatches.length === 0 && hasConflictingSourceCandidate) {
     throw new Error(
       "手入力予約とメールの顧客が一致しません。誤更新を避けるため同期を停止しました。"
     );
   }
 
-  return preferredMatches[0] || null;
+  return finalMatches[0] || null;
 }
