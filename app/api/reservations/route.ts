@@ -108,7 +108,7 @@ async function sendReservationNoticeMail({
     console.log(
       "予約通知メールはスキップされました: RESEND_API_KEY または RESERVATION_NOTIFY_EMAIL が未設定です"
     );
-    return;
+    return true;
   }
 
   const subject = "【Aily Nail Studio】新しい予約希望が入りました";
@@ -171,7 +171,10 @@ async function sendReservationNoticeMail({
   if (!response.ok) {
     const errorText = await response.text();
     console.error("予約通知メール送信エラー:", errorText);
+    return false;
   }
+
+  return true;
 }
 
 async function sendReservationNoticeLine({
@@ -207,7 +210,7 @@ async function sendReservationNoticeLine({
     console.log(
       "予約LINE通知はスキップされました: LINE_CHANNEL_ACCESS_TOKEN または LINE_ADMIN_USER_ID が未設定です"
     );
-    return;
+    return true;
   }
 
   const calendarUrl = baseUrl
@@ -259,10 +262,11 @@ async function sendReservationNoticeLine({
 
   if (!response.ok) {
     console.error("予約LINE通知送信エラー:", responseText);
-    return;
+    return false;
   }
 
   console.log("予約LINE通知成功");
+  return true;
 }
 
 export async function POST(request: NextRequest) {
@@ -490,34 +494,45 @@ export async function POST(request: NextRequest) {
 
     const reservationId = writeResult.reservation_id;
 
-    try {
-      await sendReservationNoticeMail({
-        reservationId,
-        customerName,
-        menu,
-        startIso,
-        endIso,
-        staffName,
-        memo,
-        durationMinutes,
-      });
-    } catch (mailError) {
-      console.error("予約通知メール処理エラー:", mailError);
+    const noticePayload = {
+      reservationId,
+      customerName,
+      menu,
+      startIso,
+      endIso,
+      staffName,
+      memo,
+      durationMinutes,
+    };
+    const [mailResult, lineResult] = await Promise.allSettled([
+      sendReservationNoticeMail(noticePayload),
+      sendReservationNoticeLine(noticePayload),
+    ]);
+
+    if (mailResult.status === "rejected") {
+      console.error("予約通知メール処理エラー:", mailResult.reason);
+    }
+    if (lineResult.status === "rejected") {
+      console.error("予約LINE通知処理エラー:", lineResult.reason);
     }
 
-    try {
-      await sendReservationNoticeLine({
-        reservationId,
-        customerName,
-        menu,
-        startIso,
-        endIso,
-        staffName,
-        memo,
-        durationMinutes,
-      });
-    } catch (lineError) {
-      console.error("予約LINE通知処理エラー:", lineError);
+    const notificationFailed = [mailResult, lineResult].some(
+      (result) => result.status === "rejected" || result.value === false
+    );
+
+    if (notificationFailed) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "予約は保存されましたが、店舗への通知に失敗しました。通知を再試行してください",
+          reservationSaved: true,
+          notificationRetryable: true,
+          reservationId,
+          assignedStaffId,
+        },
+        { status: 503 }
+      );
     }
 
     return NextResponse.json({

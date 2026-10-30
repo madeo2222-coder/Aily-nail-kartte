@@ -8,6 +8,7 @@ import {
   buildCustomerReservationFingerprint,
   clearCustomerReservationOperation,
   getOrCreateCustomerReservationOperationId,
+  type CustomerReservationSubmission,
 } from "@/lib/customer-reservation-submission";
 
 const customMenuId = "custom";
@@ -180,6 +181,8 @@ function ReservePageContent() {
   const [sending, setSending] = useState(false);
   const [reservationResultUnknown, setReservationResultUnknown] =
     useState(false);
+  const [reservationNotificationRetryable, setReservationNotificationRetryable] =
+    useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authError, setAuthError] = useState("");
   const [authAttempt, setAuthAttempt] = useState(0);
@@ -211,6 +214,10 @@ function ReservePageContent() {
   const [selectedTime, setSelectedTime] = useState("");
   const [note, setNote] = useState("");
   const submissionInFlight = useRef(false);
+  const notificationRetryRequest = useRef<{
+    submission: CustomerReservationSubmission;
+    operationId: string;
+  } | null>(null);
 
   const todayText = useMemo(() => getTodayText(), []);
   const maxReservationDate = useMemo(() => addDaysText(todayText, 30), [todayText]);
@@ -625,32 +632,36 @@ function ReservePageContent() {
   async function handleReserveSubmit() {
     if (submissionInFlight.current || reservationResultUnknown) return;
 
-    if (!reservationMenu) {
+    const retryRequest = reservationNotificationRetryable
+      ? notificationRetryRequest.current
+      : null;
+
+    if (!retryRequest && !reservationMenu) {
       showMessage("メニューを選択してください");
       return;
     }
 
-    if (!selectedDate) {
+    if (!retryRequest && !selectedDate) {
       showMessage("希望日を選択してください");
       return;
     }
 
-    if (selectedDate > maxReservationDate) {
+    if (!retryRequest && selectedDate > maxReservationDate) {
       showMessage("予約は本日から30日先まで選択できます");
       return;
     }
 
-    if (selectedDate < todayText) {
+    if (!retryRequest && selectedDate < todayText) {
       showMessage("過去の日付は選択できません");
       return;
     }
 
-    if (!selectedTime) {
+    if (!retryRequest && !selectedTime) {
       showMessage("希望時間を選択してください");
       return;
     }
 
-    if (!availableTimeOptions.includes(selectedTime)) {
+    if (!retryRequest && !availableTimeOptions.includes(selectedTime)) {
       showMessage("選択した時間は埋まりました。別の時間を選択してください");
       return;
     }
@@ -659,43 +670,52 @@ function ReservePageContent() {
     setSending(true);
 
     try {
-      const timeLines = timeBreakdown.map(
-        (item) => `・${item.label}：${item.minutes}分`
-      );
+      let submission: CustomerReservationSubmission;
+      let operationId: string;
 
-      const priceLines = priceBreakdown.map(
-        (item) =>
-          `・${item.label}：${formatYen(item.price)}${item.priceSuffix || ""}`
-      );
+      if (retryRequest) {
+        submission = retryRequest.submission;
+        operationId = retryRequest.operationId;
+      } else {
+        const timeLines = timeBreakdown.map(
+          (item) => `・${item.label}：${item.minutes}分`
+        );
 
-      const memoLines = [
-        galleryReferenceText,
-        selectedStaffFee > 0
-          ? `指名料：${selectedStaffName} ${formatYen(selectedStaffFee)}`
-          : "指名料：なし",
-        `合計金額目安：${formatYen(totalPrice)}${hasPriceSuffix ? "〜" : ""}`,
-        `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
-        "時間内訳",
-        ...timeLines,
-        "金額内訳",
-        ...priceLines,
-        note.trim() ? `備考：${note.trim()}` : "",
-      ].filter(Boolean);
+        const priceLines = priceBreakdown.map(
+          (item) =>
+            `・${item.label}：${formatYen(item.price)}${item.priceSuffix || ""}`
+        );
 
-      const submission = {
-        menu: reservationMenu,
-        date: selectedDate,
-        time: selectedTime,
-        staffId: selectedStaffId,
-        durationMinutes: totalMinutes,
-        memo: memoLines.join("\n"),
-      };
-      const fingerprint = buildCustomerReservationFingerprint(submission);
-      const operationId = getOrCreateCustomerReservationOperationId(
-        window.localStorage,
-        fingerprint,
-        () => crypto.randomUUID(),
-      );
+        const memoLines = [
+          galleryReferenceText,
+          selectedStaffFee > 0
+            ? `指名料：${selectedStaffName} ${formatYen(selectedStaffFee)}`
+            : "指名料：なし",
+          `合計金額目安：${formatYen(totalPrice)}${hasPriceSuffix ? "〜" : ""}`,
+          `所要時間目安：${formatMinutes(totalMinutes)}（${totalMinutes}分）`,
+          "時間内訳",
+          ...timeLines,
+          "金額内訳",
+          ...priceLines,
+          note.trim() ? `備考：${note.trim()}` : "",
+        ].filter(Boolean);
+
+        submission = {
+          menu: reservationMenu,
+          date: selectedDate,
+          time: selectedTime,
+          staffId: selectedStaffId,
+          durationMinutes: totalMinutes,
+          memo: memoLines.join("\n"),
+        };
+        const fingerprint = buildCustomerReservationFingerprint(submission);
+        operationId = getOrCreateCustomerReservationOperationId(
+          window.localStorage,
+          fingerprint,
+          () => crypto.randomUUID(),
+        );
+        notificationRetryRequest.current = { submission, operationId };
+      }
 
       const response = await fetch("/api/reservations", {
         method: "POST",
@@ -708,6 +728,8 @@ function ReservePageContent() {
       const json = (await response.json().catch(() => null)) as {
         ok?: boolean;
         error?: string;
+        reservationSaved?: boolean;
+        notificationRetryable?: boolean;
       } | null;
 
       if (!json) {
@@ -719,6 +741,15 @@ function ReservePageContent() {
       }
 
       if (!response.ok || !json.ok) {
+        if (json.reservationSaved && json.notificationRetryable) {
+          setReservationNotificationRetryable(true);
+          showMessage(
+            json.error ||
+              "予約は保存されましたが、店舗への通知に失敗しました。通知を再試行してください"
+          );
+          return;
+        }
+
         if (response.status >= 500) {
           setReservationResultUnknown(true);
           showMessage(
@@ -728,6 +759,7 @@ function ReservePageContent() {
         }
 
         clearCustomerReservationOperation(window.localStorage, operationId);
+        notificationRetryRequest.current = null;
         showMessage(json.error || "予約保存に失敗しました");
         if (response.status === 409) {
           setSelectedTime("");
@@ -738,6 +770,8 @@ function ReservePageContent() {
       }
 
       clearCustomerReservationOperation(window.localStorage, operationId);
+      notificationRetryRequest.current = null;
+      setReservationNotificationRetryable(false);
       showMessage("予約希望を受け付けました");
       setNote("");
       setCustomMenu("");
@@ -1299,6 +1333,15 @@ function ReservePageContent() {
             </div>
           ) : null}
 
+          {reservationNotificationRetryable ? (
+            <div
+              role="alert"
+              className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900"
+            >
+              予約は保存されています。店舗への通知だけを同じ予約番号で再試行できます。
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={handleReserveSubmit}
@@ -1316,6 +1359,8 @@ function ReservePageContent() {
               ? "送信中..."
               : reservationResultUnknown
               ? "マイページで予約を確認してください"
+              : reservationNotificationRetryable
+              ? "店舗への通知を再試行"
               : "この内容で予約希望を送る"}
           </button>
 
