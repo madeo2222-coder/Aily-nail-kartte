@@ -226,6 +226,8 @@ function createCustomerRequestRevision(params: {
         getString(params.reservation, ["menu", "menu_name"]),
         getString(params.reservation, ["staff_id"]),
         getString(params.reservation, ["salon_id"]),
+        getString(params.reservation, ["source"]),
+        getString(params.reservation, ["memo", "note"]),
         getString(params.reservation, ["updated_at"]),
       ].join("\u001f")
     )
@@ -504,6 +506,37 @@ export async function PATCH(
       );
     }
 
+    const guardedAction =
+      action === "update" ||
+      action === "cancel" ||
+      action === "request_change" ||
+      action === "request_cancel";
+    const expectedRequestRevision = String(
+      body.expectedRequestRevision || ""
+    ).trim();
+    const currentRequestRevision = createCustomerRequestRevision({
+      reservation,
+      customerId,
+      customerName,
+    });
+
+    if (
+      guardedAction &&
+      expectedRequestRevision !== currentRequestRevision
+    ) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "予約内容が更新されています。最新の内容を読み込み直してから操作してください",
+          ...(action === "request_change" || action === "request_cancel"
+            ? { retryable: false, deliveryStatus: "not_sent" }
+            : {}),
+        },
+        { status: 409 }
+      );
+    }
+
     const supabaseAdmin = getSupabaseAdmin();
 
     if (action === "cancel") {
@@ -601,27 +634,6 @@ export async function PATCH(
       }
 
       const requestMessage = String(body.requestMessage || "").trim();
-      const expectedRequestRevision = String(
-        body.expectedRequestRevision || ""
-      ).trim();
-      const currentRequestRevision = createCustomerRequestRevision({
-        reservation,
-        customerId,
-        customerName,
-      });
-
-      if (expectedRequestRevision !== currentRequestRevision) {
-        return NextResponse.json(
-          {
-            ok: false,
-            error:
-              "予約内容が更新されています。最新の内容を読み込み直してから依頼してください",
-            retryable: false,
-            deliveryStatus: "not_sent",
-          },
-          { status: 409 }
-        );
-      }
 
       const title =
         action === "request_cancel"

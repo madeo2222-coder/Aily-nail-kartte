@@ -517,6 +517,11 @@ export default function CustomerReservationDetailPage() {
   }
 
   async function handleUpdate() {
+    if (!reservation?.requestRevision) {
+      setErrorMessage("予約内容を確認できません。最新情報を再読み込みしてください");
+      return;
+    }
+
     await runAction({
       action: "update",
       date,
@@ -525,10 +530,16 @@ export default function CustomerReservationDetailPage() {
       staffId,
       memo,
       durationMinutes: Number(durationMinutes),
+      expectedRequestRevision: reservation.requestRevision,
     });
   }
 
   async function handleCancel() {
+    if (!reservation?.requestRevision) {
+      setErrorMessage("予約内容を確認できません。最新情報を再読み込みしてください");
+      return;
+    }
+
     const confirmed = window.confirm(
       "この予約希望を取り消しますか？"
     );
@@ -537,6 +548,7 @@ export default function CustomerReservationDetailPage() {
 
     await runAction({
       action: "cancel",
+      expectedRequestRevision: reservation.requestRevision,
     });
   }
 

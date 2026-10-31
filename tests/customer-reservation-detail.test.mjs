@@ -140,6 +140,7 @@ async function loadPage({
             source: "customer",
             startAt: "2099-10-02T01:30:00.000Z",
             endAt: "2099-10-02T03:00:00.000Z",
+            requestRevision: "revision-1",
             externalReservation: false,
             canDirectEdit: true,
             canDirectCancel: true,

@@ -134,6 +134,8 @@ function loadRoute({
         revisionPart(activeReservation.menu || activeReservation.menu_name),
         revisionPart(activeReservation.staff_id),
         revisionPart(activeReservation.salon_id),
+        revisionPart(activeReservation.source),
+        revisionPart(activeReservation.memo || activeReservation.note),
         revisionPart(activeReservation.updated_at),
       ].join("\u001f")
     )
@@ -260,8 +262,9 @@ function loadRoute({
       ...body,
     };
     if (
-      (requestBody.action === "request_change" ||
-        requestBody.action === "request_cancel") &&
+      ["update", "cancel", "request_change", "request_cancel"].includes(
+        requestBody.action
+      ) &&
       !Object.prototype.hasOwnProperty.call(body, "expectedRequestRevision")
     ) {
       requestBody.expectedRequestRevision = requestRevision;
@@ -391,6 +394,74 @@ test("stale confirmed request content stops before LINE delivery", async () => {
   assert.equal(response.body.deliveryStatus, "not_sent");
   assert.match(response.body.error, /予約内容が更新/);
   assert.equal(runtime.lineCalls.length, 0);
+});
+
+test("stale requested reservation stops direct update and cancellation before writes", async () => {
+  for (const action of ["update", "cancel"]) {
+    const runtime = loadRoute({
+      reservation: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        salon_id: "salon-1",
+        staff_id: "staff-1",
+        status: "requested",
+        menu: "ワンカラー",
+        start_at: "2099-10-02T01:30:00.000Z",
+        end_at: "2099-10-02T03:00:00.000Z",
+        updated_at: "2099-09-01T00:00:00.000Z",
+        source: "customer-app",
+        memo: "元の希望",
+      },
+    });
+    const response = await runtime.patch({
+      action,
+      expectedRequestRevision: "stale-revision",
+      date: "2099-10-03",
+      time: "10:30",
+      menu: "フレンチ",
+      staffId: "staff-1",
+      memo: "変更後",
+      durationMinutes: 90,
+    });
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.ok, false);
+    assert.match(response.body.error, /予約内容が更新/);
+    assert.equal(runtime.rpcCalls.length, 0);
+    assert.equal(runtime.lineCalls.length, 0);
+  }
+});
+
+test("customer reservation revision follows source and memo changes", async () => {
+  const baseReservation = {
+    id: "reservation-1",
+    customer_id: "customer-1",
+    salon_id: "salon-1",
+    staff_id: "staff-1",
+    status: "requested",
+    menu: "ワンカラー",
+    start_at: "2099-10-02T01:30:00.000Z",
+    end_at: "2099-10-02T03:00:00.000Z",
+    updated_at: "2099-09-01T00:00:00.000Z",
+    source: "customer-app",
+    memo: "元の希望",
+  };
+  const base = await loadRoute({ reservation: baseReservation }).get();
+  const sourceChanged = await loadRoute({
+    reservation: { ...baseReservation, source: "staff" },
+  }).get();
+  const memoChanged = await loadRoute({
+    reservation: { ...baseReservation, memo: "スタッフが更新" },
+  }).get();
+
+  assert.notEqual(
+    base.body.reservation.requestRevision,
+    sourceChanged.body.reservation.requestRevision
+  );
+  assert.notEqual(
+    base.body.reservation.requestRevision,
+    memoChanged.body.reservation.requestRevision
+  );
 });
 
 test("confirmed request without a revision fails closed before LINE", async () => {
@@ -1085,6 +1156,17 @@ test("customer reservation page restores separate change and cancel send locks",
   assert.match(
     pageSource,
     /requestLineLocks\.request_cancel \? \([\s\S]{0,1200}キャンセル希望を店舗へ送る/
+  );
+});
+
+test("customer direct update and cancellation send the displayed reservation revision", () => {
+  assert.match(
+    pageSource,
+    /async function handleUpdate\(\)[\s\S]{0,800}expectedRequestRevision: reservation\.requestRevision/
+  );
+  assert.match(
+    pageSource,
+    /async function handleCancel\(\)[\s\S]{0,700}expectedRequestRevision: reservation\.requestRevision/
   );
 });
 
