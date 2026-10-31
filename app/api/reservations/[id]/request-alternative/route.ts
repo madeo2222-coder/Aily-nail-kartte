@@ -49,6 +49,7 @@ type ClaimRow = {
 type ClaimFailure = {
   status: 403 | 409;
   error: string;
+  errorCode?: "stale_reservation";
 };
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
@@ -248,6 +249,7 @@ function getClaimFailure(message: string): ClaimFailure | null {
     return {
       status: 409,
       error: "予約状態が更新されています。最新の内容を読み込み直してください。",
+      errorCode: "stale_reservation",
     };
   }
 
@@ -362,6 +364,7 @@ export async function POST(
         {
           ok: false,
           sent: false,
+          errorCode: "stale_reservation",
           error: "予約内容が更新されています。最新の内容を読み込み直してください。",
         },
         { status: 409 }
@@ -475,7 +478,14 @@ export async function POST(
 
       if (claimFailure) {
         return NextResponse.json(
-          { ok: false, sent: false, error: claimFailure.error },
+          {
+            ok: false,
+            sent: false,
+            error: claimFailure.error,
+            ...(claimFailure.errorCode
+              ? { errorCode: claimFailure.errorCode }
+              : {}),
+          },
           { status: claimFailure.status }
         );
       }

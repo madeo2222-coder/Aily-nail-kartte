@@ -381,6 +381,7 @@ test("rejects a stale reservation snapshot before claiming or sending", async ()
     });
 
     assert.equal(response.status, 409, key);
+    assert.equal(response.body.errorCode, "stale_reservation", key);
     assert.match(response.body.error, /最新の内容を読み込み直して/);
     assert.equal(runtime.claimCalls.length, 0, key);
     assert.equal(runtime.lineCalls.length, 0, key);
@@ -574,6 +575,12 @@ test("maps known alternative-request claim failures without exposing database de
     assert.equal(response.body.ok, false);
     assert.equal(response.body.sent, false);
     assert.match(response.body.error, claimFailure.expected);
+    assert.equal(
+      response.body.errorCode,
+      claimFailure.message === "ALTERNATIVE_REQUEST_INVALID_RESERVATION"
+        ? "stale_reservation"
+        : undefined
+    );
     assert.doesNotMatch(response.body.error, /private|ALTERNATIVE_REQUEST_/);
     assert.equal(runtime.lineCalls.length, 0);
     assert.equal(runtime.completionCalls.length, 0);
@@ -913,6 +920,30 @@ test("staff UI sends the displayed reservation snapshot with an alternative-time
   ]) {
     assert.match(functionSource, new RegExp(`${field}: ${state}`));
   }
+});
+
+test("staff UI reloads only a stale alternative-time reservation conflict", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+  const functionStart = pageSource.indexOf(
+    "async function requestAlternativeTime()"
+  );
+  const nextFunction = pageSource.indexOf(
+    "\n  async function ",
+    functionStart + 1
+  );
+  const functionSource = pageSource.slice(functionStart, nextFunction);
+
+  assert.match(
+    functionSource,
+    /if \(result\.errorCode === "stale_reservation"\) \{[\s\S]{0,180}await loadPageData\(\)[\s\S]{0,320}最新の内容を画面に反映しました[\s\S]{0,120}return;/
+  );
+  assert.match(
+    functionSource,
+    /if \(!response\.ok \|\| !result\.ok\) \{[\s\S]{0,700}setErrorMessage\([\s\S]{0,100}別日時入力のLINE送信に失敗しました/
+  );
 });
 
 test("staff mutation buttons are disabled throughout every pending operation", () => {

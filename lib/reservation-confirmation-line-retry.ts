@@ -5,6 +5,7 @@ export type ConfirmationLineApiResult = {
   retried?: boolean;
   retryable?: boolean;
   status?: string;
+  errorCode?: string;
   retryAfterSeconds?: number;
   error?: string;
   message?: string;

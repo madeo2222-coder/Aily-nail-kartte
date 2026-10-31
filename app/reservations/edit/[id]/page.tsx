@@ -407,7 +407,7 @@ export default function EditReservationPage() {
     if (!reservationId) {
       setErrorMessage("予約IDが取得できませんでした");
       setLoading(false);
-      return;
+      return false;
     }
 
     setLoading(true);
@@ -425,7 +425,7 @@ export default function EditReservationPage() {
     } catch {
       setErrorMessage("予約情報の取得に失敗しました");
       setLoading(false);
-      return;
+      return false;
     }
 
     const result = (await response.json().catch(() => null)) as {
@@ -440,7 +440,7 @@ export default function EditReservationPage() {
     if (!response.ok || !result?.ok || !result.reservation) {
       setErrorMessage(result?.error || "予約情報の取得に失敗しました");
       setLoading(false);
-      return;
+      return false;
     }
 
     const reservation = result.reservation;
@@ -509,6 +509,7 @@ export default function EditReservationPage() {
     setMutationResultUnknown(false);
     setPageDataLoaded(true);
     setLoading(false);
+    return true;
   }
 
   useEffect(() => {
@@ -997,6 +998,16 @@ export default function EditReservationPage() {
       }
 
       if (!response.ok || !result.ok) {
+        if (result.errorCode === "stale_reservation") {
+          const refreshed = await loadPageData();
+          setErrorMessage(
+            refreshed
+              ? "予約内容が更新されていたため、最新の内容を画面に反映しました。内容を確認してから操作してください。"
+              : result.error || "予約内容が更新されています"
+          );
+          return;
+        }
+
         setErrorMessage(
           result.error || "別日時入力のLINE送信に失敗しました"
         );
