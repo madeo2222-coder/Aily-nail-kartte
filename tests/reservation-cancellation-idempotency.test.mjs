@@ -276,6 +276,7 @@ test("a stale edit page cannot cancel a reservation changed by sync", async () =
     assert.equal(response.body.ok, false, field);
     assert.equal(response.body.cancelled, false, field);
     assert.equal(response.body.status, "reservation_changed", field);
+    assert.equal(response.body.errorCode, "stale_reservation", field);
     assert.match(response.body.error, /最新の内容を読み込み直して/, field);
     assert.equal(runtime.updateCalled, false, field);
     assert.equal(runtime.fetchCalled, false, field);
@@ -498,6 +499,7 @@ test("a concurrent non-cancellation update is not reported as cancelled", async 
   assert.equal(response.body.ok, false);
   assert.equal(response.body.cancelled, false);
   assert.equal(response.body.status, "reservation_changed");
+  assert.equal(response.body.errorCode, "stale_reservation");
   assert.match(response.body.error, /再読み込み/);
   assert.equal(runtime.reservationQueryCount, 3);
   assert.equal(runtime.fetchCalled, false);
@@ -739,4 +741,29 @@ test("staff UI separates cancellation success from LINE warnings", () => {
       `${field} must be sent with cancellation`,
     );
   }
+});
+
+test("staff UI reloads a stale cancellation before another cancellation or LINE send", () => {
+  const functionStart = editPageSource.indexOf(
+    "async function cancelReservation()",
+  );
+  const nextFunction = editPageSource.indexOf(
+    "\n  async function ",
+    functionStart + 1,
+  );
+  const functionSource = editPageSource.slice(functionStart, nextFunction);
+
+  assert.match(
+    functionSource,
+    /result\.errorCode === "stale_reservation"[\s\S]{0,120}await loadPageData\(\)/,
+  );
+  assert.match(
+    functionSource,
+    /最新の内容を画面に反映しました。[\s\S]{0,100}もう一度キャンセルしてください。/,
+  );
+  assert.ok(
+    functionSource.indexOf('errorCode === "stale_reservation"') <
+      functionSource.indexOf('setStatus("キャンセル")'),
+    "stale cancellation stops before reporting cancellation success",
+  );
 });

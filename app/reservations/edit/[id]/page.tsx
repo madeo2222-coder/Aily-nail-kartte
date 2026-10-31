@@ -97,6 +97,7 @@ type CancellationResult = {
   ok?: boolean;
   cancelled?: boolean;
   alreadyCancelled?: boolean;
+  errorCode?: string;
   error?: string;
   line?: {
     status?: "sent" | "skipped" | "not_linked" | "failed" | "unknown";
@@ -1198,6 +1199,16 @@ export default function EditReservationPage() {
       }
 
       if (!response.ok || !result.ok) {
+        if (result.errorCode === "stale_reservation") {
+          const refreshed = await loadPageData();
+          setErrorMessage(
+            refreshed
+              ? "予約内容が更新されていたため、最新の内容を画面に反映しました。内容を確認してからもう一度キャンセルしてください。"
+              : result.error || "予約のキャンセルに失敗しました"
+          );
+          return;
+        }
+
         setErrorMessage(result.error || "予約のキャンセルに失敗しました");
         return;
       }

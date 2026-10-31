@@ -384,6 +384,7 @@ export async function POST(
           ok: false,
           cancelled: false,
           status: "reservation_changed",
+          errorCode: "stale_reservation",
           error:
             "予約内容が更新されています。最新の内容を読み込み直してください。",
         },
@@ -468,6 +469,7 @@ export async function POST(
             ok: false,
             cancelled: false,
             status: "reservation_changed",
+            errorCode: "stale_reservation",
             error:
               "別の操作で予約状態が更新されています。画面を再読み込みしてください。",
           },
