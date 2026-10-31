@@ -29,7 +29,11 @@ import {
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
 } from "@/lib/reservation-confirmation-email-retry";
-import { isExternalSyncedReservation } from "@/lib/external-reservation-metadata";
+import {
+  detectExternalReservationDisplayProvider,
+  detectExternalReservationProvider,
+  isExternalSyncedReservation,
+} from "@/lib/external-reservation-metadata";
 
 type ReservationRow = {
   id: string;
@@ -87,12 +91,13 @@ type NormalizedReservation = {
   rawStartAt: string | null;
   rawEndAt: string | null;
   rawMemo: string | null;
+  rawSource: string | null;
   status: string;
   reservationDate: string | null;
   reservationTime: string | null;
   menuName: string;
   durationMinutes: number;
-  source: string;
+  sourceLabel: string;
   memo: string;
   createdAt: string | null;
 };
@@ -305,6 +310,25 @@ function normalizeStatus(row: ReservationRow) {
 
 function normalizeSource(row: ReservationRow) {
   return pickString(row, ["source"], "手入力");
+}
+
+function normalizeSourceLabel(row: ReservationRow) {
+  const metadata = {
+    source: pickNullableString(row, ["source"]),
+    memo: pickNullableString(row, ["memo", "note"]),
+  };
+  const syncedProvider = detectExternalReservationProvider(metadata);
+  const displayProvider = detectExternalReservationDisplayProvider(metadata);
+
+  if (displayProvider === "hpb") {
+    return syncedProvider === "hpb" ? "HPB同期" : "HPB予約";
+  }
+
+  if (displayProvider === "minimo") {
+    return syncedProvider === "minimo" ? "ミニモ同期" : "ミニモ予約";
+  }
+
+  return normalizeSource(row);
 }
 
 function normalizeMenuName(row: ReservationRow) {
@@ -645,12 +669,14 @@ export default function ReservationsPageClient() {
           typeof reservation.end_at === "string" ? reservation.end_at : null,
         rawMemo:
           typeof reservation.memo === "string" ? reservation.memo : null,
+        rawSource:
+          typeof reservation.source === "string" ? reservation.source : null,
         status: normalizeStatus(reservation),
         reservationDate: buildReservationDate(reservation),
         reservationTime: buildReservationTime(reservation),
         menuName: normalizeMenuName(reservation),
         durationMinutes: normalizeDurationMinutes(reservation),
-        source: normalizeSource(reservation),
+        sourceLabel: normalizeSourceLabel(reservation),
         memo,
         createdAt:
           typeof reservation.created_at === "string"
@@ -1363,7 +1389,10 @@ export default function ReservationsPageClient() {
               const isOverlap = overlapIds.has(item.id);
               const galleryReference = item.galleryReference;
               const displayMemo = buildDisplayMemo(item.memo);
-              const isExternalSynced = isExternalSyncedReservation(item);
+              const isExternalSynced = isExternalSyncedReservation({
+                source: item.rawSource,
+                memo: item.rawMemo,
+              });
 
               return (
                 <div
@@ -1390,7 +1419,7 @@ export default function ReservationsPageClient() {
                         </span>
 
                         <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-700">
-                          {item.source || "手入力"}
+                          {item.sourceLabel}
                         </span>
 
                         {item.isAiDiagnosis ? (

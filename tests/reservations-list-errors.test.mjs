@@ -790,3 +790,25 @@ test("reservation list keeps Naily actions when a customer memo only mentions a 
   });
   assert.equal(requested.hasButton("予約確定・通知送信"), true);
 });
+
+test("reservation list distinguishes manual external entries from synced bookings", async () => {
+  for (const [reservationMemo, expectedLabel] of [
+    ["外部予約種別：ホットペッパー\n電話受付で先に登録", "HPB予約"],
+    ["外部予約種別：ミニモ", "ミニモ予約"],
+  ]) {
+    const page = await mount({
+      reservationStatus: "requested",
+      reservationMemo,
+    });
+
+    assert.match(page.html(), new RegExp(`>${expectedLabel}<`));
+    assert.equal(page.hasButton("予約確定・通知送信"), true);
+  }
+
+  const synced = await mount({
+    reservationStatus: "requested",
+    reservationSource: "HPB",
+  });
+  assert.match(synced.html(), />HPB同期</);
+  assert.equal(synced.hasButton("予約確定・通知送信"), false);
+});
