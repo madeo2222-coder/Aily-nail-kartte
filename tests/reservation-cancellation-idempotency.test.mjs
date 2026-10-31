@@ -220,6 +220,22 @@ test("does not cancel customer-linked HPB or minimo reservations", async () => {
   }
 });
 
+test("cancels a customer-app reservation whose memo only mentions booking sites", async () => {
+  const memo = "ミニモで見たデザイン。ホットペッパーの写真を参考にしたい。";
+  const runtime = loadRoute("予約", { source: "customer-app", memo });
+  const response = await runtime.post(
+    cancellationBody("予約", {
+      sendLine: false,
+      expectedMemo: memo,
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.cancelled, true);
+  assert.equal(runtime.updateCalled, true);
+  assert.equal(runtime.fetchCalled, false);
+});
+
 test("every supported cancelled status is idempotent and does not resend LINE", async () => {
   for (const status of [
     "キャンセル",

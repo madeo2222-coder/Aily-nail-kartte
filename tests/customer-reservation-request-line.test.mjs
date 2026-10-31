@@ -323,6 +323,36 @@ test("legacy full-width HPB reservations keep customer edits disabled", async ()
   assert.equal(runtime.lineCalls.length, 0);
 });
 
+test("customer actions remain available when the memo only mentions booking sites", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      staff_id: null,
+      status: "confirmed",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T02:30:00.000Z",
+      updated_at: "2099-09-01T00:00:00.000Z",
+      source: "customer-app",
+      memo: "ミニモで見たデザイン。ホットペッパーの写真を参考にしたい。",
+    },
+  });
+
+  const detail = await runtime.get();
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.reservation.externalReservation, false);
+  assert.equal(detail.body.reservation.canRequestChange, true);
+
+  const mutation = await runtime.patch({
+    expectedRequestRevision: detail.body.reservation.requestRevision,
+  });
+  assert.equal(mutation.status, 200);
+  assert.equal(mutation.body.ok, true);
+  assert.equal(runtime.lineCalls.length, 1);
+});
+
 test("confirmed change request succeeds only after LINE accepts it", async () => {
   const runtime = loadRoute();
   const detail = await runtime.get();

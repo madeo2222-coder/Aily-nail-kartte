@@ -299,6 +299,37 @@ test("rejects a legacy full-width HPB reservation before claiming or sending", a
   assert.equal(runtime.lineCalls.length, 0);
 });
 
+test("sends an alternative-time request when a customer memo only mentions booking sites", async () => {
+  const memo = "ミニモで見たデザイン。ホットペッパーの写真を参考にしたい。";
+  const reservation = {
+    id: "reservation-1",
+    salon_id: "salon-1",
+    customer_id: "customer-1",
+    staff_id: "staff-1",
+    menu: "ワンカラー",
+    status: "requested",
+    start_at: "2099-10-02T01:30:00.000Z",
+    end_at: "2099-10-02T02:30:00.000Z",
+    source: "customer-app",
+    memo,
+  };
+  const runtime = loadRoute({ reservation });
+  const response = await runtime.post({
+    expectedCustomerId: reservation.customer_id,
+    expectedStaffId: reservation.staff_id,
+    expectedMenu: reservation.menu,
+    expectedStartAt: reservation.start_at,
+    expectedEndAt: reservation.end_at,
+    expectedStatus: reservation.status,
+    expectedMemo: reservation.memo,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.sent, true);
+  assert.equal(runtime.claimCalls.length, 1);
+  assert.equal(runtime.lineCalls.length, 1);
+});
+
 test("requires the complete reservation snapshot before privileged work", async () => {
   for (const body of [
     new Error("missing body"),

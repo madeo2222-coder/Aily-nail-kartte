@@ -283,6 +283,23 @@ test("does not confirm customer-linked HPB or minimo reservations", async () => 
   }
 });
 
+test("confirms a customer-app reservation whose free-text memo mentions booking sites", async () => {
+  const memo = "ミニモで見たデザイン。ホットペッパーの写真を参考にしたい。";
+  const runtime = loadRoute({
+    reservation: {
+      ...defaultReservation,
+      source: "customer-app",
+      memo,
+    },
+    body: confirmationSnapshotBody({ expectedMemo: memo }),
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.confirmed, true);
+  assert.equal(runtime.rpcCalls.length, 1);
+});
+
 test("edited confirmation requires the original reservation snapshot", async () => {
   for (const field of [
     "expectedCustomerId",

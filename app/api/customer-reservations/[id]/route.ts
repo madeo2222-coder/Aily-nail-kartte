@@ -114,6 +114,7 @@ function isExternalReservation(row: AnyRow) {
     .toLowerCase();
   const memo = getString(row, ["memo", "note"])
     .normalize("NFKC")
+    .replace(/\s+/g, "")
     .toLowerCase();
 
   return (
@@ -123,9 +124,7 @@ function isExternalReservation(row: AnyRow) {
     source.includes("minimo") ||
     source.includes("ミニモ") ||
     memo.includes("hpb予約番号") ||
-    memo.includes("ホットペッパー") ||
-    memo.includes("ミニモ予約id") ||
-    memo.includes("ミニモ")
+    memo.includes("ミニモ予約id")
   );
 }
 

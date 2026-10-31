@@ -619,6 +619,31 @@ test("staff edit API rejects external synced reservation changes and deletes", a
   }
 });
 
+test("staff can edit a customer-app reservation whose memo only mentions booking sites", async () => {
+  const memo = "ミニモで見たデザイン。ホットペッパーの写真を参考にしたい。";
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservationSingle: {
+        data: { ...reservation, source: "customer-app", memo },
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.PATCH(
+    patchRequest({ expectedMemo: memo }),
+    context(),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    true,
+  );
+});
+
 test("staff edit retry never treats an external synced reservation as an already applied update", async () => {
   const runtime = executeRoute({
     authentication: principal(),

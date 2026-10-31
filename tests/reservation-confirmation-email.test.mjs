@@ -329,6 +329,21 @@ test("does not send Naily confirmation email for a legacy external reservation",
   }
 });
 
+test("sends confirmation email when a customer memo only mentions booking sites", async () => {
+  const reservation = {
+    ...defaultReservation,
+    source: "customer-app",
+    memo: "ミニモで見たデザイン。ホットペッパーの写真を参考にしたい。",
+  };
+  const runtime = loadRoute({ reservationReads: [reservation, reservation] });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.sent, true);
+  assert.equal(runtime.resendCreated, 1);
+  assert.equal(runtime.sendCalls.length, 1);
+});
+
 test("skips a customer without email before creating Resend", async () => {
   const runtime = loadRoute({
     customer: { id: "customer-1", salon_id: "salon-1", name: "顧客" },

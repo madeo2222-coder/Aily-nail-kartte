@@ -114,7 +114,10 @@ function getConfirmReservationRow(value: unknown) {
 
 function isExternalReservation(reservation: ReservationRow) {
   const source = (reservation.source || "").normalize("NFKC").toLowerCase();
-  const memo = (reservation.memo || "").normalize("NFKC").toLowerCase();
+  const memo = (reservation.memo || "")
+    .normalize("NFKC")
+    .replace(/\s+/g, "")
+    .toLowerCase();
 
   return (
     source.includes("hpb") ||
@@ -123,9 +126,7 @@ function isExternalReservation(reservation: ReservationRow) {
     source.includes("minimo") ||
     source.includes("ミニモ") ||
     memo.includes("hpb予約番号") ||
-    memo.includes("ホットペッパー") ||
-    memo.includes("ミニモ予約id") ||
-    memo.includes("ミニモ")
+    memo.includes("ミニモ予約id")
   );
 }
 

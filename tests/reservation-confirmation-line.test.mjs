@@ -455,6 +455,29 @@ test("does not send Naily confirmation LINE for a legacy external reservation", 
   }
 });
 
+test("sends confirmation LINE when a customer memo only mentions booking sites", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      salon_id: "salon-1",
+      customer_id: "customer-1",
+      staff_id: "staff-1",
+      status: "confirmed",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      source: "customer-app",
+      memo: "ミニモで見たデザイン。ホットペッパーの写真を参考にしたい。",
+    },
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.sent, true);
+  assert.equal(runtime.claimCalls.length, 1);
+  assert.equal(runtime.lineCalls.length, 1);
+});
+
 test("does not invite a retry when a confirmation network failure cannot be recorded", async () => {
   for (const completionResult of [
     { data: false, error: null },
