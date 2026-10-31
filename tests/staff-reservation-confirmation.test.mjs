@@ -93,7 +93,7 @@ function createReadQuery(row, calls, error = null) {
 
 function loadRoute({
   authenticated = true,
-  body = {},
+  body = confirmationSnapshotBody(),
   rawBody,
   reservation,
   rpcResult = [{ outcome: "confirmed", reservation_id: "reservation-1" }],
@@ -226,13 +226,14 @@ test("rejects malformed or empty JSON before reading or confirming a reservation
   }
 });
 
-test("preserves the reservation list's explicit empty JSON confirmation", async () => {
+test("rejects an empty JSON confirmation before reading a stale reservation", async () => {
   const runtime = loadRoute({ rawBody: "{}" });
   const response = await runtime.post();
-  assert.equal(response.status, 200);
-  assert.equal(response.body.confirmed, true);
-  assert.equal(runtime.rpcCalls.length, 1);
-  assert.equal(runtime.rpcCalls[0].args.p_start_at, "2099-10-02T01:30:00.000Z");
+  assert.equal(response.status, 400);
+  assert.equal(response.body.confirmed, false);
+  assert.match(response.body.error, /予約内容を読み直して/);
+  assert.equal(runtime.clientCreated, false);
+  assert.equal(runtime.rpcCalls.length, 0);
 });
 
 test("scopes the reservation read and atomic confirmation to the staff salon", async () => {
@@ -302,7 +303,7 @@ test("edited confirmation requires the original reservation snapshot", async () 
   }
 });
 
-test("list confirmation requires a complete snapshot when one is supplied", async () => {
+test("list confirmation requires a complete snapshot", async () => {
   for (const field of [
     "expectedCustomerId",
     "expectedStaffId",
@@ -379,6 +380,10 @@ test("returns a conflict when the final database check finds an overlap", async 
 
 test("rejects an elapsed reservation before the confirmation RPC", async () => {
   const runtime = loadRoute({
+    body: confirmationSnapshotBody({
+      expectedStartAt: "2020-10-02T01:30:00.000Z",
+      expectedEndAt: "2020-10-02T03:00:00.000Z",
+    }),
     reservation: {
       id: "reservation-1",
       salon_id: "salon-1",

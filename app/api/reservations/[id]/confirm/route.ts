@@ -191,9 +191,6 @@ export async function POST(
     );
   }
 
-  const hasEditedValues = Object.values(parsedFields).some(
-    (field) => field?.provided
-  );
   const expectedFields = {
     customerId: parseSnapshotString(body, "expectedCustomerId"),
     staffId: parseSnapshotString(body, "expectedStaffId"),
@@ -203,18 +200,7 @@ export async function POST(
     status: parseSnapshotString(body, "expectedStatus"),
     memo: parseSnapshotString(body, "expectedMemo"),
   };
-  const hasExpectedSnapshot = [
-    "expectedCustomerId",
-    "expectedStaffId",
-    "expectedMenu",
-    "expectedStartAt",
-    "expectedEndAt",
-    "expectedStatus",
-    "expectedMemo",
-  ].some((field) => field in body);
-
   if (
-    (hasEditedValues || hasExpectedSnapshot) &&
     Object.values(expectedFields).some(
       (field) => field === null || !field.provided
     )
@@ -268,8 +254,7 @@ export async function POST(
     }
 
     if (
-      hasExpectedSnapshot &&
-      (reservation.customer_id !== expectedFields.customerId!.value ||
+      reservation.customer_id !== expectedFields.customerId!.value ||
         reservation.staff_id !== expectedFields.staffId!.value ||
         reservation.menu !== expectedFields.menu!.value ||
         !sameStoredDateTime(
@@ -278,7 +263,7 @@ export async function POST(
         ) ||
         !sameStoredDateTime(reservation.end_at, expectedFields.endAt!.value) ||
         reservation.status !== expectedFields.status!.value ||
-        reservation.memo !== expectedFields.memo!.value)
+        reservation.memo !== expectedFields.memo!.value
     ) {
       return NextResponse.json(
         {
