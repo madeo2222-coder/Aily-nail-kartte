@@ -1294,6 +1294,7 @@ export default function EditReservationPage() {
       );
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
+        errorCode?: string;
         error?: string;
       } | null;
 
@@ -1304,6 +1305,16 @@ export default function EditReservationPage() {
       }
 
       if (!response.ok || !result.ok) {
+        if (result.errorCode === "stale_reservation") {
+          const refreshed = await loadPageData();
+          setErrorMessage(
+            refreshed
+              ? "予約内容が更新されていたため、最新の内容を画面に反映しました。内容を確認してからもう一度保存してください。"
+              : result.error || "予約の更新に失敗しました"
+          );
+          return;
+        }
+
         setErrorMessage(result.error || "予約の更新に失敗しました");
         return;
       }
@@ -1356,6 +1367,7 @@ export default function EditReservationPage() {
       );
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
+        errorCode?: string;
         error?: string;
       } | null;
 
@@ -1366,6 +1378,16 @@ export default function EditReservationPage() {
       }
 
       if (!response.ok || !result.ok) {
+        if (result.errorCode === "stale_reservation") {
+          const refreshed = await loadPageData();
+          setErrorMessage(
+            refreshed
+              ? "予約内容が更新されていたため、最新の内容を画面に反映しました。内容を確認してからもう一度削除してください。"
+              : result.error || "予約の削除に失敗しました"
+          );
+          return;
+        }
+
         setErrorMessage(result.error || "予約の削除に失敗しました");
         return;
       }

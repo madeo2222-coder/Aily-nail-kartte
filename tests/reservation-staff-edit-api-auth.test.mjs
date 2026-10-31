@@ -519,6 +519,7 @@ for (const [field, value] of [
     const body = await response.json();
 
     assert.equal(response.status, 409);
+    assert.equal(body.errorCode, "stale_reservation");
     assert.match(body.error, /最新の内容を読み込み直して/);
     assert.equal(
       runtime.calls.some((call) => call.operation === "update"),
@@ -541,6 +542,7 @@ test("staff edit refuses a stale screen after booking sync changed the memo", as
   const body = await response.json();
 
   assert.equal(response.status, 409);
+  assert.equal(body.errorCode, "stale_reservation");
   assert.match(body.error, /最新の内容を読み込み直して/);
   assert.equal(
     runtime.calls.some((call) => call.operation === "update"),
@@ -566,6 +568,7 @@ test("staff edit refuses a stale screen after booking sync moved the time", asyn
   const body = await response.json();
 
   assert.equal(response.status, 409);
+  assert.equal(body.errorCode, "stale_reservation");
   assert.match(body.error, /最新の内容を読み込み直して/);
   assert.equal(
     runtime.calls.some((call) => call.operation === "update"),
@@ -674,6 +677,7 @@ test("staff edit reports a write-time sync race as a conflict", async () => {
   const body = await response.json();
 
   assert.equal(response.status, 409);
+  assert.equal(body.errorCode, "stale_reservation");
   assert.match(body.error, /最新の内容を読み込み直して/);
 });
 
@@ -1025,6 +1029,7 @@ test("staff delete refuses a stale screen after booking sync changed details", a
   const body = await response.json();
 
   assert.equal(response.status, 409);
+  assert.equal(body.errorCode, "stale_reservation");
   assert.match(body.error, /最新の内容を読み込み直して/);
   assert.equal(
     runtime.calls.some((call) => call.operation === "delete"),
@@ -1041,6 +1046,7 @@ test("staff delete reports a write-time sync race as a conflict", async () => {
   const body = await response.json();
 
   assert.equal(response.status, 409);
+  assert.equal(body.errorCode, "stale_reservation");
   assert.match(body.error, /最新の内容を読み込み直して/);
 });
 
@@ -1155,4 +1161,35 @@ test("reservation edit page uses the guarded API and synchronous request locks",
   assert.match(pageSource, /setInitialSource\(reservation\.source\)/);
   assert.match(pageSource, /!isExternalSynced/);
   assert.match(pageSource, /getReservationStatusLabel\(value, "予約受付"\)/);
+});
+
+test("reservation edit page reloads only stale update and delete conflicts", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  for (const [functionName, action] of [
+    ["handleSubmit", "保存"],
+    ["handleDelete", "削除"],
+  ]) {
+    const functionStart = pageSource.indexOf(`async function ${functionName}`);
+    const nextFunction = pageSource.indexOf(
+      "\n  async function ",
+      functionStart + 1,
+    );
+    const functionSource = pageSource.slice(
+      functionStart,
+      nextFunction === -1 ? undefined : nextFunction,
+    );
+
+    assert.match(
+      functionSource,
+      /result\.errorCode === "stale_reservation"[\s\S]{0,120}await loadPageData\(\)/,
+    );
+    assert.match(
+      functionSource,
+      new RegExp(`最新の内容を画面に反映しました。[\\s\\S]{0,100}もう一度${action}してください。`),
+    );
+  }
 });

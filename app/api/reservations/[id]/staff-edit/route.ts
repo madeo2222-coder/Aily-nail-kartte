@@ -60,6 +60,18 @@ function errorResponse(error: string, status: number) {
   return NextResponse.json({ ok: false, error }, { status });
 }
 
+function staleReservationResponse() {
+  return NextResponse.json(
+    {
+      ok: false,
+      error:
+        "予約内容が更新されています。最新の内容を読み込み直してください。",
+      errorCode: "stale_reservation",
+    },
+    { status: 409 },
+  );
+}
+
 function internalErrorResponse() {
   return errorResponse(
     "予約を更新できませんでした。通信状況を確認して再試行してください。",
@@ -483,10 +495,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         });
       }
 
-      return errorResponse(
-        "予約内容が更新されています。最新の内容を読み込み直してください。",
-        409,
-      );
+      return staleReservationResponse();
     }
 
     const nextStartTime = new Date(startAt).getTime();
@@ -677,10 +686,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         });
       }
 
-      return errorResponse(
-        "予約内容が更新されています。最新の内容を読み込み直してください。",
-        409,
-      );
+      return staleReservationResponse();
     }
 
     return NextResponse.json({ ok: true, id: updateResult.data.id });
@@ -793,10 +799,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       ) ||
       !sameStoredDateTime(reservationResult.data.end_at, expectedEndAt)
     ) {
-      return errorResponse(
-        "予約内容が更新されています。最新の内容を読み込み直してください。",
-        409,
-      );
+      return staleReservationResponse();
     }
 
     if (isExternalSyncedReservation(reservationResult.data)) {
@@ -862,10 +865,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         });
       }
 
-      return errorResponse(
-        "予約内容が更新されています。最新の内容を読み込み直してください。",
-        409,
-      );
+      return staleReservationResponse();
     }
 
     return NextResponse.json({ ok: true, id: deleteResult.data.id });
