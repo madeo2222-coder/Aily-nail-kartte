@@ -936,7 +936,7 @@ test("staff UI blocks an alternative-time LINE request while reservation edits a
   );
   const functionSource = pageSource.slice(functionStart, nextFunction);
   const guardIndex = functionSource.indexOf(
-    "if (hasUnsavedAlternativeRequestChanges)"
+    "if (hasUnsavedReservationChanges)"
   );
 
   assert.notEqual(guardIndex, -1, "unsaved edit guard exists");
@@ -958,11 +958,60 @@ test("staff UI blocks an alternative-time LINE request while reservation edits a
   );
   assert.match(
     pageSource,
-    /const hasUnsavedAlternativeRequestChanges = useMemo\([\s\S]{0,1800}initialSalonId[\s\S]{0,1800}initialCustomerId[\s\S]{0,1800}initialStaffId[\s\S]{0,1800}initialMenu[\s\S]{0,1800}initialStartAt[\s\S]{0,1800}initialEndAt[\s\S]{0,1800}initialStoredStatus[\s\S]{0,1800}initialMemo/
+    /const hasUnsavedReservationChanges = useMemo\([\s\S]{0,1800}initialSalonId[\s\S]{0,1800}initialCustomerId[\s\S]{0,1800}initialStaffId[\s\S]{0,1800}initialMenu[\s\S]{0,1800}initialStartAt[\s\S]{0,1800}initialEndAt[\s\S]{0,1800}initialStoredStatus[\s\S]{0,1800}initialMemo/
   );
   assert.match(
     pageSource,
     /未保存の変更があります。先に変更を保存するか、最新情報を再読み込みしてください。/
+  );
+});
+
+test("staff UI blocks confirmation notification retries while reservation edits are unsaved", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  for (const [functionName, sendMarker] of [
+    ["retryConfirmationLine", "await fetch("],
+    ["retryConfirmationEmail", "sendConfirmationEmailNotice("],
+  ]) {
+    const functionStart = pageSource.indexOf(`async function ${functionName}()`);
+    const nextFunction = pageSource.indexOf(
+      "\n  async function ",
+      functionStart + 1
+    );
+    const functionSource = pageSource.slice(functionStart, nextFunction);
+    const guardIndex = functionSource.indexOf(
+      "if (hasUnsavedReservationChanges)"
+    );
+
+    assert.notEqual(guardIndex, -1, `${functionName} unsaved edit guard exists`);
+    assert.ok(
+      guardIndex < functionSource.indexOf("window.confirm("),
+      `${functionName} checks unsaved edits before confirmation`
+    );
+    assert.ok(
+      guardIndex < functionSource.indexOf(sendMarker),
+      `${functionName} checks unsaved edits before sending`
+    );
+    assert.match(
+      functionSource,
+      /未保存の変更があります。[\s\S]{0,90}変更を保存[\s\S]{0,140}確定通知を再試行[\s\S]{0,100}return;/
+    );
+  }
+
+  assert.match(
+    pageSource,
+    /hasUnsavedReservationChanges \? \([\s\S]{0,240}未保存の変更があります。[\s\S]{0,120}確定通知を再試行してください。/
+  );
+  assert.match(
+    pageSource,
+    /if \(confirmation\.confirmed\) \{[\s\S]{0,900}setInitialCustomerId\([\s\S]{0,900}setInitialStaffId\([\s\S]{0,900}setInitialMenu\([\s\S]{0,900}setInitialStartAt\([\s\S]{0,900}setInitialEndAt\([\s\S]{0,900}setInitialMemo\(/
+  );
+  assert.match(
+    pageSource,
+    /setInitialStatus\("confirmed"\);[\s\S]{0,120}setInitialStoredStatus\("confirmed"\);[\s\S]{0,120}setStatus\("confirmed"\);/
   );
 });
 

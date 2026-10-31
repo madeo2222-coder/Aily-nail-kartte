@@ -613,7 +613,7 @@ export default function EditReservationPage() {
     return getDurationLabel(date, startTime, endTime);
   }, [date, startTime, endTime]);
 
-  const hasUnsavedAlternativeRequestChanges = useMemo(() => {
+  const hasUnsavedReservationChanges = useMemo(() => {
     const currentMemo =
       buildMemoForSave(galleryReference, memo, syncedMemo) || null;
 
@@ -841,6 +841,19 @@ export default function EditReservationPage() {
       }`;
     }
 
+    if (confirmation.confirmed) {
+      const confirmedMemo =
+        buildMemoForSave(galleryReference, memo, syncedMemo) || "";
+      setInitialSalonId(salonId || null);
+      setInitialCustomerId(isExternalBlock ? null : customerId || null);
+      setInitialStaffId(staffId || null);
+      setInitialMenu(menu || null);
+      setInitialStartAt(dateTime.startAt);
+      setInitialEndAt(dateTime.endAt);
+      setInitialMemo(confirmedMemo);
+    }
+    setInitialStatus("confirmed");
+    setInitialStoredStatus("confirmed");
     setStatus("confirmed");
     setWasInitiallyConfirmed(true);
     setSuccessMessage(
@@ -865,6 +878,14 @@ export default function EditReservationPage() {
 
   async function retryConfirmationLine() {
     if (!reservationId || mutationRequestPendingRef.current) return;
+
+    if (hasUnsavedReservationChanges) {
+      setErrorMessage(
+        "予約内容に未保存の変更があります。先に「変更を保存」するか、最新情報を再読み込みしてから確定通知を再試行してください。"
+      );
+      setSuccessMessage("");
+      return;
+    }
 
     const storedLock = readConfirmationLineRetryLock(
       window.localStorage,
@@ -938,6 +959,14 @@ export default function EditReservationPage() {
   async function retryConfirmationEmail() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
+    if (hasUnsavedReservationChanges) {
+      setErrorMessage(
+        "予約内容に未保存の変更があります。先に「変更を保存」するか、最新情報を再読み込みしてから確定通知を再試行してください。"
+      );
+      setSuccessMessage("");
+      return;
+    }
+
     const retryNotice =
       readConfirmationEmailRetryNotice(
         window.localStorage,
@@ -994,7 +1023,7 @@ export default function EditReservationPage() {
   async function requestAlternativeTime() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
-    if (hasUnsavedAlternativeRequestChanges) {
+    if (hasUnsavedReservationChanges) {
       setErrorMessage(
         "予約内容に未保存の変更があります。先に「変更を保存」するか、最新情報を再読み込みしてから別日時を依頼してください。"
       );
@@ -1522,6 +1551,13 @@ export default function EditReservationPage() {
                             "確定メールを再試行"}
                       </button>
                     ) : null}
+                    {!isExternalBlock &&
+                    !isExternalSynced &&
+                    hasUnsavedReservationChanges ? (
+                      <p className="max-w-sm text-xs font-bold leading-5 text-amber-800">
+                        未保存の変更があります。先に変更を保存するか、最新情報を再読み込みしてから確定通知を再試行してください。
+                      </p>
+                    ) : null}
                   </div>
                 ) : isExternalSynced ? (
                   <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
@@ -1548,7 +1584,7 @@ export default function EditReservationPage() {
                     <p className="mt-1 text-xs leading-5 text-amber-800">
                       LINE連携済みのお客様へお知らせし、この予約の別希望日時入力ページへ案内します。送信済みの場合は重複送信しません。
                     </p>
-                    {hasUnsavedAlternativeRequestChanges ? (
+                    {hasUnsavedReservationChanges ? (
                       <p className="mt-2 text-xs font-bold leading-5 text-amber-900">
                         未保存の変更があります。先に変更を保存するか、最新情報を再読み込みしてください。
                       </p>
