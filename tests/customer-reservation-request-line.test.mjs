@@ -104,6 +104,8 @@ function loadRoute({
   reservationReadError = null,
   staff = { id: "staff-1", name: "テスト担当" },
   staffReadError = null,
+  cancelRpcResult = { outcome: "cancelled", reservation_id: "reservation-1" },
+  updateRpcResult = { outcome: "updated", reservation_id: "reservation-1" },
 } = {}) {
   const lineCalls = [];
   const rpcCalls = [];
@@ -167,14 +169,14 @@ function loadRoute({
 
       if (name === "cancel_customer_requested_reservation") {
         return {
-          data: [{ outcome: "cancelled", reservation_id: "reservation-1" }],
+          data: [cancelRpcResult],
           error: null,
         };
       }
 
       if (name === "update_customer_requested_reservation") {
         return {
-          data: [{ outcome: "updated", reservation_id: "reservation-1" }],
+          data: [updateRpcResult],
           error: null,
         };
       }
@@ -390,6 +392,7 @@ test("stale confirmed request content stops before LINE delivery", async () => {
 
   assert.equal(response.status, 409);
   assert.equal(response.body.ok, false);
+  assert.equal(response.body.errorCode, "stale_reservation");
   assert.equal(response.body.retryable, false);
   assert.equal(response.body.deliveryStatus, "not_sent");
   assert.match(response.body.error, /予約内容が更新/);
@@ -426,8 +429,46 @@ test("stale requested reservation stops direct update and cancellation before wr
 
     assert.equal(response.status, 409);
     assert.equal(response.body.ok, false);
+    assert.equal(response.body.errorCode, "stale_reservation");
     assert.match(response.body.error, /予約内容が更新/);
     assert.equal(runtime.rpcCalls.length, 0);
+    assert.equal(runtime.lineCalls.length, 0);
+  }
+});
+
+test("concurrent requested reservation writes return a refreshable stale code", async () => {
+  for (const action of ["update", "cancel"]) {
+    const runtime = loadRoute({
+      reservation: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        salon_id: "salon-1",
+        staff_id: "staff-1",
+        status: "requested",
+        menu: "ワンカラー",
+        start_at: "2099-10-02T01:30:00.000Z",
+        end_at: "2099-10-02T03:00:00.000Z",
+        updated_at: "2099-09-01T00:00:00.000Z",
+        source: "customer-app",
+        memo: "元の希望",
+      },
+      cancelRpcResult: { outcome: "stale", reservation_id: null },
+      updateRpcResult: { outcome: "stale", reservation_id: null },
+    });
+    const response = await runtime.patch({
+      action,
+      date: "2099-10-03",
+      time: "10:30",
+      menu: "フレンチ",
+      staffId: "staff-1",
+      memo: "変更後",
+      durationMinutes: 90,
+    });
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.errorCode, "stale_reservation");
+    assert.match(response.body.error, /最新の内容/);
     assert.equal(runtime.lineCalls.length, 0);
   }
 });

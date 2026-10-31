@@ -231,7 +231,7 @@ export default function CustomerReservationDetailPage() {
 
   const fetchReservation = useCallback(async (
     { preserveCurrent = false }: { preserveCurrent?: boolean } = {}
-  ) => {
+  ): Promise<boolean> => {
     if (!preserveCurrent) {
       setLoading(true);
       setReservation(null);
@@ -271,7 +271,7 @@ export default function CustomerReservationDetailPage() {
         setReservation(null);
         setStaffs([]);
         setErrorMessage("ログイン状態の確認に失敗しました");
-        return;
+        return false;
       }
 
       if (!sessionJson.authenticated) {
@@ -279,21 +279,21 @@ export default function CustomerReservationDetailPage() {
         setStaffs([]);
         setErrorMessage("予約内容を確認するにはLINEログインが必要です");
         setSignedOut(true);
-        return;
+        return false;
       }
 
       if (!reservationResponse.ok || !reservationJson.ok) {
         showReadFailure(
           reservationJson.error || "予約情報の取得に失敗しました"
         );
-        return;
+        return false;
       }
 
       const nextReservation = reservationJson.reservation || null;
 
       if (!nextReservation) {
         showReadFailure("予約情報が見つかりません");
-        return;
+        return false;
       }
 
       const staffResult = await fetch("/api/customer-reservations/staffs", {
@@ -305,7 +305,7 @@ export default function CustomerReservationDetailPage() {
         showReadFailure(
           staffJson.error || "担当スタッフ情報の取得に失敗しました"
         );
-        return;
+        return false;
       }
 
       const parts = getJstInputParts(nextReservation.startAt);
@@ -324,9 +324,11 @@ export default function CustomerReservationDetailPage() {
       setStaffs(staffJson.staffs || []);
       setReservation(nextReservation);
       setRefreshErrorMessage("");
+      return true;
     } catch (error) {
       console.error(error);
       showReadFailure("予約情報の読み込みに失敗しました");
+      return false;
     } finally {
       if (!preserveCurrent) {
         setLoading(false);
@@ -431,6 +433,7 @@ export default function CustomerReservationDetailPage() {
         ok?: boolean;
         message?: string;
         error?: string;
+        errorCode?: string;
         notificationWarning?: string;
         retryable?: boolean;
         deliveryStatus?: string;
@@ -480,6 +483,16 @@ export default function CustomerReservationDetailPage() {
       }
 
       if (!response.ok || !json.ok) {
+        if (json.errorCode === "stale_reservation") {
+          const refreshed = await fetchReservation({ preserveCurrent: true });
+          setErrorMessage(
+            refreshed
+              ? "予約内容が更新されていたため、最新の内容を画面に反映しました。内容を確認してから操作してください。"
+              : json.error || "予約内容が更新されています"
+          );
+          return;
+        }
+
         setErrorMessage(json.error || "予約操作に失敗しました");
         return;
       }

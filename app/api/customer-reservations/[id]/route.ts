@@ -527,6 +527,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           ok: false,
+          errorCode: "stale_reservation",
           error:
             "予約内容が更新されています。最新の内容を読み込み直してから操作してください",
           ...(action === "request_change" || action === "request_cancel"
@@ -575,6 +576,7 @@ export async function PATCH(
         return NextResponse.json(
           {
             ok: false,
+            errorCode: "stale_reservation",
             error:
               "予約状態が更新されています。最新の内容を読み込み直してください",
           },
@@ -855,6 +857,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           ok: false,
+          errorCode: "stale_reservation",
           error:
             "予約状態が更新されています。最新の内容を読み込み直してください",
         },

@@ -57,6 +57,7 @@ function response({ ok = true, body = {} } = {}) {
 async function loadPage({
   reservationId = "reservation-1",
   reservationResponse,
+  reservationRefreshResponse,
   reservationRefreshError,
   patchResponse,
   patchError,
@@ -123,6 +124,10 @@ async function loadPage({
 
       if (reservationReadCount > 1 && reservationRefreshError) {
         throw reservationRefreshError;
+      }
+
+      if (reservationReadCount > 1 && reservationRefreshResponse) {
+        return reservationRefreshResponse;
       }
 
       return reservationResponse ?? response({
@@ -396,6 +401,100 @@ test("keeps the saved result and blocks stale actions when post-save refresh fai
       ["/api/customer-reservations/reservation-1", "GET"],
       ["/api/line-login/me", "GET"],
     ]
+  );
+});
+
+test("refreshes stale reservation content before allowing another action", async () => {
+  const page = await loadPage({
+    patchResponse: response({
+      ok: false,
+      body: {
+        ok: false,
+        errorCode: "stale_reservation",
+        error: "予約内容が更新されています",
+      },
+    }),
+    reservationRefreshResponse: response({
+      body: {
+        ok: true,
+        reservation: {
+          id: "reservation-1",
+          customerId: "customer-1",
+          menu: "最新のマグネットネイル",
+          memo: "スタッフ更新済み",
+          status: "requested",
+          staffId: "staff-1",
+          staffName: "テスト担当",
+          salonId: "salon-1",
+          source: "customer",
+          startAt: "2099-10-03T02:00:00.000Z",
+          endAt: "2099-10-03T03:30:00.000Z",
+          requestRevision: "revision-2",
+          externalReservation: false,
+          canDirectEdit: true,
+          canDirectCancel: true,
+          canRequestChange: false,
+          canRequestCancel: false,
+        },
+      },
+    }),
+  });
+  const updateButton = findElement(
+    page.renderElement(),
+    (node) => node.type === "button" && /この内容に変更する/.test(getElementText(node))
+  );
+
+  assert.ok(updateButton);
+  await updateButton.props.onClick();
+  await setImmediate();
+
+  const html = page.render();
+  assert.match(html, /最新のマグネットネイル/);
+  assert.match(html, /最新の内容を画面に反映しました/);
+  assert.doesNotMatch(html, /ワンカラー/);
+  assert.deepEqual(
+    page.requests.map(({ url, options }) => [url, options.method ?? "GET"]),
+    [
+      ["/api/customer-reservations/reservation-1", "GET"],
+      ["/api/line-login/me", "GET"],
+      ["/api/customer-reservations/staffs", "GET"],
+      ["/api/customer-reservations/reservation-1", "PATCH"],
+      ["/api/customer-reservations/reservation-1", "GET"],
+      ["/api/line-login/me", "GET"],
+      ["/api/customer-reservations/staffs", "GET"],
+    ]
+  );
+});
+
+test("keeps customer input for a non-stale availability conflict", async () => {
+  const page = await loadPage({
+    patchResponse: response({
+      ok: false,
+      body: {
+        ok: false,
+        error: "選択した時間の空き状況が変わりました。別の時間を選択してください",
+      },
+    }),
+  });
+  const updateButton = findElement(
+    page.renderElement(),
+    (node) => node.type === "button" && /この内容に変更する/.test(getElementText(node))
+  );
+
+  assert.ok(updateButton);
+  await updateButton.props.onClick();
+  await setImmediate();
+
+  const html = page.render();
+  assert.match(html, /空き状況が変わりました/);
+  assert.match(html, /ワンカラー/);
+  assert.equal(
+    page.requests.filter(
+      ({ url, options }) =>
+        url === "/api/customer-reservations/reservation-1" &&
+        !options.method
+    ).length,
+    1
   );
 });
 
