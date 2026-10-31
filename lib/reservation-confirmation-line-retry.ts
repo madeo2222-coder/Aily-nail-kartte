@@ -5,6 +5,7 @@ export type ConfirmationLineApiResult = {
   retried?: boolean;
   retryable?: boolean;
   status?: string;
+  retryAfterSeconds?: number;
   error?: string;
   message?: string;
 };
@@ -15,7 +16,13 @@ export type ConfirmationLineRetryLock = {
 };
 
 export type AlternativeLineApiResult = ConfirmationLineApiResult;
-export type AlternativeLineRetryLock = ConfirmationLineRetryLock;
+export type AlternativeLineRetryLock =
+  | ConfirmationLineRetryLock
+  | {
+      kind: "wait";
+      message: string;
+      retryAt: number;
+    };
 
 export type AlternativeLineReservationSnapshot = {
   customerId: string | null;
@@ -45,6 +52,7 @@ type StoredAlternativeLineRetryLock = {
 export const CONFIRMATION_LINE_RETRY_LOCK_TTL_MS = 23 * 60 * 60 * 1000;
 export const ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS =
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS;
+export const ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS = 5 * 60 * 1000;
 
 const STORAGE_KEY_PREFIX = "aily:confirmation-line-retry-lock:v1:";
 const ALTERNATIVE_STORAGE_KEY_PREFIX =
@@ -75,6 +83,12 @@ function isRetryLockKind(
   value: unknown
 ): value is ConfirmationLineRetryLock["kind"] {
   return value === "sent" || value === "history_check";
+}
+
+function isAlternativeRetryLockKind(
+  value: unknown
+): value is AlternativeLineRetryLock["kind"] {
+  return isRetryLockKind(value) || value === "wait";
 }
 
 function hashRevisionPart(value: string, seed: number) {
@@ -241,6 +255,7 @@ const ALTERNATIVE_STORED_LOCK_MESSAGES: Record<
   sent: "別日時入力のLINEは送信済みです。重複送信していません。",
   history_check:
     "別日時入力LINEの結果を確認できません。同じ送信を繰り返さず、通知状態とLINEの送信履歴を確認してください。",
+  wait: "別の送信処理が進行中です。5分後にもう一度確認できます。",
 };
 
 export function readAlternativeLineRetryLock(
@@ -293,13 +308,17 @@ export function readAlternativeLineRetryLock(
     }
 
     const stored = JSON.parse(raw) as Partial<StoredAlternativeLineRetryLock>;
+    const lockTtl =
+      stored.kind === "wait"
+        ? ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS
+        : ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS;
     const isValid =
       stored.version === 2 &&
       typeof stored.savedAt === "number" &&
       Number.isFinite(stored.savedAt) &&
       stored.savedAt <= now &&
-      now - stored.savedAt < ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS &&
-      isRetryLockKind(stored.kind) &&
+      now - stored.savedAt < lockTtl &&
+      isAlternativeRetryLockKind(stored.kind) &&
       typeof stored.reservationRevision === "string" &&
       Boolean(reservationRevision) &&
       stored.reservationRevision === reservationRevision;
@@ -309,12 +328,22 @@ export function readAlternativeLineRetryLock(
       return null;
     }
 
-    return stored.kind
-      ? {
-          kind: stored.kind,
-          message: ALTERNATIVE_STORED_LOCK_MESSAGES[stored.kind],
-        }
-      : null;
+    if (stored.kind === "wait" && typeof stored.savedAt === "number") {
+      return {
+        kind: "wait",
+        message: ALTERNATIVE_STORED_LOCK_MESSAGES.wait,
+        retryAt: stored.savedAt + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS,
+      };
+    }
+
+    if (stored.kind === "sent" || stored.kind === "history_check") {
+      return {
+        kind: stored.kind,
+        message: ALTERNATIVE_STORED_LOCK_MESSAGES[stored.kind],
+      };
+    }
+
+    return null;
   } catch {
     try {
       storage.removeItem(key);
@@ -356,8 +385,20 @@ export function saveAlternativeLineRetryLock(
 }
 
 export function getAlternativeLineRetryLock(
-  result: AlternativeLineApiResult | null
+  result: AlternativeLineApiResult | null,
+  now = Date.now()
 ): AlternativeLineRetryLock | null {
+  if (result?.status === "in_progress") {
+    return {
+      kind: "wait",
+      message:
+        result.error ||
+        result.message ||
+        "別の送信処理が進行中です。5分後にもう一度確認できます。",
+      retryAt: now + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS,
+    };
+  }
+
   const lock = getConfirmationLineRetryLock(result);
   if (!lock) return null;
 

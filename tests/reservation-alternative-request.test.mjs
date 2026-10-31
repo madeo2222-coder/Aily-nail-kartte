@@ -487,6 +487,26 @@ test("does not call LINE again after the request is already sent", async () => {
   assert.equal(runtime.completionCalls.length, 0);
 });
 
+test("returns a five-minute wait window while another alternative send is active", async () => {
+  const runtime = loadRoute({
+    claims: [
+      {
+        claim_status: "in_progress",
+        attempt_count: 1,
+        line_retry_key: "123e4567-e89b-12d3-a456-426614174000",
+        line_message: "sending",
+      },
+    ],
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.status, "in_progress");
+  assert.equal(response.body.retryAfterSeconds, 300);
+  assert.equal(runtime.lineCalls.length, 0);
+  assert.equal(runtime.completionCalls.length, 0);
+});
+
 test("blocks an over-limit claimed retry payload before calling LINE", async () => {
   const runtime = loadRoute({
     claims: [

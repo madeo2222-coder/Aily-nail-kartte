@@ -24,6 +24,7 @@ function loadRetryLockModule() {
 }
 
 const {
+  ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS,
   ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS,
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
   createAlternativeLineReservationRevision,
@@ -381,6 +382,51 @@ test("alternative-time LINE keeps only recorded retryable failures available", (
   }
 });
 
+test("alternative-time LINE waits out an in-progress delivery without repeated clicks", () => {
+  const storage = createMemoryStorage();
+  const lock = getAlternativeLineRetryLock(
+    {
+      ok: false,
+      status: "in_progress",
+      retryAfterSeconds: 300,
+      error: "別の送信処理が進行中です。",
+    },
+    1_000
+  );
+
+  assert.equal(lock.kind, "wait");
+  assert.equal(
+    lock.retryAt,
+    1_000 + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS
+  );
+
+  saveAlternativeLineRetryLock(
+    storage,
+    "reservation-1",
+    "revision-1",
+    lock,
+    1_000
+  );
+  assert.equal(
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-1",
+      "revision-1",
+      1_000 + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS - 1
+    ).kind,
+    "wait"
+  );
+  assert.equal(
+    readAlternativeLineRetryLock(
+      storage,
+      "reservation-1",
+      "revision-1",
+      1_000 + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS
+    ),
+    null
+  );
+});
+
 test("both staff reservation screens apply the shared retry lock", () => {
   const listPage = readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -425,6 +471,10 @@ test("staff edit screen blocks unsafe alternative-time LINE repeats across reloa
     /readAlternativeLineRetryLock\([\s\S]{0,120}reservation\.updated_at/
   );
   assert.match(editPage, /saveAlternativeLineRetryLock\(/);
+  assert.match(
+    editPage,
+    /alternativeLineRetryLock\?\.kind !== "wait"[\s\S]{0,900}window\.setTimeout\(clearWaitLock, remainingMs\)/
+  );
   assert.match(
     editPage,
     /alternativeLineRetryLock \? \([\s\S]{0,1400}別日時をLINEで依頼/

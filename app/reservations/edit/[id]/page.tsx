@@ -530,6 +530,39 @@ export default function EditReservationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationId]);
 
+  useEffect(() => {
+    if (
+      alternativeLineRetryLock?.kind !== "wait" ||
+      !reservationId ||
+      !initialAlternativeRevision
+    ) {
+      return;
+    }
+
+    const clearWaitLock = () => {
+      saveAlternativeLineRetryLock(
+        window.localStorage,
+        reservationId,
+        initialAlternativeRevision,
+        null
+      );
+      setAlternativeLineRetryLock(null);
+    };
+    const remainingMs = alternativeLineRetryLock.retryAt - Date.now();
+
+    if (remainingMs <= 0) {
+      clearWaitLock();
+      return;
+    }
+
+    const timeoutId = window.setTimeout(clearWaitLock, remainingMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    alternativeLineRetryLock,
+    initialAlternativeRevision,
+    reservationId,
+  ]);
+
   const filteredCustomers = allCustomers;
 
   const filteredStaffs = useMemo(() => {
