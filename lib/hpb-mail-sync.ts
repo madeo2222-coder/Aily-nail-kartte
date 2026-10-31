@@ -348,10 +348,12 @@ function parseHpbMail(
       ? "cancel"
       : "reservation";
 
-  const reservationNumber = extractFirstMatch(text, [
-    /予約番号\s*\n\s*([A-Z]{1,4}\d{6,})/i,
-    /予約番号\s*[:：]?\s*([A-Z]{1,4}\d{6,})/i,
-  ]).toUpperCase();
+  const reservationNumber = normalizeExternalReservationNumber(
+    extractFirstMatch(text, [
+      /予約番号\s*\n\s*((?:[A-Z][ \t\u200B-\u200D\u2060\uFEFF]*){1,4}(?:\d[ \t\u200B-\u200D\u2060\uFEFF]*){6,})(?![ \t\u200B-\u200D\u2060\uFEFF]*[A-Z0-9])/i,
+      /予約番号\s*[:：]?\s*((?:[A-Z][ \t\u200B-\u200D\u2060\uFEFF]*){1,4}(?:\d[ \t\u200B-\u200D\u2060\uFEFF]*){6,})(?![ \t\u200B-\u200D\u2060\uFEFF]*[A-Z0-9])/i,
+    ])
+  );
 
   const customerName = extractFirstMatch(text, [
     /■氏名\s*\n\s*([^\n]+)/,

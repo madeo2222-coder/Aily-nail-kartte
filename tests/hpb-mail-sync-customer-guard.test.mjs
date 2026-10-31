@@ -679,6 +679,30 @@ test("HPB mail normalizes full-width and lowercase booking identifiers before ma
   assert.match(runtime.writes[0].payload.memo, /予約番号：ａ１２３４５６/);
 });
 
+test("HPB mail matches an existing booking when copied ID separators are mixed", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    mail.replace("A123456", "Ａ \u200B１ ２３ ４５６")
+  );
+
+  assert.equal(result.parsed.reservationNumber, "A123456");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
+test("HPB mail does not accept a partial booking number before another identifier character", async () => {
+  const runtime = loadSync("mail-customer", {
+    rejectDatabaseAccess: true,
+  });
+
+  await assert.rejects(
+    runtime.sync(mail.replace("A123456", "A 123456 X")),
+    /予約番号を解析できませんでした/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
 test("minimo mail normalizes full-width source markers, IDs and date fields", async () => {
   const runtime = loadSync("mail-customer", {
     existing: true,
