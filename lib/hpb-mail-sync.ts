@@ -551,6 +551,12 @@ function parseReservationMail(
       text
     );
 
+  if (bodyHasHpbReservationNumber && bodyHasMinimoReservationId) {
+    throw new Error(
+      "予約元を一意に判定できませんでした。HPB予約番号とミニモ予約IDが同じ本文にあります。"
+    );
+  }
+
   // The provider's structured identifier is stronger than free-form body
   // text when the subject is generic. For example, an HPB customer request
   // can mention a design seen on ミニモ while the mail itself still carries

@@ -453,6 +453,45 @@ test("HPB source markers take priority over an unrelated reservation ID field", 
   assert.doesNotMatch(runtime.writes[0].payload.memo, /^ミニモ予約ID/m);
 });
 
+test("an explicit HPB subject keeps HPB when both structured IDs are present", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    `予約番号：A123456
+予約ID：MINIMO-999
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+所要時間目安：90分`,
+    "【SALON BOARD】ご予約内容のお知らせ"
+  );
+
+  assert.equal(result.parsed.source, "hpb");
+  assert.equal(result.parsed.reservationNumber, "A123456");
+  assert.equal(result.result.mode, "updated");
+  assert.match(runtime.writes[0].payload.memo, /^HPB予約番号：A123456/m);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /^ミニモ予約ID/m);
+});
+
+test("a generic subject with both structured provider IDs stops before database access", async () => {
+  const runtime = loadSync("mail-customer", {
+    rejectDatabaseAccess: true,
+  });
+
+  await assert.rejects(
+    runtime.sync(
+      `予約番号：A123456
+予約ID：MINIMO-999
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+所要時間目安：90分`,
+      "Fwd: ご予約内容のお知らせ"
+    ),
+    /予約元を一意に判定できませんでした/
+  );
+  assert.equal(runtime.writes.length, 0);
+});
+
 test("HPB subject keeps customer notes mentioning minimo from changing the provider", async () => {
   const runtime = loadSync("mail-customer", { existing: true });
   const result = await runtime.sync(
