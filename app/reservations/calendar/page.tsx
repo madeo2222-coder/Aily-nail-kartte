@@ -6,6 +6,7 @@ import {
   getReservationStatusLabel,
   isCancelledReservationStatus,
 } from "@/lib/reservation-status";
+import { detectExternalReservationProvider } from "@/lib/external-reservation-metadata";
 
 type ReservationRow = {
   id: string;
@@ -306,23 +307,16 @@ function normalizeSourceLabel(params: {
   const checkText = `${params.source} ${params.memo} ${params.menuName}`.normalize(
     "NFKC"
   );
+  const externalProvider = detectExternalReservationProvider({
+    source: params.source,
+    memo: params.memo,
+  });
 
-  if (
-    source.includes("hpb") ||
-    source.includes("hotpepper") ||
-    source.includes("hot pepper") ||
-    checkText.includes("HPB予約番号") ||
-    checkText.includes("ホットペッパー")
-  ) {
+  if (externalProvider === "hpb") {
     return "HPB同期";
   }
 
-  if (
-    source.includes("minimo") ||
-    source.includes("ミニモ") ||
-    checkText.includes("ミニモ予約ID") ||
-    checkText.includes("ミニモ")
-  ) {
+  if (externalProvider === "minimo") {
     return "ミニモ同期";
   }
 

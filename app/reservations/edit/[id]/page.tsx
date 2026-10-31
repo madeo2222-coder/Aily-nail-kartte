@@ -39,6 +39,7 @@ import {
   readEditableReservationMemo,
   writeEditableReservationMemo,
 } from "@/lib/reservation-sync-memo";
+import { isExternalSyncedReservation } from "@/lib/external-reservation-metadata";
 
 type Salon = {
   id: string;
@@ -315,23 +316,6 @@ function getExternalBlockLabel(menu: string, memo: string) {
   return "";
 }
 
-function isExternalSyncedReservation(source: string | null, memo: string | null) {
-  const normalizedSource = (source || "").normalize("NFKC").toLowerCase();
-  const normalizedMemo = (memo || "").normalize("NFKC").toLowerCase();
-
-  return (
-    normalizedSource.includes("hpb") ||
-    normalizedSource.includes("hotpepper") ||
-    normalizedSource.includes("hot pepper") ||
-    normalizedSource.includes("minimo") ||
-    normalizedSource.includes("ミニモ") ||
-    normalizedMemo.includes("hpb予約番号") ||
-    normalizedMemo.includes("ホットペッパー") ||
-    normalizedMemo.includes("ミニモ予約id") ||
-    normalizedMemo.includes("ミニモ")
-  );
-}
-
 function getDurationLabel(date: string, startTime: string, endTime: string) {
   const startAt = buildDateTime(date, startTime);
   const endAt = buildDateTime(date, endTime);
@@ -560,7 +544,11 @@ export default function EditReservationPage() {
 
   const isExternalBlock = Boolean(externalBlockLabel) && !customerId;
   const isExternalSynced = useMemo(
-    () => isExternalSyncedReservation(initialSource, initialMemo),
+    () =>
+      isExternalSyncedReservation({
+        source: initialSource,
+        memo: initialMemo,
+      }),
     [initialMemo, initialSource]
   );
 

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
+import { isExternalSyncedReservation } from "@/lib/external-reservation-metadata";
 
 type ReservationRow = {
   id: string;
@@ -127,23 +128,12 @@ function getDurationLabel(startAt: string | null, endAt: string | null) {
 function isExternalBlock(row: ReservationRow) {
   if (!row.customer_id) return true;
 
-  const source = (row.source || "").normalize("NFKC").toLowerCase();
   const checkText = `${row.menu || ""}\n${row.memo || ""}`
     .normalize("NFKC")
     .toLowerCase();
 
   return (
-    source.includes("hpb") ||
-    source.includes("hotpepper") ||
-    source.includes("hot pepper") ||
-    source.includes("minimo") ||
-    source.includes("ミニモ") ||
-    checkText.includes("ホットペッパー") ||
-    checkText.includes("hpb") ||
-    checkText.includes("hotpepper") ||
-    checkText.includes("hot pepper") ||
-    checkText.includes("minimo") ||
-    checkText.includes("ミニモ") ||
+    isExternalSyncedReservation({ source: row.source, memo: row.memo }) ||
     checkText.includes("休憩") ||
     checkText.includes("店休日") ||
     checkText.includes("ブロック")

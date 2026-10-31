@@ -37,6 +37,30 @@ const externalReservationMetadata = loadTypeScriptModule(
 );
 const summary = loadTypeScriptModule("../lib/hpb-gmail-sync-summary.ts");
 
+test("external reservation detection requires a provider source or booking ID marker", () => {
+  for (const metadata of [
+    { source: "ＨＰＢ", memo: null },
+    { source: "ＭＩＮＩＭＯ", memo: null },
+    { source: "customer-app", memo: "ＨＰＢ 予約 番号：AB-123" },
+    { source: "Naily", memo: "ミニモ 予約 ID：MN-456" },
+  ]) {
+    assert.equal(
+      externalReservationMetadata.isExternalSyncedReservation(metadata),
+      true,
+    );
+  }
+
+  for (const metadata of [
+    { source: "customer-app", memo: "ミニモで見たデザインを希望" },
+    { source: "Naily", memo: "ホットペッパーの写真と同じ色を希望" },
+  ]) {
+    assert.equal(
+      externalReservationMetadata.isExternalSyncedReservation(metadata),
+      false,
+    );
+  }
+});
+
 test("external reservation and customer IDs are stable and namespaced", () => {
   const first = reconciliation.buildExternalReservationId("hpb", "A123456");
 

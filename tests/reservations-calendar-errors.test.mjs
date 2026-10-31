@@ -21,6 +21,22 @@ vm.runInNewContext(
   ).outputText,
   { exports: reservationStatusExports, Set, String }
 );
+const externalReservationMetadataExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/external-reservation-metadata.ts", import.meta.url),
+      "utf8",
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText,
+  { exports: externalReservationMetadataExports },
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/reservations/calendar/page.tsx", import.meta.url),
@@ -57,6 +73,8 @@ async function mount({
   rejection = false,
   empty = false,
   reservationStatus = "confirmed",
+  reservationSource = "Naily",
+  reservationMemo = null,
   hpbOutcomes = ["success"],
   externalBlock = false,
   deleteOutcomes = ["success"],
@@ -114,8 +132,8 @@ async function mount({
           staff_id: "staff-1",
           menu: "ワンカラー",
           status: reservationStatus,
-          memo: null,
-          source: "Naily",
+          memo: reservationMemo,
+          source: reservationSource,
           start_at: "2026-09-28T01:00:00Z",
           end_at: "2026-09-28T02:00:00Z",
           created_at: "2026-09-27T00:00:00Z",
@@ -240,6 +258,9 @@ async function mount({
       if (name === "next/link") return { default: "a" };
       if (name === "react/jsx-runtime") return require(name);
       if (name === "@/lib/reservation-status") return reservationStatusExports;
+      if (name === "@/lib/external-reservation-metadata") {
+        return externalReservationMetadataExports;
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -368,6 +389,19 @@ test("reservation calendar renders complete successful data", async () => {
   assert.match(page.html(), /顧客A/);
   assert.match(page.html(), /黒木/);
   assert.match(page.html(), /ワンカラー/);
+});
+
+test("reservation calendar keeps customer memo site mentions labeled as Naily", async () => {
+  for (const reservationMemo of [
+    "ミニモで見たデザインを希望",
+    "ホットペッパーの写真と同じ色を希望",
+  ]) {
+    const page = await mount({ reservationMemo });
+    const html = page.html();
+
+    assert.match(html, /Naily予約/);
+    assert.doesNotMatch(html, /HPB同期|ミニモ同期/);
+  }
 });
 
 test("reservation calendar normalizes a legacy full-width confirmed status", async () => {

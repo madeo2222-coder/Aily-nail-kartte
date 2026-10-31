@@ -29,6 +29,7 @@ import {
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
 } from "@/lib/reservation-confirmation-email-retry";
+import { isExternalSyncedReservation } from "@/lib/external-reservation-metadata";
 
 type ReservationRow = {
   id: string;
@@ -450,25 +451,6 @@ function canConfirmReservation(status: string) {
 
 function canRetryConfirmationLine(status: string) {
   return status === "予約確定" || status === "confirmed";
-}
-
-function isExternalSyncedReservation(
-  reservation: Pick<NormalizedReservation, "source" | "memo">
-) {
-  const source = reservation.source.normalize("NFKC").toLowerCase();
-  const memo = reservation.memo.normalize("NFKC").toLowerCase();
-
-  return (
-    source.includes("hpb") ||
-    source.includes("hotpepper") ||
-    source.includes("hot pepper") ||
-    source.includes("minimo") ||
-    source.includes("ミニモ") ||
-    memo.includes("hpb予約番号") ||
-    memo.includes("ホットペッパー") ||
-    memo.includes("ミニモ予約id") ||
-    memo.includes("ミニモ")
-  );
 }
 
 function canMarkVisited(status: string) {

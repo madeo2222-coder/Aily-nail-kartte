@@ -33,6 +33,22 @@ vm.runInNewContext(
   ).outputText,
   { exports: reservationStatusExports, Set, String }
 );
+const externalReservationMetadataExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/external-reservation-metadata.ts", import.meta.url),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  { exports: externalReservationMetadataExports }
+);
 const confirmationLineRetryExports = {};
 vm.runInNewContext(
   ts.transpileModule(
@@ -308,6 +324,9 @@ async function mount({
         return { default: () => null };
       }
       if (name === "@/lib/reservation-status") return reservationStatusExports;
+      if (name === "@/lib/external-reservation-metadata") {
+        return externalReservationMetadataExports;
+      }
       if (name === "@/lib/reservation-confirmation-line-retry") {
         return confirmationLineRetryExports;
       }
@@ -754,4 +773,20 @@ test("reservation list hides Naily confirmation actions for customer-linked exte
     reservationMemo: "ＨＰＢ予約番号：AB-123",
   });
   assert.equal(requested.hasButton("予約確定・通知送信"), false);
+});
+
+test("reservation list keeps Naily actions when a customer memo only mentions a booking site", async () => {
+  const confirmed = await mount({
+    reservationStatus: "confirmed",
+    reservationSource: "customer-app",
+    reservationMemo: "ミニモで見たデザインを希望",
+  });
+  assert.equal(confirmed.hasButton("確定LINEを再試行"), true);
+
+  const requested = await mount({
+    reservationStatus: "requested",
+    reservationSource: "Naily",
+    reservationMemo: "ホットペッパーの写真と同じ色を希望",
+  });
+  assert.equal(requested.hasButton("予約確定・通知送信"), true);
 });

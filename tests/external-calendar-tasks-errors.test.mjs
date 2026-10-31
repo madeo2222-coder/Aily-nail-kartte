@@ -21,6 +21,22 @@ vm.runInNewContext(
   ).outputText,
   { exports: reservationStatusExports, Set, String }
 );
+const externalReservationMetadataExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/external-reservation-metadata.ts", import.meta.url),
+      "utf8",
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText,
+  { exports: externalReservationMetadataExports },
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/external-calendar-tasks/page.tsx", import.meta.url),
@@ -147,6 +163,9 @@ async function mount({
       if (name === "next/link") return { default: "a" };
       if (name === "react/jsx-runtime") return require(name);
       if (name === "@/lib/reservation-status") return reservationStatusExports;
+      if (name === "@/lib/external-reservation-metadata") {
+        return externalReservationMetadataExports;
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });
@@ -229,5 +248,18 @@ for (const reservation of [
       /0件|外部カレンダーへ反映が必要な予約はありません/,
     );
     assert.doesNotMatch(page.html(), /顧客A|黒木|ワンカラー/);
+  });
+}
+
+for (const memo of [
+  "ミニモで見たデザインを希望",
+  "ホットペッパーの写真と同じ色を希望",
+]) {
+  test(`external calendar tasks keeps a customer-app reservation with a site mention: ${memo}`, async () => {
+    const page = await mount({ reservation: { source: "customer-app", memo } });
+
+    assert.doesNotMatch(page.html(), /role="alert"/);
+    assert.match(page.html(), /反映待ち[\s\S]*1件/);
+    assert.match(page.html(), /顧客A|黒木|ワンカラー/);
   });
 }
