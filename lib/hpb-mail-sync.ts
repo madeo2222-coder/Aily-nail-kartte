@@ -543,7 +543,7 @@ function parseReservationMail(
   }
 
   const bodyHasHpbReservationNumber =
-    /(?:^|\n)[^\S\r\n]*(?:■[^\S\r\n]*)?予約番号[^\S\r\n]*(?:\n[^\S\r\n]*|[:：][^\S\r\n]*)[A-Z]{1,4}\d{6,}/im.test(
+    /(?:^|\n)[^\S\r\n]*(?:■[^\S\r\n]*)?予約番号[^\S\r\n]*(?:\n[^\S\r\n]*|[:：][^\S\r\n]*)((?:[A-Z][ \t\u200B-\u200D\u2060\uFEFF]*){1,4}(?:\d[ \t\u200B-\u200D\u2060\uFEFF]*){6,})(?![ \t\u200B-\u200D\u2060\uFEFF]*[A-Z0-9])/im.test(
       text
     );
   const bodyHasMinimoReservationId =

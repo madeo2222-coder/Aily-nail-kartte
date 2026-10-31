@@ -491,6 +491,26 @@ test("HPB reservation number keeps a generic subject and minimo customer note on
   assert.doesNotMatch(runtime.writes[0].payload.memo, /^ミニモ予約ID/m);
 });
 
+test("copied HPB reservation number keeps a generic subject and minimo customer note on HPB", async () => {
+  const runtime = loadSync("mail-customer", { existing: true });
+  const result = await runtime.sync(
+    `予約番号：Ａ \u200B１ ２３ ４５６
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+所要時間目安：90分
+ご要望：ミニモで見たデザインを希望`,
+    "ご予約内容のお知らせ"
+  );
+
+  assert.equal(result.parsed.source, "hpb");
+  assert.equal(result.parsed.reservationNumber, "A123456");
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.match(runtime.writes[0].payload.memo, /^HPB予約番号：A123456/m);
+  assert.doesNotMatch(runtime.writes[0].payload.memo, /^ミニモ予約ID/m);
+});
+
 for (const subject of [
   "【サロンボード】ご予約内容のお知らせ",
   "【ホットペッパービューティー】ご予約内容のお知らせ",
