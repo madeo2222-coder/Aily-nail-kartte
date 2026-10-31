@@ -922,6 +922,50 @@ test("staff UI sends the displayed reservation snapshot with an alternative-time
   }
 });
 
+test("staff UI blocks an alternative-time LINE request while reservation edits are unsaved", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+  const functionStart = pageSource.indexOf(
+    "async function requestAlternativeTime()"
+  );
+  const nextFunction = pageSource.indexOf(
+    "\n  async function ",
+    functionStart + 1
+  );
+  const functionSource = pageSource.slice(functionStart, nextFunction);
+  const guardIndex = functionSource.indexOf(
+    "if (hasUnsavedAlternativeRequestChanges)"
+  );
+
+  assert.notEqual(guardIndex, -1, "unsaved edit guard exists");
+  assert.ok(
+    guardIndex < functionSource.indexOf("readAlternativeLineRetryLock("),
+    "unsaved edits are checked before the retry lock"
+  );
+  assert.ok(
+    guardIndex < functionSource.indexOf("window.confirm("),
+    "unsaved edits are checked before confirmation"
+  );
+  assert.ok(
+    guardIndex < functionSource.indexOf("await fetch("),
+    "unsaved edits are checked before the LINE API call"
+  );
+  assert.match(
+    functionSource,
+    /未保存の変更があります。[\s\S]{0,80}変更を保存[\s\S]{0,120}return;/
+  );
+  assert.match(
+    pageSource,
+    /const hasUnsavedAlternativeRequestChanges = useMemo\([\s\S]{0,1800}initialSalonId[\s\S]{0,1800}initialCustomerId[\s\S]{0,1800}initialStaffId[\s\S]{0,1800}initialMenu[\s\S]{0,1800}initialStartAt[\s\S]{0,1800}initialEndAt[\s\S]{0,1800}initialStoredStatus[\s\S]{0,1800}initialMemo/
+  );
+  assert.match(
+    pageSource,
+    /未保存の変更があります。先に変更を保存するか、最新情報を再読み込みしてください。/
+  );
+});
+
 test("staff UI reloads only a stale alternative-time reservation conflict", () => {
   const pageSource = readFileSync(
     new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),

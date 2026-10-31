@@ -191,6 +191,20 @@ function buildDateTime(targetDate: string, targetTime: string) {
   return date.toISOString();
 }
 
+function isSameReservationDateTime(left: string | null, right: string | null) {
+  if (left === right) return true;
+  if (!left || !right) return false;
+
+  const leftTime = new Date(normalizeSupabaseDateTime(left) ?? "").getTime();
+  const rightTime = new Date(normalizeSupabaseDateTime(right) ?? "").getTime();
+
+  return (
+    Number.isFinite(leftTime) &&
+    Number.isFinite(rightTime) &&
+    leftTime === rightTime
+  );
+}
+
 function normalizeStatus(value: string | null): ReservationStatus {
   const label = getReservationStatusLabel(value, "予約受付");
 
@@ -376,6 +390,7 @@ export default function EditReservationPage() {
   const [wasInitiallyCancelled, setWasInitiallyCancelled] = useState(false);
   const [initialCustomerId, setInitialCustomerId] =
     useState<string | null>(null);
+  const [initialSalonId, setInitialSalonId] = useState<string | null>(null);
   const [initialStaffId, setInitialStaffId] = useState<string | null>(null);
   const [initialMenu, setInitialMenu] = useState<string | null>(null);
   const [initialStatus, setInitialStatus] = useState("");
@@ -477,6 +492,7 @@ export default function EditReservationPage() {
       );
     }
     setInitialCustomerId(reservation.customer_id);
+    setInitialSalonId(reservation.salon_id);
     setInitialStaffId(reservation.staff_id);
     setInitialMenu(reservation.menu);
     setInitialStatus(reservation.status ?? "");
@@ -596,6 +612,45 @@ export default function EditReservationPage() {
   const durationLabel = useMemo(() => {
     return getDurationLabel(date, startTime, endTime);
   }, [date, startTime, endTime]);
+
+  const hasUnsavedAlternativeRequestChanges = useMemo(() => {
+    const currentMemo =
+      buildMemoForSave(galleryReference, memo, syncedMemo) || null;
+
+    return (
+      (salonId || null) !== (initialSalonId || null) ||
+      (customerId || null) !== (initialCustomerId || null) ||
+      (staffId || null) !== (initialStaffId || null) ||
+      (menu || null) !== (initialMenu || null) ||
+      !isSameReservationDateTime(
+        buildDateTime(date, startTime),
+        initialStartAt
+      ) ||
+      !isSameReservationDateTime(buildDateTime(date, endTime), initialEndAt) ||
+      status !== normalizeStatus(initialStoredStatus) ||
+      currentMemo !== (initialMemo || null)
+    );
+  }, [
+    customerId,
+    date,
+    endTime,
+    galleryReference,
+    initialCustomerId,
+    initialEndAt,
+    initialMemo,
+    initialMenu,
+    initialSalonId,
+    initialStaffId,
+    initialStartAt,
+    initialStoredStatus,
+    memo,
+    menu,
+    salonId,
+    staffId,
+    startTime,
+    status,
+    syncedMemo,
+  ]);
 
   function handleSalonChange(nextSalonId: string) {
     setSalonId(nextSalonId);
@@ -938,6 +993,14 @@ export default function EditReservationPage() {
 
   async function requestAlternativeTime() {
     if (!reservationId || mutationRequestPendingRef.current) return;
+
+    if (hasUnsavedAlternativeRequestChanges) {
+      setErrorMessage(
+        "予約内容に未保存の変更があります。先に「変更を保存」するか、最新情報を再読み込みしてから別日時を依頼してください。"
+      );
+      setSuccessMessage("");
+      return;
+    }
 
     const storedLock = readAlternativeLineRetryLock(
       window.localStorage,
@@ -1485,6 +1548,11 @@ export default function EditReservationPage() {
                     <p className="mt-1 text-xs leading-5 text-amber-800">
                       LINE連携済みのお客様へお知らせし、この予約の別希望日時入力ページへ案内します。送信済みの場合は重複送信しません。
                     </p>
+                    {hasUnsavedAlternativeRequestChanges ? (
+                      <p className="mt-2 text-xs font-bold leading-5 text-amber-900">
+                        未保存の変更があります。先に変更を保存するか、最新情報を再読み込みしてください。
+                      </p>
+                    ) : null}
                   </div>
                   {alternativeLineRetryLock ? (
                     <div
