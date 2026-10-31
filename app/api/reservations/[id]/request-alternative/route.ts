@@ -505,7 +505,7 @@ export async function POST(
           sent: false,
           status: "in_progress",
           retryAfterSeconds: 300,
-          error: "別の送信処理が進行中です。しばらくしてから確認してください。",
+          error: "別の送信処理が進行中です。5分後にもう一度確認できます。",
         },
         { status: 409 }
       );

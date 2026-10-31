@@ -477,6 +477,10 @@ test("staff edit screen blocks unsafe alternative-time LINE repeats across reloa
   );
   assert.match(
     editPage,
+    /const expiredMessage = alternativeLineRetryLock\.message;[\s\S]{0,600}setErrorMessage\(\(current\) =>[\s\S]{0,100}current === expiredMessage \? "" : current[\s\S]{0,150}setSuccessMessage\(\(current\) =>[\s\S]{0,100}current === expiredMessage \? "" : current/
+  );
+  assert.match(
+    editPage,
     /alternativeLineRetryLock \? \([\s\S]{0,1400}別日時をLINEで依頼/
   );
 });

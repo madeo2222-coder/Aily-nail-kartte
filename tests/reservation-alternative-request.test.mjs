@@ -503,6 +503,10 @@ test("returns a five-minute wait window while another alternative send is active
   assert.equal(response.status, 409);
   assert.equal(response.body.status, "in_progress");
   assert.equal(response.body.retryAfterSeconds, 300);
+  assert.equal(
+    response.body.error,
+    "別の送信処理が進行中です。5分後にもう一度確認できます。"
+  );
   assert.equal(runtime.lineCalls.length, 0);
   assert.equal(runtime.completionCalls.length, 0);
 });

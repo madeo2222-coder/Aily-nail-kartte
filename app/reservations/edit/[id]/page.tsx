@@ -540,6 +540,7 @@ export default function EditReservationPage() {
     }
 
     const clearWaitLock = () => {
+      const expiredMessage = alternativeLineRetryLock.message;
       saveAlternativeLineRetryLock(
         window.localStorage,
         reservationId,
@@ -547,6 +548,12 @@ export default function EditReservationPage() {
         null
       );
       setAlternativeLineRetryLock(null);
+      setErrorMessage((current) =>
+        current === expiredMessage ? "" : current
+      );
+      setSuccessMessage((current) =>
+        current === expiredMessage ? "" : current
+      );
     };
     const remainingMs = alternativeLineRetryLock.retryAt - Date.now();
 
