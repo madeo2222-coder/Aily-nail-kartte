@@ -357,6 +357,7 @@ for (const [field, value] of [
     const response = await runtime.post();
 
     assert.equal(response.status, 409);
+    assert.equal(response.body.errorCode, "stale_reservation");
     assert.match(response.body.error, /最新の内容を読み込み直して/);
     assert.equal(runtime.rpcCalls.length, 0);
   });
@@ -379,6 +380,7 @@ for (const [field, value] of [
     const response = await runtime.post();
 
     assert.equal(response.status, 409);
+    assert.equal(response.body.errorCode, "stale_reservation");
     assert.match(response.body.error, /最新の内容を読み込み直して/);
     assert.equal(runtime.rpcCalls.length, 0);
   });
@@ -393,6 +395,18 @@ test("returns a conflict when the final database check finds an overlap", async 
   assert.equal(response.status, 409);
   assert.equal(response.body.confirmed, false);
   assert.match(response.body.error, /別の予約またはブロック/);
+});
+
+test("marks a final database stale result for automatic screen refresh", async () => {
+  const runtime = loadRoute({
+    rpcResult: [{ outcome: "stale", reservation_id: null }],
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.confirmed, false);
+  assert.equal(response.body.errorCode, "stale_reservation");
+  assert.match(response.body.error, /最新の内容を読み込み直して/);
 });
 
 test("rejects an elapsed reservation before the confirmation RPC", async () => {

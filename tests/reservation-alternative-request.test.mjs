@@ -1015,6 +1015,35 @@ test("staff UI blocks confirmation notification retries while reservation edits 
   );
 });
 
+test("staff UI reloads the latest reservation after a stale confirmation response", () => {
+  const pageSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+  const functionStart = pageSource.indexOf(
+    "async function handleConfirmReservation()"
+  );
+  const nextFunction = pageSource.indexOf(
+    "\n  async function ",
+    functionStart + 1
+  );
+  const functionSource = pageSource.slice(functionStart, nextFunction);
+
+  assert.match(
+    functionSource,
+    /confirmation\?\.errorCode === "stale_reservation"[\s\S]{0,120}await loadPageData\(\)/
+  );
+  assert.match(
+    functionSource,
+    /最新の内容を画面に反映しました。[\s\S]{0,100}もう一度操作してください。[\s\S]{0,80}return;/
+  );
+  assert.ok(
+    functionSource.indexOf('errorCode === "stale_reservation"') <
+      functionSource.indexOf("sendConfirmationLineNotice("),
+    "stale confirmation stops before notifications"
+  );
+});
+
 test("staff UI reloads only a stale alternative-time reservation conflict", () => {
   const pageSource = readFileSync(
     new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),

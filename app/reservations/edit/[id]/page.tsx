@@ -802,6 +802,7 @@ export default function EditReservationPage() {
       ok?: boolean;
       confirmed?: boolean;
       alreadyConfirmed?: boolean;
+      errorCode?: string;
       error?: string;
       message?: string;
     } | null;
@@ -820,6 +821,15 @@ export default function EditReservationPage() {
     }
 
     if (!confirmationResponse.ok || !confirmation?.ok) {
+      if (confirmation?.errorCode === "stale_reservation") {
+        const refreshed = await loadPageData();
+        setErrorMessage(
+          refreshed
+            ? "予約内容が更新されていたため、最新の内容を画面に反映しました。内容を確認してからもう一度操作してください。"
+            : confirmation.error || "予約確定に失敗しました"
+        );
+        return;
+      }
       setErrorMessage(confirmation?.error || "予約確定に失敗しました");
       return;
     }

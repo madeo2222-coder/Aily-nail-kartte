@@ -270,6 +270,7 @@ export async function POST(
         {
           ok: false,
           confirmed: false,
+          errorCode: "stale_reservation",
           error: "予約内容が更新されています。最新の内容を読み込み直してください。",
         },
         { status: 409 }
@@ -405,7 +406,14 @@ export async function POST(
     };
 
     return NextResponse.json(
-      { ok: false, confirmed: false, error: response.error },
+      {
+        ok: false,
+        confirmed: false,
+        ...(result.outcome === "stale"
+          ? { errorCode: "stale_reservation" }
+          : {}),
+        error: response.error,
+      },
       { status: response.status }
     );
   } catch (error) {
