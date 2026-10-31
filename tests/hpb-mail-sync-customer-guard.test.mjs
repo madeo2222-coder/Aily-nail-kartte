@@ -701,6 +701,25 @@ test("minimo mail normalizes full-width source markers, IDs and date fields", as
   assert.equal(runtime.writes[0].operation, "update");
 });
 
+test("minimo mail matches an existing booking when copied ID separators are mixed", async () => {
+  const runtime = loadSync("mail-customer", {
+    existing: true,
+    memo: "ミニモ予約ID：MINIMO-123",
+  });
+  const result = await runtime.sync(`ミニモ予約受付
+予約ID：ＭＩＮＩＭＯ - \u200B１２３
+氏名：テスト顧客
+電話番号：09000000000
+来店日時：2099年10月20日 10:00
+担当者：指名なし
+施術時間：90分`);
+
+  assert.equal(result.parsed.reservationNumber, "MINIMO-123");
+  assert.equal(result.result.reservationId, "manual-reservation");
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+});
+
 test("minimo replay adopts a legacy full-width lowercase reservation marker", async () => {
   const runtime = loadSync("mail-customer", {
     existing: true,

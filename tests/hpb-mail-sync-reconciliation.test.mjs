@@ -69,6 +69,17 @@ test("external reservation IDs are stable across case and width variants", () =>
     canonical,
     reconciliation.buildExternalReservationId("minimo", " minimo-123 ")
   );
+  assert.equal(
+    canonical,
+    reconciliation.buildExternalReservationId("minimo", "MINIMO - 123")
+  );
+  assert.equal(
+    canonical,
+    reconciliation.buildExternalReservationId(
+      "minimo",
+      "MINIMO-\u200B1\uFEFF23"
+    )
+  );
 });
 
 test("manual reservation lookup tolerates a small staff-entry time difference", () => {
@@ -183,6 +194,21 @@ test("external reservation lookup matches legacy lowercase and full-width IDs", 
   });
 
   assert.equal(result?.id, "legacy-width");
+});
+
+test("external reservation lookup ignores copied whitespace and zero-width separators", () => {
+  const result = reconciliation.findExternalReservationCandidate({
+    source: "minimo",
+    reservationNumber: "MINIMO-123",
+    candidates: [
+      {
+        id: "copied-id",
+        memo: "ミニモ予約ID：ＭＩＮＩＭＯ - \u200B１２３",
+      },
+    ],
+  });
+
+  assert.equal(result?.id, "copied-id");
 });
 
 test("duplicate normalized external reservation keys stop before an update", () => {

@@ -50,7 +50,12 @@ function normalize(value: string | null | undefined) {
 }
 
 export function normalizeExternalReservationNumber(value: string) {
-  return value.normalize("NFKC").trim().toUpperCase();
+  // Forwarding and copy/paste can insert visible or zero-width separators.
+  // Provider reservation IDs do not use whitespace as meaningful content.
+  return value
+    .normalize("NFKC")
+    .replace(/[\s\u200B-\u200D\u2060\uFEFF]+/g, "")
+    .toUpperCase();
 }
 
 function hasSourceMarker(source: MailSyncSource, value: string) {
