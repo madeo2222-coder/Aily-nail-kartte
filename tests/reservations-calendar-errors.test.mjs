@@ -435,6 +435,36 @@ test("reservation calendar labels explicit contact-channel sources", async () =>
   }
 });
 
+test("reservation calendar labels manual HPB and minimo entries by their structured source", async () => {
+  for (const [reservationMemo, expectedBadge] of [
+    [
+      "外部予約種別：ホットペッパー\n電話受付で先に登録",
+      /bg-orange-100 text-orange-700[^>]*>HPB予約<\/span>/,
+    ],
+    [
+      "外部予約種別：ミニモ",
+      /bg-purple-100 text-purple-700[^>]*>ミニモ予約<\/span>/,
+    ],
+  ]) {
+    const page = await mount({
+      reservationSource: null,
+      reservationMemo,
+    });
+
+    assert.match(page.html(), expectedBadge);
+  }
+});
+
+test("reservation calendar keeps provider-imported entries labeled as synced", async () => {
+  for (const [reservationSource, expectedBadge] of [
+    ["HPB", /bg-orange-100 text-orange-700[^>]*>HPB同期<\/span>/],
+    ["minimo", /bg-purple-100 text-purple-700[^>]*>ミニモ同期<\/span>/],
+  ]) {
+    const page = await mount({ reservationSource });
+    assert.match(page.html(), expectedBadge);
+  }
+});
+
 test("reservation calendar keeps contact-channel inference for external blocks", async () => {
   const page = await mount({
     externalBlock: true,

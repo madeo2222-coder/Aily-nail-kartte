@@ -61,6 +61,34 @@ test("external reservation detection requires a provider source or booking ID ma
   }
 });
 
+test("manual external source markers are display-only and remain staff-editable", () => {
+  for (const [memo, provider] of [
+    ["外部予約種別：ホットペッパー\n電話受付で先に登録", "hpb"],
+    ["外部予約種別：ミニモ", "minimo"],
+  ]) {
+    const metadata = { source: "手入力", memo };
+
+    assert.equal(
+      externalReservationMetadata.detectExternalReservationDisplayProvider(
+        metadata,
+      ),
+      provider,
+    );
+    assert.equal(
+      externalReservationMetadata.isExternalSyncedReservation(metadata),
+      false,
+    );
+  }
+
+  assert.equal(
+    externalReservationMetadata.detectExternalReservationDisplayProvider({
+      source: "Naily",
+      memo: "通常の顧客メモ\n外部予約種別：ミニモ",
+    }),
+    null,
+  );
+});
+
 test("external reservation and customer IDs are stable and namespaced", () => {
   const first = reconciliation.buildExternalReservationId("hpb", "A123456");
 

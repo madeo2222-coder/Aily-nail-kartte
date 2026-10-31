@@ -6,7 +6,10 @@ import {
   getReservationStatusLabel,
   isCancelledReservationStatus,
 } from "@/lib/reservation-status";
-import { detectExternalReservationProvider } from "@/lib/external-reservation-metadata";
+import {
+  detectExternalReservationDisplayProvider,
+  detectExternalReservationProvider,
+} from "@/lib/external-reservation-metadata";
 
 type ReservationRow = {
   id: string;
@@ -307,17 +310,19 @@ function normalizeSourceLabel(params: {
   const checkText = `${params.source} ${params.memo} ${params.menuName}`.normalize(
     "NFKC"
   );
-  const externalProvider = detectExternalReservationProvider({
+  const metadata = {
     source: params.source,
     memo: params.memo,
-  });
+  };
+  const syncedProvider = detectExternalReservationProvider(metadata);
+  const externalProvider = detectExternalReservationDisplayProvider(metadata);
 
   if (externalProvider === "hpb") {
-    return "HPB同期";
+    return syncedProvider === "hpb" ? "HPB同期" : "HPB予約";
   }
 
   if (externalProvider === "minimo") {
-    return "ミニモ同期";
+    return syncedProvider === "minimo" ? "ミニモ同期" : "ミニモ予約";
   }
 
   if (
@@ -371,11 +376,11 @@ function normalizeSourceLabel(params: {
 }
 
 function getSourceBadgeClass(sourceLabel: string) {
-  if (sourceLabel === "HPB同期") {
+  if (sourceLabel === "HPB同期" || sourceLabel === "HPB予約") {
     return "bg-orange-100 text-orange-700";
   }
 
-  if (sourceLabel === "ミニモ同期") {
+  if (sourceLabel === "ミニモ同期" || sourceLabel === "ミニモ予約") {
     return "bg-purple-100 text-purple-700";
   }
 
@@ -407,11 +412,11 @@ function getStatusColor(status: string, sourceLabel: string) {
     return "border-zinc-300 bg-zinc-100 text-zinc-500 opacity-60";
   }
 
-  if (sourceLabel === "HPB同期") {
+  if (sourceLabel === "HPB同期" || sourceLabel === "HPB予約") {
     return "border-orange-200 bg-orange-100 text-orange-800";
   }
 
-  if (sourceLabel === "ミニモ同期") {
+  if (sourceLabel === "ミニモ同期" || sourceLabel === "ミニモ予約") {
     return "border-purple-200 bg-purple-100 text-purple-800";
   }
 
