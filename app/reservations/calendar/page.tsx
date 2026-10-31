@@ -323,8 +323,8 @@ function normalizeSourceLabel(params: {
   if (
     source.includes("line") ||
     source.includes("ライン") ||
-    checkText.includes("LINE") ||
-    checkText.includes("ライン")
+    (params.isExternalBlock &&
+      (checkText.includes("LINE") || checkText.includes("ライン")))
   ) {
     return "LINE予約";
   }
@@ -332,8 +332,8 @@ function normalizeSourceLabel(params: {
   if (
     source.includes("instagram") ||
     source.includes("インスタ") ||
-    checkText.includes("Instagram") ||
-    checkText.includes("インスタ")
+    (params.isExternalBlock &&
+      (checkText.includes("Instagram") || checkText.includes("インスタ")))
   ) {
     return "Instagram";
   }
@@ -341,7 +341,7 @@ function normalizeSourceLabel(params: {
   if (
     source.includes("phone") ||
     source.includes("電話") ||
-    checkText.includes("電話")
+    (params.isExternalBlock && checkText.includes("電話"))
   ) {
     return "電話予約";
   }

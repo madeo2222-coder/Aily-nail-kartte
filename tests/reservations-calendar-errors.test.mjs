@@ -77,6 +77,9 @@ async function mount({
   reservationMemo = null,
   hpbOutcomes = ["success"],
   externalBlock = false,
+  externalBlockSource = "HPB",
+  externalBlockTitle = "外部予約",
+  externalBlockMemo = "受付番号123",
   deleteOutcomes = ["success"],
 } = {}) {
   const states = [];
@@ -143,11 +146,11 @@ async function mount({
             id: "block-1",
             salon_id: "salon-1",
             staff_id: "staff-1",
-            source: "HPB",
-            title: "外部予約",
+            source: externalBlockSource,
+            title: externalBlockTitle,
             start_at: "2026-09-28T01:00:00Z",
             end_at: "2026-09-28T02:00:00Z",
-            memo: "受付番号123",
+            memo: externalBlockMemo,
             created_at: "2026-09-27T00:00:00Z",
           }]
         : [],
@@ -402,6 +405,47 @@ test("reservation calendar keeps customer memo site mentions labeled as Naily", 
     assert.match(html, /Naily予約/);
     assert.doesNotMatch(html, /HPB同期|ミニモ同期/);
   }
+});
+
+test("reservation calendar keeps contact-channel mentions in customer memo labeled as Naily", async () => {
+  for (const reservationMemo of [
+    "LINEで連絡希望",
+    "Instagramの画像を参考",
+    "インスタで見たデザイン",
+    "電話してください",
+  ]) {
+    const page = await mount({ reservationMemo });
+    const html = page.html();
+
+    assert.match(
+      html,
+      /bg-blue-100 text-blue-700[^>]*>Naily予約<\/span>/,
+    );
+  }
+});
+
+test("reservation calendar labels explicit contact-channel sources", async () => {
+  for (const [reservationSource, expectedBadge] of [
+    ["LINE", /bg-emerald-100 text-emerald-700[^>]*>LINE予約<\/span>/],
+    ["Instagram", /bg-pink-100 text-pink-700[^>]*>Instagram<\/span>/],
+    ["phone", /bg-slate-200 text-slate-700[^>]*>電話予約<\/span>/],
+  ]) {
+    const page = await mount({ reservationSource });
+    assert.match(page.html(), expectedBadge);
+  }
+});
+
+test("reservation calendar keeps contact-channel inference for external blocks", async () => {
+  const page = await mount({
+    externalBlock: true,
+    externalBlockSource: "manual",
+    externalBlockMemo: "LINE受付",
+  });
+
+  assert.match(
+    page.html(),
+    /bg-emerald-100 text-emerald-700[^>]*>LINE予約<\/span>/,
+  );
 });
 
 test("reservation calendar normalizes a legacy full-width confirmed status", async () => {
