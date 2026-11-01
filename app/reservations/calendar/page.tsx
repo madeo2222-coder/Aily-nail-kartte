@@ -10,6 +10,10 @@ import {
   detectExternalReservationDisplayProvider,
   detectExternalReservationProvider,
 } from "@/lib/external-reservation-metadata";
+import {
+  readHpbGmailSyncUnknownLock,
+  saveHpbGmailSyncUnknownLock,
+} from "@/lib/hpb-gmail-sync-unknown-lock";
 
 type ReservationRow = {
   id: string;
@@ -588,6 +592,11 @@ export default function ReservationsCalendarPage() {
   async function syncHpbNow() {
     if (hpbSyncInFlightRef.current || hpbSyncResultUnknown) return;
 
+    if (readHpbGmailSyncUnknownLock(window.localStorage)) {
+      setHpbSyncResultUnknown(true);
+      return;
+    }
+
     hpbSyncInFlightRef.current = true;
     let canRetry = false;
 
@@ -602,6 +611,7 @@ export default function ReservationsCalendarPage() {
 
       if (json.partial) {
         canRetry = true;
+        saveHpbGmailSyncUnknownLock(window.localStorage, false);
         await fetchCalendarData();
         alert(
           `予約同期は一部失敗しました。成功 ${json.syncedCount ?? json.count ?? 0}件・失敗 ${json.failedCount ?? 0}件です。失敗内容を予約同期センターで確認し、再試行してください。`
@@ -611,10 +621,12 @@ export default function ReservationsCalendarPage() {
 
       if (!response.ok || !json.ok) {
         canRetry = true;
+        saveHpbGmailSyncUnknownLock(window.localStorage, false);
         throw new Error(json.error || "同期に失敗しました");
       }
 
       canRetry = true;
+      saveHpbGmailSyncUnknownLock(window.localStorage, false);
       await fetchCalendarData();
 
       const syncedCount = json.syncedCount ?? json.count ?? 0;
@@ -635,6 +647,7 @@ export default function ReservationsCalendarPage() {
       if (canRetry) {
         alert(error instanceof Error ? error.message : "同期に失敗しました");
       } else {
+        saveHpbGmailSyncUnknownLock(window.localStorage, true);
         setHpbSyncResultUnknown(true);
         await fetchCalendarData();
         alert(
@@ -707,6 +720,9 @@ export default function ReservationsCalendarPage() {
   }
 
   useEffect(() => {
+    setHpbSyncResultUnknown(
+      readHpbGmailSyncUnknownLock(window.localStorage),
+    );
     void fetchCalendarData();
 
     return () => {

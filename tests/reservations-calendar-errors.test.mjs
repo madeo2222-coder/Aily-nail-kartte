@@ -37,6 +37,22 @@ vm.runInNewContext(
   ).outputText,
   { exports: externalReservationMetadataExports },
 );
+const hpbGmailSyncUnknownLockExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/hpb-gmail-sync-unknown-lock.ts", import.meta.url),
+      "utf8",
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText,
+  { exports: hpbGmailSyncUnknownLockExports, JSON, Number },
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/reservations/calendar/page.tsx", import.meta.url),
@@ -68,6 +84,21 @@ function findNode(node, predicate) {
   return null;
 }
 
+function createStorage() {
+  const values = new Map();
+  return {
+    getItem(key) {
+      return values.get(key) ?? null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
+
 async function mount({
   failure = false,
   rejection = false,
@@ -81,6 +112,7 @@ async function mount({
   externalBlockTitle = "外部予約",
   externalBlockMemo = "受付番号123",
   deleteOutcomes = ["success"],
+  storage = createStorage(),
 } = {}) {
   const states = [];
   const effects = [];
@@ -255,7 +287,7 @@ async function mount({
         json: async () => calendarPayload(),
       };
     },
-    window: { confirm: () => true },
+    window: { confirm: () => true, localStorage: storage },
     require(name) {
       if (name === "react") return hooks;
       if (name === "next/link") return { default: "a" };
@@ -263,6 +295,9 @@ async function mount({
       if (name === "@/lib/reservation-status") return reservationStatusExports;
       if (name === "@/lib/external-reservation-metadata") {
         return externalReservationMetadataExports;
+      }
+      if (name === "@/lib/hpb-gmail-sync-unknown-lock") {
+        return hpbGmailSyncUnknownLockExports;
       }
       throw new Error(`Unexpected import: ${name}`);
     },
@@ -531,6 +566,33 @@ for (const outcome of ["networkFailure", "invalidJson"]) {
     );
   });
 }
+
+test("reservation calendar restores an unknown Gmail sync lock after reload", async () => {
+  const storage = createStorage();
+  const firstPage = await mount({
+    hpbOutcomes: ["networkFailure"],
+    storage,
+  });
+
+  await firstPage.syncOnce();
+  assert.equal(
+    firstPage.requests.filter(request => request.url === "/api/hpb-gmail-sync")
+      .length,
+    1,
+  );
+
+  const reloadedPage = await mount({ storage });
+  assert.match(reloadedPage.html(), /同期結果を確認してください/);
+  assert.match(reloadedPage.html(), /予約同期の結果を確認できませんでした/);
+
+  await reloadedPage.syncOnce();
+  assert.equal(
+    reloadedPage.requests.filter(
+      request => request.url === "/api/hpb-gmail-sync",
+    ).length,
+    0,
+  );
+});
 
 test("reservation calendar allows retry after an explicit Gmail sync failure", async () => {
   const page = await mount({ hpbOutcomes: ["explicitFailure", "success"] });
