@@ -42,7 +42,11 @@ function currentDateParts() {
   const year = now.getFullYear();
   const month = `${now.getMonth() + 1}`.padStart(2, "0");
   const day = `${now.getDate()}`.padStart(2, "0");
-  return { today: `${year}-${month}-${day}`, month: `${year}-${month}` };
+  return {
+    today: `${year}-${month}-${day}`,
+    month: `${year}-${month}`,
+    anotherDay: `${year}-${month}-${day === "01" ? "02" : "01"}`,
+  };
 }
 
 async function mount({ mode = "success" } = {}) {
@@ -123,7 +127,7 @@ async function mount({ mode = "success" } = {}) {
                         return { data: [], error: null };
                       }
 
-                      const { today, month } = currentDateParts();
+                      const { today, anotherDay } = currentDateParts();
                       return {
                         data: [
                           {
@@ -137,10 +141,10 @@ async function mount({ mode = "success" } = {}) {
                           {
                             id: "visit-2",
                             customer_id: "customer-2",
-                            visit_date: `${month}-01`,
+                            visit_date: anotherDay,
                             menu_name: "カラー",
                             price: 3000,
-                            created_at: `${month}-01T00:00:00Z`,
+                            created_at: `${anotherDay}T00:00:00Z`,
                           },
                           {
                             id: "visit-3",

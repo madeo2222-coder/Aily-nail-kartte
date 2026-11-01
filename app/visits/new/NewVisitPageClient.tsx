@@ -184,6 +184,16 @@ function getCreatedVisitId(value: unknown) {
   return value.visit.id;
 }
 
+function hasReliablePostgresErrorCode(value: unknown) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    typeof value.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(value.code.trim())
+  );
+}
+
 function reservationStatusApiErrorMessage(status: number, value: unknown) {
   if (
     typeof value === "object" &&
@@ -917,10 +927,17 @@ export default function NewVisitPageClient() {
             !UUID_PATTERN.test(insertedVisit.id)
           ) {
             console.error("visits insert error:", visitError);
+
+            if (!visitError || !hasReliablePostgresErrorCode(visitError)) {
+              keepSubmissionLocked = true;
+              setMessage(
+                "来店履歴の登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
+              );
+              return;
+            }
+
             setMessage(
-              `来店履歴の登録に失敗しました: ${
-                visitError?.message || "insert failed"
-              }`
+              "来店履歴の登録に失敗しました。入力内容を確認してください。"
             );
             return;
           }

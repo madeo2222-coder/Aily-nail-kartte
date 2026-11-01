@@ -37,6 +37,10 @@ async function mount({
   reservationStatus,
   resumeExistingVisit = false,
   completionFirstResult = null,
+  legacyVisitResult = {
+    data: { id: VISIT_ID },
+    error: null,
+  },
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -255,10 +259,11 @@ async function mount({
                   return chain;
                 },
                 single() {
-                  return Promise.resolve({
-                    data: { id: VISIT_ID },
-                    error: null,
-                  });
+                  return Promise.resolve(
+                    table === "visits" && call.operation === "insert"
+                      ? legacyVisitResult
+                      : { data: { id: VISIT_ID }, error: null },
+                  );
                 },
                 then(resolve, reject) {
                   return Promise.resolve(
@@ -514,6 +519,47 @@ test("shared-login reservation visit fails closed when its status snapshot is mi
     false,
   );
   assert.match(page.html(), /予約一覧を読み直してから来店登録してください/);
+});
+
+test("shared-login visit blocks resubmission when the visit insert result is unknown", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitResult: { data: null, error: null },
+  });
+  await page.submit();
+
+  const operationCount = page.operations.length;
+  assert.match(
+    page.html(),
+    /来店履歴の登録結果を確認できませんでした。再送信せず、管理者へ確認してください/,
+  );
+
+  await page.submit();
+
+  assert.equal(page.operations.length, operationCount);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
+});
+
+test("shared-login visit does not expose a coded database error message", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitResult: {
+      data: null,
+      error: { code: "23514", message: "sensitive constraint detail" },
+    },
+  });
+  await page.submit();
+
+  assert.match(
+    page.html(),
+    /来店履歴の登録に失敗しました。入力内容を確認してください/,
+  );
+  assert.doesNotMatch(page.html(), /sensitive constraint detail/);
 });
 
 test("shared-login reservation visit completes a fully saved existing visit without inserting it again", async () => {

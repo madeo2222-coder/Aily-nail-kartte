@@ -29,6 +29,12 @@ function findNode(node, predicate) {
   return null;
 }
 
+function currentMonthDate(day = "15") {
+  const now = new Date();
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
 async function mount({ rejection = false, failure = false, empty = false } = {}) {
   const states = [];
   const requests = [];
@@ -59,11 +65,11 @@ async function mount({ rejection = false, failure = false, empty = false } = {})
   const visits = [{
     id: "visit-1",
     customer_id: "customer-1",
-    visit_date: "2026-09-15",
+    visit_date: currentMonthDate(),
     price: 12000,
     payment_method: "現金",
     memo: "次回は秋色",
-    next_visit_date: "2026-10-15",
+    next_visit_date: currentMonthDate("28"),
     next_proposal: "マグネット",
     next_suggestion: null,
     customers: { name: "顧客A" },
