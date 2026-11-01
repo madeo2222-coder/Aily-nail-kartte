@@ -37,6 +37,7 @@ async function mount({
   reservationStatus,
   resumeExistingVisit = false,
   completionFirstResult = null,
+  authenticatedVisitResult = null,
   legacyVisitResult = {
     data: { id: VISIT_ID },
     error: null,
@@ -160,6 +161,12 @@ async function mount({
       }
 
       if (url === "/api/visits") {
+        if (authenticatedVisitResult !== null) {
+          return typeof authenticatedVisitResult === "function"
+            ? authenticatedVisitResult()
+            : authenticatedVisitResult;
+        }
+
         return Promise.resolve({
           ok: true,
           status: 201,
@@ -466,6 +473,33 @@ test("individual staff registration uses the authenticated atomic API without di
   assert.deepEqual(body.payments, [{ method: "現金", amount: 5000 }]);
   assert.deepEqual(page.alerts, ["来店履歴を登録しました"]);
   assert.deepEqual(page.navigations, [`/customers/${CUSTOMER_ID}`]);
+});
+
+test("individual staff registration locks resubmission when the atomic API result is unknown", async () => {
+  const page = await mount({
+    authenticatedVisitResult: () => {
+      throw new Error("sensitive authenticated visit transport detail");
+    },
+  });
+  await page.submit();
+
+  const requestCount = page.requests.length;
+  assert.equal(page.dbCalls.length, 0);
+  assert.equal(page.requests.at(-1).url, "/api/visits");
+  assert.match(
+    page.html(),
+    /登録結果を確認できませんでした。再送信せず、管理者へ確認してください/,
+  );
+  assert.doesNotMatch(
+    page.html(),
+    /sensitive authenticated visit transport detail/,
+  );
+  assert.deepEqual(page.storageUploads, []);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
+
+  await page.submit();
+  assert.equal(page.requests.length, requestCount);
 });
 
 test("authenticated photo registration uploads the file then stores metadata through the guarded API", async () => {

@@ -869,26 +869,38 @@ export default function NewVisitPageClient() {
       let reservationStatusForCompletion: string | null = null;
 
       if (authenticationMode === "supabase") {
-        const response = await fetch("/api/visits", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            reservationId: prefilledReservationId || null,
-            customerId,
-            staffId: prefilledReservationId ? null : selectedStaff?.id || null,
-            visitDate,
-            menuName: normalizedMenuName,
-            color: color.trim() || null,
-            price: totalPrice,
-            memo: memo.trim() || null,
-            nextVisitDate: nextVisitDate || null,
-            nextProposal: nextProposal.trim() || null,
-            payments: cleanedPaymentLines.map((line) => ({
-              method: line.payment_method,
-              amount: line.amount,
-            })),
-          }),
-        });
+        let response: Response;
+
+        try {
+          response = await fetch("/api/visits", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reservationId: prefilledReservationId || null,
+              customerId,
+              staffId: prefilledReservationId ? null : selectedStaff?.id || null,
+              visitDate,
+              menuName: normalizedMenuName,
+              color: color.trim() || null,
+              price: totalPrice,
+              memo: memo.trim() || null,
+              nextVisitDate: nextVisitDate || null,
+              nextProposal: nextProposal.trim() || null,
+              payments: cleanedPaymentLines.map((line) => ({
+                method: line.payment_method,
+                amount: line.amount,
+              })),
+            }),
+          });
+        } catch (error) {
+          console.error("authenticated visit write error:", error);
+          keepSubmissionLocked = true;
+          setMessage(
+            "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
+          );
+          return;
+        }
+
         const responseBody: unknown = await response.json().catch(() => null);
 
         if (!response.ok) {
