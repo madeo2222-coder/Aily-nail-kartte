@@ -22,6 +22,22 @@ vm.runInNewContext(
   ).outputText,
   { exports: hpbGmailSyncUnknownLockExports, JSON, Number },
 );
+const hpbManualSyncUnknownLockExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/hpb-manual-sync-unknown-lock.ts", import.meta.url),
+      "utf8",
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText,
+  { exports: hpbManualSyncUnknownLockExports, JSON, Math, Number },
+);
 const compiled = ts.transpileModule(readFileSync(new URL("../app/hpb-mail-sync-test/page.tsx", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
@@ -48,7 +64,12 @@ function mount({ storage = createStorage() } = {}) {
   let confirm = true;
   const exports = {};
   vm.runInNewContext(compiled, {
-    exports, console: { error() {} }, alert: text => alerts.push(text), window: { confirm: () => confirm, localStorage: storage },
+    exports, console: { error() {} }, alert: text => alerts.push(text), window: {
+      confirm: () => confirm,
+      localStorage: storage,
+      setTimeout() { return 1; },
+      clearTimeout() {},
+    },
     fetch(url, options) { return new Promise((resolve, reject) => requests.push({ url, options, resolve, reject })); },
     require(name) {
       if (name === "react") return {
@@ -61,6 +82,9 @@ function mount({ storage = createStorage() } = {}) {
       if (name === "next/link") return { default: "a" };
       if (name === "@/lib/hpb-gmail-sync-unknown-lock") {
         return hpbGmailSyncUnknownLockExports;
+      }
+      if (name === "@/lib/hpb-manual-sync-unknown-lock") {
+        return hpbManualSyncUnknownLockExports;
       }
       throw new Error(`Unexpected import: ${name}`);
     },
@@ -203,6 +227,37 @@ test("manual mail response loss locks Gmail and manual retries", async () => {
   assert.match(page.alerts[0], /手動同期の結果を確認できませんでした/);
   await page.buttons()[0].props.onClick();
   assert.equal(page.requests.length, 1);
+});
+
+test("manual response loss blocks the same mail after reload but allows another mail", async () => {
+  const storage = createStorage();
+  const first = mount({ storage });
+  first.subject("予約変更");
+  first.input("結果不明になった予約メール");
+  const pending = first.buttons()[1].props.onClick();
+  first.requests[0].reject(new Error("offline"));
+  await pending;
+
+  const reloaded = mount({ storage });
+  assert.equal(reloaded.buttons()[0].props.disabled, true);
+  assert.equal(reloaded.buttons()[1].props.disabled, false);
+
+  reloaded.subject("予約変更");
+  reloaded.input("結果不明になった予約メール");
+  await reloaded.buttons()[1].props.onClick();
+  assert.equal(reloaded.requests.length, 0);
+  assert.match(reloaded.alerts[0], /直前の同期結果を確認できていません/);
+
+  const another = mount({ storage });
+  another.subject("新規予約");
+  another.input("別の予約メール");
+  const anotherPending = another.buttons()[1].props.onClick();
+  assert.equal(another.requests.length, 1);
+  another.requests[0].resolve({
+    ok: true,
+    json: async () => ({ ok: true }),
+  });
+  await anotherPending;
 });
 
 test("cancelled confirmation and empty manual text never acquire a stuck lock", async () => {

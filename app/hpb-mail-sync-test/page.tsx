@@ -6,6 +6,14 @@ import {
   readHpbGmailSyncUnknownLock,
   saveHpbGmailSyncUnknownLock,
 } from "@/lib/hpb-gmail-sync-unknown-lock";
+import {
+  buildHpbManualSyncFingerprint,
+  clearHpbManualSyncUnknownLock,
+  getHpbManualSyncUnknownLockUntil,
+  hasAnyHpbManualSyncUnknownLock,
+  hasHpbManualSyncUnknownLock,
+  markHpbManualSyncResultUnknown,
+} from "@/lib/hpb-manual-sync-unknown-lock";
 
 type SyncItem = {
   ok?: boolean;
@@ -62,9 +70,14 @@ export default function HpbMailSyncTestPage() {
   const [syncResultUnknown, setSyncResultUnknown] = useState<
     "gmail" | "manual" | null
   >(null);
+  const [hasPersistedManualUnknown, setHasPersistedManualUnknown] =
+    useState(false);
   const syncInFlight = useRef(false);
   const gmailBusy =
-    sending || gmailSyncing || syncResultUnknown !== null;
+    sending ||
+    gmailSyncing ||
+    syncResultUnknown !== null ||
+    hasPersistedManualUnknown;
   const manualBusy =
     sending || gmailSyncing || syncResultUnknown === "manual";
 
@@ -72,6 +85,25 @@ export default function HpbMailSyncTestPage() {
     if (readHpbGmailSyncUnknownLock(window.localStorage)) {
       setSyncResultUnknown("gmail");
     }
+
+    let expiryTimer: number | undefined;
+    const refreshManualUnknownLock = () => {
+      const lockUntil = getHpbManualSyncUnknownLockUntil(
+        window.localStorage,
+      );
+      setHasPersistedManualUnknown(lockUntil !== null);
+      if (lockUntil !== null) {
+        expiryTimer = window.setTimeout(
+          refreshManualUnknownLock,
+          Math.max(0, lockUntil - Date.now()) + 50,
+        );
+      }
+    };
+    refreshManualUnknownLock();
+
+    return () => {
+      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+    };
   }, []);
 
   const summary = useMemo(() => {
@@ -98,6 +130,18 @@ export default function HpbMailSyncTestPage() {
       return;
     }
 
+    const fingerprint = buildHpbManualSyncFingerprint(mailSubject, mailText);
+    if (
+      hasHpbManualSyncUnknownLock(window.localStorage, fingerprint)
+    ) {
+      setSyncResultUnknown("manual");
+      setHasPersistedManualUnknown(true);
+      alert(
+        "このメールは直前の同期結果を確認できていません。同じメールを再同期せず、予約一覧またはカレンダーで反映状況を確認してください。",
+      );
+      return;
+    }
+
     syncInFlight.current = true;
     setSending(true);
     setResult(null);
@@ -112,6 +156,10 @@ export default function HpbMailSyncTestPage() {
 
       const json = (await response.json()) as SyncResult;
       setResult(json);
+      clearHpbManualSyncUnknownLock(window.localStorage, fingerprint);
+      setHasPersistedManualUnknown(
+        hasAnyHpbManualSyncUnknownLock(window.localStorage),
+      );
 
       if (!response.ok || !json.ok) {
         canRetry = true;
@@ -123,9 +171,11 @@ export default function HpbMailSyncTestPage() {
       alert("予約メール本文の同期が完了しました");
     } catch (error) {
       console.error(error);
+      markHpbManualSyncResultUnknown(window.localStorage, fingerprint);
       setSyncResultUnknown("manual");
+      setHasPersistedManualUnknown(true);
       alert(
-        "手動同期の結果を確認できませんでした。同じメールを再同期せず、予約一覧またはカレンダーで反映状況を確認してください。未反映の場合だけ、ページを再読込してそのメールを手動同期してください。",
+        "手動同期の結果を確認できませんでした。同じメールを再同期せず、予約一覧またはカレンダーで反映状況を確認してください。結果不明のロックは30分後に解除されます。",
       );
     } finally {
       if (canRetry) {
@@ -136,10 +186,18 @@ export default function HpbMailSyncTestPage() {
   }
 
   async function handleGmailSync() {
-    if (syncInFlight.current || syncResultUnknown) return;
+    if (
+      syncInFlight.current ||
+      syncResultUnknown ||
+      hasPersistedManualUnknown
+    ) return;
 
     if (readHpbGmailSyncUnknownLock(window.localStorage)) {
       setSyncResultUnknown("gmail");
+      return;
+    }
+    if (hasAnyHpbManualSyncUnknownLock(window.localStorage)) {
+      setHasPersistedManualUnknown(true);
       return;
     }
 
@@ -227,7 +285,7 @@ export default function HpbMailSyncTestPage() {
           </Link>
         </div>
 
-        {syncResultUnknown ? (
+        {syncResultUnknown || hasPersistedManualUnknown ? (
           <section
             role="alert"
             className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 shadow-sm"
@@ -235,7 +293,7 @@ export default function HpbMailSyncTestPage() {
             <div className="text-sm font-bold text-amber-800">
               {syncResultUnknown === "gmail"
                 ? "Gmail同期の結果を確認できませんでした"
-                : "手動同期の結果を確認できませんでした"}
+                : "手動同期の結果を確認できないメールがあります"}
             </div>
             <p className="mt-2 text-sm leading-6 text-amber-800">
               同じ予約を重複登録しないよう、結果を確認できなかった同期操作を停止しました。予約一覧またはカレンダーで反映状況を確認してください。
@@ -243,7 +301,7 @@ export default function HpbMailSyncTestPage() {
             <p className="mt-2 text-sm leading-6 text-amber-800">
               {syncResultUnknown === "gmail"
                 ? "未反映のメールがある場合だけ、そのメール本文を下の手動同期へ貼り付けてください。"
-                : "未反映の場合だけページを再読込し、対象メールを手動同期してください。"}
+                : "予約一覧またはカレンダーで反映状況を確認してください。別のメールは手動同期できますが、同じメールの再同期は30分間停止します。"}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Link
