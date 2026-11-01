@@ -41,6 +41,10 @@ async function mount({
     data: { id: VISIT_ID },
     error: null,
   },
+  legacyVisitCount = 1,
+  legacyVisitCountError = null,
+  legacyRpcResults = {},
+  legacyInsertResults = {},
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -268,8 +272,11 @@ async function mount({
                 then(resolve, reject) {
                   return Promise.resolve(
                     table === "visits" && call.operation !== "insert"
-                      ? { count: 1, error: null }
-                      : { error: null },
+                      ? {
+                          count: legacyVisitCount,
+                          error: legacyVisitCountError,
+                        }
+                      : legacyInsertResults[table] ?? { error: null },
                   ).then(resolve, reject);
                 },
               };
@@ -277,7 +284,14 @@ async function mount({
             },
             rpc(name) {
               dbCalls.push(`rpc:${name}`);
-              throw new Error("individual staff registration must use the API");
+              if (authenticationMode === "supabase") {
+                throw new Error("individual staff registration must use the API");
+              }
+              return Promise.resolve(
+                Object.hasOwn(legacyRpcResults, name)
+                  ? legacyRpcResults[name]
+                  : { data: null, error: null },
+              );
             },
             storage: {
               from(bucket) {
@@ -560,6 +574,93 @@ test("shared-login visit does not expose a coded database error message", async 
     /来店履歴の登録に失敗しました。入力内容を確認してください/,
   );
   assert.doesNotMatch(page.html(), /sensitive constraint detail/);
+});
+
+test("shared-login visit keeps the saved payment and locks resubmission when the visit count is unknown", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitCount: null,
+    legacyVisitCountError: { message: "sensitive count detail" },
+  });
+  await page.submit();
+
+  const operationCount = page.operations.length;
+  assert.equal(
+    page.dbCalls.some(
+      (call) => call.table === "visit_payments" && call.operation === "insert",
+    ),
+    true,
+  );
+  assert.match(page.html(), /来店回数を確認できませんでした/);
+  assert.doesNotMatch(page.html(), /sensitive count detail/);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
+
+  await page.submit();
+  assert.equal(page.operations.length, operationCount);
+});
+
+test("shared-login visit reports an unconfirmed coupon award without exposing database details", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitCount: 6,
+    legacyRpcResults: {
+      increment_coupon_500: {
+        data: null,
+        error: { message: "sensitive coupon detail" },
+      },
+    },
+  });
+  await page.submit();
+
+  assert.equal(
+    page.dbCalls.some(
+      (call) => call.table === "visit_payments" && call.operation === "insert",
+    ),
+    true,
+  );
+  assert.equal(page.dbCalls.includes("rpc:increment_coupon_500"), true);
+  assert.equal(
+    page.dbCalls.some(
+      (call) => call.table === "coupon_histories" && call.operation === "insert",
+    ),
+    false,
+  );
+  assert.match(page.html(), /500円クーポンの付与を確認できませんでした/);
+  assert.doesNotMatch(page.html(), /sensitive coupon detail/);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
+});
+
+test("shared-login visit reports an unconfirmed coupon history after the award", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitCount: 6,
+    legacyInsertResults: {
+      coupon_histories: {
+        error: { message: "sensitive coupon history detail" },
+      },
+    },
+  });
+  await page.submit();
+
+  assert.equal(page.dbCalls.includes("rpc:increment_coupon_500"), true);
+  assert.equal(
+    page.dbCalls.some(
+      (call) => call.table === "coupon_histories" && call.operation === "insert",
+    ),
+    true,
+  );
+  assert.match(page.html(), /500円クーポンの履歴保存を確認できませんでした/);
+  assert.doesNotMatch(page.html(), /sensitive coupon history detail/);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
 });
 
 test("shared-login reservation visit completes a fully saved existing visit without inserting it again", async () => {

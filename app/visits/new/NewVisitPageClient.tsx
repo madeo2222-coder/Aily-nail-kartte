@@ -194,6 +194,35 @@ function hasReliablePostgresErrorCode(value: unknown) {
   );
 }
 
+async function requireConfirmedLegacyWrite(
+  operation: PromiseLike<unknown>,
+  failureMessage: string
+) {
+  let result: unknown;
+
+  try {
+    result = await operation;
+  } catch (error) {
+    console.error("legacy visit post-commit write error:", error);
+    throw new Error(failureMessage);
+  }
+
+  if (
+    typeof result !== "object" ||
+    result === null ||
+    !("error" in result) ||
+    result.error
+  ) {
+    console.error(
+      "legacy visit post-commit write error:",
+      typeof result === "object" && result !== null && "error" in result
+        ? result.error
+        : result
+    );
+    throw new Error(failureMessage);
+  }
+}
+
 function reservationStatusApiErrorMessage(status: number, value: unknown) {
   if (
     typeof value === "object" &&
@@ -946,44 +975,6 @@ export default function NewVisitPageClient() {
           visitCommitted = true;
           keepSubmissionLocked = true;
 
-          const { count: visitCount } = await supabase
-            .from("visits")
-            .select("*", {
-              count: "exact",
-              head: true,
-            })
-            .eq("customer_id", customerId);
-
-          if (visitCount) {
-            if (visitCount % 12 === 0) {
-              await supabase.rpc("increment_coupon_1000", {
-                customer_id_input: customerId,
-              });
-
-              await supabase.from("coupon_histories").insert({
-                customer_id: customerId,
-                visit_id: insertedVisitId,
-                coupon_type: "coupon_1000",
-                action: "earned",
-                amount: 1000,
-                note: "12回来店達成",
-              });
-            } else if (visitCount % 6 === 0) {
-              await supabase.rpc("increment_coupon_500", {
-                customer_id_input: customerId,
-              });
-
-              await supabase.from("coupon_histories").insert({
-                customer_id: customerId,
-                visit_id: insertedVisitId,
-                coupon_type: "coupon_500",
-                action: "earned",
-                amount: 500,
-                note: "6回来店達成",
-              });
-            }
-          }
-
           const visitPaymentsPayload = cleanedPaymentLines.map((line) => ({
             visit_id: insertedVisitId,
             payment_method: line.payment_method,
@@ -997,8 +988,68 @@ export default function NewVisitPageClient() {
 
           if (paymentError) {
             throw new Error(
-              `支払い内訳の登録に失敗しました: ${paymentError.message}`
+              "支払い内訳の登録に失敗しました。管理者へ確認してください。"
             );
+          }
+
+          const {
+            count: visitCount,
+            error: visitCountError,
+          } = await supabase
+            .from("visits")
+            .select("*", {
+              count: "exact",
+              head: true,
+            })
+            .eq("customer_id", customerId);
+
+          if (visitCountError || visitCount === null) {
+            console.error("visits count error:", visitCountError);
+            throw new Error(
+              "来店回数を確認できませんでした。クーポン付与状況を管理者へ確認してください。"
+            );
+          }
+
+          if (visitCount) {
+            if (visitCount % 12 === 0) {
+              await requireConfirmedLegacyWrite(
+                supabase.rpc("increment_coupon_1000", {
+                  customer_id_input: customerId,
+                }),
+                "1,000円クーポンの付与を確認できませんでした。管理者へ確認してください。"
+              );
+
+              await requireConfirmedLegacyWrite(
+                supabase.from("coupon_histories").insert({
+                  customer_id: customerId,
+                  visit_id: insertedVisitId,
+                  coupon_type: "coupon_1000",
+                  action: "earned",
+                  amount: 1000,
+                  note: "12回来店達成",
+                }),
+                "1,000円クーポンの履歴保存を確認できませんでした。管理者へ確認してください。"
+              );
+            } else if (visitCount % 6 === 0) {
+              await requireConfirmedLegacyWrite(
+                supabase.rpc("increment_coupon_500", {
+                  customer_id_input: customerId,
+                }),
+                "500円クーポンの付与を確認できませんでした。管理者へ確認してください。"
+              );
+
+              await requireConfirmedLegacyWrite(
+                supabase.from("coupon_histories").insert({
+                  customer_id: customerId,
+                  visit_id: insertedVisitId,
+                  coupon_type: "coupon_500",
+                  action: "earned",
+                  amount: 500,
+                  note: "6回来店達成",
+                }),
+                "500円クーポンの履歴保存を確認できませんでした。管理者へ確認してください。"
+              );
+            }
           }
 
           const discountTotal = cleanedPaymentLines
@@ -1006,31 +1057,43 @@ export default function NewVisitPageClient() {
             .reduce((sum, line) => sum + Math.abs(line.amount), 0);
 
           if (discountTotal >= 1000) {
-            await supabase.rpc("decrement_coupon_1000", {
-              customer_id_input: customerId,
-            });
+            await requireConfirmedLegacyWrite(
+              supabase.rpc("decrement_coupon_1000", {
+                customer_id_input: customerId,
+              }),
+              "1,000円クーポンの利用反映を確認できませんでした。管理者へ確認してください。"
+            );
 
-            await supabase.from("coupon_histories").insert({
-              customer_id: customerId,
-              visit_id: insertedVisitId,
-              coupon_type: "coupon_1000",
-              action: "used",
-              amount: -1000,
-              note: "会計時利用",
-            });
+            await requireConfirmedLegacyWrite(
+              supabase.from("coupon_histories").insert({
+                customer_id: customerId,
+                visit_id: insertedVisitId,
+                coupon_type: "coupon_1000",
+                action: "used",
+                amount: -1000,
+                note: "会計時利用",
+              }),
+              "1,000円クーポンの利用履歴を確認できませんでした。管理者へ確認してください。"
+            );
           } else if (discountTotal >= 500) {
-            await supabase.rpc("decrement_coupon_500", {
-              customer_id_input: customerId,
-            });
+            await requireConfirmedLegacyWrite(
+              supabase.rpc("decrement_coupon_500", {
+                customer_id_input: customerId,
+              }),
+              "500円クーポンの利用反映を確認できませんでした。管理者へ確認してください。"
+            );
 
-            await supabase.from("coupon_histories").insert({
-              customer_id: customerId,
-              visit_id: insertedVisitId,
-              coupon_type: "coupon_500",
-              action: "used",
-              amount: -500,
-              note: "会計時利用",
-            });
+            await requireConfirmedLegacyWrite(
+              supabase.from("coupon_histories").insert({
+                customer_id: customerId,
+                visit_id: insertedVisitId,
+                coupon_type: "coupon_500",
+                action: "used",
+                amount: -500,
+                note: "会計時利用",
+              }),
+              "500円クーポンの利用履歴を確認できませんでした。管理者へ確認してください。"
+            );
           }
         }
       }
