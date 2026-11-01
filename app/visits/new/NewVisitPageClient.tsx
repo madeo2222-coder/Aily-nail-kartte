@@ -11,6 +11,12 @@ import {
   validateVisitPhotoFile,
   validateVisitPhotoMetadata,
 } from "@/lib/visitPhotoStorage";
+import {
+  buildVisitSubmissionFingerprint,
+  clearVisitSubmissionLock,
+  hasActiveVisitSubmissionLock,
+  markVisitSubmissionPending,
+} from "@/lib/visit-submission-lock";
 
 type Customer = {
   id: string;
@@ -872,6 +878,31 @@ export default function NewVisitPageClient() {
       return;
     }
 
+    const authenticatedSubmissionFingerprint =
+      authenticationMode === "supabase"
+        ? buildVisitSubmissionFingerprint({
+            reservationId: prefilledReservationId || null,
+            customerId,
+            staffId: prefilledReservationId ? null : selectedStaff?.id || null,
+            visitDate,
+          })
+        : null;
+
+    if (
+      authenticatedSubmissionFingerprint &&
+      hasActiveVisitSubmissionLock(
+        window.localStorage,
+        authenticatedSubmissionFingerprint,
+      )
+    ) {
+      submissionLockRef.current = true;
+      setSubmissionLocked(true);
+      setMessage(
+        "前回の登録結果を確認できていません。同じ内容を再送信せず、管理者へ確認してください。"
+      );
+      return;
+    }
+
     submissionLockRef.current = true;
     setSaving(true);
     let keepSubmissionLocked = false;
@@ -884,6 +915,13 @@ export default function NewVisitPageClient() {
 
       if (authenticationMode === "supabase") {
         let response: Response;
+
+        if (authenticatedSubmissionFingerprint) {
+          markVisitSubmissionPending(
+            window.localStorage,
+            authenticatedSubmissionFingerprint,
+          );
+        }
 
         try {
           response = await fetch("/api/visits", {
@@ -920,9 +958,11 @@ export default function NewVisitPageClient() {
         if (!response.ok) {
           setMessage(visitApiErrorMessage(response.status, responseBody));
 
+          const terminalConflict = isTerminalVisitApiError(responseBody);
+
           if (
             response.status >= 500 ||
-            isTerminalVisitApiError(responseBody)
+            terminalConflict
           ) {
             keepSubmissionLocked = true;
 
@@ -931,6 +971,11 @@ export default function NewVisitPageClient() {
                 "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
               );
             }
+          } else if (authenticatedSubmissionFingerprint) {
+            clearVisitSubmissionLock(
+              window.localStorage,
+              authenticatedSubmissionFingerprint,
+            );
           }
           return;
         }
@@ -1171,6 +1216,13 @@ export default function NewVisitPageClient() {
 
       alert("来店履歴を登録しました");
       router.push(`/customers/${customerId}`);
+
+      if (authenticatedSubmissionFingerprint) {
+        clearVisitSubmissionLock(
+          window.localStorage,
+          authenticatedSubmissionFingerprint,
+        );
+      }
     } catch (error) {
       console.error("来店登録エラー:", error);
 

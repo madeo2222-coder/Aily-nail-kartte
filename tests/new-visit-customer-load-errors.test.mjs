@@ -158,6 +158,12 @@ async function mount({ mode = "success", preselectedCustomerId = "" } = {}) {
         validateVisitPhotoFile: async file => ({ file, contentType: file.type, extension: "png" }),
         createVisitPhotoPath: () => "visit/photo-test.png",
       };
+      if (name === "@/lib/visit-submission-lock") return {
+        buildVisitSubmissionFingerprint: () => "visit-test",
+        hasActiveVisitSubmissionLock: () => false,
+        markVisitSubmissionPending() {},
+        clearVisitSubmissionLock() {},
+      };
       throw new Error(`Unexpected import: ${name}`);
     },
   });

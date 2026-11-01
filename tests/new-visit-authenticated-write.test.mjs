@@ -18,11 +18,40 @@ const compiled = ts.transpileModule(source, {
     jsx: ts.JsxEmit.ReactJSX,
   },
 }).outputText;
+const visitSubmissionLockExports = {};
+const visitSubmissionLockSource = ts.transpileModule(
+  readFileSync(
+    new URL("../lib/visit-submission-lock.ts", import.meta.url),
+    "utf8",
+  ),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+).outputText;
+vm.runInNewContext(visitSubmissionLockSource, {
+  exports: visitSubmissionLockExports,
+  Date,
+  JSON,
+  Number,
+});
 
 const CUSTOMER_ID = "10000000-0000-4000-8000-000000000001";
 const STAFF_ID = "20000000-0000-4000-8000-000000000002";
 const SALON_ID = "30000000-0000-4000-8000-000000000003";
 const VISIT_ID = "40000000-0000-4000-8000-000000000004";
+
+function makeStorage() {
+  const values = new Map();
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key) : null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
 
 function walk(node) {
   if (!node || typeof node !== "object") return [];
@@ -49,6 +78,7 @@ async function mount({
   legacyStorageUploadResult = { error: null },
   legacyPhotoPublicUrlResult = null,
   photoMetadataResult = null,
+  localStorage = makeStorage(),
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -136,6 +166,7 @@ async function mount({
       alerts.push(message);
     },
     console: { error() {} },
+    window: { localStorage },
     fetch(url, options = {}) {
       requests.push({ url, options });
       operations.push({ type: "fetch", url, options });
@@ -362,6 +393,9 @@ async function mount({
             `${visitId}/photo-50000000-0000-4000-8000-000000000005.png`,
         };
       }
+      if (name === "@/lib/visit-submission-lock") {
+        return visitSubmissionLockExports;
+      }
       return require(name);
     },
   });
@@ -384,6 +418,7 @@ async function mount({
     storageUploads,
     navigations,
     alerts,
+    localStorage,
     operations,
     html() {
       return walk(tree)
@@ -500,6 +535,28 @@ test("individual staff registration locks resubmission when the atomic API resul
 
   await page.submit();
   assert.equal(page.requests.length, requestCount);
+});
+
+test("individual staff registration restores its unknown-result lock after reload", async () => {
+  const localStorage = makeStorage();
+  const first = await mount({
+    localStorage,
+    authenticatedVisitResult: () => {
+      throw new Error("response lost after visit commit");
+    },
+  });
+  await first.submit();
+
+  const reloaded = await mount({ localStorage });
+  await reloaded.submit();
+
+  assert.equal(
+    reloaded.requests.some((request) => request.url === "/api/visits"),
+    false,
+  );
+  assert.match(reloaded.html(), /前回の登録結果を確認できていません/);
+  assert.deepEqual(reloaded.alerts, []);
+  assert.deepEqual(reloaded.navigations, []);
 });
 
 for (const error of [
