@@ -434,7 +434,7 @@ async function mount({
             (child) => child.props?.children === "担当スタッフを選択してください",
           ),
       );
-      if (authenticationMode === "supabase") {
+      if (authenticationMode === "supabase" && !reservationId) {
         assert.ok(staffSelect, "staff select should be shown for individual auth");
         staffSelect.props.onChange({ target: { value: STAFF_ID } });
         render();
@@ -500,6 +500,55 @@ test("individual staff registration locks resubmission when the atomic API resul
 
   await page.submit();
   assert.equal(page.requests.length, requestCount);
+});
+
+for (const error of [
+  "この予約は既に完了しています。",
+  "この予約には既に来店履歴があります。",
+]) {
+  test(`individual staff registration locks resubmission after terminal conflict: ${error}`, async () => {
+    const page = await mount({
+      reservationId: "reservation-1",
+      reservationStatus: "confirmed",
+      authenticatedVisitResult: Promise.resolve({
+        ok: false,
+        status: 409,
+        json: async () => ({ ok: false, error }),
+      }),
+    });
+    await page.submit();
+
+    const requestCount = page.requests.length;
+    assert.match(page.html(), new RegExp(error));
+    assert.deepEqual(page.storageUploads, []);
+    assert.deepEqual(page.alerts, []);
+    assert.deepEqual(page.navigations, []);
+
+    await page.submit();
+    assert.equal(page.requests.length, requestCount);
+  });
+}
+
+test("individual staff registration keeps a correctable conflict retryable", async () => {
+  let attempts = 0;
+  const page = await mount({
+    authenticatedVisitResult: () => {
+      attempts += 1;
+      return Promise.resolve({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          ok: false,
+          error: "利用できるクーポン残高を確認してください。",
+        }),
+      });
+    },
+  });
+
+  await page.submit();
+  assert.match(page.html(), /利用できるクーポン残高を確認してください/);
+  await page.submit();
+  assert.equal(attempts, 2);
 });
 
 test("authenticated photo registration uploads the file then stores metadata through the guarded API", async () => {

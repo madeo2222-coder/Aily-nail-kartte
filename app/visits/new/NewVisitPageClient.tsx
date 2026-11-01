@@ -93,6 +93,10 @@ const KNOWN_RESERVATION_STATUS_API_ERRORS = new Set([
   "この予約には既に来店履歴があります。",
   "予約ステータスの更新に失敗しました。",
 ]);
+const TERMINAL_VISIT_API_ERRORS = new Set([
+  "この予約は既に完了しています。",
+  "この予約には既に来店履歴があります。",
+]);
 
 function createLineId() {
   return `payment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -163,6 +167,16 @@ function visitApiErrorMessage(status: number, value: unknown) {
   }
 
   return "来店登録に失敗しました。入力内容を確認してください。";
+}
+
+function isTerminalVisitApiError(value: unknown) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    typeof value.error === "string" &&
+    TERMINAL_VISIT_API_ERRORS.has(value.error)
+  );
 }
 
 function getCreatedVisitId(value: unknown) {
@@ -906,11 +920,17 @@ export default function NewVisitPageClient() {
         if (!response.ok) {
           setMessage(visitApiErrorMessage(response.status, responseBody));
 
-          if (response.status >= 500) {
+          if (
+            response.status >= 500 ||
+            isTerminalVisitApiError(responseBody)
+          ) {
             keepSubmissionLocked = true;
-            setMessage(
-              "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
-            );
+
+            if (response.status >= 500) {
+              setMessage(
+                "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
+              );
+            }
           }
           return;
         }
