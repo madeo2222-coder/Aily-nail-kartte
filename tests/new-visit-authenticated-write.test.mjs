@@ -270,13 +270,24 @@ async function mount({
                   );
                 },
                 then(resolve, reject) {
+                  const configuredInsertResult = Object.hasOwn(
+                    legacyInsertResults,
+                    table,
+                  )
+                    ? legacyInsertResults[table]
+                    : { error: null };
+                  const insertResult =
+                    typeof configuredInsertResult === "function"
+                      ? configuredInsertResult()
+                      : configuredInsertResult;
+
                   return Promise.resolve(
                     table === "visits" && call.operation !== "insert"
                       ? {
                           count: legacyVisitCount,
                           error: legacyVisitCountError,
                         }
-                      : legacyInsertResults[table] ?? { error: null },
+                      : insertResult,
                   ).then(resolve, reject);
                 },
               };
@@ -575,6 +586,48 @@ test("shared-login visit does not expose a coded database error message", async 
   );
   assert.doesNotMatch(page.html(), /sensitive constraint detail/);
 });
+
+for (const [label, paymentResult] of [
+  ["malformed", {}],
+  [
+    "rejected",
+    () => {
+      throw new Error("sensitive payment transport detail");
+    },
+  ],
+]) {
+  test(`shared-login visit locks resubmission after a ${label} payment result`, async () => {
+    const page = await mount({
+      authenticationMode: "legacy",
+      reservationId: "reservation-1",
+      reservationStatus: "confirmed",
+      legacyInsertResults: { visit_payments: paymentResult },
+    });
+    await page.submit();
+
+    const operationCount = page.operations.length;
+    assert.equal(
+      page.dbCalls.some(
+        (call) =>
+          call.table === "visit_payments" && call.operation === "insert",
+      ),
+      true,
+    );
+    assert.equal(
+      page.dbCalls.some(
+        (call) => call.table === "visits" && call.operation !== "insert",
+      ),
+      false,
+    );
+    assert.match(page.html(), /支払い内訳の登録結果を確認できませんでした/);
+    assert.doesNotMatch(page.html(), /sensitive payment transport detail/);
+    assert.deepEqual(page.alerts, []);
+    assert.deepEqual(page.navigations, []);
+
+    await page.submit();
+    assert.equal(page.operations.length, operationCount);
+  });
+}
 
 test("shared-login visit keeps the saved payment and locks resubmission when the visit count is unknown", async () => {
   const page = await mount({

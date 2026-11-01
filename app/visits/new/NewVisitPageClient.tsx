@@ -982,15 +982,10 @@ export default function NewVisitPageClient() {
             sort_order: line.sort_order,
           }));
 
-          const { error: paymentError } = await supabase
-            .from("visit_payments")
-            .insert(visitPaymentsPayload);
-
-          if (paymentError) {
-            throw new Error(
-              "支払い内訳の登録に失敗しました。管理者へ確認してください。"
-            );
-          }
+          await requireConfirmedLegacyWrite(
+            supabase.from("visit_payments").insert(visitPaymentsPayload),
+            "支払い内訳の登録結果を確認できませんでした。管理者へ確認してください。"
+          );
 
           const {
             count: visitCount,
