@@ -320,11 +320,13 @@ async function mount({
                   return chain;
                 },
                 single() {
-                  return Promise.resolve(
+                  const result =
                     table === "visits" && call.operation === "insert"
-                      ? legacyVisitResult
-                      : { data: { id: VISIT_ID }, error: null },
-                  );
+                      ? typeof legacyVisitResult === "function"
+                        ? legacyVisitResult()
+                        : legacyVisitResult
+                      : { data: { id: VISIT_ID }, error: null };
+                  return Promise.resolve(result);
                 },
                 then(resolve, reject) {
                   const configuredInsertResult = Object.hasOwn(
@@ -758,6 +760,80 @@ test("shared-login visit blocks resubmission when the visit insert result is unk
   assert.deepEqual(page.navigations, []);
 });
 
+test("shared-login visit restores its unknown-result lock after reload", async () => {
+  const localStorage = makeStorage();
+  const first = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitResult: { data: null, error: null },
+    localStorage,
+  });
+  await first.submit();
+
+  const reloaded = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    localStorage,
+  });
+  await reloaded.submit();
+
+  assert.equal(
+    reloaded.requests.some((request) =>
+      request.url.includes("/api/reservations/reservation-1/status")
+    ),
+    false,
+  );
+  assert.equal(
+    reloaded.dbCalls.some(
+      (call) => call.table === "visits" && call.operation === "insert",
+    ),
+    false,
+  );
+  assert.match(reloaded.html(), /前回の登録結果を確認できていません/);
+  assert.deepEqual(reloaded.alerts, []);
+  assert.deepEqual(reloaded.navigations, []);
+});
+
+test("shared-login visit hides a rejected insert and restores its lock after reload", async () => {
+  const localStorage = makeStorage();
+  const first = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitResult: () => {
+      throw new Error("sensitive visit transport detail");
+    },
+    localStorage,
+  });
+  await first.submit();
+
+  assert.match(
+    first.html(),
+    /来店履歴の登録結果を確認できませんでした。再送信せず、管理者へ確認してください/,
+  );
+  assert.doesNotMatch(first.html(), /sensitive visit transport detail/);
+
+  const reloaded = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    localStorage,
+  });
+  await reloaded.submit();
+
+  assert.equal(
+    reloaded.dbCalls.some(
+      (call) => call.table === "visits" && call.operation === "insert",
+    ),
+    false,
+  );
+  assert.match(reloaded.html(), /前回の登録結果を確認できていません/);
+  assert.deepEqual(reloaded.alerts, []);
+  assert.deepEqual(reloaded.navigations, []);
+});
+
 test("shared-login visit does not expose a coded database error message", async () => {
   const page = await mount({
     authenticationMode: "legacy",
@@ -775,6 +851,38 @@ test("shared-login visit does not expose a coded database error message", async 
     /来店履歴の登録に失敗しました。入力内容を確認してください/,
   );
   assert.doesNotMatch(page.html(), /sensitive constraint detail/);
+});
+
+test("shared-login visit clears its reload lock after a coded database error", async () => {
+  const localStorage = makeStorage();
+  const first = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    legacyVisitResult: {
+      data: null,
+      error: { code: "23514", message: "sensitive constraint detail" },
+    },
+    localStorage,
+  });
+  await first.submit();
+
+  const reloaded = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    localStorage,
+  });
+  await reloaded.submit();
+
+  assert.equal(
+    reloaded.dbCalls.some(
+      (call) => call.table === "visits" && call.operation === "insert",
+    ),
+    true,
+  );
+  assert.deepEqual(reloaded.alerts, ["来店履歴を登録しました"]);
+  assert.deepEqual(reloaded.navigations, [`/customers/${CUSTOMER_ID}`]);
 });
 
 for (const [label, paymentResult] of [

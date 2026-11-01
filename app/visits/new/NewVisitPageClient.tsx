@@ -886,24 +886,22 @@ export default function NewVisitPageClient() {
       return;
     }
 
-    const authenticatedSubmissionStorage =
-      authenticationMode === "supabase" ? getSafeLocalStorage() : null;
-    const authenticatedSubmissionFingerprint =
-      authenticationMode === "supabase"
-        ? buildVisitSubmissionFingerprint({
-            reservationId: prefilledReservationId || null,
-            customerId,
-            staffId: prefilledReservationId ? null : selectedStaff?.id || null,
-            visitDate,
-          })
-        : null;
+    const submissionStorage = getSafeLocalStorage();
+    const submissionFingerprint = buildVisitSubmissionFingerprint({
+      reservationId: prefilledReservationId || null,
+      customerId,
+      staffId:
+        authenticationMode === "supabase" && !prefilledReservationId
+          ? selectedStaff?.id || null
+          : null,
+      visitDate,
+    });
 
     if (
-      authenticatedSubmissionFingerprint &&
-      authenticatedSubmissionStorage &&
+      submissionStorage &&
       hasActiveVisitSubmissionLock(
-        authenticatedSubmissionStorage,
-        authenticatedSubmissionFingerprint,
+        submissionStorage,
+        submissionFingerprint,
       )
     ) {
       submissionLockRef.current = true;
@@ -927,13 +925,10 @@ export default function NewVisitPageClient() {
       if (authenticationMode === "supabase") {
         let response: Response;
 
-        if (
-          authenticatedSubmissionFingerprint &&
-          authenticatedSubmissionStorage
-        ) {
+        if (submissionStorage) {
           markVisitSubmissionPending(
-            authenticatedSubmissionStorage,
-            authenticatedSubmissionFingerprint,
+            submissionStorage,
+            submissionFingerprint,
           );
         }
 
@@ -985,13 +980,10 @@ export default function NewVisitPageClient() {
                 "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
               );
             }
-          } else if (
-            authenticatedSubmissionFingerprint &&
-            authenticatedSubmissionStorage
-          ) {
+          } else if (submissionStorage) {
             clearVisitSubmissionLock(
-              authenticatedSubmissionStorage,
-              authenticatedSubmissionFingerprint,
+              submissionStorage,
+              submissionFingerprint,
             );
           }
           return;
@@ -1030,6 +1022,13 @@ export default function NewVisitPageClient() {
             insertedVisitId = statusResult.existingVisitId;
             visitCommitted = true;
             keepSubmissionLocked = true;
+
+            if (submissionStorage) {
+              markVisitSubmissionPending(
+                submissionStorage,
+                submissionFingerprint,
+              );
+            }
           }
         }
 
@@ -1058,11 +1057,32 @@ export default function NewVisitPageClient() {
             staff_name: staffName.trim() || null,
           };
 
-          const { data: insertedVisit, error: visitError } = await supabase
-            .from("visits")
-            .insert([visitPayload])
-            .select("id")
-            .single();
+          if (submissionStorage) {
+            markVisitSubmissionPending(
+              submissionStorage,
+              submissionFingerprint,
+            );
+          }
+
+          let insertedVisit: { id: string } | null = null;
+          let visitError: { code?: string | null } | null = null;
+
+          try {
+            const visitResult = await supabase
+              .from("visits")
+              .insert([visitPayload])
+              .select("id")
+              .single();
+            insertedVisit = visitResult.data;
+            visitError = visitResult.error;
+          } catch (error) {
+            console.error("visits insert transport error:", error);
+            keepSubmissionLocked = true;
+            setMessage(
+              "来店履歴の登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
+            );
+            return;
+          }
 
           if (
             visitError ||
@@ -1082,6 +1102,13 @@ export default function NewVisitPageClient() {
             setMessage(
               "来店履歴の登録に失敗しました。入力内容を確認してください。"
             );
+
+            if (submissionStorage) {
+              clearVisitSubmissionLock(
+                submissionStorage,
+                submissionFingerprint,
+              );
+            }
             return;
           }
 
@@ -1234,13 +1261,10 @@ export default function NewVisitPageClient() {
       alert("来店履歴を登録しました");
       router.push(`/customers/${customerId}`);
 
-      if (
-        authenticatedSubmissionFingerprint &&
-        authenticatedSubmissionStorage
-      ) {
+      if (submissionStorage) {
         clearVisitSubmissionLock(
-          authenticatedSubmissionStorage,
-          authenticatedSubmissionFingerprint,
+          submissionStorage,
+          submissionFingerprint,
         );
       }
     } catch (error) {
