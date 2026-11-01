@@ -142,6 +142,10 @@ export default function HpbMailSyncTestPage() {
       return;
     }
 
+    // Acquire the persisted lock before sending so another tab cannot submit
+    // the same mail while this response is still pending. A known response
+    // clears it below; an interrupted response keeps it for reconciliation.
+    markHpbManualSyncResultUnknown(window.localStorage, fingerprint);
     syncInFlight.current = true;
     setSending(true);
     setResult(null);
@@ -157,6 +161,7 @@ export default function HpbMailSyncTestPage() {
       const json = (await response.json()) as SyncResult;
       setResult(json);
       clearHpbManualSyncUnknownLock(window.localStorage, fingerprint);
+      setSyncResultUnknown(null);
       setHasPersistedManualUnknown(
         hasAnyHpbManualSyncUnknownLock(window.localStorage),
       );
@@ -206,6 +211,9 @@ export default function HpbMailSyncTestPage() {
     );
     if (!ok) return;
 
+    // Share the in-progress scan with the calendar and other tabs before the
+    // request starts. Known results clear the lock; response loss retains it.
+    saveHpbGmailSyncUnknownLock(window.localStorage, true);
     syncInFlight.current = true;
     setGmailSyncing(true);
     setResult(null);
@@ -218,6 +226,7 @@ export default function HpbMailSyncTestPage() {
 
       const json = (await response.json()) as SyncResult;
       setResult(json);
+      setSyncResultUnknown(null);
 
       if (json.partial) {
         canRetry = true;

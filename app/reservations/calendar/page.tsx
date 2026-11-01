@@ -597,6 +597,9 @@ export default function ReservationsCalendarPage() {
       return;
     }
 
+    // Persist before sending so the sync center or another calendar tab
+    // cannot start the same Gmail scan while this request is still pending.
+    saveHpbGmailSyncUnknownLock(window.localStorage, true);
     hpbSyncInFlightRef.current = true;
     let canRetry = false;
 

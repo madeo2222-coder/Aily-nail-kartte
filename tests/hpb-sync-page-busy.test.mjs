@@ -190,6 +190,32 @@ test("Gmail unknown-result lock is shared with the calendar across reloads", asy
   await manual;
 });
 
+test("concurrent tabs share the in-progress Gmail lock", async () => {
+  const storage = createStorage();
+  const first = mount({ storage });
+  const second = mount({ storage });
+
+  const firstPending = first.buttons()[0].props.onClick();
+  assert.equal(first.requests.length, 1);
+  await second.buttons()[0].props.onClick();
+  assert.equal(second.requests.length, 0);
+
+  first.requests[0].resolve({
+    ok: true,
+    json: async () => ({ ok: true, count: 1 }),
+  });
+  await firstPending;
+
+  const afterKnownResult = mount({ storage });
+  const nextPending = afterKnownResult.buttons()[0].props.onClick();
+  assert.equal(afterKnownResult.requests.length, 1);
+  afterKnownResult.requests[0].resolve({
+    ok: true,
+    json: async () => ({ ok: true, count: 0 }),
+  });
+  await nextPending;
+});
+
 test("partial and explicit API failures release both buttons for retry", async () => {
   for (const failure of ["partial", "explicit"]) {
     const page = mount(); page.input("架空の予約メール");
@@ -258,6 +284,38 @@ test("manual response loss blocks the same mail after reload but allows another 
     json: async () => ({ ok: true }),
   });
   await anotherPending;
+});
+
+test("concurrent tabs share the in-progress lock for the same manual mail", async () => {
+  const storage = createStorage();
+  const first = mount({ storage });
+  const second = mount({ storage });
+  for (const page of [first, second]) {
+    page.subject("予約変更");
+    page.input("同じ予約メール本文");
+  }
+
+  const firstPending = first.buttons()[1].props.onClick();
+  assert.equal(first.requests.length, 1);
+  await second.buttons()[1].props.onClick();
+  assert.equal(second.requests.length, 0);
+
+  first.requests[0].resolve({
+    ok: true,
+    json: async () => ({ ok: true }),
+  });
+  await firstPending;
+
+  const afterKnownResult = mount({ storage });
+  afterKnownResult.subject("予約変更");
+  afterKnownResult.input("同じ予約メール本文");
+  const nextPending = afterKnownResult.buttons()[1].props.onClick();
+  assert.equal(afterKnownResult.requests.length, 1);
+  afterKnownResult.requests[0].resolve({
+    ok: true,
+    json: async () => ({ ok: true }),
+  });
+  await nextPending;
 });
 
 test("cancelled confirmation and empty manual text never acquire a stuck lock", async () => {
