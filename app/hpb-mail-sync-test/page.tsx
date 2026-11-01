@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  readHpbGmailSyncUnknownLock,
+  saveHpbGmailSyncUnknownLock,
+} from "@/lib/hpb-gmail-sync-unknown-lock";
 
 type SyncItem = {
   ok?: boolean;
@@ -59,7 +63,16 @@ export default function HpbMailSyncTestPage() {
     "gmail" | "manual" | null
   >(null);
   const syncInFlight = useRef(false);
-  const busy = sending || gmailSyncing || syncResultUnknown !== null;
+  const gmailBusy =
+    sending || gmailSyncing || syncResultUnknown !== null;
+  const manualBusy =
+    sending || gmailSyncing || syncResultUnknown === "manual";
+
+  useEffect(() => {
+    if (readHpbGmailSyncUnknownLock(window.localStorage)) {
+      setSyncResultUnknown("gmail");
+    }
+  }, []);
 
   const summary = useMemo(() => {
     const items = result?.results || [];
@@ -79,7 +92,7 @@ export default function HpbMailSyncTestPage() {
   }, [result]);
 
   async function handleSync() {
-    if (syncInFlight.current || syncResultUnknown) return;
+    if (syncInFlight.current || syncResultUnknown === "manual") return;
     if (!mailText.trim()) {
       alert("予約メール本文を貼り付けてください");
       return;
@@ -124,6 +137,12 @@ export default function HpbMailSyncTestPage() {
 
   async function handleGmailSync() {
     if (syncInFlight.current || syncResultUnknown) return;
+
+    if (readHpbGmailSyncUnknownLock(window.localStorage)) {
+      setSyncResultUnknown("gmail");
+      return;
+    }
+
     const ok = window.confirm(
       "Gmailから最新の予約メールを取得して同期しますか？"
     );
@@ -144,6 +163,7 @@ export default function HpbMailSyncTestPage() {
 
       if (json.partial) {
         canRetry = true;
+        saveHpbGmailSyncUnknownLock(window.localStorage, false);
         alert(
           `予約同期は一部失敗しました（成功 ${json.syncedCount || 0} 件・失敗 ${json.failedCount || 0} 件）。失敗内容を確認して再試行してください。`
         );
@@ -152,15 +172,19 @@ export default function HpbMailSyncTestPage() {
 
       if (!response.ok || !json.ok) {
         canRetry = true;
+        saveHpbGmailSyncUnknownLock(window.localStorage, false);
         alert(json.error || "Gmail同期に失敗しました");
         return;
       }
 
       canRetry = true;
+      saveHpbGmailSyncUnknownLock(window.localStorage, false);
       alert(`予約同期が完了しました（取得 ${json.count || 0} 件）`);
     } catch (error) {
       console.error(error);
+      saveHpbGmailSyncUnknownLock(window.localStorage, true);
       setSyncResultUnknown("gmail");
+      syncInFlight.current = false;
       alert(
         "Gmail同期の結果を確認できませんでした。同じ同期を繰り返さず、予約一覧またはカレンダーで反映状況を確認してください。未反映の場合だけ、ページを再読込して対象メールを手動同期してください。",
       );
@@ -214,10 +238,12 @@ export default function HpbMailSyncTestPage() {
                 : "手動同期の結果を確認できませんでした"}
             </div>
             <p className="mt-2 text-sm leading-6 text-amber-800">
-              同じ予約を重複登録しないよう、この画面の同期操作を停止しました。予約一覧またはカレンダーで反映状況を確認してください。
+              同じ予約を重複登録しないよう、結果を確認できなかった同期操作を停止しました。予約一覧またはカレンダーで反映状況を確認してください。
             </p>
             <p className="mt-2 text-sm leading-6 text-amber-800">
-              未反映の場合だけページを再読込し、対象メールを手動同期してください。
+              {syncResultUnknown === "gmail"
+                ? "未反映のメールがある場合だけ、そのメール本文を下の手動同期へ貼り付けてください。"
+                : "未反映の場合だけページを再読込し、対象メールを手動同期してください。"}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Link
@@ -247,7 +273,7 @@ export default function HpbMailSyncTestPage() {
           <button
             type="button"
             onClick={handleGmailSync}
-            disabled={busy}
+            disabled={gmailBusy}
             className="mt-4 w-full rounded-2xl bg-orange-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
             {gmailSyncing
@@ -446,12 +472,12 @@ export default function HpbMailSyncTestPage() {
           <button
             type="button"
             onClick={handleSync}
-            disabled={busy}
+            disabled={manualBusy}
             className="mt-4 w-full rounded-2xl bg-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
           >
             {sending
               ? "同期中..."
-              : syncResultUnknown
+              : syncResultUnknown === "manual"
                 ? "同期結果を確認してください"
                 : "予約メール本文を同期テスト"}
           </button>

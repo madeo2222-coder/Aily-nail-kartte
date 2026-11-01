@@ -6,6 +6,22 @@ import vm from "node:vm";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+const hpbGmailSyncUnknownLockExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/hpb-gmail-sync-unknown-lock.ts", import.meta.url),
+      "utf8",
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    },
+  ).outputText,
+  { exports: hpbGmailSyncUnknownLockExports, JSON, Number },
+);
 const compiled = ts.transpileModule(readFileSync(new URL("../app/hpb-mail-sync-test/page.tsx", import.meta.url), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
@@ -15,7 +31,16 @@ function nodes(node, type) {
   return [...(node.type === type ? [node] : []), ...[node.props?.children].flat(Infinity).flatMap(child => nodes(child, type))];
 }
 
-function mount() {
+function createStorage() {
+  const values = new Map();
+  return {
+    getItem(key) { return values.get(key) ?? null; },
+    setItem(key, value) { values.set(key, String(value)); },
+    removeItem(key) { values.delete(key); },
+  };
+}
+
+function mount({ storage = createStorage() } = {}) {
   const states = [];
   let cursor = 0;
   const requests = [];
@@ -23,20 +48,25 @@ function mount() {
   let confirm = true;
   const exports = {};
   vm.runInNewContext(compiled, {
-    exports, console: { error() {} }, alert: text => alerts.push(text), window: { confirm: () => confirm },
+    exports, console: { error() {} }, alert: text => alerts.push(text), window: { confirm: () => confirm, localStorage: storage },
     fetch(url, options) { return new Promise((resolve, reject) => requests.push({ url, options, resolve, reject })); },
     require(name) {
       if (name === "react") return {
         useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value; }]; },
         useRef(initial) { const i = cursor++; return states[i] ??= { current: initial }; },
         useMemo(fn) { return fn(); },
+        useEffect(fn) { fn(); },
       };
       if (name === "react/jsx-runtime") return require(name);
       if (name === "next/link") return { default: "a" };
+      if (name === "@/lib/hpb-gmail-sync-unknown-lock") {
+        return hpbGmailSyncUnknownLockExports;
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });
   function render() { cursor = 0; return exports.default(); }
+  render();
   return {
     requests, alerts,
     buttons: () => nodes(render(), "button"),
@@ -85,7 +115,7 @@ for (const first of [0, 1]) {
   });
 }
 
-test("network and JSON failures lock both sync modes until the result is checked", async () => {
+test("Gmail response loss locks Gmail but keeps targeted manual recovery available", async () => {
   for (const failure of ["network", "json"]) {
     const page = mount(); page.input("架空の予約メール");
     const pending = page.buttons()[0].props.onClick();
@@ -95,17 +125,45 @@ test("network and JSON failures lock both sync modes until the result is checked
       throw new Error("bad JSON");
     } });
     await pending;
-    assert.ok(page.buttons().every(button => button.props.disabled));
+    assert.equal(page.buttons()[0].props.disabled, true);
+    assert.equal(page.buttons()[1].props.disabled, false);
     assert.equal(page.alerts.length, 1);
     assert.match(page.alerts[0], /結果を確認できませんでした/);
-    assert.ok(
-      page.buttons().every(
-        button => button.props.children === "同期結果を確認してください",
-      ),
+    assert.equal(
+      page.buttons()[0].props.children,
+      "同期結果を確認してください",
     );
-    await page.buttons()[1].props.onClick();
+    assert.equal(
+      page.buttons()[1].props.children,
+      "予約メール本文を同期テスト",
+    );
+    await page.buttons()[0].props.onClick();
     assert.equal(page.requests.length, 1);
   }
+});
+
+test("Gmail unknown-result lock is shared with the calendar across reloads", async () => {
+  const storage = createStorage();
+  hpbGmailSyncUnknownLockExports.saveHpbGmailSyncUnknownLock(
+    storage,
+    true,
+    Date.now(),
+  );
+  const page = mount({ storage });
+
+  assert.equal(page.buttons()[0].props.disabled, true);
+  assert.equal(page.buttons()[0].props.children, "同期結果を確認してください");
+  assert.equal(page.buttons()[1].props.disabled, false);
+
+  await page.buttons()[0].props.onClick();
+  assert.equal(page.requests.length, 0);
+
+  page.input("未反映の予約メール本文");
+  const manual = page.buttons()[1].props.onClick();
+  assert.equal(page.requests.length, 1);
+  assert.equal(page.requests[0].url, "/api/hpb-mail-sync");
+  page.requests[0].resolve({ ok: true, json: async () => ({ ok: true }) });
+  await manual;
 });
 
 test("partial and explicit API failures release both buttons for retry", async () => {
