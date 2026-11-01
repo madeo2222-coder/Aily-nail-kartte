@@ -153,6 +153,14 @@ function formatYen(value: number) {
   return amount < 0 ? `-¥${absoluteAmount}` : `¥${absoluteAmount}`;
 }
 
+function getSafeLocalStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 function visitApiErrorMessage(status: number, value: unknown) {
   if (
     typeof value === "object" &&
@@ -878,6 +886,8 @@ export default function NewVisitPageClient() {
       return;
     }
 
+    const authenticatedSubmissionStorage =
+      authenticationMode === "supabase" ? getSafeLocalStorage() : null;
     const authenticatedSubmissionFingerprint =
       authenticationMode === "supabase"
         ? buildVisitSubmissionFingerprint({
@@ -890,8 +900,9 @@ export default function NewVisitPageClient() {
 
     if (
       authenticatedSubmissionFingerprint &&
+      authenticatedSubmissionStorage &&
       hasActiveVisitSubmissionLock(
-        window.localStorage,
+        authenticatedSubmissionStorage,
         authenticatedSubmissionFingerprint,
       )
     ) {
@@ -916,9 +927,12 @@ export default function NewVisitPageClient() {
       if (authenticationMode === "supabase") {
         let response: Response;
 
-        if (authenticatedSubmissionFingerprint) {
+        if (
+          authenticatedSubmissionFingerprint &&
+          authenticatedSubmissionStorage
+        ) {
           markVisitSubmissionPending(
-            window.localStorage,
+            authenticatedSubmissionStorage,
             authenticatedSubmissionFingerprint,
           );
         }
@@ -971,9 +985,12 @@ export default function NewVisitPageClient() {
                 "登録結果を確認できませんでした。再送信せず、管理者へ確認してください。"
               );
             }
-          } else if (authenticatedSubmissionFingerprint) {
+          } else if (
+            authenticatedSubmissionFingerprint &&
+            authenticatedSubmissionStorage
+          ) {
             clearVisitSubmissionLock(
-              window.localStorage,
+              authenticatedSubmissionStorage,
               authenticatedSubmissionFingerprint,
             );
           }
@@ -1217,9 +1234,12 @@ export default function NewVisitPageClient() {
       alert("来店履歴を登録しました");
       router.push(`/customers/${customerId}`);
 
-      if (authenticatedSubmissionFingerprint) {
+      if (
+        authenticatedSubmissionFingerprint &&
+        authenticatedSubmissionStorage
+      ) {
         clearVisitSubmissionLock(
-          window.localStorage,
+          authenticatedSubmissionStorage,
           authenticatedSubmissionFingerprint,
         );
       }

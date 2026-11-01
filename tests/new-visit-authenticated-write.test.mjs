@@ -79,6 +79,7 @@ async function mount({
   legacyPhotoPublicUrlResult = null,
   photoMetadataResult = null,
   localStorage = makeStorage(),
+  localStorageUnavailable = false,
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -91,6 +92,15 @@ async function mount({
   const alerts = [];
   const operations = [];
   let completionAttempts = 0;
+  const browserWindow = {};
+  Object.defineProperty(browserWindow, "localStorage", {
+    get() {
+      if (localStorageUnavailable) {
+        throw new Error("localStorage is unavailable");
+      }
+      return localStorage;
+    },
+  });
 
   const hooks = {
     useState(initial) {
@@ -166,7 +176,7 @@ async function mount({
       alerts.push(message);
     },
     console: { error() {} },
-    window: { localStorage },
+    window: browserWindow,
     fetch(url, options = {}) {
       requests.push({ url, options });
       operations.push({ type: "fetch", url, options });
@@ -557,6 +567,29 @@ test("individual staff registration restores its unknown-result lock after reloa
   assert.match(reloaded.html(), /前回の登録結果を確認できていません/);
   assert.deepEqual(reloaded.alerts, []);
   assert.deepEqual(reloaded.navigations, []);
+});
+
+test("individual staff registration keeps its in-page lock when localStorage is unavailable", async () => {
+  const page = await mount({
+    localStorageUnavailable: true,
+    authenticatedVisitResult: () => {
+      throw new Error("response lost after visit commit");
+    },
+  });
+
+  await page.submit();
+  assert.match(page.html(), /登録結果を確認できませんでした/);
+  const requestCount = page.requests.length;
+  await page.submit();
+
+  assert.equal(
+    page.requests.some((request) => request.url === "/api/visits"),
+    true,
+  );
+  assert.equal(page.requests.length, requestCount);
+  assert.match(page.html(), /登録結果を確認してください/);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
 });
 
 for (const error of [
