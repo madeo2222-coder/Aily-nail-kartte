@@ -45,6 +45,7 @@ async function mount({
   legacyVisitCountError = null,
   legacyRpcResults = {},
   legacyInsertResults = {},
+  legacyStorageUploadResult = { error: null },
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -310,7 +311,9 @@ async function mount({
                 return {
                   async upload(path, file, options) {
                     storageUploads.push({ path, file, options });
-                    return { error: null };
+                    return typeof legacyStorageUploadResult === "function"
+                      ? legacyStorageUploadResult()
+                      : legacyStorageUploadResult;
                   },
                   getPublicUrl(path) {
                     return {
@@ -626,6 +629,56 @@ for (const [label, paymentResult] of [
 
     await page.submit();
     assert.equal(page.operations.length, operationCount);
+  });
+}
+
+for (const [label, uploadResult] of [
+  ["malformed", {}],
+  [
+    "rejected",
+    () => {
+      throw new Error("sensitive storage transport detail");
+    },
+  ],
+]) {
+  test(`shared-login visit locks resubmission after a ${label} photo upload result`, async () => {
+    const page = await mount({
+      authenticationMode: "legacy",
+      reservationId: "reservation-1",
+      reservationStatus: "confirmed",
+      withPhoto: true,
+      legacyStorageUploadResult: uploadResult,
+    });
+    await page.submit();
+
+    const operationCount = page.operations.length;
+    assert.equal(page.storageUploads.length, 1);
+    assert.equal(
+      page.requests.some(
+        (request) => request.url === `/api/visits/${VISIT_ID}/photos`,
+      ),
+      false,
+    );
+    assert.equal(
+      page.requests.some((request) => {
+        if (request.url !== "/api/reservations/reservation-1/status") {
+          return false;
+        }
+        return JSON.parse(request.options.body).status === "完了";
+      }),
+      false,
+    );
+    assert.match(
+      page.html(),
+      /写真アップロードの結果を確認できませんでした/,
+    );
+    assert.doesNotMatch(page.html(), /sensitive storage transport detail/);
+    assert.deepEqual(page.alerts, []);
+    assert.deepEqual(page.navigations, []);
+
+    await page.submit();
+    assert.equal(page.operations.length, operationCount);
+    assert.equal(page.storageUploads.length, 1);
   });
 }
 

@@ -194,7 +194,7 @@ function hasReliablePostgresErrorCode(value: unknown) {
   );
 }
 
-async function requireConfirmedLegacyWrite(
+async function requireConfirmedPostCommitWrite(
   operation: PromiseLike<unknown>,
   failureMessage: string
 ) {
@@ -617,17 +617,16 @@ export default function NewVisitPageClient() {
       const validatedPhoto = await validateVisitPhotoFile(photo.file);
       const filePath = createVisitPhotoPath(visitId, validatedPhoto.extension);
 
-      const { error: uploadError } = await supabase.storage
-        .from(VISIT_PHOTO_BUCKET)
-        .upload(filePath, validatedPhoto.file, {
-          cacheControl: "3600",
-          contentType: validatedPhoto.contentType,
-          upsert: false,
-        });
-
-      if (uploadError) {
-        throw new Error(`写真アップロード失敗: ${uploadError.message}`);
-      }
+      await requireConfirmedPostCommitWrite(
+        supabase.storage
+          .from(VISIT_PHOTO_BUCKET)
+          .upload(filePath, validatedPhoto.file, {
+            cacheControl: "3600",
+            contentType: validatedPhoto.contentType,
+            upsert: false,
+          }),
+        "写真アップロードの結果を確認できませんでした。管理者へ確認してください。"
+      );
 
       const { data: publicUrlData } = supabase.storage
         .from(VISIT_PHOTO_BUCKET)
@@ -982,7 +981,7 @@ export default function NewVisitPageClient() {
             sort_order: line.sort_order,
           }));
 
-          await requireConfirmedLegacyWrite(
+          await requireConfirmedPostCommitWrite(
             supabase.from("visit_payments").insert(visitPaymentsPayload),
             "支払い内訳の登録結果を確認できませんでした。管理者へ確認してください。"
           );
@@ -1007,14 +1006,14 @@ export default function NewVisitPageClient() {
 
           if (visitCount) {
             if (visitCount % 12 === 0) {
-              await requireConfirmedLegacyWrite(
+              await requireConfirmedPostCommitWrite(
                 supabase.rpc("increment_coupon_1000", {
                   customer_id_input: customerId,
                 }),
                 "1,000円クーポンの付与を確認できませんでした。管理者へ確認してください。"
               );
 
-              await requireConfirmedLegacyWrite(
+              await requireConfirmedPostCommitWrite(
                 supabase.from("coupon_histories").insert({
                   customer_id: customerId,
                   visit_id: insertedVisitId,
@@ -1026,14 +1025,14 @@ export default function NewVisitPageClient() {
                 "1,000円クーポンの履歴保存を確認できませんでした。管理者へ確認してください。"
               );
             } else if (visitCount % 6 === 0) {
-              await requireConfirmedLegacyWrite(
+              await requireConfirmedPostCommitWrite(
                 supabase.rpc("increment_coupon_500", {
                   customer_id_input: customerId,
                 }),
                 "500円クーポンの付与を確認できませんでした。管理者へ確認してください。"
               );
 
-              await requireConfirmedLegacyWrite(
+              await requireConfirmedPostCommitWrite(
                 supabase.from("coupon_histories").insert({
                   customer_id: customerId,
                   visit_id: insertedVisitId,
@@ -1052,14 +1051,14 @@ export default function NewVisitPageClient() {
             .reduce((sum, line) => sum + Math.abs(line.amount), 0);
 
           if (discountTotal >= 1000) {
-            await requireConfirmedLegacyWrite(
+            await requireConfirmedPostCommitWrite(
               supabase.rpc("decrement_coupon_1000", {
                 customer_id_input: customerId,
               }),
               "1,000円クーポンの利用反映を確認できませんでした。管理者へ確認してください。"
             );
 
-            await requireConfirmedLegacyWrite(
+            await requireConfirmedPostCommitWrite(
               supabase.from("coupon_histories").insert({
                 customer_id: customerId,
                 visit_id: insertedVisitId,
@@ -1071,14 +1070,14 @@ export default function NewVisitPageClient() {
               "1,000円クーポンの利用履歴を確認できませんでした。管理者へ確認してください。"
             );
           } else if (discountTotal >= 500) {
-            await requireConfirmedLegacyWrite(
+            await requireConfirmedPostCommitWrite(
               supabase.rpc("decrement_coupon_500", {
                 customer_id_input: customerId,
               }),
               "500円クーポンの利用反映を確認できませんでした。管理者へ確認してください。"
             );
 
-            await requireConfirmedLegacyWrite(
+            await requireConfirmedPostCommitWrite(
               supabase.from("coupon_histories").insert({
                 customer_id: customerId,
                 visit_id: insertedVisitId,
