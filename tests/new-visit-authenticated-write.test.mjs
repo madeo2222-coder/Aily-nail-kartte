@@ -46,6 +46,8 @@ async function mount({
   legacyRpcResults = {},
   legacyInsertResults = {},
   legacyStorageUploadResult = { error: null },
+  legacyPhotoPublicUrlResult = null,
+  photoMetadataResult = null,
 } = {}) {
   const slots = [];
   let cursor = 0;
@@ -206,6 +208,12 @@ async function mount({
       }
 
       if (url === `/api/visits/${VISIT_ID}/photos`) {
+        if (photoMetadataResult !== null) {
+          return typeof photoMetadataResult === "function"
+            ? photoMetadataResult()
+            : photoMetadataResult;
+        }
+
         return Promise.resolve({
           ok: true,
           status: 201,
@@ -316,6 +324,12 @@ async function mount({
                       : legacyStorageUploadResult;
                   },
                   getPublicUrl(path) {
+                    if (legacyPhotoPublicUrlResult !== null) {
+                      return typeof legacyPhotoPublicUrlResult === "function"
+                        ? legacyPhotoPublicUrlResult(path)
+                        : legacyPhotoPublicUrlResult;
+                    }
+
                     return {
                       data: {
                         publicUrl: `https://example.supabase.co/storage/v1/object/public/visit-photos/${path}`,
@@ -681,6 +695,75 @@ for (const [label, uploadResult] of [
     assert.equal(page.storageUploads.length, 1);
   });
 }
+
+test("shared-login visit locks resubmission when the uploaded photo URL is unknown", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    withPhoto: true,
+    legacyPhotoPublicUrlResult: () => {
+      throw new Error("sensitive public URL detail");
+    },
+  });
+  await page.submit();
+
+  const operationCount = page.operations.length;
+  assert.equal(page.storageUploads.length, 1);
+  assert.equal(
+    page.requests.some(
+      (request) => request.url === `/api/visits/${VISIT_ID}/photos`,
+    ),
+    false,
+  );
+  assert.match(page.html(), /写真URLの取得結果を確認できませんでした/);
+  assert.doesNotMatch(page.html(), /sensitive public URL detail/);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
+
+  await page.submit();
+  assert.equal(page.operations.length, operationCount);
+  assert.equal(page.storageUploads.length, 1);
+});
+
+test("shared-login visit locks resubmission when photo metadata persistence is unknown", async () => {
+  const page = await mount({
+    authenticationMode: "legacy",
+    reservationId: "reservation-1",
+    reservationStatus: "confirmed",
+    withPhoto: true,
+    photoMetadataResult: () => {
+      throw new Error("sensitive photo metadata transport detail");
+    },
+  });
+  await page.submit();
+
+  const operationCount = page.operations.length;
+  assert.equal(page.storageUploads.length, 1);
+  assert.equal(
+    page.requests.some(
+      (request) => request.url === `/api/visits/${VISIT_ID}/photos`,
+    ),
+    true,
+  );
+  assert.equal(
+    page.requests.some((request) => {
+      if (request.url !== "/api/reservations/reservation-1/status") {
+        return false;
+      }
+      return JSON.parse(request.options.body).status === "完了";
+    }),
+    false,
+  );
+  assert.match(page.html(), /写真情報の保存結果を確認できませんでした/);
+  assert.doesNotMatch(page.html(), /sensitive photo metadata transport detail/);
+  assert.deepEqual(page.alerts, []);
+  assert.deepEqual(page.navigations, []);
+
+  await page.submit();
+  assert.equal(page.operations.length, operationCount);
+  assert.equal(page.storageUploads.length, 1);
+});
 
 test("shared-login visit keeps the saved payment and locks resubmission when the visit count is unknown", async () => {
   const page = await mount({

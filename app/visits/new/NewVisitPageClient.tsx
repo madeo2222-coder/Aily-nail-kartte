@@ -628,33 +628,54 @@ export default function NewVisitPageClient() {
         "写真アップロードの結果を確認できませんでした。管理者へ確認してください。"
       );
 
-      const { data: publicUrlData } = supabase.storage
-        .from(VISIT_PHOTO_BUCKET)
-        .getPublicUrl(filePath);
+      let publicUrl: string;
 
-      if (!publicUrlData.publicUrl) {
-        throw new Error("写真URLの取得に失敗しました");
+      try {
+        const { data: publicUrlData } = supabase.storage
+          .from(VISIT_PHOTO_BUCKET)
+          .getPublicUrl(filePath);
+
+        if (!publicUrlData.publicUrl) {
+          throw new Error("missing photo URL");
+        }
+
+        publicUrl = publicUrlData.publicUrl;
+      } catch (error) {
+        console.error("visit photo URL error:", error);
+        throw new Error(
+          "写真URLの取得結果を確認できませんでした。管理者へ確認してください。"
+        );
       }
 
       uploadedPhotoRows.push({
         visit_id: visitId,
         salon_id: salonId,
-        image_url: publicUrlData.publicUrl,
+        image_url: publicUrl,
         photo_type: "after",
       });
     }
 
-    const response = await fetch(`/api/visits/${visitId}/photos`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        salonId,
-        photos: uploadedPhotoRows.map((photo) => ({
-          imageUrl: photo.image_url,
-          photoType: photo.photo_type,
-        })),
-      }),
-    });
+    let response: Response;
+
+    try {
+      response = await fetch(`/api/visits/${visitId}/photos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          salonId,
+          photos: uploadedPhotoRows.map((photo) => ({
+            imageUrl: photo.image_url,
+            photoType: photo.photo_type,
+          })),
+        }),
+      });
+    } catch (error) {
+      console.error("visit photo metadata write error:", error);
+      throw new Error(
+        "写真情報の保存結果を確認できませんでした。管理者へ確認してください。"
+      );
+    }
+
     const responseBody: unknown = await response.json().catch(() => null);
 
     if (
