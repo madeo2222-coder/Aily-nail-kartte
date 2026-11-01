@@ -42,6 +42,8 @@ function loadRoute({
   messageResponseThreadIds = {},
   messagePayloads = {},
   messageGetDelayMs = 0,
+  gmailListError = null,
+  syncFailureError = null,
 } = {}) {
   const authOptions = [];
   let oauthClientCount = 0;
@@ -98,6 +100,7 @@ function loadRoute({
                 users: {
                   messages: {
                     async list(parameters) {
+                      if (gmailListError) throw gmailListError;
                       const page = listPages[gmailListCalls.length] || {
                         messages: [],
                       };
@@ -195,7 +198,7 @@ function loadRoute({
             syncedTexts.push(text);
             syncedSubjects.push(subject);
             if (syncFailures.includes(text)) {
-              throw new Error(`sync failed: ${text}`);
+              throw syncFailureError ?? new Error(`sync failed: ${text}`);
             }
             return {
               parsed: { source: "hpb" },
@@ -305,6 +308,43 @@ test("cron Gmail sync accepts the configured bearer token", async () => {
   assert.equal((await response.json()).ok, true);
   assert.equal(runtime.authOptions.length, 0);
   assert.equal(runtime.gmailListCount, 1);
+});
+
+test("manual Gmail sync hides provider and database details", async () => {
+  const runtime = loadRoute({
+    gmailListError: new Error(
+      "invalid_grant for GOOGLE_GMAIL_REFRESH_TOKEN and postgres relation reservations"
+    ),
+  });
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 500);
+  assert.equal(
+    body.error,
+    "予約メールを同期できませんでした。予約一覧を確認してから再試行してください。"
+  );
+  assert.doesNotMatch(body.error, /invalid_grant|GOOGLE_GMAIL|postgres|relation/i);
+});
+
+test("Gmail sync hides database details from each failed reservation", async () => {
+  const runtime = loadRoute({
+    listPages: [{ messages: [{ id: "failed-reservation" }] }],
+    syncFailures: ["failed-reservation"],
+    syncFailureError: new Error(
+      "duplicate key value violates unique constraint reservations_pkey"
+    ),
+  });
+  const response = await runtime.exports.POST();
+  const body = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(body.failedCount, 1);
+  assert.equal(
+    body.results[0].error,
+    "予約メールを同期できませんでした。予約一覧を確認してから再試行してください。"
+  );
+  assert.doesNotMatch(body.results[0].error, /duplicate|constraint|reservations/i);
 });
 
 test("manual and scheduled Gmail sync share a local lock that releases afterward", async () => {

@@ -28,7 +28,7 @@ class MockResponse {
   }
 }
 
-async function runRoute({ authenticated = true, requestBody = {}, syncResult } = {}) {
+async function runRoute({ authenticated = true, requestBody = {}, syncResult, syncError } = {}) {
   let authOptions = null;
   let requestRead = false;
   const syncedTexts = [];
@@ -69,6 +69,7 @@ async function runRoute({ authenticated = true, requestBody = {}, syncResult } =
           syncHpbMailText: async (text, subject) => {
             syncedTexts.push(text);
             syncedSubjects.push(subject);
+            if (syncError) throw syncError;
             return syncResult ?? {
               parsed: { source: "hpb" },
               result: { mode: "updated", reservationId: "reservation-1" },
@@ -146,3 +147,34 @@ test("manual HPB sync rejects empty authenticated input before syncing", async (
   assert.deepEqual(result.syncedTexts, []);
   assert.deepEqual(result.syncedSubjects, []);
 });
+
+test("manual HPB sync preserves safe business guidance", async () => {
+  const result = await runRoute({
+    requestBody: { text: "reservation mail" },
+    syncError: new Error(
+      "顧客候補を一意に特定できません。誤紐付けを避けるため予約保存を停止しました。"
+    ),
+  });
+
+  assert.equal(result.status, 500);
+  assert.match(result.body.error, /顧客候補を一意に特定できません/);
+});
+
+for (const message of [
+  "duplicate key value violates unique constraint reservations_pkey",
+  "Supabase管理接続の環境変数が不足しています",
+]) {
+  test(`manual HPB sync hides internal failure: ${message}`, async () => {
+    const result = await runRoute({
+      requestBody: { text: "reservation mail" },
+      syncError: new Error(message),
+    });
+
+    assert.equal(result.status, 500);
+    assert.equal(
+      result.body.error,
+      "予約メールを同期できませんでした。予約一覧を確認してから再試行してください。"
+    );
+    assert.doesNotMatch(result.body.error, /duplicate|constraint|Supabase|環境変数/i);
+  });
+}

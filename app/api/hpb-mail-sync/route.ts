@@ -2,6 +2,21 @@ import { NextResponse } from "next/server";
 import { syncHpbMailText } from "@/lib/hpb-mail-sync";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
+function getPublicSyncError(error: unknown) {
+  const message = error instanceof Error ? error.message.trim() : "";
+  const hasJapaneseGuidance = /[ぁ-んァ-ヶ一-龠]/.test(message);
+  const exposesInternalDetail =
+    /supabase|postgres|sql|relation|column|constraint|duplicate key|jwt|service.role|環境変数/i.test(
+      message
+    );
+
+  if (message && message.length <= 500 && hasJapaneseGuidance && !exposesInternalDetail) {
+    return message;
+  }
+
+  return "予約メールを同期できませんでした。予約一覧を確認してから再試行してください。";
+}
+
 export async function POST(request: Request) {
   const authentication = await authenticateStaffApi({
     allowedRoles: ["owner", "staff"],
@@ -38,8 +53,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error ? error.message : "HPBメール同期に失敗しました",
+        error: getPublicSyncError(error),
       },
       { status: 500 }
     );

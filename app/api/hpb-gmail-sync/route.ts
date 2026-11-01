@@ -204,6 +204,24 @@ const RESERVATION_MAIL_QUERY =
 // share module state.
 let gmailSyncInFlight = false;
 
+function getPublicGmailSyncError(
+  error: unknown,
+  fallback = "予約メールを同期できませんでした。予約一覧を確認してから再試行してください。"
+) {
+  const message = error instanceof Error ? error.message.trim() : "";
+  const hasJapaneseGuidance = /[ぁ-んァ-ヶ一-龠]/.test(message);
+  const exposesInternalDetail =
+    /supabase|postgres|sql|relation|column|constraint|duplicate key|jwt|service.role|環境変数|google_gmail_/i.test(
+      message
+    );
+
+  if (message && message.length <= 500 && hasJapaneseGuidance && !exposesInternalDetail) {
+    return message;
+  }
+
+  return fallback;
+}
+
 function decodeHtmlEntities(value: string) {
   return value
     .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) => {
@@ -550,10 +568,10 @@ async function fetchReservationMessages(
             // body/attachment decoding fails so only the affected thread is
             // deferred instead of stopping every reservation thread.
             threadId: resolvedThreadId,
-            error:
-              error instanceof Error
-                ? `Gmail本文の取得に失敗しました: ${error.message}`
-                : "Gmail本文の取得に失敗しました",
+            error: getPublicGmailSyncError(
+              error,
+              "Gmail本文の取得に失敗しました。通信状況を確認して再試行してください。"
+            ),
           };
         }
       })
@@ -586,7 +604,7 @@ async function runHpbGmailSync() {
       {
         ok: false,
         error:
-          "GOOGLE_GMAIL_CLIENT_ID / GOOGLE_GMAIL_CLIENT_SECRET / GOOGLE_GMAIL_REDIRECT_URI / GOOGLE_GMAIL_REFRESH_TOKEN を確認してください",
+          "Gmail同期の設定を確認できませんでした。管理者へ連絡してください。",
       },
       { status: 500 }
     );
@@ -765,10 +783,7 @@ async function runHpbGmailSync() {
         subject,
         skipped: false,
         ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "予約メール同期に失敗しました",
+        error: getPublicGmailSyncError(error),
       });
     }
   }
@@ -835,10 +850,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Gmailから予約メール取得に失敗しました",
+        error: getPublicGmailSyncError(error),
       },
       { status: 500 }
     );
@@ -865,10 +877,7 @@ export async function POST() {
     return NextResponse.json(
       {
         ok: false,
-        error:
-          error instanceof Error
-            ? error.message
-            : "Gmailから予約メール取得に失敗しました",
+        error: getPublicGmailSyncError(error),
       },
       { status: 500 }
     );
