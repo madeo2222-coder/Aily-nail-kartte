@@ -590,7 +590,7 @@ test("both staff confirmation screens invoke the guarded email API only after co
   );
   assert.match(
     listPage,
-    /async function sendReservationConfirmedEmail[\s\S]{0,360}\/api\/send-reservation-confirmed-email/
+    /async function sendReservationConfirmedEmail[\s\S]{0,1000}\/api\/send-reservation-confirmed-email/
   );
   assert.match(
     editPage,
@@ -598,7 +598,7 @@ test("both staff confirmation screens invoke the guarded email API only after co
   );
   assert.match(
     editPage,
-    /async function sendConfirmationEmailNotice[\s\S]{0,360}\/api\/send-reservation-confirmed-email/
+    /async function sendConfirmationEmailNotice[\s\S]{0,1000}\/api\/send-reservation-confirmed-email/
   );
   for (const page of [listPage, editPage]) {
     assert.match(page, /expectedIdempotencyKey: retryToken/);

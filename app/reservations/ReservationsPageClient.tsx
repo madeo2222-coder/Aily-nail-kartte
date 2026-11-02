@@ -21,11 +21,15 @@ import type {
 import {
   createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
+  getConfirmationEmailInProgressLock,
+  getConfirmationEmailInProgressNotice,
   getExpiredConfirmationEmailNotice,
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
+  saveConfirmationEmailInProgressLock,
   saveConfirmationEmailRetryNotice,
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
@@ -877,8 +881,22 @@ export default function ReservationsPageClient() {
     retryToken?: string,
     previousAttemptId?: string
   ): Promise<ConfirmationEmailNotice> {
+    const existingLock = readConfirmationEmailInProgressLock(
+      window.localStorage,
+      id
+    );
+    if (existingLock) {
+      return getConfirmationEmailInProgressNotice(existingLock);
+    }
+
     const attemptId =
       previousAttemptId || createConfirmationEmailAttemptId();
+    const inProgressLock = getConfirmationEmailInProgressLock(attemptId);
+    saveConfirmationEmailInProgressLock(
+      window.localStorage,
+      id,
+      inProgressLock
+    );
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
         method: "POST",
@@ -892,6 +910,9 @@ export default function ReservationsPageClient() {
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationEmailApiResult | null;
+      if (result) {
+        saveConfirmationEmailInProgressLock(window.localStorage, id, null);
+      }
       const notice = getConfirmationEmailNotice(
         response.ok,
         result,
@@ -917,6 +938,15 @@ export default function ReservationsPageClient() {
 
   async function handleRetryConfirmationEmail(id: string) {
     if (mutationRequestPendingIdsRef.current.has(id)) return;
+
+    const inProgressLock = readConfirmationEmailInProgressLock(
+      window.localStorage,
+      id
+    );
+    if (inProgressLock) {
+      alert(inProgressLock.message);
+      return;
+    }
 
     const retryNotice =
       readConfirmationEmailRetryNotice(window.localStorage, id) ||

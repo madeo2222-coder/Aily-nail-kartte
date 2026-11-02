@@ -18,8 +18,17 @@ export type ConfirmationEmailNotice = {
   actionLabel?: "確定メールを送信" | "確定メールを再試行";
 };
 
+export type ConfirmationEmailInProgressLock = {
+  attemptId: string;
+  message: string;
+  retryAt: number;
+};
+
 const DEFAULT_RETRY_WINDOW_HOURS = 24;
 const STORAGE_KEY_PREFIX = "aily:confirmation-email-retry:v1:";
+const IN_PROGRESS_STORAGE_KEY_PREFIX =
+  "aily:confirmation-email-in-progress:v1:";
+export const CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS = 5 * 60 * 1000;
 
 type RetryNoticeStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -33,11 +42,21 @@ type StoredConfirmationEmailRetryNotice = {
   attemptId?: string;
 };
 
+type StoredConfirmationEmailInProgressLock = {
+  version: 1;
+  savedAt: number;
+  attemptId: string;
+};
+
 const CONFIRMATION_EMAIL_ATTEMPT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function getStorageKey(reservationId: string) {
   return `${STORAGE_KEY_PREFIX}${reservationId}`;
+}
+
+function getInProgressStorageKey(reservationId: string) {
+  return `${IN_PROGRESS_STORAGE_KEY_PREFIX}${reservationId}`;
 }
 
 function isActionLabel(
@@ -79,6 +98,100 @@ export function createConfirmationEmailAttemptId(
     12,
     16
   )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export function getConfirmationEmailInProgressLock(
+  attemptId = createConfirmationEmailAttemptId(),
+  now = Date.now()
+): ConfirmationEmailInProgressLock {
+  return {
+    attemptId,
+    message:
+      "予約確定メールの送信処理が進行中です。5分後に画面を再読み込みして結果を確認してください。",
+    retryAt: now + CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS,
+  };
+}
+
+export function readConfirmationEmailInProgressLock(
+  storage: RetryNoticeStorage,
+  reservationId: string,
+  now = Date.now()
+): ConfirmationEmailInProgressLock | null {
+  const key = getInProgressStorageKey(reservationId);
+
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return null;
+
+    const stored = JSON.parse(
+      raw
+    ) as Partial<StoredConfirmationEmailInProgressLock>;
+    const attemptId = normalizeAttemptId(stored.attemptId);
+    const isValid =
+      stored.version === 1 &&
+      typeof stored.savedAt === "number" &&
+      Number.isFinite(stored.savedAt) &&
+      stored.savedAt <= now &&
+      now - stored.savedAt < CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS &&
+      Boolean(attemptId);
+
+    if (!isValid || !attemptId || typeof stored.savedAt !== "number") {
+      storage.removeItem(key);
+      return null;
+    }
+
+    return getConfirmationEmailInProgressLock(attemptId, stored.savedAt);
+  } catch {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Storage access can be unavailable in privacy-restricted browsers.
+    }
+    return null;
+  }
+}
+
+export function saveConfirmationEmailInProgressLock(
+  storage: RetryNoticeStorage,
+  reservationId: string,
+  lock: ConfirmationEmailInProgressLock | null,
+  now = Date.now()
+) {
+  const key = getInProgressStorageKey(reservationId);
+
+  try {
+    if (!lock) {
+      storage.removeItem(key);
+      return;
+    }
+
+    const attemptId = normalizeAttemptId(lock.attemptId);
+    if (!attemptId || lock.retryAt <= now) {
+      storage.removeItem(key);
+      return;
+    }
+
+    const stored: StoredConfirmationEmailInProgressLock = {
+      version: 1,
+      savedAt: now,
+      attemptId,
+    };
+    storage.setItem(key, JSON.stringify(stored));
+  } catch {
+    // The current screen still keeps its in-memory request guard.
+  }
+}
+
+export function getConfirmationEmailInProgressNotice(
+  lock: ConfirmationEmailInProgressLock
+): ConfirmationEmailNotice {
+  return {
+    message: lock.message,
+    canRetry: false,
+    completed: false,
+    retryWindowHours: null,
+    expiresAt: null,
+  };
 }
 
 export function readConfirmationEmailRetryNotice(

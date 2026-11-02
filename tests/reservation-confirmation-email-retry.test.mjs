@@ -25,13 +25,18 @@ vm.runInNewContext(
 );
 
 const {
+  CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS,
   createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
+  getConfirmationEmailInProgressLock,
+  getConfirmationEmailInProgressNotice,
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   getExpiredConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
+  saveConfirmationEmailInProgressLock,
   saveConfirmationEmailRetryNotice,
 } = exports;
 
@@ -226,6 +231,90 @@ test("creates a valid UUID when randomUUID is unavailable", () => {
   );
 });
 
+test("blocks a second confirmation email attempt while delivery is in progress", () => {
+  const storage = createMemoryStorage();
+  const startedAt = 4_000_000;
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
+  const lock = getConfirmationEmailInProgressLock(attemptId, startedAt);
+
+  assert.equal(lock.attemptId, attemptId);
+  assert.equal(
+    lock.retryAt,
+    startedAt + CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS
+  );
+  assert.match(lock.message, /送信処理が進行中/);
+
+  saveConfirmationEmailInProgressLock(
+    storage,
+    "reservation-1",
+    lock,
+    startedAt
+  );
+  const restored = readConfirmationEmailInProgressLock(
+    storage,
+    "reservation-1",
+    startedAt + CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS - 1
+  );
+  assert.equal(restored?.attemptId, attemptId);
+  assert.equal(restored?.retryAt, lock.retryAt);
+
+  const notice = getConfirmationEmailInProgressNotice(restored);
+  assert.equal(notice.canRetry, false);
+  assert.equal(notice.completed, false);
+  assert.match(notice.message, /5分後/);
+
+  assert.equal(
+    readConfirmationEmailInProgressLock(
+      storage,
+      "reservation-1",
+      startedAt + CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS
+    ),
+    null
+  );
+});
+
+test("clears a known confirmation email result lock but keeps an unknown result lock", () => {
+  const listSource = readFileSync(
+    new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
+    "utf8"
+  );
+  const editSource = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  for (const source of [listSource, editSource]) {
+    const functionStart = source.indexOf(
+      source.includes("sendReservationConfirmedEmail")
+        ? "async function sendReservationConfirmedEmail"
+        : "async function sendConfirmationEmailNotice"
+    );
+    const functionEnd = source.indexOf("\n  async function ", functionStart + 20);
+    const sendFunction = source.slice(functionStart, functionEnd);
+    const readIndex = sendFunction.indexOf(
+      "readConfirmationEmailInProgressLock"
+    );
+    const saveIndex = sendFunction.indexOf(
+      "saveConfirmationEmailInProgressLock",
+      readIndex
+    );
+    const fetchIndex = sendFunction.indexOf(
+      'fetch("/api/send-reservation-confirmed-email"'
+    );
+
+    assert.ok(readIndex >= 0 && readIndex < saveIndex);
+    assert.ok(saveIndex < fetchIndex);
+    assert.match(
+      sendFunction,
+      /if \(result\) \{[\s\S]{0,120}saveConfirmationEmailInProgressLock\([\s\S]{0,100}null/
+    );
+    assert.doesNotMatch(
+      sendFunction,
+      /catch \(error\)[\s\S]{0,180}saveConfirmationEmailInProgressLock/
+    );
+  }
+});
+
 test("clears completed, expired, and malformed stored email retries", () => {
   const storage = createMemoryStorage();
   const startedAt = 3_000_000;
@@ -286,6 +375,9 @@ test("reservation screens restore and persist email retry recovery", () => {
     assert.match(source, /createConfirmationEmailAttemptId\(\)/);
     assert.match(source, /retryNotice(?:\?|)\.attemptId/);
     assert.match(source, /attemptId,/);
+    assert.match(source, /readConfirmationEmailInProgressLock\(/);
+    assert.match(source, /saveConfirmationEmailInProgressLock\(/);
+    assert.match(source, /getConfirmationEmailInProgressNotice\(/);
   }
   assert.match(
     listSource,

@@ -27,11 +27,15 @@ import type {
 import {
   createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
+  getConfirmationEmailInProgressLock,
+  getConfirmationEmailInProgressNotice,
   getExpiredConfirmationEmailNotice,
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
+  saveConfirmationEmailInProgressLock,
   saveConfirmationEmailRetryNotice,
   type ConfirmationEmailApiResult,
   type ConfirmationEmailNotice,
@@ -725,8 +729,23 @@ export default function EditReservationPage() {
     retryToken?: string,
     previousAttemptId?: string
   ): Promise<ConfirmationEmailNotice> {
+    const existingLock = readConfirmationEmailInProgressLock(
+      window.localStorage,
+      id
+    );
+    if (existingLock) {
+      const notice = getConfirmationEmailInProgressNotice(existingLock);
+      return { ...notice, message: ` メール通知：${notice.message}` };
+    }
+
     const attemptId =
       previousAttemptId || createConfirmationEmailAttemptId();
+    const inProgressLock = getConfirmationEmailInProgressLock(attemptId);
+    saveConfirmationEmailInProgressLock(
+      window.localStorage,
+      id,
+      inProgressLock
+    );
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
         method: "POST",
@@ -740,6 +759,9 @@ export default function EditReservationPage() {
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationEmailApiResult | null;
+      if (result) {
+        saveConfirmationEmailInProgressLock(window.localStorage, id, null);
+      }
       const notice = getConfirmationEmailNotice(
         response.ok,
         result,
@@ -987,6 +1009,16 @@ export default function EditReservationPage() {
       setErrorMessage(
         "予約内容に未保存の変更があります。先に「変更を保存」するか、最新情報を再読み込みしてから確定通知を再試行してください。"
       );
+      setSuccessMessage("");
+      return;
+    }
+
+    const inProgressLock = readConfirmationEmailInProgressLock(
+      window.localStorage,
+      reservationId
+    );
+    if (inProgressLock) {
+      setErrorMessage(inProgressLock.message);
       setSuccessMessage("");
       return;
     }
