@@ -43,6 +43,11 @@ type StaffRow = {
   name: string | null;
 };
 
+type AvailabilitySlot = {
+  time: string;
+  staffIds: string[];
+};
+
 type DetailResponse = {
   ok: boolean;
   reservation?: ReservationDetail;
@@ -58,26 +63,6 @@ type StaffResponse = {
   staffs?: StaffRow[];
   error?: string;
 };
-
-const timeOptions = [
-  "10:00",
-  "10:30",
-  "11:00",
-  "11:30",
-  "12:00",
-  "12:30",
-  "13:00",
-  "13:30",
-  "14:00",
-  "14:30",
-  "15:00",
-  "15:30",
-  "16:00",
-  "16:30",
-  "17:00",
-  "17:30",
-  "18:00",
-];
 
 function getTodayText() {
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -201,6 +186,12 @@ export default function CustomerReservationDetailPage() {
   const [staffId, setStaffId] = useState("");
   const [memo, setMemo] = useState("");
   const [durationMinutes, setDurationMinutes] = useState("90");
+  const [availabilitySlots, setAvailabilitySlots] = useState<
+    AvailabilitySlot[]
+  >([]);
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+  const [availabilityAttempt, setAvailabilityAttempt] = useState(0);
   const [requestMessage, setRequestMessage] = useState("");
   const [requestLineLocks, setRequestLineLocks] = useState<
     Partial<
@@ -383,6 +374,105 @@ export default function CustomerReservationDetailPage() {
       nextRetries.request_cancel?.requestMessage;
     setRequestMessage(retryMessage ?? "");
   }, [reservationId, reservation?.requestRevision]);
+
+  useEffect(() => {
+    if (!reservation?.canDirectEdit || !date) {
+      setAvailabilitySlots([]);
+      setAvailabilityError("");
+      setAvailabilityLoading(false);
+      return;
+    }
+
+    const requestedDuration = Number(durationMinutes);
+    if (
+      !Number.isInteger(requestedDuration) ||
+      requestedDuration < 30 ||
+      requestedDuration > 360
+    ) {
+      setAvailabilitySlots([]);
+      setAvailabilityError("所要時間は30分から360分で入力してください");
+      setAvailabilityLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function fetchAvailability() {
+      setAvailabilityLoading(true);
+      setAvailabilityError("");
+
+      try {
+        const response = await fetch(
+          "/api/customer-reservations/availability",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              date,
+              durationMinutes: requestedDuration,
+              reservationId,
+            }),
+            signal: controller.signal,
+          }
+        );
+        const json = (await response.json()) as {
+          ok?: boolean;
+          error?: string;
+          staffs?: StaffRow[];
+          slots?: AvailabilitySlot[];
+        };
+
+        if (!response.ok || !json.ok) {
+          setAvailabilitySlots([]);
+          setAvailabilityError(
+            json.error || "空き時間の取得に失敗しました"
+          );
+          return;
+        }
+
+        const nextSlots = json.slots || [];
+        setAvailabilitySlots(nextSlots);
+        setStaffs(json.staffs || []);
+        setTime((currentTime) => {
+          const currentSlot = nextSlots.find(
+            (slot) => slot.time === currentTime
+          );
+          if (!currentSlot) {
+            setStaffId("");
+            return "";
+          }
+          setStaffId((currentStaffId) =>
+            !currentStaffId || currentSlot.staffIds.includes(currentStaffId)
+              ? currentStaffId
+              : ""
+          );
+          return currentTime;
+        });
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setAvailabilitySlots([]);
+        setAvailabilityError("空き時間の取得に失敗しました");
+      } finally {
+        if (!controller.signal.aborted) setAvailabilityLoading(false);
+      }
+    }
+
+    void fetchAvailability();
+
+    return () => controller.abort();
+  }, [
+    reservation?.canDirectEdit,
+    reservationId,
+    date,
+    durationMinutes,
+    availabilityAttempt,
+  ]);
+
+  const availableStaffs = useMemo(() => {
+    const slot = availabilitySlots.find((item) => item.time === time);
+    if (!slot) return [];
+    return staffs.filter((staff) => slot.staffIds.includes(staff.id));
+  }, [availabilitySlots, staffs, time]);
 
   async function runAction(body: Record<string, unknown>) {
     if (actionPendingRef.current) return;
@@ -893,15 +983,39 @@ export default function CustomerReservationDetailPage() {
                 <select
                   value={time}
                   onChange={(event) => setTime(event.target.value)}
+                  disabled={availabilityLoading || Boolean(availabilityError)}
                   className="w-full rounded-2xl border bg-white px-4 py-3 text-sm"
                 >
-                  {timeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                  <option value="">
+                    {availabilityLoading
+                      ? "空き時間を確認中..."
+                      : availabilityError
+                        ? "空き時間を再確認してください"
+                        : availabilitySlots.length === 0
+                          ? "空き時間がありません"
+                          : "希望時間を選択"}
+                  </option>
+
+                  {availabilitySlots.map((option) => (
+                    <option key={option.time} value={option.time}>
+                      {option.time}
                     </option>
                   ))}
                 </select>
               </label>
+
+              {availabilityError ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">
+                  <p>{availabilityError}</p>
+                  <button
+                    type="button"
+                    onClick={() => setAvailabilityAttempt((value) => value + 1)}
+                    className="mt-2 w-full rounded-xl border border-amber-300 bg-white px-3 py-2"
+                  >
+                    空き時間を再取得
+                  </button>
+                </div>
+              ) : null}
 
               <label className="block">
                 <span className="mb-2 block text-sm font-bold text-slate-700">
@@ -928,7 +1042,7 @@ export default function CustomerReservationDetailPage() {
                 >
                   <option value="">指名なし</option>
 
-                  {staffs.map((staff) => (
+                  {availableStaffs.map((staff) => (
                     <option key={staff.id} value={staff.id}>
                       {staff.name || "名前未設定"}
                     </option>
@@ -970,7 +1084,13 @@ export default function CustomerReservationDetailPage() {
               <button
                 type="button"
                 onClick={handleUpdate}
-                disabled={saving || Boolean(refreshErrorMessage)}
+                disabled={
+                  saving ||
+                  availabilityLoading ||
+                  Boolean(availabilityError) ||
+                  !time ||
+                  Boolean(refreshErrorMessage)
+                }
                 className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
                 {saving ? "変更中..." : "この内容に変更する"}
