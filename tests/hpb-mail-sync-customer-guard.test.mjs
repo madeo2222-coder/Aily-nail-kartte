@@ -1167,6 +1167,27 @@ test("booking sync stops instead of overwriting a concurrently edited staff memo
   ]);
 });
 
+test("concurrent delayed sync of the same mail converges without rewriting the manual reservation", async () => {
+  const winner = loadSync("mail-customer");
+  await winner.sync(mail);
+  const winningMemo = winner.writes[0].payload.memo.replace(
+    "【HPBメール本文】",
+    "スタッフが同期直後に追記\n【HPBメール本文】"
+  );
+
+  const loser = loadSync("mail-customer", {
+    latestMemoOnUpdate: winningMemo,
+    updateData: null,
+  });
+  const result = await loser.sync(mail);
+
+  assert.equal(result.result.mode, "updated");
+  assert.equal(result.result.alreadySynced, true);
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(loser.writes.length, 1);
+  assert.equal(loser.writes[0].operation, "update");
+});
+
 test("booking sync stops instead of overwriting a concurrently moved reservation", async () => {
   const runtime = loadSync("mail-customer", {
     existing: true,

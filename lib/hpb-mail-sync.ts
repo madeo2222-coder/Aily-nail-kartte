@@ -1350,6 +1350,26 @@ async function upsertReservation(
           alreadyCancelled: true,
         };
       }
+      // A second Gmail sync can read the same manual or existing reservation
+      // before the first sync commits. The optimistic UPDATE then correctly
+      // loses its compare-and-swap race. If the winning row already contains
+      // this exact provider mail body, the intended synchronization is complete
+      // and must converge without another write or a misleading failure. Any
+      // staff edits made around the saved body remain untouched.
+      if (
+        hasSyncedMailBody({
+          memo: latest.memo,
+          sourceLabel,
+          rawText,
+        })
+      ) {
+        return {
+          mode: "updated",
+          reservationId: latest.id,
+          alreadySynced: true,
+          reconciledManualEntry: Boolean(delayedManualEntry),
+        };
+      }
       if (latest.status !== reservationToUpdate.status) {
         throw new Error(
           "同期中に予約状態が変更されました。最新状態を確認して再試行してください。"
