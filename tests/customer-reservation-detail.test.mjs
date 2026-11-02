@@ -472,6 +472,7 @@ test("keeps customer input for a non-stale availability conflict", async () => {
       ok: false,
       body: {
         ok: false,
+        errorCode: "slot_unavailable",
         error: "選択した時間の空き状況が変わりました。別の時間を選択してください",
       },
     }),
@@ -488,6 +489,10 @@ test("keeps customer input for a non-stale availability conflict", async () => {
   const html = page.render();
   assert.match(html, /空き状況が変わりました/);
   assert.match(html, /ワンカラー/);
+  assert.match(
+    source,
+    /errorCode === "slot_unavailable"[\s\S]{0,180}errorCode === "invalid_staff"[\s\S]{0,220}setAvailabilityAttempt/
+  );
   assert.equal(
     page.requests.filter(
       ({ url, options }) =>

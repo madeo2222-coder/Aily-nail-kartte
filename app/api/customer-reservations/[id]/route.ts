@@ -808,6 +808,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           ok: false,
+          errorCode: "slot_unavailable",
           error:
             "選択した時間の空き状況が変わりました。別の時間を選択してください",
         },
@@ -869,6 +870,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           ok: false,
+          errorCode: "slot_unavailable",
           error: staffId
             ? "選択した担当者はその時間帯に既に予約があります"
             : "その時間帯には既に予約があります",
@@ -879,7 +881,11 @@ export async function PATCH(
 
     if (writeResult.outcome === "invalid_staff") {
       return NextResponse.json(
-        { ok: false, error: "選択した担当者は現在予約できません" },
+        {
+          ok: false,
+          errorCode: "invalid_staff",
+          error: "選択した担当者は現在予約できません",
+        },
         { status: 409 }
       );
     }

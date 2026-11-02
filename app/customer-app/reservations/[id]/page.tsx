@@ -624,6 +624,18 @@ export default function CustomerReservationDetailPage() {
           return;
         }
 
+        if (
+          json.errorCode === "slot_unavailable" ||
+          json.errorCode === "invalid_staff"
+        ) {
+          setAvailabilityAttempt((value) => value + 1);
+          setErrorMessage(
+            json.error ||
+              "空き状況が変わりました。最新の候補から選び直してください"
+          );
+          return;
+        }
+
         setErrorMessage(json.error || "予約操作に失敗しました");
         return;
       }

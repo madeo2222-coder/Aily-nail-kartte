@@ -104,6 +104,7 @@ function loadRoute({
   reservationReadError = null,
   staff = { id: "staff-1", name: "テスト担当" },
   staffReadError = null,
+  availabilitySlots = [{ time: "10:30", staffIds: ["staff-1"] }],
   cancelRpcResult = { outcome: "cancelled", reservation_id: "reservation-1" },
   updateRpcResult = { outcome: "updated", reservation_id: "reservation-1" },
 } = {}) {
@@ -242,7 +243,7 @@ function loadRoute({
         return {
           getCustomerReservationAvailability() {
             return {
-              slots: [{ time: "10:30", staffIds: ["staff-1"] }],
+              slots: availabilitySlots,
             };
           },
           isValidCustomerBookingDate() {
@@ -469,6 +470,76 @@ test("concurrent requested reservation writes return a refreshable stale code", 
     assert.equal(response.body.ok, false);
     assert.equal(response.body.errorCode, "stale_reservation");
     assert.match(response.body.error, /最新の内容/);
+    assert.equal(runtime.lineCalls.length, 0);
+  }
+});
+
+test("direct update marks a changed availability result for slot refresh", async () => {
+  const runtime = loadRoute({
+    reservation: {
+      id: "reservation-1",
+      customer_id: "customer-1",
+      salon_id: "salon-1",
+      staff_id: "staff-1",
+      status: "requested",
+      menu: "ワンカラー",
+      start_at: "2099-10-02T01:30:00.000Z",
+      end_at: "2099-10-02T03:00:00.000Z",
+      updated_at: "2099-09-01T00:00:00.000Z",
+      source: "customer-app",
+      memo: "元の希望",
+    },
+    availabilitySlots: [],
+  });
+  const response = await runtime.patch({
+    action: "update",
+    date: "2099-10-03",
+    time: "10:30",
+    menu: "フレンチ",
+    staffId: "staff-1",
+    memo: "変更後",
+    durationMinutes: 90,
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.body.ok, false);
+  assert.equal(response.body.errorCode, "slot_unavailable");
+  assert.equal(runtime.rpcCalls.length, 0);
+  assert.equal(runtime.lineCalls.length, 0);
+});
+
+test("guarded update marks late slot and staff conflicts for slot refresh", async () => {
+  for (const outcome of ["slot_unavailable", "invalid_staff"]) {
+    const runtime = loadRoute({
+      reservation: {
+        id: "reservation-1",
+        customer_id: "customer-1",
+        salon_id: "salon-1",
+        staff_id: "staff-1",
+        status: "requested",
+        menu: "ワンカラー",
+        start_at: "2099-10-02T01:30:00.000Z",
+        end_at: "2099-10-02T03:00:00.000Z",
+        updated_at: "2099-09-01T00:00:00.000Z",
+        source: "customer-app",
+        memo: "元の希望",
+      },
+      updateRpcResult: { outcome, reservation_id: null },
+    });
+    const response = await runtime.patch({
+      action: "update",
+      date: "2099-10-03",
+      time: "10:30",
+      menu: "フレンチ",
+      staffId: "staff-1",
+      memo: "変更後",
+      durationMinutes: 90,
+    });
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.ok, false);
+    assert.equal(response.body.errorCode, outcome);
+    assert.equal(runtime.rpcCalls.length, 1);
     assert.equal(runtime.lineCalls.length, 0);
   }
 });
