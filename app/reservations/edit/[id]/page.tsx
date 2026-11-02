@@ -587,6 +587,24 @@ export default function EditReservationPage() {
   }, [confirmationLineWaitRetryAt, reservationId]);
 
   useEffect(() => {
+    if (!reservationId || !initialAlternativeRevision) return;
+
+    const refreshAlternativeLineRetryLock = () => {
+      setAlternativeLineRetryLock(
+        readAlternativeLineRetryLock(
+          window.localStorage,
+          reservationId,
+          initialAlternativeRevision
+        )
+      );
+    };
+
+    window.addEventListener("storage", refreshAlternativeLineRetryLock);
+    return () =>
+      window.removeEventListener("storage", refreshAlternativeLineRetryLock);
+  }, [initialAlternativeRevision, reservationId]);
+
+  useEffect(() => {
     if (
       alternativeLineRetryLock?.kind !== "wait" ||
       !reservationId ||

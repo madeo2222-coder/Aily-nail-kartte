@@ -678,6 +678,14 @@ test("staff edit screen blocks unsafe alternative-time LINE repeats across reloa
   );
   assert.match(
     editPage,
+    /window\.addEventListener\("storage", refreshAlternativeLineRetryLock\)[\s\S]{0,260}window\.removeEventListener\("storage", refreshAlternativeLineRetryLock\)/
+  );
+  assert.match(
+    editPage,
+    /const refreshAlternativeLineRetryLock = \(\) => \{[\s\S]{0,260}readAlternativeLineRetryLock\([\s\S]{0,120}window\.localStorage,[\s\S]{0,80}reservationId,[\s\S]{0,80}initialAlternativeRevision/
+  );
+  assert.match(
+    editPage,
     /const expiredMessage = alternativeLineRetryLock\.message;[\s\S]{0,600}setErrorMessage\(\(current\) =>[\s\S]{0,100}current === expiredMessage \? "" : current[\s\S]{0,150}setSuccessMessage\(\(current\) =>[\s\S]{0,100}current === expiredMessage \? "" : current/
   );
   assert.match(
