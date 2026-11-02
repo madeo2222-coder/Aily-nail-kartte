@@ -554,6 +554,38 @@ export default function EditReservationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reservationId]);
 
+  const confirmationLineWaitRetryAt =
+    confirmationLineRetryLock?.kind === "wait"
+      ? confirmationLineRetryLock.retryAt
+      : null;
+
+  useEffect(() => {
+    if (!reservationId) return;
+
+    const refreshConfirmationLineRetryLock = () => {
+      setConfirmationLineRetryLock(
+        readConfirmationLineRetryLock(window.localStorage, reservationId)
+      );
+    };
+
+    window.addEventListener("storage", refreshConfirmationLineRetryLock);
+    const timeoutId =
+      confirmationLineWaitRetryAt === null
+        ? null
+        : window.setTimeout(
+            refreshConfirmationLineRetryLock,
+            Math.max(0, confirmationLineWaitRetryAt - Date.now()) + 25
+          );
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        refreshConfirmationLineRetryLock
+      );
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [confirmationLineWaitRetryAt, reservationId]);
+
   useEffect(() => {
     if (
       alternativeLineRetryLock?.kind !== "wait" ||

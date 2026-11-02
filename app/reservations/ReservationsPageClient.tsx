@@ -623,6 +623,52 @@ export default function ReservationsPageClient() {
     });
   }, [searchParams]);
 
+  const confirmationLineWaitRetryAt = useMemo(() => {
+    const retryAts = Object.values(confirmationLineRetryLocks)
+      .filter(
+        (lock): lock is Extract<
+          ConfirmationLineRetryLock,
+          { kind: "wait" }
+        > => lock.kind === "wait"
+      )
+      .map((lock) => lock.retryAt);
+
+    return retryAts.length > 0 ? Math.min(...retryAts) : null;
+  }, [confirmationLineRetryLocks]);
+
+  useEffect(() => {
+    const refreshConfirmationLineRetryLocks = () => {
+      const restored: Record<string, ConfirmationLineRetryLock> = {};
+
+      for (const reservation of reservations) {
+        const lock = readConfirmationLineRetryLock(
+          window.localStorage,
+          reservation.id
+        );
+        if (lock) restored[reservation.id] = lock;
+      }
+
+      setConfirmationLineRetryLocks(restored);
+    };
+
+    window.addEventListener("storage", refreshConfirmationLineRetryLocks);
+    const timeoutId =
+      confirmationLineWaitRetryAt === null
+        ? null
+        : window.setTimeout(
+            refreshConfirmationLineRetryLocks,
+            Math.max(0, confirmationLineWaitRetryAt - Date.now()) + 25
+          );
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        refreshConfirmationLineRetryLocks
+      );
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [confirmationLineWaitRetryAt, reservations]);
+
   const normalizedReservations = useMemo<NormalizedReservation[]>(() => {
     return reservations.map((reservation) => {
       const customerId =

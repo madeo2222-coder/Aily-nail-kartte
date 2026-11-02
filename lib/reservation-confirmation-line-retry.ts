@@ -72,7 +72,7 @@ const STORED_LOCK_MESSAGES: Record<
   history_check:
     "LINE通知の結果を確認できません。同じ送信を繰り返さず、通知状態とLINEの送信履歴を確認してください。",
   wait:
-    "予約確定LINEの送信処理が進行中です。5分後にページを再読み込みして確認してください。",
+    "予約確定LINEの送信処理が進行中です。5分後にこの画面から再試行できます。",
 };
 
 const HISTORY_CHECK_STATUSES = new Set([

@@ -628,6 +628,22 @@ test("both staff reservation screens apply the shared retry lock", () => {
     /canRetryConfirmationLine\(item\.status\) &&[\s\S]{0,80}!isExternalSynced \? \([\s\S]{0,120}confirmationLineRetryLocks\[item\.id\] \?/
   );
   assert.match(editPage, /!confirmationLineRetryLock/);
+  assert.match(
+    listPage,
+    /window\.addEventListener\("storage", refreshConfirmationLineRetryLocks\)[\s\S]{0,500}confirmationLineWaitRetryAt - Date\.now\(\)/
+  );
+  assert.match(
+    editPage,
+    /window\.addEventListener\("storage", refreshConfirmationLineRetryLock\)[\s\S]{0,500}confirmationLineWaitRetryAt - Date\.now\(\)/
+  );
+  assert.match(
+    listPage,
+    /window\.removeEventListener\([\s\S]{0,100}"storage",[\s\S]{0,100}refreshConfirmationLineRetryLocks[\s\S]{0,150}window\.clearTimeout\(timeoutId\)/
+  );
+  assert.match(
+    editPage,
+    /window\.removeEventListener\([\s\S]{0,100}"storage",[\s\S]{0,100}refreshConfirmationLineRetryLock[\s\S]{0,150}window\.clearTimeout\(timeoutId\)/
+  );
 });
 
 test("staff edit screen blocks unsafe alternative-time LINE repeats across reloads", () => {
