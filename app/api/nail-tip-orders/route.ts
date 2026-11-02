@@ -34,6 +34,67 @@ function buildNailTipOrderId({
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+export async function GET(request: NextRequest) {
+  let customer: Awaited<ReturnType<typeof requireCustomerLineSession>>;
+
+  try {
+    customer = await requireCustomerLineSession(request);
+  } catch {
+    return NextResponse.json({ ok: true, status: "unknown" });
+  }
+
+  if (!customer) {
+    return NextResponse.json(
+      { ok: false, error: "LINEログインが必要です" },
+      { status: 401 }
+    );
+  }
+
+  const requestKey = String(
+    request.nextUrl.searchParams.get("requestKey") || ""
+  ).trim();
+  if (!REQUEST_KEY_PATTERN.test(requestKey)) {
+    return NextResponse.json(
+      { ok: false, error: "注文識別情報が正しくありません" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const salonId = await resolveCustomerBookingSalonId(
+      supabase,
+      customer.salonId
+    );
+    if (!salonId) {
+      return NextResponse.json({ ok: true, status: "unknown" });
+    }
+
+    const orderId = buildNailTipOrderId({
+      customerId: customer.id,
+      salonId,
+      requestKey,
+    });
+    const { data, error } = await supabase
+      .from("nail_tip_orders")
+      .select("id")
+      .eq("id", orderId)
+      .eq("customer_id", customer.id)
+      .eq("salon_id", salonId)
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ ok: true, status: "unknown" });
+    }
+    return NextResponse.json({
+      ok: true,
+      status: data?.id ? "saved" : "not_found",
+    });
+  } catch {
+    return NextResponse.json({ ok: true, status: "unknown" });
+  }
+}
+
 export async function POST(request: NextRequest) {
   let customer: Awaited<ReturnType<typeof requireCustomerLineSession>>;
 

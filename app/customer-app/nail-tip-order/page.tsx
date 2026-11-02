@@ -1,12 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useSearchParams } from "next/navigation";
 import {
   NAIL_TIP_PRODUCTS,
   type NailTipProduct as CatalogNailTipProduct,
 } from "@/lib/nail-tip-products/catalog";
+import {
+  clearPendingNailTipOrderSubmission,
+  readPendingNailTipOrderSubmission,
+  savePendingNailTipOrderSubmission,
+  type NailTipOrderSubmission,
+} from "@/lib/nail-tip-order-submission";
 
 type NailTipProduct = CatalogNailTipProduct & {
   description: string;
@@ -95,7 +108,6 @@ function findRecommendedProduct(stone: string) {
 }
 
 const ORDER_SUBMISSION_STATE_KEY = "aily.nailTipOrder.submissionState";
-const ORDER_REQUEST_KEY = "aily.nailTipOrder.requestKey";
 
 type OrderSubmissionState = "idle" | "uncertain" | "confirmed";
 
@@ -118,21 +130,96 @@ function NailTipOrderContent() {
   const [submitting, setSubmitting] = useState(false);
   const [submissionState, setSubmissionState] =
     useState<OrderSubmissionState>("idle");
+  const [recoveryChecking, setRecoveryChecking] = useState(false);
+  const [retryReady, setRetryReady] = useState(false);
+  const [recoveredSaved, setRecoveredSaved] = useState(false);
   const submitLockRef = useRef(false);
 
-  useEffect(() => {
-    try {
-      const previous = window.sessionStorage.getItem(ORDER_SUBMISSION_STATE_KEY);
-      if (previous === "uncertain" || previous === "confirmed") {
-        setSubmissionState(previous);
-      }
-    } catch {
-      // Storage access is checked again before each submission.
+  const restorePendingFields = useCallback((pending: NailTipOrderSubmission) => {
+    if (nailTipProducts.some((product) => product.code === pending.productCode)) {
+      setSelectedProductId(pending.productCode);
     }
+    setDesignRequest(pending.designRequest);
+    setSizeStatus(pending.sizeStatus);
+    setDeliveryRequest(pending.deliveryRequest);
   }, []);
 
+  const reconcilePendingSubmission = useCallback(async () => {
+    let previous: string | null = null;
+    let pending: NailTipOrderSubmission | null = null;
+    try {
+      previous = window.sessionStorage.getItem(ORDER_SUBMISSION_STATE_KEY);
+      pending = readPendingNailTipOrderSubmission(window.sessionStorage);
+    } catch {
+      setSubmissionState("idle");
+      return;
+    }
+
+    if (previous === "confirmed") {
+      setSubmissionState("confirmed");
+      return;
+    }
+
+    if (previous !== "uncertain") {
+      if (pending) {
+        restorePendingFields(pending);
+        setRetryReady(true);
+      }
+      return;
+    }
+
+    setSubmissionState("uncertain");
+    setRecoveryChecking(true);
+    setRetryReady(false);
+    setRecoveredSaved(false);
+
+    if (!pending) {
+      setRecoveryChecking(false);
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `/api/nail-tip-orders?requestKey=${encodeURIComponent(
+          pending.requestKey
+        )}`,
+        { cache: "no-store" }
+      );
+      const json = (await response.json()) as {
+        ok?: boolean;
+        status?: "saved" | "not_found" | "unknown";
+      };
+
+      if (!response.ok || !json.ok || json.status === "unknown") return;
+
+      if (json.status === "saved") {
+        window.sessionStorage.setItem(ORDER_SUBMISSION_STATE_KEY, "confirmed");
+        setSubmissionState("confirmed");
+        setRecoveredSaved(true);
+        return;
+      }
+
+      if (json.status === "not_found") {
+        restorePendingFields(pending);
+        window.sessionStorage.removeItem(ORDER_SUBMISSION_STATE_KEY);
+        setSubmissionState("idle");
+        setRetryReady(true);
+      }
+    } catch (error) {
+      console.error("Order reconciliation failed:", error);
+    } finally {
+      setRecoveryChecking(false);
+    }
+  }, [restorePendingFields]);
+
   useEffect(() => {
-    setSelectedProductId(recommendedProductId);
+    void reconcilePendingSubmission();
+  }, [reconcilePendingSubmission]);
+
+  useEffect(() => {
+    if (!readPendingNailTipOrderSubmission(window.sessionStorage)) {
+      setSelectedProductId(recommendedProductId);
+    }
   }, [recommendedProductId]);
 
   const selectedProduct = useMemo(() => {
@@ -151,25 +238,13 @@ function NailTipOrderContent() {
     window.setTimeout(() => setMessage(""), 2500);
   }
 
-  function getOrCreateRequestKey() {
-    const requestKey = window.crypto.randomUUID();
-
-    try {
-      const existing = window.sessionStorage.getItem(ORDER_REQUEST_KEY);
-      if (existing) return existing;
-      window.sessionStorage.setItem(ORDER_REQUEST_KEY, requestKey);
-    } catch {
-      // The in-memory key still makes the immediate retry idempotent.
-    }
-
-    return requestKey;
-  }
-
   async function handleSubmit() {
     // Ref lock takes effect before React can render the disabled button.
     if (submitLockRef.current || submissionState !== "idle") return;
     submitLockRef.current = true;
     setSubmitting(true);
+
+    let requestStarted = false;
 
     try {
       // A response can be lost after the server saves an order. Persist the
@@ -179,11 +254,10 @@ function NailTipOrderContent() {
         setSubmissionState(previous);
         return;
       }
-      window.sessionStorage.setItem(ORDER_SUBMISSION_STATE_KEY, "uncertain");
-      setSubmissionState("uncertain");
-
-      const requestKey = getOrCreateRequestKey();
-      const requestBody = JSON.stringify({
+      const storedPending = readPendingNailTipOrderSubmission(
+        window.sessionStorage
+      );
+      const submission: NailTipOrderSubmission = storedPending || {
         luckyColor: color,
         luckyStone: stone,
         nailTheme: theme,
@@ -191,14 +265,25 @@ function NailTipOrderContent() {
         designRequest,
         sizeStatus,
         deliveryRequest,
-        requestKey,
-      });
+        requestKey: window.crypto.randomUUID(),
+      };
+
+      if (!storedPending) {
+        savePendingNailTipOrderSubmission(window.sessionStorage, submission);
+      }
+      window.sessionStorage.setItem(ORDER_SUBMISSION_STATE_KEY, "uncertain");
+      setSubmissionState("uncertain");
+      setRetryReady(false);
+      setRecoveredSaved(false);
+
+      const requestBody = JSON.stringify(submission);
 
       let response: Response | null = null;
       let json: { ok?: boolean; error?: string } = {};
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
+          requestStarted = true;
           response = await fetch("/api/nail-tip-orders", {
             method: "POST",
             headers: {
@@ -223,7 +308,7 @@ function NailTipOrderContent() {
         // A 500 or a lost response can occur after the order was saved.
         if ([400, 401, 403, 404, 422].includes(response.status)) {
           window.sessionStorage.removeItem(ORDER_SUBMISSION_STATE_KEY);
-          window.sessionStorage.removeItem(ORDER_REQUEST_KEY);
+          clearPendingNailTipOrderSubmission(window.sessionStorage);
           setSubmissionState("idle");
         }
         showMessage(json.error || "注文の受付結果を確認できませんでした");
@@ -235,6 +320,13 @@ function NailTipOrderContent() {
       showMessage("ネイルチップの注文相談を受け付けました");
     } catch (error) {
       console.error(error);
+      if (!requestStarted) {
+        setSubmissionState("idle");
+        showMessage(
+          "安全に送信準備を保存できません。ブラウザの保存設定を確認してください"
+        );
+        return;
+      }
       // Fail closed, even when browser storage is unavailable.
       setSubmissionState("uncertain");
       showMessage("送信結果を確認できません。再送せず注文履歴を確認してください");
@@ -250,7 +342,7 @@ function NailTipOrderContent() {
     }
     try {
       window.sessionStorage.removeItem(ORDER_SUBMISSION_STATE_KEY);
-      window.sessionStorage.removeItem(ORDER_REQUEST_KEY);
+      clearPendingNailTipOrderSubmission(window.sessionStorage);
       setSubmissionState("idle");
       setDesignRequest("");
       setDeliveryRequest("");
@@ -446,7 +538,9 @@ function NailTipOrderContent() {
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={submitting || submissionState !== "idle"}
+              disabled={
+                submitting || recoveryChecking || submissionState !== "idle"
+              }
               className="w-full rounded-2xl bg-purple-600 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "注文送信中..." : "この内容で注文相談する"}
@@ -464,11 +558,28 @@ function NailTipOrderContent() {
                   マイページの注文履歴を確認
                 </Link>
                 してください。履歴を確認できない場合は店舗へご連絡ください。
+                <button
+                  type="button"
+                  onClick={() => void reconcilePendingSubmission()}
+                  disabled={recoveryChecking}
+                  className="mt-2 block w-full rounded-xl border border-amber-300 bg-white px-3 py-2 font-bold disabled:opacity-60"
+                >
+                  {recoveryChecking ? "注文結果を確認中..." : "注文結果を再確認"}
+                </button>
+              </div>
+            ) : null}
+            {retryReady ? (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-900">
+                注文は保存されていませんでした。入力内容を復元しました。内容を確認して再送できます。
               </div>
             ) : null}
             {submissionState === "confirmed" ? (
               <div className="space-y-3 rounded-xl border border-green-200 bg-green-50 p-3 text-sm leading-6 text-green-900">
-                <p>注文相談を受け付けました。同じ注文の再送はできません。</p>
+                <p>
+                  {recoveredSaved
+                    ? "保存済みの注文相談を確認しました。同じ注文の再送はできません。"
+                    : "注文相談を受け付けました。同じ注文の再送はできません。"}
+                </p>
                 <Link
                   href="/customer-app/mypage"
                   className="font-bold underline"

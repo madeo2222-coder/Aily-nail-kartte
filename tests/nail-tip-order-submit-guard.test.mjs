@@ -16,9 +16,13 @@ test("guard is established before the order POST and prior to awaiting network",
     handler.indexOf("submitLockRef.current = true") <
       handler.indexOf('fetch("/api/nail-tip-orders"')
   );
-  assert.match(handler, /requestKey,/);
+  assert.match(handler, /requestKey: window\.crypto\.randomUUID\(\)/);
   assert.match(handler, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
   assert.match(handler, /body: requestBody/);
+  assert.ok(
+    handler.indexOf("savePendingNailTipOrderSubmission") <
+      handler.indexOf('fetch("/api/nail-tip-orders"')
+  );
   assert.ok(
     handler.indexOf(
       'sessionStorage.setItem(ORDER_SUBMISSION_STATE_KEY, "uncertain")'
@@ -58,11 +62,11 @@ test("confirmed orders stay locked until explicit new consultation", () => {
   );
   assert.match(
     source,
-    /disabled=\{submitting \|\| submissionState !== "idle"\}/
+    /submitting \|\| recoveryChecking \|\| submissionState !== "idle"/
   );
   assert.match(source, /function startAnotherConsultation\(\)/);
   assert.match(source, /sessionStorage\.removeItem\(ORDER_SUBMISSION_STATE_KEY\)/);
-  assert.match(source, /sessionStorage\.removeItem\(ORDER_REQUEST_KEY\)/);
+  assert.match(source, /clearPendingNailTipOrderSubmission/);
   assert.match(source, /href="\/customer-app\/mypage"/);
 });
 
@@ -71,4 +75,21 @@ test("screen differentiates unknown result and confirmed order", () => {
   assert.match(source, /submissionState === "confirmed"\s*\?/);
   assert.match(source, /role="alert"/);
   assert.match(source, /二重注文を防ぐため再送を停止/);
+  assert.match(source, /注文結果を再確認/);
+  assert.match(source, /status === "saved"/);
+  assert.match(source, /status === "not_found"/);
+  assert.match(source, /入力内容を復元しました/);
+});
+
+test("storage failure prevents an untracked order request", () => {
+  const handler = source.slice(
+    source.indexOf("async function handleSubmit()"),
+    source.indexOf("function startAnotherConsultation()")
+  );
+  assert.match(handler, /let requestStarted = false/);
+  assert.match(handler, /if \(!requestStarted\)/);
+  assert.ok(
+    handler.indexOf("savePendingNailTipOrderSubmission") <
+      handler.indexOf("requestStarted = true")
+  );
 });

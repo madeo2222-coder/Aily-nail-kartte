@@ -102,6 +102,90 @@ test("customer nail-tip creation rejects an unsigned session before reading the 
   assert.equal(adminClientCreated, false);
 });
 
+test("customer nail-tip reconciliation rejects an unsigned session before database access", async () => {
+  let adminClientCreated = false;
+  const runtime = loadRoute("nail-tip-orders", {
+    customer: null,
+    getSupabaseAdmin() {
+      adminClientCreated = true;
+      throw new Error("service role must not be used");
+    },
+  });
+
+  const response = await runtime.exports.GET({
+    nextUrl: {
+      searchParams: new URLSearchParams(
+        "requestKey=11111111-1111-4111-8111-111111111111"
+      ),
+    },
+  });
+
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).ok, false);
+  assert.equal(adminClientCreated, false);
+});
+
+for (const [label, row, error, expected] of [
+  ["saved", { id: "order-1" }, null, "saved"],
+  ["not found", null, null, "not_found"],
+  ["unknown", null, { message: "read failed" }, "unknown"],
+]) {
+  test(`customer nail-tip reconciliation reports ${label} without writing`, async () => {
+    const calls = [];
+    const runtime = loadRoute("nail-tip-orders", {
+      customer: {
+        id: "trusted-customer",
+        name: "Customer",
+        salonId: "trusted-salon",
+      },
+      getSupabaseAdmin() {
+        return {
+          from(table) {
+            assert.equal(table, "nail_tip_orders");
+            const chain = {
+              select(columns) {
+                calls.push(["select", columns]);
+                return chain;
+              },
+              eq(column, value) {
+                calls.push(["eq", column, value]);
+                return chain;
+              },
+              async maybeSingle() {
+                return { data: row, error };
+              },
+            };
+            return chain;
+          },
+        };
+      },
+    });
+
+    const response = await runtime.exports.GET({
+      nextUrl: {
+        searchParams: new URLSearchParams(
+          "requestKey=11111111-1111-4111-8111-111111111111"
+        ),
+      },
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.status, expected);
+    assert.deepEqual(calls[0], ["select", "id"]);
+    assert.ok(calls.some(([kind, column]) => kind === "eq" && column === "id"));
+    assert.ok(
+      calls.some(
+        ([kind, column, value]) =>
+          kind === "eq" &&
+          column === "customer_id" &&
+          value === "trusted-customer"
+      )
+    );
+    assert.ok(calls.every(([kind]) => kind !== "insert" && kind !== "update"));
+  });
+}
+
 test("customer nail-tip creation derives customer and salon identity from the signed session", async () => {
   let inserted = null;
   const runtime = loadRoute("nail-tip-orders", {
