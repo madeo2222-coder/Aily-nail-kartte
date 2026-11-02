@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isUuidV4 } from "@/lib/inbound-nail-tip-submission";
 
 function getFromEmail() {
   return (
@@ -60,6 +62,7 @@ async function sendEmail(params: {
   to: string[];
   subject: string;
   text: string;
+  idempotencyKey: string;
 }) {
   const resendApiKey = process.env.RESEND_API_KEY;
 
@@ -73,6 +76,7 @@ async function sendEmail(params: {
     headers: {
       Authorization: `Bearer ${resendApiKey}`,
       "Content-Type": "application/json",
+      "Idempotency-Key": params.idempotencyKey,
     },
     body: JSON.stringify({
       from: getFromEmail(),
@@ -89,6 +93,7 @@ async function sendEmail(params: {
 }
 
 type NotifyParams = {
+  operationId: string;
   customerName: string;
   customerEmail: string;
   country: string;
@@ -135,6 +140,7 @@ async function sendAdminMail(params: NotifyParams) {
     to: [notifyEmail],
     subject: "【Aily Nail Studio】Custom nail tips request",
     text,
+    idempotencyKey: `inbound-nail-tip/${params.operationId}/admin-email`,
   });
 }
 
@@ -175,6 +181,7 @@ async function sendCustomerConfirmationMail(params: NotifyParams) {
     to: [params.customerEmail],
     subject: "Aily Nail Studio - Custom nail tips request received",
     text,
+    idempotencyKey: `inbound-nail-tip/${params.operationId}/customer-email`,
   });
 }
 
@@ -216,6 +223,7 @@ async function sendAdminLine(params: NotifyParams) {
     headers: {
       Authorization: `Bearer ${lineAccessToken}`,
       "Content-Type": "application/json",
+      "X-Line-Retry-Key": params.operationId,
     },
     body: JSON.stringify({
       to: adminUserId,
@@ -229,10 +237,105 @@ async function sendAdminLine(params: NotifyParams) {
   }
 }
 
+type ExistingRequestRow = {
+  id: string;
+  customer_name: string | null;
+  customer_email: string | null;
+  country: string | null;
+  instagram_id: string | null;
+  language: string | null;
+  order_type: string | null;
+  design_request: string | null;
+  image_urls: unknown;
+  recipient_name: string | null;
+  shipping_address: string | null;
+  shipping_city: string | null;
+  shipping_state: string | null;
+  shipping_postal_code: string | null;
+  shipping_phone: string | null;
+};
+
+type NormalizedRequest = {
+  customerName: string;
+  customerEmail: string;
+  country: string;
+  instagramId: string;
+  language: string;
+  orderType: string;
+  designRequest: string;
+  imageUrls: string[];
+  recipientName: string;
+  shippingAddress: string;
+  shippingCity: string;
+  shippingState: string;
+  shippingPostalCode: string;
+  shippingPhone: string;
+};
+
+function matchesExistingRequest(
+  row: ExistingRequestRow,
+  request: NormalizedRequest
+) {
+  return (
+    row.customer_name === request.customerName &&
+    row.customer_email === request.customerEmail &&
+    row.country === request.country &&
+    (row.instagram_id || "") === request.instagramId &&
+    row.language === request.language &&
+    row.order_type === request.orderType &&
+    row.design_request === request.designRequest &&
+    JSON.stringify(normalizeImageUrls(row.image_urls)) ===
+      JSON.stringify(request.imageUrls) &&
+    row.recipient_name === request.recipientName &&
+    row.shipping_address === request.shippingAddress &&
+    row.shipping_city === request.shippingCity &&
+    (row.shipping_state || "") === request.shippingState &&
+    row.shipping_postal_code === request.shippingPostalCode &&
+    row.shipping_phone === request.shippingPhone
+  );
+}
+
+export async function GET(request: Request) {
+  const operationId = new URL(request.url).searchParams.get("operationId");
+  if (!isUuidV4(operationId)) {
+    return NextResponse.json(
+      { ok: false, error: "Invalid operation ID." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("inbound_nail_tip_requests")
+      .select("id")
+      .eq("id", operationId)
+      .maybeSingle();
+
+    if (error) {
+      return NextResponse.json({ ok: true, status: "unknown" });
+    }
+    return NextResponse.json({
+      ok: true,
+      status: data?.id === operationId ? "saved" : "not_found",
+    });
+  } catch {
+    return NextResponse.json({ ok: true, status: "unknown" });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
 
+    const requestedOperationId = body.operationId;
+    if (requestedOperationId && !isUuidV4(requestedOperationId)) {
+      return NextResponse.json(
+        { ok: false, error: "Invalid operation ID." },
+        { status: 400 }
+      );
+    }
+    const operationId = requestedOperationId || randomUUID();
     const customerName = String(body.customerName || "").trim();
     const customerEmail = String(body.customerEmail || "").trim();
     const country = String(body.country || "").trim();
@@ -312,11 +415,61 @@ export async function POST(request: Request) {
       );
     }
 
+    const normalizedRequest: NormalizedRequest = {
+      customerName,
+      customerEmail,
+      country,
+      instagramId,
+      language,
+      orderType,
+      designRequest,
+      imageUrls,
+      recipientName,
+      shippingAddress,
+      shippingCity,
+      shippingState,
+      shippingPostalCode,
+      shippingPhone,
+    };
+
     const supabase = getSupabaseAdmin();
+    const readExistingRequest = async () => {
+      const { data, error } = await supabase
+        .from("inbound_nail_tip_requests")
+        .select(
+          "id, customer_name, customer_email, country, instagram_id, language, order_type, design_request, image_urls, recipient_name, shipping_address, shipping_city, shipping_state, shipping_postal_code, shipping_phone"
+        )
+        .eq("id", operationId)
+        .maybeSingle();
+      if (error) return { state: "error" as const, error };
+      if (!data) return { state: "missing" as const };
+      if (!matchesExistingRequest(data as ExistingRequestRow, normalizedRequest)) {
+        return { state: "conflict" as const };
+      }
+      return { state: "match" as const };
+    };
+
+    const existing = await readExistingRequest();
+    if (existing.state === "error") {
+      return NextResponse.json(
+        { ok: false, error: existing.error.message },
+        { status: 500 }
+      );
+    }
+    if (existing.state === "conflict") {
+      return NextResponse.json(
+        { ok: false, error: "Custom request key conflict." },
+        { status: 409 }
+      );
+    }
+    if (existing.state === "match") {
+      return NextResponse.json({ ok: true, replayed: true, requestId: operationId });
+    }
 
     const { error: insertError } = await supabase
       .from("inbound_nail_tip_requests")
       .insert({
+        id: operationId,
         customer_name: customerName,
         customer_email: customerEmail,
         country,
@@ -335,6 +488,20 @@ export async function POST(request: Request) {
       });
 
     if (insertError) {
+      const reconciliation = await readExistingRequest();
+      if (reconciliation.state === "match") {
+        return NextResponse.json({
+          ok: true,
+          replayed: true,
+          requestId: operationId,
+        });
+      }
+      if (reconciliation.state === "conflict") {
+        return NextResponse.json(
+          { ok: false, error: "Custom request key conflict." },
+          { status: 409 }
+        );
+      }
       return NextResponse.json(
         { ok: false, error: insertError.message },
         { status: 500 }
@@ -342,6 +509,7 @@ export async function POST(request: Request) {
     }
 
     const notifyParams: NotifyParams = {
+      operationId,
       customerName,
       customerEmail,
       country,
@@ -366,6 +534,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
+      replayed: false,
+      requestId: operationId,
     });
   } catch (error) {
     return NextResponse.json(

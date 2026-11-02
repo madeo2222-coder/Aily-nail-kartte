@@ -1,8 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import {
+  clearPendingInboundNailTipSubmission,
+  readPendingInboundNailTipSubmission,
+  savePendingInboundNailTipSubmission,
+  type InboundNailTipSubmission,
+} from "@/lib/inbound-nail-tip-submission";
 import {
   inboundLanguageOptions,
   inboundTranslations,
@@ -58,43 +64,76 @@ const reservationRecoveryCopy: Record<
 
 const nailTipRecoveryCopy: Record<
   InboundLanguage,
-  { title: string; body: string }
+  {
+    title: string;
+    body: string;
+    retryTitle: string;
+    retryBody: string;
+    recheck: string;
+  }
 > = {
   en: {
     title: "We could not confirm the custom request result.",
     body: "Do not send the same request again. Please check your email and contact Aily Nail Studio if you do not receive a confirmation.",
+    retryTitle: "The request was not saved.",
+    retryBody: "You can safely send the saved request again with the button below.",
+    recheck: "Check the result again",
   },
   ja: {
     title: "ネイルチップ相談の結果を確認できませんでした。",
     body: "同じ内容を再送せず、メールをご確認ください。確認メールが届かない場合はAily Nail Studioへお問い合わせください。",
+    retryTitle: "相談は保存されていませんでした。",
+    retryBody: "下のボタンから、保存済みの同じ内容を安全に再送できます。",
+    recheck: "結果をもう一度確認",
   },
   "zh-TW": {
     title: "無法確認美甲貼片諮詢結果。",
     body: "請勿重複送出相同內容。請查看電子郵件；若未收到確認信，請聯絡 Aily Nail Studio。",
+    retryTitle: "此諮詢尚未儲存。",
+    retryBody: "您可以使用下方按鈕安全地重新送出已儲存的內容。",
+    recheck: "再次確認結果",
   },
   "zh-CN": {
     title: "无法确认美甲贴片咨询结果。",
     body: "请勿重复提交相同内容。请查看电子邮件；若未收到确认邮件，请联系 Aily Nail Studio。",
+    retryTitle: "此咨询尚未保存。",
+    retryBody: "您可以使用下方按钮安全地重新提交已保存的内容。",
+    recheck: "再次确认结果",
   },
   ko: {
     title: "네일팁 상담 결과를 확인할 수 없습니다.",
     body: "같은 요청을 다시 보내지 마세요. 이메일을 확인하고 확인 메일이 오지 않으면 Aily Nail Studio로 문의해 주세요.",
+    retryTitle: "상담이 저장되지 않았습니다.",
+    retryBody: "아래 버튼으로 저장된 동일한 내용을 안전하게 다시 보낼 수 있습니다.",
+    recheck: "결과 다시 확인",
   },
   fr: {
     title: "Nous ne pouvons pas confirmer le résultat de votre demande.",
     body: "Ne renvoyez pas la même demande. Vérifiez votre e-mail et contactez Aily Nail Studio si vous ne recevez pas de confirmation.",
+    retryTitle: "La demande n’a pas été enregistrée.",
+    retryBody: "Vous pouvez renvoyer en toute sécurité la demande enregistrée avec le bouton ci-dessous.",
+    recheck: "Vérifier à nouveau",
   },
   es: {
     title: "No pudimos confirmar el resultado de tu solicitud.",
     body: "No vuelvas a enviar la misma solicitud. Revisa tu correo y contacta con Aily Nail Studio si no recibes la confirmación.",
+    retryTitle: "La solicitud no se guardó.",
+    retryBody: "Puedes volver a enviar de forma segura la solicitud guardada con el botón de abajo.",
+    recheck: "Comprobar de nuevo",
   },
   th: {
     title: "ไม่สามารถยืนยันผลคำขอเล็บปลอมได้",
     body: "กรุณาอย่าส่งคำขอเดิมซ้ำ ตรวจสอบอีเมล และติดต่อ Aily Nail Studio หากไม่ได้รับอีเมลยืนยัน",
+    retryTitle: "คำขอยังไม่ได้รับการบันทึก",
+    retryBody: "คุณสามารถส่งข้อมูลเดิมที่บันทึกไว้ซ้ำได้อย่างปลอดภัยด้วยปุ่มด้านล่าง",
+    recheck: "ตรวจสอบผลอีกครั้ง",
   },
   ar: {
     title: "تعذر تأكيد نتيجة طلب الأظافر اللاصقة.",
     body: "يرجى عدم إرسال الطلب نفسه مرة أخرى. تحققي من بريدك الإلكتروني وتواصلي مع Aily Nail Studio إذا لم تصلك رسالة تأكيد.",
+    retryTitle: "لم يتم حفظ الطلب.",
+    retryBody: "يمكنك إعادة إرسال الطلب المحفوظ بأمان باستخدام الزر أدناه.",
+    recheck: "التحقق من النتيجة مرة أخرى",
   },
 };
 
@@ -256,6 +295,10 @@ export default function InboundReservePage() {
     useState(false);
   const reservationSubmissionInFlight = useRef(false);
   const [nailTipResultUnknown, setNailTipResultUnknown] = useState(false);
+  const [nailTipRecoveryChecking, setNailTipRecoveryChecking] =
+    useState(false);
+  const [nailTipRetryReady, setNailTipRetryReady] = useState(false);
+  const [nailTipRecoveredSaved, setNailTipRecoveredSaved] = useState(false);
   const nailTipSubmissionInFlight = useRef(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleUserEmail, setGoogleUserEmail] = useState("");
@@ -306,6 +349,52 @@ export default function InboundReservePage() {
 
     loadGoogleUser();
   }, []);
+
+  const reconcilePendingNailTipSubmission = useCallback(async () => {
+    const pending = readPendingInboundNailTipSubmission(window.sessionStorage);
+    if (!pending) {
+      setNailTipResultUnknown(false);
+      setNailTipRetryReady(false);
+      return;
+    }
+
+    setNailTipRecoveryChecking(true);
+    setNailTipResultUnknown(true);
+    setNailTipRetryReady(false);
+    setNailTipRecoveredSaved(false);
+
+    try {
+      const response = await fetch(
+        `/api/inbound-nail-tip-requests?operationId=${encodeURIComponent(
+          pending.operationId
+        )}`
+      );
+      const json = (await response.json()) as {
+        ok?: boolean;
+        status?: "saved" | "not_found" | "unknown";
+      };
+
+      if (!response.ok || !json.ok || json.status === "unknown") return;
+      if (json.status === "saved") {
+        clearPendingInboundNailTipSubmission(window.sessionStorage);
+        setNailTipResultUnknown(false);
+        setNailTipRecoveredSaved(true);
+        return;
+      }
+      if (json.status === "not_found") {
+        setNailTipResultUnknown(false);
+        setNailTipRetryReady(true);
+      }
+    } catch (error) {
+      console.error("Custom request reconciliation failed:", error);
+    } finally {
+      setNailTipRecoveryChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reconcilePendingNailTipSubmission();
+  }, [reconcilePendingNailTipSubmission]);
 
   async function handleGoogleLogin() {
     setGoogleLoading(true);
@@ -457,38 +546,50 @@ export default function InboundReservePage() {
     if (nailTipSubmissionInFlight.current || nailTipResultUnknown) {
       return;
     }
-    if (!customerName.trim()) return showMessage(copy.messages.nameRequired);
-    if (!customerEmail.trim()) return showMessage(copy.messages.emailRequired);
-    if (!country.trim()) return showMessage(copy.messages.countryRequired);
-    if (!recipientName.trim())
-      return showMessage(copy.messages.recipientRequired);
-    if (!shippingAddress.trim())
-      return showMessage(copy.messages.addressRequired);
-    if (!shippingCity.trim()) return showMessage(copy.messages.cityRequired);
-    if (!shippingPostalCode.trim())
-      return showMessage(copy.messages.postalRequired);
-    if (!shippingPhone.trim())
-      return showMessage(copy.messages.phoneRequired);
-    if (!tipDesignRequest.trim())
-      return showMessage(copy.messages.designRequired);
+    const pending = readPendingInboundNailTipSubmission(window.sessionStorage);
+    if (pending && !nailTipRetryReady) {
+      setNailTipResultUnknown(true);
+      return;
+    }
+    if (!pending) {
+      if (!customerName.trim()) return showMessage(copy.messages.nameRequired);
+      if (!customerEmail.trim()) return showMessage(copy.messages.emailRequired);
+      if (!country.trim()) return showMessage(copy.messages.countryRequired);
+      if (!recipientName.trim())
+        return showMessage(copy.messages.recipientRequired);
+      if (!shippingAddress.trim())
+        return showMessage(copy.messages.addressRequired);
+      if (!shippingCity.trim()) return showMessage(copy.messages.cityRequired);
+      if (!shippingPostalCode.trim())
+        return showMessage(copy.messages.postalRequired);
+      if (!shippingPhone.trim())
+        return showMessage(copy.messages.phoneRequired);
+      if (!tipDesignRequest.trim())
+        return showMessage(copy.messages.designRequired);
+    }
 
     nailTipSubmissionInFlight.current = true;
     setSending(true);
 
     try {
-      let imageUrls: string[] = [];
+      let operationId: string;
+      let submission: InboundNailTipSubmission;
 
-      try {
-        imageUrls = await uploadDesignImages();
-      } catch (uploadError) {
-        console.error("Reference image upload failed:", uploadError);
-        showMessage(copy.messages.uploadFailed);
-      }
+      if (pending) {
+        operationId = pending.operationId;
+        submission = pending.submission;
+      } else {
+        let imageUrls: string[] = [];
 
-      const response = await fetch("/api/inbound-nail-tip-requests", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        try {
+          imageUrls = await uploadDesignImages();
+        } catch (uploadError) {
+          console.error("Reference image upload failed:", uploadError);
+          showMessage(copy.messages.uploadFailed);
+        }
+
+        operationId = crypto.randomUUID();
+        submission = {
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
           country: country.trim(),
@@ -503,7 +604,23 @@ export default function InboundReservePage() {
           shippingState: shippingState.trim(),
           shippingPostalCode: shippingPostalCode.trim(),
           shippingPhone: shippingPhone.trim(),
-        }),
+        };
+        try {
+          savePendingInboundNailTipSubmission(window.sessionStorage, {
+            operationId,
+            submission,
+          });
+        } catch (storageError) {
+          console.error("Custom request recovery storage failed:", storageError);
+          showMessage(copy.messages.requestFailed);
+          return;
+        }
+      }
+
+      const response = await fetch("/api/inbound-nail-tip-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ operationId, ...submission }),
       });
 
       let json: { ok?: boolean; error?: string };
@@ -517,15 +634,23 @@ export default function InboundReservePage() {
           return;
         }
 
+        clearPendingInboundNailTipSubmission(window.sessionStorage);
+        setNailTipRetryReady(false);
         showMessage(copy.messages.requestFailed);
         return;
       }
 
       if (!response.ok || !json.ok) {
+        clearPendingInboundNailTipSubmission(window.sessionStorage);
+        setNailTipRetryReady(false);
         showMessage(json.error || copy.messages.requestFailed);
         return;
       }
 
+      clearPendingInboundNailTipSubmission(window.sessionStorage);
+      setNailTipResultUnknown(false);
+      setNailTipRetryReady(false);
+      setNailTipRecoveredSaved(false);
       showMessage(copy.messages.requestSuccess);
       setTipDesignRequest("");
       setDesignFiles([]);
@@ -1243,22 +1368,46 @@ export default function InboundReservePage() {
               </div>
             </div>
 
-            {nailTipResultUnknown ? (
+            {nailTipRecoveredSaved ? (
+              <div className="mt-4 rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
+                {copy.messages.requestSuccess}
+              </div>
+            ) : null}
+
+            {nailTipResultUnknown || nailTipRetryReady ? (
               <div
                 role="alert"
                 className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900"
               >
                 <div className="font-black">
-                  {nailTipRecoveryCopy[language].title}
+                  {nailTipRetryReady
+                    ? nailTipRecoveryCopy[language].retryTitle
+                    : nailTipRecoveryCopy[language].title}
                 </div>
-                <p className="mt-2">{nailTipRecoveryCopy[language].body}</p>
+                <p className="mt-2">
+                  {nailTipRetryReady
+                    ? nailTipRecoveryCopy[language].retryBody
+                    : nailTipRecoveryCopy[language].body}
+                </p>
+                {nailTipResultUnknown ? (
+                  <button
+                    type="button"
+                    onClick={reconcilePendingNailTipSubmission}
+                    disabled={nailTipRecoveryChecking}
+                    className="mt-3 rounded-xl border border-amber-500 px-3 py-2 text-xs font-bold disabled:opacity-60"
+                  >
+                    {nailTipRecoveryCopy[language].recheck}
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
             <button
               type="button"
               onClick={handleTipsSubmit}
-              disabled={sending || nailTipResultUnknown}
+              disabled={
+                sending || nailTipResultUnknown || nailTipRecoveryChecking
+              }
               className="mt-4 w-full rounded-2xl bg-pink-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
             >
               {sending ? copy.uploadingAndSending : copy.sendCustom}

@@ -17,6 +17,18 @@ const compiledPage = ts.transpileModule(pageSource, {
     jsx: ts.JsxEmit.ReactJSX,
   },
 }).outputText;
+const submissionHelpers = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/inbound-nail-tip-submission.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  vm.runInNewContext(source, { exports, JSON, Object, RegExp });
+  return exports;
+})();
 
 const translations = (() => {
   const exports = {};
@@ -53,8 +65,23 @@ function response({ ok = true, body = { ok: true } } = {}) {
   return { ok, async json() { return body; } };
 }
 
-function mount({ mode = "success", flow = "reservation" } = {}) {
+function createStorage(seed = new Map()) {
+  return {
+    data: seed,
+    getItem(key) { return seed.get(key) ?? null; },
+    setItem(key, value) { seed.set(key, String(value)); },
+    removeItem(key) { seed.delete(key); },
+  };
+}
+
+function mount({
+  mode = "success",
+  flow = "reservation",
+  recoveryStatus = "saved",
+  storage = createStorage(),
+} = {}) {
   const states = [];
+  const effects = [];
   let cursor = 0;
   const requests = [];
 
@@ -74,11 +101,15 @@ function mount({ mode = "success", flow = "reservation" } = {}) {
       return states[index];
     },
     useMemo: fn => fn(),
-    useEffect() {},
+    useCallback: fn => fn,
+    useEffect(fn) { effects.push(fn); },
   };
 
   async function fetch(url, options = {}) {
     requests.push({ url, options });
+    if (String(url).startsWith("/api/inbound-nail-tip-requests?")) {
+      return response({ body: { ok: true, status: recoveryStatus } });
+    }
     assert.equal(
       url,
       flow === "reservation"
@@ -123,8 +154,12 @@ function mount({ mode = "success", flow = "reservation" } = {}) {
     Promise,
     console: { error() {} },
     document: { body: { scrollHeight: 1 } },
+    crypto: {
+      randomUUID() { return "11111111-1111-4111-8111-111111111111"; },
+    },
     window: {
       location: { origin: "https://example.test" },
+      sessionStorage: storage,
       setTimeout() {},
       scrollTo() {},
     },
@@ -143,6 +178,9 @@ function mount({ mode = "success", flow = "reservation" } = {}) {
           },
         };
       }
+      if (name === "@/lib/inbound-nail-tip-submission") {
+        return submissionHelpers;
+      }
       if (name === "./translations") return translations;
       if (name === "./InboundPortfolioGallery") {
         return { default: () => null };
@@ -158,6 +196,12 @@ function mount({ mode = "success", flow = "reservation" } = {}) {
 
   function html() {
     return renderToStaticMarkup(tree());
+  }
+
+  async function runEffects() {
+    const initialEffects = effects.splice(0);
+    for (const effect of initialEffects) effect();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
   }
 
   function prepareReservation() {
@@ -246,6 +290,8 @@ function mount({ mode = "success", flow = "reservation" } = {}) {
     prepareNailTipRequest,
     prepareReservation,
     requests,
+    runEffects,
+    storage,
     submit,
     submitNailTipRequest,
     tree,
@@ -300,7 +346,10 @@ test("inbound nail-tip request guards before uploading or sending", () => {
     pageSource.indexOf("nailTipSubmissionInFlight.current = true") <
       pageSource.indexOf("await uploadDesignImages()"),
   );
-  assert.match(pageSource, /disabled=\{sending \|\| nailTipResultUnknown\}/);
+  assert.match(
+    pageSource,
+    /sending \|\| nailTipResultUnknown \|\| nailTipRecoveryChecking/,
+  );
 });
 
 for (const mode of ["reject", "unknown-json"]) {
@@ -328,4 +377,78 @@ test("inbound nail-tip request keeps an authoritative API rejection retryable", 
 
   await page.submitNailTipRequest();
   assert.equal(page.requests.length, 2);
+});
+
+test("inbound nail-tip request persists its operation before an unknown result", async () => {
+  const page = mount({ mode: "reject", flow: "nail-tip" });
+  page.prepareNailTipRequest();
+  await page.submitNailTipRequest();
+
+  const pending = submissionHelpers.readPendingInboundNailTipSubmission(
+    page.storage,
+  );
+  assert.equal(pending.operationId, "11111111-1111-4111-8111-111111111111");
+  assert.equal(pending.submission.customerEmail, "guest@example.com");
+  assert.deepEqual(pending.submission.imageUrls, []);
+  assert.equal(
+    JSON.parse(page.requests[0].options.body).operationId,
+    pending.operationId,
+  );
+});
+
+test("inbound nail-tip request does not send when recovery storage is unavailable", async () => {
+  const storage = {
+    getItem() { return null; },
+    setItem() { throw new Error("storage unavailable"); },
+    removeItem() { throw new Error("storage unavailable"); },
+  };
+  const page = mount({ flow: "nail-tip", storage });
+  page.prepareNailTipRequest();
+  await page.submitNailTipRequest();
+
+  assert.equal(page.requests.length, 0);
+  assert.match(page.html(), /Custom nail tips request failed/);
+  assert.doesNotMatch(page.html(), /could not confirm the custom request/i);
+});
+
+test("inbound nail-tip reload clears a saved operation without resending", async () => {
+  const storage = createStorage();
+  const first = mount({ mode: "reject", flow: "nail-tip", storage });
+  first.prepareNailTipRequest();
+  await first.submitNailTipRequest();
+
+  const reload = mount({ flow: "nail-tip", recoveryStatus: "saved", storage });
+  reload.tree();
+  await reload.runEffects();
+
+  assert.equal(reload.requests.length, 1);
+  assert.match(reload.requests[0].url, /\?operationId=11111111-/);
+  assert.equal(
+    submissionHelpers.readPendingInboundNailTipSubmission(storage),
+    null,
+  );
+  assert.match(reload.html(), /custom nail tips request sent/i);
+});
+
+test("inbound nail-tip reload retries only after not-found with the same operation", async () => {
+  const storage = createStorage();
+  const first = mount({ mode: "reject", flow: "nail-tip", storage });
+  first.prepareNailTipRequest();
+  await first.submitNailTipRequest();
+  const original = submissionHelpers.readPendingInboundNailTipSubmission(storage);
+
+  const reload = mount({ flow: "nail-tip", recoveryStatus: "not_found", storage });
+  reload.tree();
+  await reload.runEffects();
+  assert.match(reload.html(), /request was not saved/i);
+
+  await reload.submitNailTipRequest();
+  assert.equal(reload.requests.length, 2);
+  const retried = JSON.parse(reload.requests[1].options.body);
+  assert.equal(retried.operationId, original.operationId);
+  assert.equal(retried.customerEmail, original.submission.customerEmail);
+  assert.equal(
+    submissionHelpers.readPendingInboundNailTipSubmission(storage),
+    null,
+  );
 });
