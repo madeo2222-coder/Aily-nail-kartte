@@ -28,8 +28,10 @@ const {
   ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS,
   CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
+  claimAlternativeLineInProgressLock,
   claimConfirmationLineInProgressLock,
   createAlternativeLineReservationRevision,
+  getAlternativeLineInProgressLock,
   getAlternativeLineRetryLock,
   getConfirmationLineInProgressLock,
   getConfirmationLineRetryLock,
@@ -526,6 +528,66 @@ test("alternative-time LINE waits out an in-progress delivery without repeated c
   );
 });
 
+test("alternative-time LINE claim proceeds only for the tab that still owns the revision lock", async () => {
+  const storage = createMemoryStorage();
+  const now = Date.now();
+  const firstAttemptId = "11111111-1111-4111-8111-111111111111";
+  const secondAttemptId = "22222222-2222-4222-8222-222222222222";
+  let releaseClaim;
+
+  const firstClaim = claimAlternativeLineInProgressLock(
+    storage,
+    "reservation-1",
+    "revision-1",
+    firstAttemptId,
+    now,
+    () =>
+      new Promise((resolve) => {
+        releaseClaim = resolve;
+      })
+  );
+  saveAlternativeLineRetryLock(
+    storage,
+    "reservation-1",
+    "revision-1",
+    getAlternativeLineInProgressLock(now, secondAttemptId),
+    now
+  );
+  releaseClaim();
+
+  const result = await firstClaim;
+  assert.equal(result.acquired, false);
+  assert.equal(result.lock.kind, "wait");
+  assert.equal(result.lock.attemptId, secondAttemptId);
+});
+
+test("alternative-time LINE claim keeps the current-screen guard when storage is unavailable", async () => {
+  const unavailableStorage = {
+    getItem() {
+      throw new Error("blocked");
+    },
+    setItem() {
+      throw new Error("blocked");
+    },
+    removeItem() {
+      throw new Error("blocked");
+    },
+  };
+  const attemptId = "33333333-3333-4333-8333-333333333333";
+  const result = await claimAlternativeLineInProgressLock(
+    unavailableStorage,
+    "reservation-1",
+    "revision-1",
+    attemptId,
+    1_000,
+    async () => {}
+  );
+
+  assert.equal(result.acquired, true);
+  assert.equal(result.lock.kind, "wait");
+  assert.equal(result.lock.attemptId, attemptId);
+});
+
 test("both staff reservation screens apply the shared retry lock", () => {
   const listPage = readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -585,6 +647,15 @@ test("staff edit screen blocks unsafe alternative-time LINE repeats across reloa
     /readAlternativeLineRetryLock\([\s\S]{0,120}reservation\.updated_at/
   );
   assert.match(editPage, /saveAlternativeLineRetryLock\(/);
+  assert.match(editPage, /claimAlternativeLineInProgressLock\(/);
+  const claimIndex = editPage.indexOf("claimAlternativeLineInProgressLock(");
+  const ownerIndex = editPage.indexOf("if (!claim.acquired)", claimIndex);
+  const fetchIndex = editPage.indexOf("request-alternative`,", claimIndex);
+  assert.ok(claimIndex >= 0, "alternative LINE lock is claimed");
+  assert.ok(
+    ownerIndex > claimIndex && fetchIndex > ownerIndex,
+    "the alternative LINE owner is confirmed before the request"
+  );
   assert.match(
     editPage,
     /alternativeLineRetryLock\?\.kind !== "wait"[\s\S]{0,900}window\.setTimeout\(clearWaitLock, remainingMs\)/

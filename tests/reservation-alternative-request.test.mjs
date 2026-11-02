@@ -1196,6 +1196,11 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
     "alternative request rechecks a lock written by another tab"
   );
   assert.match(
+    alternativeFunctionSource,
+    /claimAlternativeLineInProgressLock\([\s\S]{0,220}initialAlternativeRevision[\s\S]{0,220}if \(!claim\.acquired\) \{[\s\S]{0,220}return;[\s\S]{0,500}fetch\(/,
+    "alternative request confirms cross-tab ownership before sending"
+  );
+  assert.match(
     pageSource,
     /createAlternativeLineReservationRevision\(\{[\s\S]{0,500}customerId:[\s\S]{0,500}memo:/,
     "alternative retry revision follows the guarded reservation snapshot"

@@ -9,6 +9,7 @@ import {
   isCancelledReservationStatus,
 } from "@/lib/reservation-status";
 import {
+  claimAlternativeLineInProgressLock,
   claimConfirmationLineInProgressLock,
   createAlternativeLineReservationRevision,
   getAlternativeLineRetryLock,
@@ -1112,6 +1113,17 @@ export default function EditReservationPage() {
     setSuccessMessage("");
 
     try {
+      const claim = await claimAlternativeLineInProgressLock(
+        window.localStorage,
+        reservationId,
+        initialAlternativeRevision
+      );
+      setAlternativeLineRetryLock(claim.lock);
+      if (!claim.acquired) {
+        setSuccessMessage(claim.lock.message);
+        return;
+      }
+
       const response = await fetch(
         `/api/reservations/${reservationId}/request-alternative`,
         {

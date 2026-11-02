@@ -50,6 +50,7 @@ type StoredAlternativeLineRetryLock = {
   savedAt: number;
   kind: AlternativeLineRetryLock["kind"];
   reservationRevision: string;
+  attemptId?: string;
 };
 
 export const CONFIRMATION_LINE_RETRY_LOCK_TTL_MS = 23 * 60 * 60 * 1000;
@@ -468,6 +469,7 @@ export function readAlternativeLineRetryLock(
         kind: "wait",
         message: ALTERNATIVE_STORED_LOCK_MESSAGES.wait,
         retryAt: stored.savedAt + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS,
+        attemptId: normalizeConfirmationLineAttemptId(stored.attemptId),
       };
     }
 
@@ -504,7 +506,7 @@ export function saveAlternativeLineRetryLock(
     );
     if (!lock || !reservationRevision) {
       storage.removeItem(key);
-      return;
+      return true;
     }
 
     const stored: StoredAlternativeLineRetryLock = {
@@ -512,11 +514,76 @@ export function saveAlternativeLineRetryLock(
       savedAt: now,
       kind: lock.kind,
       reservationRevision,
+      ...(lock.kind === "wait" && lock.attemptId
+        ? { attemptId: lock.attemptId }
+        : {}),
     };
     storage.setItem(key, JSON.stringify(stored));
+    return true;
   } catch {
     // The in-memory lock still protects the current screen when storage fails.
+    return false;
   }
+}
+
+export function getAlternativeLineInProgressLock(
+  now = Date.now(),
+  attemptId = createConfirmationLineAttemptId()
+): Extract<AlternativeLineRetryLock, { kind: "wait" }> {
+  return {
+    kind: "wait",
+    message: ALTERNATIVE_STORED_LOCK_MESSAGES.wait,
+    retryAt: now + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS,
+    attemptId: normalizeConfirmationLineAttemptId(attemptId),
+  };
+}
+
+export async function claimAlternativeLineInProgressLock(
+  storage: RetryLockStorage,
+  reservationId: string,
+  reservationRevision: string,
+  attemptId = createConfirmationLineAttemptId(),
+  now = Date.now(),
+  settle: () => Promise<void> = () =>
+    new Promise((resolve) => {
+      if (typeof globalThis.setTimeout === "function") {
+        globalThis.setTimeout(resolve, 0);
+        return;
+      }
+      resolve();
+    })
+) {
+  const existing = readAlternativeLineRetryLock(
+    storage,
+    reservationId,
+    reservationRevision,
+    now
+  );
+  if (existing) return { acquired: false, lock: existing };
+
+  const lock = getAlternativeLineInProgressLock(now, attemptId);
+  const persisted = saveAlternativeLineRetryLock(
+    storage,
+    reservationId,
+    reservationRevision,
+    lock,
+    now
+  );
+  if (!persisted) return { acquired: true, lock };
+
+  await settle();
+  const current = readAlternativeLineRetryLock(
+    storage,
+    reservationId,
+    reservationRevision,
+    Date.now()
+  );
+  const acquired =
+    current?.kind === "wait" &&
+    Boolean(lock.attemptId) &&
+    current.attemptId === lock.attemptId;
+
+  return { acquired, lock: current ?? lock };
 }
 
 export function getAlternativeLineRetryLock(
@@ -524,13 +591,11 @@ export function getAlternativeLineRetryLock(
   now = Date.now()
 ): AlternativeLineRetryLock | null {
   if (result?.status === "in_progress") {
+    const lock = getAlternativeLineInProgressLock(now);
     return {
-      kind: "wait",
-      message:
-        result.error ||
-        result.message ||
-        "別の送信処理が進行中です。5分後にもう一度確認できます。",
-      retryAt: now + ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS,
+      ...lock,
+      message: result.error || result.message || lock.message,
+      attemptId: undefined,
     };
   }
 
