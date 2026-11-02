@@ -34,6 +34,7 @@ import {
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailDisplayNotice,
   readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
   saveConfirmationEmailInProgressLock,
@@ -544,7 +545,7 @@ export default function EditReservationPage() {
     setAlternativeLineRetryLock(null);
     setConfirmationEmailRetryNotice(
       reservationId
-        ? readConfirmationEmailRetryNotice(
+        ? readConfirmationEmailDisplayNotice(
             window.localStorage,
             reservationId
           )
@@ -585,6 +586,39 @@ export default function EditReservationPage() {
       if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
   }, [confirmationLineWaitRetryAt, reservationId]);
+
+  const confirmationEmailRefreshAt =
+    confirmationEmailRetryNotice?.expiresAt ?? null;
+
+  useEffect(() => {
+    if (!reservationId) return;
+
+    const refreshConfirmationEmailRetryNotice = () => {
+      setConfirmationEmailRetryNotice(
+        readConfirmationEmailDisplayNotice(
+          window.localStorage,
+          reservationId
+        )
+      );
+    };
+
+    window.addEventListener("storage", refreshConfirmationEmailRetryNotice);
+    const timeoutId =
+      confirmationEmailRefreshAt === null
+        ? null
+        : window.setTimeout(
+            refreshConfirmationEmailRetryNotice,
+            Math.max(0, confirmationEmailRefreshAt - Date.now()) + 25
+          );
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        refreshConfirmationEmailRetryNotice
+      );
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [confirmationEmailRefreshAt, reservationId]);
 
   useEffect(() => {
     if (!reservationId || !initialAlternativeRevision) return;
@@ -1701,6 +1735,12 @@ export default function EditReservationPage() {
                           : confirmationEmailRetryNotice.actionLabel ||
                             "確定メールを再試行"}
                       </button>
+                    ) : !isExternalBlock &&
+                      !isExternalSynced &&
+                      confirmationEmailRetryNotice ? (
+                      <div className="max-w-sm rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs font-bold leading-5 text-violet-900">
+                        {confirmationEmailRetryNotice.message}
+                      </div>
                     ) : null}
                     {!isExternalBlock &&
                     !isExternalSynced &&

@@ -27,6 +27,7 @@ import {
   getConfirmationEmailRecoveryNotice,
   getConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailDisplayNotice,
   readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
   saveConfirmationEmailInProgressLock,
@@ -577,7 +578,7 @@ export default function ReservationsPageClient() {
         const restored: Record<string, ConfirmationEmailNotice> = {};
 
         for (const reservation of fetchedReservations) {
-          const notice = readConfirmationEmailRetryNotice(
+          const notice = readConfirmationEmailDisplayNotice(
             window.localStorage,
             reservation.id
           );
@@ -668,6 +669,47 @@ export default function ReservationsPageClient() {
       if (timeoutId !== null) window.clearTimeout(timeoutId);
     };
   }, [confirmationLineWaitRetryAt, reservations]);
+
+  const confirmationEmailRefreshAt = useMemo(() => {
+    const expiresAts = Object.values(confirmationEmailRetryNotices)
+      .map((notice) => notice.expiresAt)
+      .filter((expiresAt): expiresAt is number => expiresAt !== null);
+
+    return expiresAts.length > 0 ? Math.min(...expiresAts) : null;
+  }, [confirmationEmailRetryNotices]);
+
+  useEffect(() => {
+    const refreshConfirmationEmailRetryNotices = () => {
+      const restored: Record<string, ConfirmationEmailNotice> = {};
+
+      for (const reservation of reservations) {
+        const notice = readConfirmationEmailDisplayNotice(
+          window.localStorage,
+          reservation.id
+        );
+        if (notice) restored[reservation.id] = notice;
+      }
+
+      setConfirmationEmailRetryNotices(restored);
+    };
+
+    window.addEventListener("storage", refreshConfirmationEmailRetryNotices);
+    const timeoutId =
+      confirmationEmailRefreshAt === null
+        ? null
+        : window.setTimeout(
+            refreshConfirmationEmailRetryNotices,
+            Math.max(0, confirmationEmailRefreshAt - Date.now()) + 25
+          );
+
+    return () => {
+      window.removeEventListener(
+        "storage",
+        refreshConfirmationEmailRetryNotices
+      );
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [confirmationEmailRefreshAt, reservations]);
 
   const normalizedReservations = useMemo<NormalizedReservation[]>(() => {
     return reservations.map((reservation) => {

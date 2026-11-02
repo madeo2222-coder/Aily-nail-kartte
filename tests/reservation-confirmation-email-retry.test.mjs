@@ -35,6 +35,7 @@ const {
   getConfirmationEmailNotice,
   getExpiredConfirmationEmailNotice,
   isConfirmationEmailRetryActive,
+  readConfirmationEmailDisplayNotice,
   readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
   saveConfirmationEmailInProgressLock,
@@ -262,6 +263,7 @@ test("blocks a second confirmation email attempt while delivery is in progress",
   const notice = getConfirmationEmailInProgressNotice(restored);
   assert.equal(notice.canRetry, false);
   assert.equal(notice.completed, false);
+  assert.equal(notice.expiresAt, lock.retryAt);
   assert.match(notice.message, /5分後/);
 
   assert.equal(
@@ -272,6 +274,51 @@ test("blocks a second confirmation email attempt while delivery is in progress",
     ),
     null
   );
+});
+
+test("display notice follows a cross-tab send lock and restores its retry", () => {
+  const storage = createMemoryStorage();
+  const startedAt = 5_000_000;
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
+  const retryNotice = getConfirmationEmailNotice(
+    false,
+    null,
+    startedAt,
+    null,
+    attemptId
+  );
+  saveConfirmationEmailRetryNotice(
+    storage,
+    "reservation-1",
+    retryNotice,
+    startedAt
+  );
+
+  const lockStartedAt = startedAt + 1_000;
+  const lock = getConfirmationEmailInProgressLock(attemptId, lockStartedAt);
+  saveConfirmationEmailInProgressLock(
+    storage,
+    "reservation-1",
+    lock,
+    lockStartedAt
+  );
+
+  const inProgressNotice = readConfirmationEmailDisplayNotice(
+    storage,
+    "reservation-1",
+    lockStartedAt + 1
+  );
+  assert.equal(inProgressNotice?.canRetry, false);
+  assert.equal(inProgressNotice?.expiresAt, lock.retryAt);
+
+  const restoredRetry = readConfirmationEmailDisplayNotice(
+    storage,
+    "reservation-1",
+    lock.retryAt
+  );
+  assert.equal(restoredRetry?.canRetry, true);
+  assert.equal(restoredRetry?.attemptId, attemptId);
+  assert.equal(restoredRetry?.expiresAt, retryNotice.expiresAt);
 });
 
 test("confirmation email claim proceeds only for the tab that still owns the lock", async () => {
@@ -438,16 +485,20 @@ test("reservation screens restore and persist email retry recovery", () => {
     assert.match(source, /retryNotice(?:\?|)\.attemptId/);
     assert.match(source, /attemptId,/);
     assert.match(source, /readConfirmationEmailInProgressLock\(/);
+    assert.match(source, /readConfirmationEmailDisplayNotice\(/);
     assert.match(source, /saveConfirmationEmailInProgressLock\(/);
     assert.match(source, /claimConfirmationEmailInProgressLock\(/);
     assert.match(source, /getConfirmationEmailInProgressNotice\(/);
+    assert.match(source, /addEventListener\("storage",[\s\S]{0,100}ConfirmationEmail/);
+    assert.match(source, /removeEventListener\([\s\S]{0,100}"storage",[\s\S]{0,100}ConfirmationEmail/);
+    assert.match(source, /confirmationEmailRefreshAt[\s\S]{0,260}setTimeout/);
   }
   assert.match(
     listSource,
-    /for \(const reservation of fetchedReservations\)[\s\S]{0,260}readConfirmationEmailRetryNotice/
+    /for \(const reservation of fetchedReservations\)[\s\S]{0,260}readConfirmationEmailDisplayNotice/
   );
   assert.match(
     editSource,
-    /setConfirmationEmailRetryNotice\([\s\S]{0,220}readConfirmationEmailRetryNotice/
+    /setConfirmationEmailRetryNotice\([\s\S]{0,220}readConfirmationEmailDisplayNotice/
   );
 });

@@ -244,8 +244,24 @@ export function getConfirmationEmailInProgressNotice(
     canRetry: false,
     completed: false,
     retryWindowHours: null,
-    expiresAt: null,
+    expiresAt: lock.retryAt,
   };
+}
+
+export function readConfirmationEmailDisplayNotice(
+  storage: RetryNoticeStorage,
+  reservationId: string,
+  now = Date.now()
+): ConfirmationEmailNotice | null {
+  const inProgressLock = readConfirmationEmailInProgressLock(
+    storage,
+    reservationId,
+    now
+  );
+
+  return inProgressLock
+    ? getConfirmationEmailInProgressNotice(inProgressLock)
+    : readConfirmationEmailRetryNotice(storage, reservationId, now);
 }
 
 export function readConfirmationEmailRetryNotice(
