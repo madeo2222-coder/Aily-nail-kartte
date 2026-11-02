@@ -9,9 +9,9 @@ import {
   isCancelledReservationStatus,
 } from "@/lib/reservation-status";
 import {
+  claimConfirmationLineInProgressLock,
   createAlternativeLineReservationRevision,
   getAlternativeLineRetryLock,
-  getConfirmationLineInProgressLock,
   getConfirmationLineRetryLock,
   readAlternativeLineRetryLock,
   readConfirmationLineRetryLock,
@@ -685,9 +685,12 @@ export default function EditReservationPage() {
   }
 
   async function sendConfirmationLineNotice(id: string) {
-    const inProgressLock = getConfirmationLineInProgressLock();
-    saveConfirmationLineRetryLock(window.localStorage, id, inProgressLock);
-    setConfirmationLineRetryLock(inProgressLock);
+    const claim = await claimConfirmationLineInProgressLock(
+      window.localStorage,
+      id
+    );
+    setConfirmationLineRetryLock(claim.lock);
+    if (!claim.acquired) return ` LINE通知：${claim.lock.message}`;
 
     try {
       const response = await fetch("/api/send-reservation-confirmed-line", {
@@ -946,13 +949,17 @@ export default function EditReservationPage() {
     setErrorMessage("");
     setSuccessMessage("");
 
-    const inProgressLock = getConfirmationLineInProgressLock();
-    saveConfirmationLineRetryLock(
+    const claim = await claimConfirmationLineInProgressLock(
       window.localStorage,
-      reservationId,
-      inProgressLock
+      reservationId
     );
-    setConfirmationLineRetryLock(inProgressLock);
+    setConfirmationLineRetryLock(claim.lock);
+    if (!claim.acquired) {
+      mutationRequestPendingRef.current = false;
+      setConfirming(false);
+      setSuccessMessage(claim.lock.message);
+      return;
+    }
 
     try {
       const response = await fetch("/api/send-reservation-confirmed-line", {

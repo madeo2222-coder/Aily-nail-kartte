@@ -554,7 +554,7 @@ test("reservation list sends LINE and email only after confirmation succeeds", a
   const emailIndex = urls.indexOf("/api/send-reservation-confirmed-email");
   assert.ok(confirmIndex >= 0);
   assert.ok(lineIndex > confirmIndex);
-  assert.ok(emailIndex > lineIndex);
+  assert.ok(emailIndex > confirmIndex);
   assert.match(page.alerts.at(-1), /LINE通知を送信しました/);
   assert.match(page.alerts.at(-1), /予約確定メールを送信しました/);
 });

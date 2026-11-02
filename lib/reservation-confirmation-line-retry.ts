@@ -20,6 +20,7 @@ export type ConfirmationLineRetryLock =
       kind: "wait";
       message: string;
       retryAt: number;
+      attemptId?: string;
     };
 
 export type AlternativeLineApiResult = ConfirmationLineApiResult;
@@ -41,6 +42,7 @@ type StoredConfirmationLineRetryLock = {
   version: 1;
   savedAt: number;
   kind: ConfirmationLineRetryLock["kind"];
+  attemptId?: string;
 };
 
 type StoredAlternativeLineRetryLock = {
@@ -78,6 +80,44 @@ const HISTORY_CHECK_STATUSES = new Set([
   "retry_expired",
   "message_changed",
 ]);
+
+const CONFIRMATION_LINE_ATTEMPT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function normalizeConfirmationLineAttemptId(value: unknown) {
+  return typeof value === "string" &&
+    CONFIRMATION_LINE_ATTEMPT_ID_PATTERN.test(value.trim())
+    ? value.trim().toLowerCase()
+    : undefined;
+}
+
+export function createConfirmationLineAttemptId(
+  cryptoApi: Pick<Crypto, "randomUUID" | "getRandomValues"> | undefined =
+    globalThis.crypto
+) {
+  if (typeof cryptoApi?.randomUUID === "function") {
+    return cryptoApi.randomUUID().toLowerCase();
+  }
+
+  const bytes = new Uint8Array(16);
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) =>
+    value.toString(16).padStart(2, "0")
+  ).join("");
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
+    12,
+    16
+  )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 function getStorageKey(prefix: string, reservationId: string) {
   return `${prefix}${reservationId}`;
@@ -181,6 +221,7 @@ function readLineRetryLock(
         kind: "wait",
         message: messages.wait,
         retryAt: stored.savedAt + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
+        attemptId: normalizeConfirmationLineAttemptId(stored.attemptId),
       };
     }
 
@@ -203,7 +244,13 @@ export function saveConfirmationLineRetryLock(
   lock: ConfirmationLineRetryLock | null,
   now = Date.now()
 ) {
-  saveLineRetryLock(storage, STORAGE_KEY_PREFIX, reservationId, lock, now);
+  return saveLineRetryLock(
+    storage,
+    STORAGE_KEY_PREFIX,
+    reservationId,
+    lock,
+    now
+  );
 }
 
 function saveLineRetryLock(
@@ -218,17 +265,22 @@ function saveLineRetryLock(
   try {
     if (!lock) {
       storage.removeItem(key);
-      return;
+      return true;
     }
 
     const stored: StoredConfirmationLineRetryLock = {
       version: 1,
       savedAt: now,
       kind: lock.kind,
+      ...(lock.kind === "wait" && lock.attemptId
+        ? { attemptId: lock.attemptId }
+        : {}),
     };
     storage.setItem(key, JSON.stringify(stored));
+    return true;
   } catch {
     // The in-memory lock still protects the current screen when storage fails.
+    return false;
   }
 }
 
@@ -276,13 +328,55 @@ export function getConfirmationLineRetryLock(
 }
 
 export function getConfirmationLineInProgressLock(
-  now = Date.now()
+  now = Date.now(),
+  attemptId = createConfirmationLineAttemptId()
 ): Extract<ConfirmationLineRetryLock, { kind: "wait" }> {
   return {
     kind: "wait",
     message: STORED_LOCK_MESSAGES.wait,
     retryAt: now + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
+    attemptId: normalizeConfirmationLineAttemptId(attemptId),
   };
+}
+
+export async function claimConfirmationLineInProgressLock(
+  storage: RetryLockStorage,
+  reservationId: string,
+  attemptId = createConfirmationLineAttemptId(),
+  now = Date.now(),
+  settle: () => Promise<void> = () =>
+    new Promise((resolve) => {
+      if (typeof globalThis.setTimeout === "function") {
+        globalThis.setTimeout(resolve, 0);
+        return;
+      }
+      resolve();
+    })
+) {
+  const existing = readConfirmationLineRetryLock(storage, reservationId, now);
+  if (existing) return { acquired: false, lock: existing };
+
+  const lock = getConfirmationLineInProgressLock(now, attemptId);
+  const persisted = saveConfirmationLineRetryLock(
+    storage,
+    reservationId,
+    lock,
+    now
+  );
+  if (!persisted) return { acquired: true, lock };
+
+  await settle();
+  const current = readConfirmationLineRetryLock(
+    storage,
+    reservationId,
+    Date.now()
+  );
+  const acquired =
+    current?.kind === "wait" &&
+    Boolean(lock.attemptId) &&
+    current.attemptId === lock.attemptId;
+
+  return { acquired, lock: current ?? lock };
 }
 
 const ALTERNATIVE_STORED_LOCK_MESSAGES: Record<

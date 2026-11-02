@@ -28,6 +28,7 @@ const {
   ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS,
   CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
+  claimConfirmationLineInProgressLock,
   createAlternativeLineReservationRevision,
   getAlternativeLineRetryLock,
   getConfirmationLineInProgressLock,
@@ -179,6 +180,63 @@ test("confirmation LINE waits out an in-progress delivery across reloads", () =>
     serverLock.retryAt,
     2_000 + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS
   );
+});
+
+test("confirmation LINE claim proceeds only for the tab that still owns the lock", async () => {
+  const storage = createMemoryStorage();
+  const now = Date.now();
+  const firstAttemptId = "11111111-1111-4111-8111-111111111111";
+  const secondAttemptId = "22222222-2222-4222-8222-222222222222";
+  let releaseClaim;
+
+  const firstClaim = claimConfirmationLineInProgressLock(
+    storage,
+    "reservation-1",
+    firstAttemptId,
+    now,
+    () =>
+      new Promise((resolve) => {
+        releaseClaim = resolve;
+      })
+  );
+  saveConfirmationLineRetryLock(
+    storage,
+    "reservation-1",
+    getConfirmationLineInProgressLock(now, secondAttemptId),
+    now
+  );
+  releaseClaim();
+
+  const result = await firstClaim;
+  assert.equal(result.acquired, false);
+  assert.equal(result.lock.kind, "wait");
+  assert.equal(result.lock.attemptId, secondAttemptId);
+});
+
+test("confirmation LINE claim keeps the current-screen guard when storage is unavailable", async () => {
+  const unavailableStorage = {
+    getItem() {
+      throw new Error("blocked");
+    },
+    setItem() {
+      throw new Error("blocked");
+    },
+    removeItem() {
+      throw new Error("blocked");
+    },
+  };
+  const attemptId = "33333333-3333-4333-8333-333333333333";
+  const result = await claimConfirmationLineInProgressLock(
+    unavailableStorage,
+    "reservation-1",
+    attemptId,
+    1_000,
+    async () => {}
+  );
+
+  assert.equal(result.acquired, true);
+  assert.equal(result.lock.kind, "wait");
+  assert.equal(result.lock.attemptId, attemptId);
 });
 
 test("clears retryable, expired, and malformed stored locks", () => {
@@ -487,18 +545,20 @@ test("both staff reservation screens apply the shared retry lock", () => {
       /readConfirmationLineRetryLock\([\s\S]{0,80}window\.localStorage/
     );
     assert.match(source, /saveConfirmationLineRetryLock\(/);
-    assert.match(source, /getConfirmationLineInProgressLock\(\)/);
+    assert.match(source, /claimConfirmationLineInProgressLock\(/);
+    assert.match(source, /if \(!claim\.acquired\)/);
   }
   for (const source of [listPage, editPage]) {
-    const lockIndex = source.indexOf("getConfirmationLineInProgressLock()");
+    const lockIndex = source.indexOf("claimConfirmationLineInProgressLock(");
+    const ownerIndex = source.indexOf("if (!claim.acquired)", lockIndex);
     const fetchIndex = source.indexOf(
       'fetch("/api/send-reservation-confirmed-line"',
       lockIndex
     );
-    assert.ok(lockIndex >= 0, "confirmation LINE wait lock is created");
+    assert.ok(lockIndex >= 0, "confirmation LINE lock is claimed");
     assert.ok(
-      fetchIndex > lockIndex,
-      "wait lock is stored before the LINE request"
+      ownerIndex > lockIndex && fetchIndex > ownerIndex,
+      "the owner is confirmed before the LINE request"
     );
   }
   assert.match(

@@ -9,7 +9,7 @@ import {
   isCancelledReservationStatus,
 } from "@/lib/reservation-status";
 import {
-  getConfirmationLineInProgressLock,
+  claimConfirmationLineInProgressLock,
   getConfirmationLineRetryLock,
   readConfirmationLineRetryLock,
   saveConfirmationLineRetryLock,
@@ -794,12 +794,15 @@ export default function ReservationsPageClient() {
     id: string,
     showAlert = true
   ): Promise<string> {
-    const inProgressLock = getConfirmationLineInProgressLock();
-    saveConfirmationLineRetryLock(window.localStorage, id, inProgressLock);
+    const claim = await claimConfirmationLineInProgressLock(
+      window.localStorage,
+      id
+    );
     setConfirmationLineRetryLocks((current) => ({
       ...current,
-      [id]: inProgressLock,
+      [id]: claim.lock,
     }));
+    if (!claim.acquired) return claim.lock.message;
 
     try {
       const response = await fetch("/api/send-reservation-confirmed-line", {
