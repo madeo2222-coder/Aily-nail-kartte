@@ -20,6 +20,7 @@ export type ConfirmationEmailNotice = {
 
 export type ConfirmationEmailInProgressLock = {
   attemptId: string;
+  ownerId?: string;
   message: string;
   retryAt: number;
 };
@@ -46,6 +47,7 @@ type StoredConfirmationEmailInProgressLock = {
   version: 1;
   savedAt: number;
   attemptId: string;
+  ownerId?: string;
 };
 
 const CONFIRMATION_EMAIL_ATTEMPT_ID_PATTERN =
@@ -102,10 +104,12 @@ export function createConfirmationEmailAttemptId(
 
 export function getConfirmationEmailInProgressLock(
   attemptId = createConfirmationEmailAttemptId(),
-  now = Date.now()
+  now = Date.now(),
+  ownerId?: string
 ): ConfirmationEmailInProgressLock {
   return {
     attemptId,
+    ownerId: normalizeAttemptId(ownerId),
     message:
       "予約確定メールの送信処理が進行中です。5分後に画面を再読み込みして結果を確認してください。",
     retryAt: now + CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS,
@@ -140,7 +144,11 @@ export function readConfirmationEmailInProgressLock(
       return null;
     }
 
-    return getConfirmationEmailInProgressLock(attemptId, stored.savedAt);
+    return getConfirmationEmailInProgressLock(
+      attemptId,
+      stored.savedAt,
+      normalizeAttemptId(stored.ownerId)
+    );
   } catch {
     try {
       storage.removeItem(key);
@@ -162,24 +170,70 @@ export function saveConfirmationEmailInProgressLock(
   try {
     if (!lock) {
       storage.removeItem(key);
-      return;
+      return true;
     }
 
     const attemptId = normalizeAttemptId(lock.attemptId);
     if (!attemptId || lock.retryAt <= now) {
       storage.removeItem(key);
-      return;
+      return true;
     }
 
     const stored: StoredConfirmationEmailInProgressLock = {
       version: 1,
       savedAt: now,
       attemptId,
+      ...(lock.ownerId ? { ownerId: normalizeAttemptId(lock.ownerId) } : {}),
     };
     storage.setItem(key, JSON.stringify(stored));
+    return true;
   } catch {
     // The current screen still keeps its in-memory request guard.
+    return false;
   }
+}
+
+export async function claimConfirmationEmailInProgressLock(
+  storage: RetryNoticeStorage,
+  reservationId: string,
+  attemptId = createConfirmationEmailAttemptId(),
+  ownerId = createConfirmationEmailAttemptId(),
+  now = Date.now(),
+  settle: () => Promise<void> = () =>
+    new Promise((resolve) => {
+      if (typeof globalThis.setTimeout === "function") {
+        globalThis.setTimeout(resolve, 0);
+        return;
+      }
+      resolve();
+    })
+) {
+  const existing = readConfirmationEmailInProgressLock(
+    storage,
+    reservationId,
+    now
+  );
+  if (existing) return { acquired: false, lock: existing };
+
+  const lock = getConfirmationEmailInProgressLock(attemptId, now, ownerId);
+  const persisted = saveConfirmationEmailInProgressLock(
+    storage,
+    reservationId,
+    lock,
+    now
+  );
+  if (!persisted) return { acquired: true, lock };
+
+  await settle();
+  const current = readConfirmationEmailInProgressLock(
+    storage,
+    reservationId,
+    Date.now()
+  );
+  const acquired =
+    Boolean(lock.ownerId) && current?.ownerId === lock.ownerId;
+
+  return { acquired, lock: current ?? lock };
 }
 
 export function getConfirmationEmailInProgressNotice(

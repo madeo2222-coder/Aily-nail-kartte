@@ -26,6 +26,7 @@ vm.runInNewContext(
 
 const {
   CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS,
+  claimConfirmationEmailInProgressLock,
   createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
   getConfirmationEmailInProgressLock,
@@ -273,6 +274,67 @@ test("blocks a second confirmation email attempt while delivery is in progress",
   );
 });
 
+test("confirmation email claim proceeds only for the tab that still owns the lock", async () => {
+  const storage = createMemoryStorage();
+  const now = Date.now();
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
+  const firstOwnerId = "11111111-1111-4111-8111-111111111111";
+  const secondOwnerId = "22222222-2222-4222-8222-222222222222";
+  let releaseClaim;
+
+  const firstClaim = claimConfirmationEmailInProgressLock(
+    storage,
+    "reservation-1",
+    attemptId,
+    firstOwnerId,
+    now,
+    () =>
+      new Promise((resolve) => {
+        releaseClaim = resolve;
+      })
+  );
+  saveConfirmationEmailInProgressLock(
+    storage,
+    "reservation-1",
+    getConfirmationEmailInProgressLock(attemptId, now, secondOwnerId),
+    now
+  );
+  releaseClaim();
+
+  const result = await firstClaim;
+  assert.equal(result.acquired, false);
+  assert.equal(result.lock.attemptId, attemptId);
+  assert.equal(result.lock.ownerId, secondOwnerId);
+});
+
+test("confirmation email claim keeps the current-screen guard when storage is unavailable", async () => {
+  const unavailableStorage = {
+    getItem() {
+      throw new Error("blocked");
+    },
+    setItem() {
+      throw new Error("blocked");
+    },
+    removeItem() {
+      throw new Error("blocked");
+    },
+  };
+  const attemptId = "123e4567-e89b-42d3-a456-426614174000";
+  const ownerId = "33333333-3333-4333-8333-333333333333";
+  const result = await claimConfirmationEmailInProgressLock(
+    unavailableStorage,
+    "reservation-1",
+    attemptId,
+    ownerId,
+    1_000,
+    async () => {}
+  );
+
+  assert.equal(result.acquired, true);
+  assert.equal(result.lock.attemptId, attemptId);
+  assert.equal(result.lock.ownerId, ownerId);
+});
+
 test("clears a known confirmation email result lock but keeps an unknown result lock", () => {
   const listSource = readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -291,19 +353,19 @@ test("clears a known confirmation email result lock but keeps an unknown result 
     );
     const functionEnd = source.indexOf("\n  async function ", functionStart + 20);
     const sendFunction = source.slice(functionStart, functionEnd);
-    const readIndex = sendFunction.indexOf(
-      "readConfirmationEmailInProgressLock"
+    const claimIndex = sendFunction.indexOf(
+      "claimConfirmationEmailInProgressLock"
     );
-    const saveIndex = sendFunction.indexOf(
-      "saveConfirmationEmailInProgressLock",
-      readIndex
+    const ownerIndex = sendFunction.indexOf(
+      "if (!claim.acquired)",
+      claimIndex
     );
     const fetchIndex = sendFunction.indexOf(
       'fetch("/api/send-reservation-confirmed-email"'
     );
 
-    assert.ok(readIndex >= 0 && readIndex < saveIndex);
-    assert.ok(saveIndex < fetchIndex);
+    assert.ok(claimIndex >= 0 && ownerIndex > claimIndex);
+    assert.ok(fetchIndex > ownerIndex);
     assert.match(
       sendFunction,
       /if \(result\) \{[\s\S]{0,120}saveConfirmationEmailInProgressLock\([\s\S]{0,100}null/
@@ -377,6 +439,7 @@ test("reservation screens restore and persist email retry recovery", () => {
     assert.match(source, /attemptId,/);
     assert.match(source, /readConfirmationEmailInProgressLock\(/);
     assert.match(source, /saveConfirmationEmailInProgressLock\(/);
+    assert.match(source, /claimConfirmationEmailInProgressLock\(/);
     assert.match(source, /getConfirmationEmailInProgressNotice\(/);
   }
   assert.match(

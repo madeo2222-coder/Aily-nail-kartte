@@ -25,9 +25,9 @@ import type {
   ConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import {
+  claimConfirmationEmailInProgressLock,
   createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
-  getConfirmationEmailInProgressLock,
   getConfirmationEmailInProgressNotice,
   getExpiredConfirmationEmailNotice,
   getConfirmationEmailRecoveryNotice,
@@ -732,23 +732,17 @@ export default function EditReservationPage() {
     retryToken?: string,
     previousAttemptId?: string
   ): Promise<ConfirmationEmailNotice> {
-    const existingLock = readConfirmationEmailInProgressLock(
-      window.localStorage,
-      id
-    );
-    if (existingLock) {
-      const notice = getConfirmationEmailInProgressNotice(existingLock);
-      return { ...notice, message: ` メール通知：${notice.message}` };
-    }
-
     const attemptId =
       previousAttemptId || createConfirmationEmailAttemptId();
-    const inProgressLock = getConfirmationEmailInProgressLock(attemptId);
-    saveConfirmationEmailInProgressLock(
+    const claim = await claimConfirmationEmailInProgressLock(
       window.localStorage,
       id,
-      inProgressLock
+      attemptId
     );
+    if (!claim.acquired) {
+      const notice = getConfirmationEmailInProgressNotice(claim.lock);
+      return { ...notice, message: ` メール通知：${notice.message}` };
+    }
     try {
       const response = await fetch("/api/send-reservation-confirmed-email", {
         method: "POST",
