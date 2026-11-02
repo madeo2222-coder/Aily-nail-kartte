@@ -1033,6 +1033,87 @@ test("an unobservable customer LINE result preserves the exact request for retry
   );
 });
 
+test("customer LINE requests keep a five-minute shared pre-send lock", () => {
+  const {
+    CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS,
+    getCustomerReservationRequestInProgressLock,
+    readCustomerReservationRequestLineLock,
+    saveCustomerReservationRequestLineLock,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+  const lock = getCustomerReservationRequestInProgressLock(
+    "request_change",
+    1_000
+  );
+
+  assert.equal(lock.kind, "wait");
+  assert.equal(
+    lock.retryAt,
+    1_000 + CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS
+  );
+  saveCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    lock,
+    "revision-1",
+    1_000
+  );
+
+  const restored = readCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    "request_change",
+    "revision-1",
+    2_000
+  );
+  assert.equal(restored.kind, "wait");
+  assert.match(restored.message, /5分後/);
+  assert.equal(
+    readCustomerReservationRequestLineLock(
+      storage,
+      "reservation-1",
+      "request_change",
+      "revision-1",
+      1_000 + CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS
+    ),
+    null
+  );
+});
+
+test("known customer LINE results clear the pre-send lock for safe retry", () => {
+  const {
+    clearCustomerReservationRequestLineLock,
+    getCustomerReservationRequestInProgressLock,
+    readCustomerReservationRequestLineLock,
+    saveCustomerReservationRequestLineLock,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+
+  saveCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    getCustomerReservationRequestInProgressLock("request_cancel", 1_000),
+    "revision-1",
+    1_000
+  );
+  clearCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    "request_cancel"
+  );
+
+  assert.equal(
+    readCustomerReservationRequestLineLock(
+      storage,
+      "reservation-1",
+      "request_cancel",
+      "revision-1",
+      2_000
+    ),
+    null
+  );
+});
+
 test("customer request retry expires and rejects malformed storage", () => {
   const {
     CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS,
@@ -1127,7 +1208,7 @@ test("customer page retries only the persisted LINE request after response loss"
     /retry\?\.expectedRequestRevision === revision/
   );
   assert.match(pageSource, /currentRequestLineRetries/);
-  assert.match(pageSource, /保存した同じ内容で安全に再試行できます/);
+  assert.match(pageSource, /5分後に画面を再読み込み/);
   assert.match(pageSource, /同じ変更希望を再試行/);
   assert.match(pageSource, /同じキャンセル希望を再試行/);
   assert.match(pageSource, /先に保存済みのキャンセル希望を再試行してください/);
@@ -1173,11 +1254,13 @@ test("customer reservation page restores separate change and cancel send locks",
   );
   assert.match(pageSource, /saveCustomerReservationRequestLineLock\(/);
   assert.match(pageSource, /reservation\.requestRevision/);
+  assert.match(pageSource, /getCustomerReservationRequestInProgressLock\(requestAction\)/);
+  assert.match(pageSource, /clearCustomerReservationRequestLineLock\(/);
+  assert.match(pageSource, /requestLineLocks\.request_change\.kind === "sent"/);
   assert.match(
     pageSource,
-    /getCustomerReservationRequestLineLock\([\s\S]{0,80}null,[\s\S]{0,80}requestAction/
+    /readCustomerReservationRequestLineLock\([\s\S]{0,2000}getCustomerReservationRequestInProgressLock\(requestAction\)[\s\S]{0,1000}fetch\(/
   );
-  assert.match(pageSource, /requestLineLocks\.request_change\.kind === "history_check"/);
   assert.match(
     pageSource,
     /function restoreRequestLineLock[\s\S]{0,500}window\.localStorage/

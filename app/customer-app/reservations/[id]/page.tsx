@@ -5,7 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { getReservationStatusLabel } from "@/lib/reservation-status";
 import {
+  clearCustomerReservationRequestLineLock,
   getCustomerReservationRequestLineLock,
+  getCustomerReservationRequestInProgressLock,
   readCustomerReservationRequestRetry,
   readCustomerReservationRequestLineLock,
   saveCustomerReservationRequestRetry,
@@ -404,20 +406,48 @@ export default function CustomerReservationDetailPage() {
         }
       : null;
 
-    if (requestAction && requestRetry) {
-      saveCustomerReservationRequestRetry(
-        window.localStorage,
-        reservationId,
-        requestRetry,
-        requestAction
-      );
-      setRequestLineRetries((current) => ({
-        ...current,
-        [requestAction]: requestRetry,
-      }));
-    }
-
     try {
+      if (requestAction && requestRetry) {
+        const activeLock = readCustomerReservationRequestLineLock(
+          window.localStorage,
+          reservationId,
+          requestAction,
+          requestRetry.expectedRequestRevision
+        );
+
+        if (activeLock) {
+          setRequestLineLocks((current) => ({
+            ...current,
+            [requestAction]: activeLock,
+          }));
+          return;
+        }
+
+        saveCustomerReservationRequestRetry(
+          window.localStorage,
+          reservationId,
+          requestRetry,
+          requestAction
+        );
+        setRequestLineRetries((current) => ({
+          ...current,
+          [requestAction]: requestRetry,
+        }));
+
+        const inProgressLock =
+          getCustomerReservationRequestInProgressLock(requestAction);
+        saveCustomerReservationRequestLineLock(
+          window.localStorage,
+          reservationId,
+          inProgressLock,
+          requestRetry.expectedRequestRevision
+        );
+        setRequestLineLocks((current) => ({
+          ...current,
+          [requestAction]: inProgressLock,
+        }));
+      }
+
       const response = await fetch(
         `/api/customer-reservations/${reservationId}`,
         {
@@ -456,6 +486,17 @@ export default function CustomerReservationDetailPage() {
             ...current,
             [requestAction]: lock,
           }));
+        } else {
+          clearCustomerReservationRequestLineLock(
+            window.localStorage,
+            reservationId,
+            requestAction
+          );
+          setRequestLineLocks((current) => {
+            const next = { ...current };
+            delete next[requestAction];
+            return next;
+          });
         }
 
         if (!shouldKeepCustomerReservationRequestRetry(json)) {
@@ -476,7 +517,7 @@ export default function CustomerReservationDetailPage() {
       if (!json) {
         setRefreshErrorMessage(
           requestAction
-            ? "店舗へのLINE送信結果を確認できませんでした。保存した同じ内容で安全に再試行できます。"
+            ? "店舗へのLINE送信結果を確認できませんでした。5分後に画面を再読み込みし、保存した同じ内容で再試行してください。"
             : "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
         );
         return;
@@ -502,25 +543,9 @@ export default function CustomerReservationDetailPage() {
       await fetchReservation({ preserveCurrent: true });
     } catch (error) {
       console.error(error);
-      if (requestAction) {
-        const lock = getCustomerReservationRequestLineLock(
-          null,
-          requestAction
-        );
-        saveCustomerReservationRequestLineLock(
-          window.localStorage,
-          reservationId,
-          lock,
-          requestRetry?.expectedRequestRevision || ""
-        );
-        setRequestLineLocks((current) => ({
-          ...current,
-          [requestAction]: lock,
-        }));
-      }
       setRefreshErrorMessage(
         requestAction
-          ? "店舗へのLINE送信結果を確認できませんでした。保存した同じ内容で安全に再試行できます。"
+          ? "店舗へのLINE送信結果を確認できませんでした。5分後に画面を再読み込みし、保存した同じ内容で再試行してください。"
           : "通信が途切れたため、予約操作の結果を確認できませんでした。同じ操作を繰り返さず、最新情報を再読み込みしてください。"
       );
     } finally {
@@ -1010,9 +1035,9 @@ export default function CustomerReservationDetailPage() {
                 requestLineLocks.request_change ? (
                   <div
                     className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
-                      requestLineLocks.request_change.kind === "history_check"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      requestLineLocks.request_change.kind === "sent"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
                     }`}
                   >
                     {requestLineLocks.request_change.message}
@@ -1040,9 +1065,9 @@ export default function CustomerReservationDetailPage() {
                 requestLineLocks.request_cancel ? (
                   <div
                     className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
-                      requestLineLocks.request_cancel.kind === "history_check"
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      requestLineLocks.request_cancel.kind === "sent"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
                     }`}
                   >
                     {requestLineLocks.request_cancel.message}

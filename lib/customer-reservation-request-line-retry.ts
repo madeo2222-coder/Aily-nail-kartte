@@ -9,11 +9,22 @@ export type CustomerReservationRequestLineResult = {
   deliveryStatus?: string;
 };
 
-export type CustomerReservationRequestLineLock = {
+type CustomerReservationRequestTerminalLineLock = {
   action: CustomerReservationRequestAction;
   kind: "sent" | "history_check";
   message: string;
 };
+
+type CustomerReservationRequestWaitLineLock = {
+  action: CustomerReservationRequestAction;
+  kind: "wait";
+  message: string;
+  retryAt: number;
+};
+
+export type CustomerReservationRequestLineLock =
+  | CustomerReservationRequestTerminalLineLock
+  | CustomerReservationRequestWaitLineLock;
 
 export type CustomerReservationRequestRetry = {
   action: CustomerReservationRequestAction;
@@ -33,7 +44,7 @@ type StoredCustomerReservationRequestLineLock = {
 type LegacyStoredCustomerReservationRequestLineLock = {
   version: 1;
   savedAt: number;
-  kind?: CustomerReservationRequestLineLock["kind"];
+  kind?: CustomerReservationRequestTerminalLineLock["kind"];
 };
 
 type StoredCustomerReservationRequestRetry = {
@@ -45,6 +56,8 @@ type StoredCustomerReservationRequestRetry = {
 
 export const CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS =
   23 * 60 * 60 * 1000;
+export const CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS =
+  5 * 60 * 1000;
 
 const STORAGE_KEY_PREFIX = "aily:customer-reservation-request-line:v2:";
 const LEGACY_STORAGE_KEY_PREFIX =
@@ -64,6 +77,12 @@ function getStoredMessage(
   action: CustomerReservationRequestAction,
   kind: CustomerReservationRequestLineLock["kind"]
 ) {
+  if (kind === "wait") {
+    return action === "request_cancel"
+      ? "キャンセル希望の送信処理が進行中です。5分後に画面を再読み込みして確認してください。"
+      : "変更希望の送信処理が進行中です。5分後に画面を再読み込みして確認してください。";
+  }
+
   if (kind === "history_check") {
     return "店舗へのLINE送信結果を確認できません。同じ依頼を繰り返さず、店舗へ送信状況を確認してください。";
   }
@@ -131,14 +150,21 @@ export function readCustomerReservationRequestLineLock(
     const stored = JSON.parse(
       raw
     ) as Partial<StoredCustomerReservationRequestLineLock>;
+    const validKind =
+      stored.kind === "sent" ||
+      stored.kind === "history_check" ||
+      stored.kind === "wait";
+    const lockTtl =
+      stored.kind === "wait"
+        ? CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS
+        : CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS;
     const valid =
       stored.version === 2 &&
       typeof stored.savedAt === "number" &&
       Number.isFinite(stored.savedAt) &&
       stored.savedAt <= now &&
-      now - stored.savedAt <
-        CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS &&
-      (stored.kind === "sent" || stored.kind === "history_check") &&
+      now - stored.savedAt < lockTtl &&
+      validKind &&
       typeof stored.reservationRevision === "string" &&
       Boolean(stored.reservationRevision) &&
       stored.reservationRevision === reservationRevision;
@@ -146,6 +172,17 @@ export function readCustomerReservationRequestLineLock(
     if (!valid) {
       storage.removeItem(key);
       return null;
+    }
+
+    if (stored.kind === "wait") {
+      return {
+        action,
+        kind: "wait",
+        message: getStoredMessage(action, "wait"),
+        retryAt:
+          (stored.savedAt as number) +
+          CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS,
+      };
     }
 
     const kind = stored.kind === "history_check" ? "history_check" : "sent";
@@ -163,6 +200,33 @@ export function readCustomerReservationRequestLineLock(
     }
     return null;
   }
+}
+
+export function clearCustomerReservationRequestLineLock(
+  storage: RetryLockStorage,
+  reservationId: string,
+  action: CustomerReservationRequestAction
+) {
+  const key = getStorageKey(STORAGE_KEY_PREFIX, reservationId, action);
+
+  try {
+    storage.removeItem(key);
+  } catch {
+    // The in-memory lock is cleared by the caller when storage is unavailable.
+  }
+}
+
+export function getCustomerReservationRequestInProgressLock(
+  action: CustomerReservationRequestAction,
+  now = Date.now()
+): CustomerReservationRequestLineLock {
+  return {
+    action,
+    kind: "wait",
+    message: getStoredMessage(action, "wait"),
+    retryAt:
+      now + CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS,
+  };
 }
 
 export function saveCustomerReservationRequestLineLock(
