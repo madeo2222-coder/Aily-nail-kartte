@@ -60,6 +60,10 @@ test("external block operation ID survives a response-loss reload for the same p
     FIRST_ID,
   );
   assert.equal(created, 1);
+  assert.equal(
+    exports.getPendingExternalBlockOperationId(storage),
+    FIRST_ID,
+  );
 });
 
 test("external block operation ID rotates when the submitted payload changes", () => {
@@ -89,6 +93,7 @@ test("external block cleanup removes only the matching completed operation", () 
   );
 
   exports.clearExternalBlockOperation(storage, FIRST_ID);
+  assert.equal(exports.getPendingExternalBlockOperationId(storage), null);
   assert.equal(
     exports.getOrCreateExternalBlockOperationId(storage, fingerprint, () => SECOND_ID),
     SECOND_ID,

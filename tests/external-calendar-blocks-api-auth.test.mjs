@@ -101,6 +101,13 @@ function request(overrides = {}) {
   };
 }
 
+function getRequest(operationId = "") {
+  const query = operationId
+    ? `?operationId=${encodeURIComponent(operationId)}`
+    : "";
+  return { url: `https://example.test/api/external-calendar-blocks${query}` };
+}
+
 function executeCreate({ authentication, rows = {} }) {
   const calls = [];
   let authOptions = null;
@@ -126,6 +133,7 @@ function executeCreate({ authentication, rows = {} }) {
         (filter) => filter.column === "id" && filter.value === OPERATION_ID,
       )
     ) {
+      if (rows.pendingOperationResult) return rows.pendingOperationResult;
       const configured = rows.existingOperations || [rows.existingOperation];
       const value = configured[existingOperationRead] ?? null;
       existingOperationRead += 1;
@@ -187,6 +195,7 @@ function executeCreate({ authentication, rows = {} }) {
     RegExp,
     Set,
     String,
+    URL,
     process: {
       env: {
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
@@ -245,7 +254,7 @@ test("external block API rejects unauthenticated reads and writes before service
     error: "スタッフ認証が必要です。",
   };
   const getRuntime = executeCreate({ authentication });
-  const getResponse = await getRuntime.exports.GET();
+  const getResponse = await getRuntime.exports.GET(getRequest());
   assert.equal(getResponse.status, 401);
   assert.equal(getRuntime.clientCreated, false);
 
@@ -262,7 +271,7 @@ test("external block API rejects unauthenticated reads and writes before service
 
 test("individual staff sees only active staff in their salon", async () => {
   const runtime = executeCreate({ authentication: principal() });
-  const response = await runtime.exports.GET();
+  const response = await runtime.exports.GET(getRequest());
 
   assert.equal(response.status, 200);
   const read = runtime.calls.find((call) => call.table === "staffs");
@@ -280,7 +289,7 @@ test("individual staff sees only active staff in their salon", async () => {
 
 test("signed shared login keeps the active multi-salon staff list", async () => {
   const runtime = executeCreate({ authentication: principal("legacy") });
-  const response = await runtime.exports.GET();
+  const response = await runtime.exports.GET(getRequest());
 
   assert.equal(response.status, 200);
   const read = runtime.calls.find((call) => call.table === "staffs");
@@ -288,6 +297,58 @@ test("signed shared login keeps the active multi-salon staff list", async () => 
     read.filters.some((filter) => filter.column === "salon_id"),
     false,
   );
+});
+
+test("external block read reconciles a saved pending operation inside the staff salon", async () => {
+  const runtime = executeCreate({
+    authentication: principal(),
+    rows: { existingOperation: { id: OPERATION_ID } },
+  });
+  const response = await runtime.exports.GET(getRequest(OPERATION_ID));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.pendingOperationStatus, "saved");
+  const pendingRead = runtime.calls.find(
+    (call) =>
+      call.table === "external_calendar_blocks" &&
+      call.filters.some(
+        (filter) => filter.column === "id" && filter.value === OPERATION_ID,
+      ),
+  );
+  assert.ok(pendingRead);
+  assert.ok(
+    pendingRead.filters.some(
+      (filter) => filter.column === "salon_id" && filter.value === SALON_ID,
+    ),
+  );
+});
+
+test("external block read reports not found and uncertain pending operations separately", async () => {
+  const missing = executeCreate({ authentication: principal() });
+  const missingResponse = await missing.exports.GET(getRequest(OPERATION_ID));
+  assert.equal((await missingResponse.json()).pendingOperationStatus, "not_found");
+
+  const uncertain = executeCreate({
+    authentication: principal(),
+    rows: {
+      pendingOperationResult: {
+        data: null,
+        error: { message: "temporary read failure" },
+      },
+    },
+  });
+  const uncertainResponse = await uncertain.exports.GET(getRequest(OPERATION_ID));
+  assert.equal(uncertainResponse.status, 200);
+  assert.equal((await uncertainResponse.json()).pendingOperationStatus, "unknown");
+});
+
+test("external block read rejects an invalid pending operation before service-role access", async () => {
+  const runtime = executeCreate({ authentication: principal() });
+  const response = await runtime.exports.GET(getRequest("invalid"));
+
+  assert.equal(response.status, 400);
+  assert.equal(runtime.clientCreated, false);
 });
 
 test("individual staff cannot post a block for another salon", async () => {

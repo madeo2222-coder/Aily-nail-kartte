@@ -62,6 +62,10 @@ function readStoredSubmission(storage: StorageLike): StoredSubmission | null {
   }
 }
 
+export function getPendingExternalBlockOperationId(storage: StorageLike) {
+  return readStoredSubmission(storage)?.operationId || null;
+}
+
 export function getOrCreateExternalBlockOperationId(
   storage: StorageLike,
   fingerprint: string,

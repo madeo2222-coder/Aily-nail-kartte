@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   buildExternalBlockFingerprint,
   clearExternalBlockOperation,
+  getPendingExternalBlockOperationId,
   getOrCreateExternalBlockOperationId,
 } from "@/lib/external-calendar-block-submission";
 
@@ -42,6 +43,7 @@ export default function ExternalCalendarBlocksPage() {
   const [staffsLoading, setStaffsLoading] = useState(true);
   const [staffsError, setStaffsError] = useState("");
   const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
+  const [recoveryNotice, setRecoveryNotice] = useState("");
   const staffRequestVersionRef = useRef(0);
   const submissionInFlightRef = useRef(false);
 
@@ -64,13 +66,20 @@ export default function ExternalCalendarBlocksPage() {
     setStaffsError("");
 
     try {
-      const response = await fetch("/api/external-calendar-blocks", {
+      const pendingOperationId = getPendingExternalBlockOperationId(
+        window.localStorage,
+      );
+      const query = pendingOperationId
+        ? `?operationId=${encodeURIComponent(pendingOperationId)}`
+        : "";
+      const response = await fetch(`/api/external-calendar-blocks${query}`, {
         cache: "no-store",
       });
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
         error?: string;
         staffs?: StaffRow[];
+        pendingOperationStatus?: "saved" | "not_found" | "unknown";
       } | null;
 
       if (!response.ok || !result?.ok || !Array.isArray(result.staffs)) {
@@ -81,6 +90,29 @@ export default function ExternalCalendarBlocksPage() {
 
       if (requestVersion === staffRequestVersionRef.current) {
         setStaffs(result.staffs);
+
+        if (pendingOperationId) {
+          if (result.pendingOperationStatus === "saved") {
+            clearExternalBlockOperation(
+              window.localStorage,
+              pendingOperationId,
+            );
+            setMutationResultUnknown(false);
+            setRecoveryNotice(
+              "前回の外部予定が保存済みであることを確認しました。予約カレンダーで確認できます。",
+            );
+          } else if (result.pendingOperationStatus === "not_found") {
+            setMutationResultUnknown(false);
+            setRecoveryNotice(
+              "前回の外部予定は保存されていませんでした。同じ内容を入力すると安全に再登録できます。",
+            );
+          } else {
+            setMutationResultUnknown(true);
+            setRecoveryNotice("");
+          }
+        } else {
+          setMutationResultUnknown(false);
+        }
       }
     } catch (error) {
       console.error("スタッフ取得エラー:", error);
@@ -222,6 +254,14 @@ export default function ExternalCalendarBlocksPage() {
         </section>
       ) : (
         <div className="space-y-4 rounded-2xl border bg-white p-4">
+        {recoveryNotice ? (
+          <section
+            role="status"
+            className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold text-emerald-900"
+          >
+            {recoveryNotice}
+          </section>
+        ) : null}
         {!isContractorBooking ? (
           <div>
             <label className="mb-2 block text-sm font-medium">
@@ -370,6 +410,13 @@ export default function ExternalCalendarBlocksPage() {
             >
               予約カレンダーで確認
             </Link>
+            <button
+              type="button"
+              onClick={loadStaffs}
+              className="mt-3 w-full rounded-xl border border-amber-700 px-4 py-3 text-center font-bold text-amber-900"
+            >
+              登録結果を再確認
+            </button>
           </section>
         ) : null}
 

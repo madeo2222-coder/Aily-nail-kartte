@@ -68,6 +68,7 @@ async function mount({
   postMode = "success",
   storage = makeStorage(),
   operationId = "55555555-5555-4555-8555-555555555555",
+  pendingStatus = "not_found",
 } = {}) {
   const states = [];
   let cursor = 0;
@@ -96,7 +97,7 @@ async function mount({
     useEffect: fn => { effect = fn; },
   };
 
-  function staffResponse() {
+  function staffResponse(url) {
     if (shouldFail) {
       if (rejection) throw new Error("offline");
       return {
@@ -112,6 +113,9 @@ async function mount({
         staffs: empty
           ? []
           : [{ id: "staff-1", name: "黒木", salon_id: "salon-1" }],
+        ...(String(url).includes("operationId=")
+          ? { pendingOperationStatus: pendingStatus }
+          : {}),
       }),
     };
   }
@@ -120,8 +124,8 @@ async function mount({
   vm.runInNewContext(compiled, {
     exports,
     console: { error() {} },
-    fetch: async (_url, options = {}) => {
-      if (options.method !== "POST") return staffResponse();
+    fetch: async (url, options = {}) => {
+      if (options.method !== "POST") return staffResponse(url);
 
       postCount += 1;
       postBodies.push(JSON.parse(options.body));
@@ -223,6 +227,9 @@ async function mount({
     get postBodies() {
       return postBodies;
     },
+    get pendingOperationId() {
+      return submissionExports.getPendingExternalBlockOperationId(storage);
+    },
     async retrySaveAfterUnknown() {
       const button = findNode(
         tree(),
@@ -306,4 +313,44 @@ test("external calendar blocks reuses its operation ID after a response-loss rel
     "55555555-5555-4555-8555-555555555555",
   );
   assert.equal(second.postBodies[0].operationId, first.postBodies[0].operationId);
+});
+
+test("external calendar blocks clears a saved pending operation after reload", async () => {
+  const storage = makeStorage();
+  const first = await mount({ postMode: "network", storage });
+  await first.save();
+
+  const second = await mount({ storage, pendingStatus: "saved" });
+
+  assert.match(second.html(), /前回の外部予定が保存済み/);
+  assert.match(second.html(), /予約カレンダーで確認できます/);
+  assert.equal(second.pendingOperationId, null);
+  assert.equal(second.postCount, 0);
+});
+
+test("external calendar blocks keeps registration locked while reconciliation is uncertain", async () => {
+  const storage = makeStorage();
+  const first = await mount({ postMode: "network", storage });
+  await first.save();
+
+  const second = await mount({ storage, pendingStatus: "unknown" });
+
+  assert.match(second.html(), /登録結果を確認できませんでした/);
+  assert.match(second.html(), /登録結果を再確認/);
+  assert.equal(second.pendingOperationId, "55555555-5555-4555-8555-555555555555");
+  await second.retrySaveAfterUnknown();
+  assert.equal(second.postCount, 0);
+});
+
+test("external calendar blocks allows the same operation to retry after a confirmed miss", async () => {
+  const storage = makeStorage();
+  const first = await mount({ postMode: "network", storage });
+  await first.save();
+
+  const second = await mount({ storage, pendingStatus: "not_found" });
+  assert.match(second.html(), /前回の外部予定は保存されていませんでした/);
+  await second.save();
+
+  assert.equal(second.postBodies[0].operationId, first.postBodies[0].operationId);
+  assert.equal(second.pendingOperationId, null);
 });

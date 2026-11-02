@@ -123,11 +123,18 @@ async function authenticate() {
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const authentication = await authenticate();
 
   if (!authentication.ok) {
     return errorResponse(authentication.error, authentication.status);
+  }
+
+  const operationId =
+    new URL(request.url).searchParams.get("operationId")?.trim() || "";
+
+  if (operationId && !isExternalBlockOperationId(operationId)) {
+    return errorResponse("外部予定の登録操作を確認できません。", 400);
   }
 
   try {
@@ -145,7 +152,27 @@ export async function GET() {
       );
     }
 
-    const staffsResult = await staffsQuery;
+    let pendingOperationQuery = operationId
+      ? supabase
+          .from("external_calendar_blocks")
+          .select("id")
+          .eq("id", operationId)
+      : null;
+
+    if (
+      pendingOperationQuery &&
+      authentication.principal.authenticationMode === "supabase"
+    ) {
+      pendingOperationQuery = pendingOperationQuery.eq(
+        "salon_id",
+        authentication.principal.salonId,
+      );
+    }
+
+    const [staffsResult, pendingOperationResult] = await Promise.all([
+      staffsQuery,
+      pendingOperationQuery ? pendingOperationQuery.maybeSingle() : null,
+    ]);
 
     if (staffsResult.error) {
       return errorResponse(
@@ -154,7 +181,19 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({ ok: true, staffs: staffsResult.data || [] });
+    const pendingOperationStatus = operationId
+      ? pendingOperationResult?.error
+        ? "unknown"
+        : pendingOperationResult?.data
+          ? "saved"
+          : "not_found"
+      : undefined;
+
+    return NextResponse.json({
+      ok: true,
+      staffs: staffsResult.data || [],
+      ...(pendingOperationStatus ? { pendingOperationStatus } : {}),
+    });
   } catch {
     return errorResponse(
       "スタッフ情報を取得できませんでした。通信状況を確認して再試行してください。",
