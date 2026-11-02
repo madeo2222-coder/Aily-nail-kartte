@@ -114,11 +114,18 @@ async function authenticate() {
   });
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const authentication = await authenticate();
 
   if (!authentication.ok) {
     return errorResponse(authentication.error, authentication.status);
+  }
+
+  const operationId =
+    new URL(request.url).searchParams.get("operationId")?.trim() || "";
+
+  if (operationId && !isSubmissionOperationId(operationId)) {
+    return errorResponse("予約登録操作を確認できません。", 400);
   }
 
   try {
@@ -151,10 +158,24 @@ export async function GET() {
       staffsQuery = staffsQuery.eq("salon_id", salonId);
     }
 
-    const [salonsResult, customersResult, staffsResult] = await Promise.all([
+    let pendingOperationQuery = operationId
+      ? supabase.from("reservations").select("id").eq("id", operationId)
+      : null;
+    if (pendingOperationQuery && salonId) {
+      pendingOperationQuery = pendingOperationQuery.eq("salon_id", salonId);
+    }
+
+    const [
+      salonsResult,
+      customersResult,
+      staffsResult,
+      pendingOperationResult,
+    ] = await Promise.all([
       salonsQuery,
       customersQuery,
       staffsQuery,
+      pendingOperationQuery?.maybeSingle() ||
+        Promise.resolve({ data: null, error: null }),
     ]);
 
     if (salonsResult.error || customersResult.error || staffsResult.error) {
@@ -169,6 +190,15 @@ export async function GET() {
       salons: salonsResult.data || [],
       customers: customersResult.data || [],
       staffs: staffsResult.data || [],
+      ...(operationId
+        ? {
+            pendingOperationStatus: pendingOperationResult.error
+              ? "unknown"
+              : pendingOperationResult.data
+                ? "saved"
+                : "not_found",
+          }
+        : {}),
     });
   } catch {
     return errorResponse(

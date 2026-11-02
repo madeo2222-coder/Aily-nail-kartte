@@ -7,6 +7,7 @@ import { buildExternalReservationMemo } from "@/lib/external-reservation-metadat
 import {
   buildStaffReservationFingerprint,
   clearStaffReservationOperation,
+  getPendingStaffReservationOperation,
   getOrCreateStaffReservationOperationId,
 } from "@/lib/staff-reservation-submission";
 
@@ -253,12 +254,18 @@ export default function ReservationNewPage() {
   const fetchMasterData = useCallback(async () => {
     const version = ++masterRequestVersion.current;
     const isCurrent = () => version === masterRequestVersion.current;
+    const pendingOperation = getPendingStaffReservationOperation(
+      window.localStorage,
+    );
 
     try {
       setPageLoading(true);
       setMasterDataError("");
 
-      const response = await fetch("/api/reservations/staff-create", {
+      const requestUrl = pendingOperation
+        ? `/api/reservations/staff-create?operationId=${encodeURIComponent(pendingOperation.operationId)}`
+        : "/api/reservations/staff-create";
+      const response = await fetch(requestUrl, {
         method: "GET",
         cache: "no-store",
       });
@@ -268,6 +275,7 @@ export default function ReservationNewPage() {
         salons?: Salon[];
         customers?: Customer[];
         staffs?: Staff[];
+        pendingOperationStatus?: "saved" | "not_found" | "unknown";
       } | null;
 
       if (!isCurrent()) return;
@@ -284,6 +292,36 @@ export default function ReservationNewPage() {
         setCustomerId("");
         setStaffId("");
         return;
+      }
+
+      if (
+        pendingOperation &&
+        result.pendingOperationStatus === "saved"
+      ) {
+        clearStaffReservationOperation(
+          window.localStorage,
+          pendingOperation.operationId,
+        );
+        router.push("/reservations/calendar");
+        return;
+      }
+
+      if (
+        pendingOperation &&
+        result.pendingOperationStatus === "unknown"
+      ) {
+        setSubmissionResultUnknown(true);
+        setErrorMessage(
+          "前回の予約登録結果を確認できませんでした。同じ内容を再送せず、予約カレンダーで最新状態を確認してください。",
+        );
+      } else if (
+        pendingOperation &&
+        result.pendingOperationStatus === "not_found"
+      ) {
+        setSubmissionResultUnknown(false);
+        setErrorMessage(
+          "前回の予約は保存済みと確認できませんでした。内容を確認し、必要な場合だけ登録してください。",
+        );
       }
 
       const salonRows = result.salons || [];
@@ -311,7 +349,7 @@ export default function ReservationNewPage() {
     } finally {
       if (isCurrent()) setPageLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     let active = true;

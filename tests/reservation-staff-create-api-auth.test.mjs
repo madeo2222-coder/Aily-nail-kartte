@@ -151,6 +151,7 @@ function executeRoute({ authentication, rows = {} }) {
     RegExp,
     Set,
     String,
+    URL,
     process: {
       env: {
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
@@ -245,6 +246,12 @@ function postRequest(overrides = {}) {
   };
 }
 
+function getRequest(query = "") {
+  return new Request(
+    `https://example.test/api/reservations/staff-create${query}`,
+  );
+}
+
 test("staff reservation API rejects unauthenticated reads and writes before service-role access", async () => {
   const authentication = {
     ok: false,
@@ -252,7 +259,7 @@ test("staff reservation API rejects unauthenticated reads and writes before serv
     error: "スタッフ認証が必要です。",
   };
   const getRuntime = executeRoute({ authentication });
-  const getResponse = await getRuntime.exports.GET();
+  const getResponse = await getRuntime.exports.GET(getRequest());
   assert.equal(getResponse.status, 401);
   assert.equal(getRuntime.clientCreated, false);
 
@@ -269,7 +276,7 @@ test("staff reservation API rejects unauthenticated reads and writes before serv
 
 test("staff reservation master data is scoped to an individual staff salon", async () => {
   const runtime = executeRoute({ authentication: principal() });
-  const response = await runtime.exports.GET();
+  const response = await runtime.exports.GET(getRequest());
   const body = await response.json();
 
   assert.equal(response.status, 200);
@@ -296,7 +303,7 @@ test("staff reservation master data is scoped to an individual staff salon", asy
 
 test("staff reservation master data keeps the signed shared-login multi-salon path", async () => {
   const runtime = executeRoute({ authentication: principal("legacy") });
-  const response = await runtime.exports.GET();
+  const response = await runtime.exports.GET(getRequest());
 
   assert.equal(response.status, 200);
   assert.equal(
@@ -307,6 +314,66 @@ test("staff reservation master data keeps the signed shared-login multi-salon pa
     ),
     false,
   );
+});
+
+test("staff reservation master read reconciles a saved pending operation within the staff salon", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      operationSingle: { data: { id: OPERATION_ID }, error: null },
+    },
+  });
+  const response = await runtime.exports.GET(
+    getRequest(`?operationId=${OPERATION_ID}`),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.pendingOperationStatus, "saved");
+  const operationRead = runtime.calls.find(
+    (call) =>
+      call.table === "reservations" &&
+      call.filters.some(
+        (filter) => filter.column === "id" && filter.value === OPERATION_ID,
+      ),
+  );
+  assert.ok(operationRead);
+  assert.ok(
+    operationRead.filters.some(
+      (filter) =>
+        filter.column === "salon_id" && filter.value === SALON_ID,
+    ),
+  );
+});
+
+test("staff reservation master read keeps an uncertain pending lookup locked", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      operationSingle: {
+        data: null,
+        error: { message: "temporary read failure" },
+      },
+    },
+  });
+  const response = await runtime.exports.GET(
+    getRequest(`?operationId=${OPERATION_ID}`),
+  );
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.pendingOperationStatus, "unknown");
+});
+
+test("staff reservation master read rejects an invalid pending operation before database access", async () => {
+  const runtime = executeRoute({ authentication: principal() });
+  const response = await runtime.exports.GET(
+    getRequest("?operationId=invalid"),
+  );
+
+  assert.equal(response.status, 400);
+  assert.equal(runtime.clientCreated, false);
+  assert.equal(runtime.calls.length, 0);
 });
 
 test("individual staff cannot create a reservation for another salon", async () => {

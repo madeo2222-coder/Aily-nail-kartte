@@ -63,6 +63,23 @@ test("staff reservation operation ID survives a response-loss reload for the sam
   assert.equal(created, 1);
 });
 
+test("staff reservation exposes a valid pending operation for read-only reconciliation", () => {
+  const storage = makeStorage();
+  const fingerprint = exports.buildStaffReservationFingerprint(submission);
+  exports.getOrCreateStaffReservationOperationId(
+    storage,
+    fingerprint,
+    () => FIRST_ID,
+  );
+
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(exports.getPendingStaffReservationOperation(storage)),
+    ),
+    { fingerprint, operationId: FIRST_ID },
+  );
+});
+
 test("staff reservation operation ID rotates when the submitted payload changes", () => {
   const storage = makeStorage();
   const first = exports.buildStaffReservationFingerprint(submission);

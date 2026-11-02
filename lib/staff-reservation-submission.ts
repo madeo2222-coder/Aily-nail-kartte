@@ -64,6 +64,10 @@ function readStoredSubmission(storage: StorageLike): StoredSubmission | null {
   }
 }
 
+export function getPendingStaffReservationOperation(storage: StorageLike) {
+  return readStoredSubmission(storage);
+}
+
 export function getOrCreateStaffReservationOperationId(
   storage: StorageLike,
   fingerprint: string,

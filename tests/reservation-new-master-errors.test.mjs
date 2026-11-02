@@ -69,6 +69,8 @@ async function mount({
   rejection = false,
   empty = false,
   postMode = "success",
+  pendingOperationStatus,
+  initialStorageValue,
 } = {}) {
   const states = [];
   let cursor = 0;
@@ -78,6 +80,12 @@ async function mount({
   const requests = [];
   const pushed = [];
   const storageValues = new Map();
+  if (initialStorageValue) {
+    storageValues.set(
+      "aily:staff-reservation-submission:v1",
+      initialStorageValue,
+    );
+  }
   const localStorage = {
     getItem(key) {
       return storageValues.has(key) ? storageValues.get(key) : null;
@@ -147,7 +155,7 @@ async function mount({
     return {
       ok: true,
       async json() {
-        return empty
+        const result = empty
           ? { ok: true, salons: [], customers: [], staffs: [] }
           : {
               ok: true,
@@ -155,6 +163,10 @@ async function mount({
               customers: [{ id: "c1", name: "顧客A", salon_id: "s1" }],
               staffs: [{ id: "st1", name: "スタッフA", salon_id: "s1" }],
             };
+        if (url.includes("operationId=") && pendingOperationStatus) {
+          result.pendingOperationStatus = pendingOperationStatus;
+        }
+        return result;
       },
     };
   }
@@ -340,6 +352,51 @@ test("reservation creation locks resubmission after a network result loss", asyn
   await page.submit();
   assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 1);
   page.unmount();
+});
+
+test("reservation creation reconciles a saved result after reloading the page", async () => {
+  const first = await mount({ postMode: "rejection" });
+  await first.submit();
+  const stored = first.localStorage.getItem(
+    "aily:staff-reservation-submission:v1",
+  );
+  assert.ok(stored);
+  first.unmount();
+
+  const reloaded = await mount({
+    initialStorageValue: stored,
+    pendingOperationStatus: "saved",
+  });
+  assert.match(reloaded.requests[0].url, new RegExp(`operationId=${JSON.parse(stored).operationId}`));
+  assert.deepEqual(reloaded.pushed, ["/reservations/calendar"]);
+  assert.equal(
+    reloaded.localStorage.getItem("aily:staff-reservation-submission:v1"),
+    null,
+  );
+  reloaded.unmount();
+});
+
+test("reservation creation blocks resubmission when the reload check is uncertain", async () => {
+  const first = await mount({ postMode: "rejection" });
+  await first.submit();
+  const stored = first.localStorage.getItem(
+    "aily:staff-reservation-submission:v1",
+  );
+  assert.ok(stored);
+  first.unmount();
+
+  const reloaded = await mount({
+    initialStorageValue: stored,
+    pendingOperationStatus: "unknown",
+  });
+  assert.match(reloaded.html(), /前回の予約登録結果を確認できませんでした/);
+  assert.match(reloaded.html(), /最新の予約を確認/);
+  await reloaded.submit();
+  assert.equal(
+    reloaded.requests.filter((request) => request.options?.method === "POST").length,
+    0,
+  );
+  reloaded.unmount();
 });
 
 test("reservation creation allows retry after an authoritative API rejection", async () => {
