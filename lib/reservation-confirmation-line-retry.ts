@@ -11,19 +11,19 @@ export type ConfirmationLineApiResult = {
   message?: string;
 };
 
-export type ConfirmationLineRetryLock = {
-  kind: "sent" | "history_check";
-  message: string;
-};
-
-export type AlternativeLineApiResult = ConfirmationLineApiResult;
-export type AlternativeLineRetryLock =
-  | ConfirmationLineRetryLock
+export type ConfirmationLineRetryLock =
+  | {
+      kind: "sent" | "history_check";
+      message: string;
+    }
   | {
       kind: "wait";
       message: string;
       retryAt: number;
     };
+
+export type AlternativeLineApiResult = ConfirmationLineApiResult;
+export type AlternativeLineRetryLock = ConfirmationLineRetryLock;
 
 export type AlternativeLineReservationSnapshot = {
   customerId: string | null;
@@ -51,6 +51,7 @@ type StoredAlternativeLineRetryLock = {
 };
 
 export const CONFIRMATION_LINE_RETRY_LOCK_TTL_MS = 23 * 60 * 60 * 1000;
+export const CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS = 5 * 60 * 1000;
 export const ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS =
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS;
 export const ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS = 5 * 60 * 1000;
@@ -67,6 +68,8 @@ const STORED_LOCK_MESSAGES: Record<
   sent: "予約確定LINEは送信済みです。重複送信していません。",
   history_check:
     "LINE通知の結果を確認できません。同じ送信を繰り返さず、通知状態とLINEの送信履歴を確認してください。",
+  wait:
+    "予約確定LINEの送信処理が進行中です。5分後にページを再読み込みして確認してください。",
 };
 
 const HISTORY_CHECK_STATUSES = new Set([
@@ -80,10 +83,16 @@ function getStorageKey(prefix: string, reservationId: string) {
   return `${prefix}${reservationId}`;
 }
 
+function isTerminalRetryLockKind(
+  value: unknown
+): value is "sent" | "history_check" {
+  return value === "sent" || value === "history_check";
+}
+
 function isRetryLockKind(
   value: unknown
 ): value is ConfirmationLineRetryLock["kind"] {
-  return value === "sent" || value === "history_check";
+  return isTerminalRetryLockKind(value) || value === "wait";
 }
 
 function isAlternativeRetryLockKind(
@@ -150,12 +159,16 @@ function readLineRetryLock(
     if (!raw) return null;
 
     const stored = JSON.parse(raw) as Partial<StoredConfirmationLineRetryLock>;
+    const lockTtl =
+      stored.kind === "wait"
+        ? CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS
+        : CONFIRMATION_LINE_RETRY_LOCK_TTL_MS;
     const isValid =
       stored.version === 1 &&
       typeof stored.savedAt === "number" &&
       Number.isFinite(stored.savedAt) &&
       stored.savedAt <= now &&
-      now - stored.savedAt < CONFIRMATION_LINE_RETRY_LOCK_TTL_MS &&
+      now - stored.savedAt < lockTtl &&
       isRetryLockKind(stored.kind);
 
     if (!isValid) {
@@ -163,7 +176,15 @@ function readLineRetryLock(
       return null;
     }
 
-    return stored.kind
+    if (stored.kind === "wait" && typeof stored.savedAt === "number") {
+      return {
+        kind: "wait",
+        message: messages.wait,
+        retryAt: stored.savedAt + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
+      };
+    }
+
+    return stored.kind === "sent" || stored.kind === "history_check"
       ? { kind: stored.kind, message: messages[stored.kind] }
       : null;
   } catch {
@@ -212,8 +233,13 @@ function saveLineRetryLock(
 }
 
 export function getConfirmationLineRetryLock(
-  result: ConfirmationLineApiResult | null
+  result: ConfirmationLineApiResult | null,
+  now = Date.now()
 ): ConfirmationLineRetryLock | null {
+  if (result?.status === "in_progress") {
+    return getConfirmationLineInProgressLock(now);
+  }
+
   if (!result) {
     return {
       kind: "history_check",
@@ -247,6 +273,16 @@ export function getConfirmationLineRetryLock(
   }
 
   return null;
+}
+
+export function getConfirmationLineInProgressLock(
+  now = Date.now()
+): Extract<ConfirmationLineRetryLock, { kind: "wait" }> {
+  return {
+    kind: "wait",
+    message: STORED_LOCK_MESSAGES.wait,
+    retryAt: now + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
+  };
 }
 
 const ALTERNATIVE_STORED_LOCK_MESSAGES: Record<
@@ -286,10 +322,14 @@ export function readAlternativeLineRetryLock(
         Number.isFinite(legacy.savedAt) &&
         legacy.savedAt <= now &&
         now - legacy.savedAt < ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS &&
-        isRetryLockKind(legacy.kind) &&
+        isTerminalRetryLockKind(legacy.kind) &&
         Boolean(reservationRevision);
 
-      if (!legacyIsValid || !legacy.kind || legacy.savedAt === undefined) {
+      if (
+        !legacyIsValid ||
+        !isTerminalRetryLockKind(legacy.kind) ||
+        typeof legacy.savedAt !== "number"
+      ) {
         storage.removeItem(legacyKey);
         return null;
       }

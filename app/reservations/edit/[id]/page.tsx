@@ -11,6 +11,7 @@ import {
 import {
   createAlternativeLineReservationRevision,
   getAlternativeLineRetryLock,
+  getConfirmationLineInProgressLock,
   getConfirmationLineRetryLock,
   readAlternativeLineRetryLock,
   readConfirmationLineRetryLock,
@@ -680,6 +681,10 @@ export default function EditReservationPage() {
   }
 
   async function sendConfirmationLineNotice(id: string) {
+    const inProgressLock = getConfirmationLineInProgressLock();
+    saveConfirmationLineRetryLock(window.localStorage, id, inProgressLock);
+    setConfirmationLineRetryLock(inProgressLock);
+
     try {
       const response = await fetch("/api/send-reservation-confirmed-line", {
         method: "POST",
@@ -918,6 +923,14 @@ export default function EditReservationPage() {
     setConfirming(true);
     setErrorMessage("");
     setSuccessMessage("");
+
+    const inProgressLock = getConfirmationLineInProgressLock();
+    saveConfirmationLineRetryLock(
+      window.localStorage,
+      reservationId,
+      inProgressLock
+    );
+    setConfirmationLineRetryLock(inProgressLock);
 
     try {
       const response = await fetch("/api/send-reservation-confirmed-line", {

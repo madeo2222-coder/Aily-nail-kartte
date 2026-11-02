@@ -26,9 +26,11 @@ function loadRetryLockModule() {
 const {
   ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS,
   ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS,
+  CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
   createAlternativeLineReservationRevision,
   getAlternativeLineRetryLock,
+  getConfirmationLineInProgressLock,
   getConfirmationLineRetryLock,
   readAlternativeLineRetryLock,
   readConfirmationLineRetryLock,
@@ -138,6 +140,45 @@ test("restores a retry lock after a page reload within the retry window", () => 
   assert.equal(restored.kind, "history_check");
   assert.match(restored.message, /同じ送信を繰り返さず/);
   assert.doesNotMatch([...storage.entries.values()][0], /通知履歴/);
+});
+
+test("confirmation LINE waits out an in-progress delivery across reloads", () => {
+  const storage = createMemoryStorage();
+  const lock = getConfirmationLineInProgressLock(1_000);
+
+  assert.equal(lock.kind, "wait");
+  assert.equal(
+    lock.retryAt,
+    1_000 + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS
+  );
+
+  saveConfirmationLineRetryLock(storage, "reservation-1", lock, 1_000);
+  assert.equal(
+    readConfirmationLineRetryLock(
+      storage,
+      "reservation-1",
+      1_000 + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS - 1
+    ).kind,
+    "wait"
+  );
+  assert.equal(
+    readConfirmationLineRetryLock(
+      storage,
+      "reservation-1",
+      1_000 + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS
+    ),
+    null
+  );
+
+  const serverLock = getConfirmationLineRetryLock(
+    { ok: false, status: "in_progress" },
+    2_000
+  );
+  assert.equal(serverLock.kind, "wait");
+  assert.equal(
+    serverLock.retryAt,
+    2_000 + CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS
+  );
 });
 
 test("clears retryable, expired, and malformed stored locks", () => {
@@ -446,6 +487,19 @@ test("both staff reservation screens apply the shared retry lock", () => {
       /readConfirmationLineRetryLock\([\s\S]{0,80}window\.localStorage/
     );
     assert.match(source, /saveConfirmationLineRetryLock\(/);
+    assert.match(source, /getConfirmationLineInProgressLock\(\)/);
+  }
+  for (const source of [listPage, editPage]) {
+    const lockIndex = source.indexOf("getConfirmationLineInProgressLock()");
+    const fetchIndex = source.indexOf(
+      'fetch("/api/send-reservation-confirmed-line"',
+      lockIndex
+    );
+    assert.ok(lockIndex >= 0, "confirmation LINE wait lock is created");
+    assert.ok(
+      fetchIndex > lockIndex,
+      "wait lock is stored before the LINE request"
+    );
   }
   assert.match(
     listPage,
