@@ -334,46 +334,100 @@ export default function CustomerReservationDetailPage() {
     void Promise.resolve().then(() => fetchReservation());
   }, [reservationId, fetchReservation]);
 
+  const restoreCustomerRequestLineState = useCallback(
+    (resetMessage = false) => {
+      if (!reservationId || !reservation?.requestRevision) return;
+
+      const nextLocks: Partial<
+        Record<
+          CustomerReservationRequestAction,
+          CustomerReservationRequestLineLock
+        >
+      > = {};
+      const nextRetries: Partial<
+        Record<
+          CustomerReservationRequestAction,
+          CustomerReservationRequestRetry
+        >
+      > = {};
+
+      for (const action of [
+        "request_change",
+        "request_cancel",
+      ] as const) {
+        const lock = readCustomerReservationRequestLineLock(
+          window.localStorage,
+          reservationId,
+          action,
+          reservation.requestRevision
+        );
+        if (lock) nextLocks[action] = lock;
+        const retry = readCustomerReservationRequestRetry(
+          window.localStorage,
+          reservationId,
+          action,
+          reservation.requestRevision
+        );
+        if (retry) nextRetries[action] = retry;
+      }
+
+      setRequestLineLocks(nextLocks);
+      setRequestLineRetries(nextRetries);
+      const retryMessage =
+        nextRetries.request_change?.requestMessage ??
+        nextRetries.request_cancel?.requestMessage;
+      if (resetMessage) {
+        setRequestMessage(retryMessage ?? "");
+      } else if (retryMessage !== undefined) {
+        setRequestMessage(retryMessage);
+      }
+    },
+    [reservationId, reservation?.requestRevision]
+  );
+
   useEffect(() => {
-    if (!reservationId || !reservation?.requestRevision) return;
+    restoreCustomerRequestLineState(true);
+  }, [restoreCustomerRequestLineState]);
 
-    const nextLocks: Partial<
-      Record<
-        CustomerReservationRequestAction,
-        CustomerReservationRequestLineLock
-      >
-    > = {};
-    const nextRetries: Partial<
-      Record<CustomerReservationRequestAction, CustomerReservationRequestRetry>
-    > = {};
+  const requestChangeRetryAt =
+    requestLineLocks.request_change?.kind === "wait"
+      ? requestLineLocks.request_change.retryAt
+      : null;
+  const requestCancelRetryAt =
+    requestLineLocks.request_cancel?.kind === "wait"
+      ? requestLineLocks.request_cancel.retryAt
+      : null;
 
-    for (const action of [
-      "request_change",
-      "request_cancel",
-    ] as const) {
-      const lock = readCustomerReservationRequestLineLock(
-        window.localStorage,
-        reservationId,
-        action,
-        reservation.requestRevision
-      );
-      if (lock) nextLocks[action] = lock;
-      const retry = readCustomerReservationRequestRetry(
-        window.localStorage,
-        reservationId,
-        action,
-        reservation.requestRevision
-      );
-      if (retry) nextRetries[action] = retry;
-    }
+  useEffect(() => {
+    if (!reservation?.requestRevision) return;
 
-    setRequestLineLocks(nextLocks);
-    setRequestLineRetries(nextRetries);
-    const retryMessage =
-      nextRetries.request_change?.requestMessage ??
-      nextRetries.request_cancel?.requestMessage;
-    setRequestMessage(retryMessage ?? "");
-  }, [reservationId, reservation?.requestRevision]);
+    const refreshCustomerRequestLineState = () => {
+      restoreCustomerRequestLineState(false);
+    };
+    window.addEventListener("storage", refreshCustomerRequestLineState);
+
+    const retryAt = Math.min(
+      ...[requestChangeRetryAt, requestCancelRetryAt].filter(
+        (value): value is number => value !== null
+      )
+    );
+    const timeoutId = Number.isFinite(retryAt)
+      ? window.setTimeout(
+          refreshCustomerRequestLineState,
+          Math.max(0, retryAt - Date.now()) + 25
+        )
+      : null;
+
+    return () => {
+      window.removeEventListener("storage", refreshCustomerRequestLineState);
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+    };
+  }, [
+    reservation?.requestRevision,
+    requestChangeRetryAt,
+    requestCancelRetryAt,
+    restoreCustomerRequestLineState,
+  ]);
 
   useEffect(() => {
     if (!reservation?.canDirectEdit || !date) {

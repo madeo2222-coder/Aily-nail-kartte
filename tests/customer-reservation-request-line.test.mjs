@@ -1371,7 +1371,7 @@ test("customer page retries only the persisted LINE request after response loss"
     /retry\?\.expectedRequestRevision === revision/
   );
   assert.match(pageSource, /currentRequestLineRetries/);
-  assert.match(pageSource, /5分後に画面を再読み込み/);
+  assert.match(pageSource, /restoreCustomerRequestLineState/);
   assert.match(pageSource, /同じ変更希望を再試行/);
   assert.match(pageSource, /同じキャンセル希望を再試行/);
   assert.match(pageSource, /先に保存済みのキャンセル希望を再試行してください/);
@@ -1443,6 +1443,32 @@ test("customer reservation page restores separate change and cancel send locks",
   assert.match(
     pageSource,
     /requestLineLocks\.request_cancel \? \([\s\S]{0,1200}キャンセル希望を店舗へ送る/
+  );
+});
+
+test("customer request wait locks refresh after expiry and cross-tab updates", () => {
+  assert.match(
+    pageSource,
+    /window\.addEventListener\("storage", refreshCustomerRequestLineState\)/
+  );
+  assert.match(
+    pageSource,
+    /window\.setTimeout\([\s\S]{0,180}retryAt - Date\.now\(\)/
+  );
+  assert.match(
+    pageSource,
+    /window\.removeEventListener\("storage", refreshCustomerRequestLineState\)/
+  );
+  assert.match(pageSource, /window\.clearTimeout\(timeoutId\)/);
+  assert.match(
+    readFileSync(
+      new URL(
+        "../lib/customer-reservation-request-line-retry.ts",
+        import.meta.url
+      ),
+      "utf8"
+    ),
+    /5分後にこの画面から同じ内容を再試行できます/
   );
 });
 
