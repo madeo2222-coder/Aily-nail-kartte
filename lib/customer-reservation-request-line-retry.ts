@@ -20,6 +20,7 @@ type CustomerReservationRequestWaitLineLock = {
   kind: "wait";
   message: string;
   retryAt: number;
+  attemptId?: string;
 };
 
 export type CustomerReservationRequestLineLock =
@@ -39,6 +40,7 @@ type StoredCustomerReservationRequestLineLock = {
   savedAt: number;
   kind: CustomerReservationRequestLineLock["kind"];
   reservationRevision: string;
+  attemptId?: string;
 };
 
 type LegacyStoredCustomerReservationRequestLineLock = {
@@ -58,6 +60,9 @@ export const CUSTOMER_RESERVATION_REQUEST_LINE_LOCK_TTL_MS =
   23 * 60 * 60 * 1000;
 export const CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS =
   5 * 60 * 1000;
+
+const CUSTOMER_RESERVATION_REQUEST_ATTEMPT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const STORAGE_KEY_PREFIX = "aily:customer-reservation-request-line:v2:";
 const LEGACY_STORAGE_KEY_PREFIX =
@@ -90,6 +95,41 @@ function getStoredMessage(
   return action === "request_cancel"
     ? "キャンセル希望は店舗へ送信済みです。重複送信していません。"
     : "変更希望は店舗へ送信済みです。重複送信していません。";
+}
+
+function normalizeAttemptId(value: unknown) {
+  return typeof value === "string" &&
+    CUSTOMER_RESERVATION_REQUEST_ATTEMPT_ID_PATTERN.test(value.trim())
+    ? value.trim().toLowerCase()
+    : undefined;
+}
+
+export function createCustomerReservationRequestAttemptId(
+  cryptoApi: Pick<Crypto, "randomUUID" | "getRandomValues"> | undefined =
+    globalThis.crypto
+) {
+  if (typeof cryptoApi?.randomUUID === "function") {
+    return cryptoApi.randomUUID().toLowerCase();
+  }
+
+  const bytes = new Uint8Array(16);
+  if (typeof cryptoApi?.getRandomValues === "function") {
+    cryptoApi.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (value) =>
+    value.toString(16).padStart(2, "0")
+  ).join("");
+
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(
+    12,
+    16
+  )}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function readCustomerReservationRequestLineLock(
@@ -182,6 +222,7 @@ export function readCustomerReservationRequestLineLock(
         retryAt:
           (stored.savedAt as number) +
           CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS,
+        attemptId: normalizeAttemptId(stored.attemptId),
       };
     }
 
@@ -218,14 +259,16 @@ export function clearCustomerReservationRequestLineLock(
 
 export function getCustomerReservationRequestInProgressLock(
   action: CustomerReservationRequestAction,
-  now = Date.now()
-): CustomerReservationRequestLineLock {
+  now = Date.now(),
+  attemptId = createCustomerReservationRequestAttemptId()
+): CustomerReservationRequestWaitLineLock {
   return {
     action,
     kind: "wait",
     message: getStoredMessage(action, "wait"),
     retryAt:
       now + CUSTOMER_RESERVATION_REQUEST_LINE_IN_PROGRESS_LOCK_TTL_MS,
+    attemptId: normalizeAttemptId(attemptId),
   };
 }
 
@@ -236,7 +279,7 @@ export function saveCustomerReservationRequestLineLock(
   reservationRevision: string,
   now = Date.now()
 ) {
-  if (!lock || !reservationRevision) return;
+  if (!lock || !reservationRevision) return false;
 
   const key = getStorageKey(STORAGE_KEY_PREFIX, reservationId, lock.action);
 
@@ -246,11 +289,68 @@ export function saveCustomerReservationRequestLineLock(
       savedAt: now,
       kind: lock.kind,
       reservationRevision,
+      ...(lock.kind === "wait" && lock.attemptId
+        ? { attemptId: lock.attemptId }
+        : {}),
     };
     storage.setItem(key, JSON.stringify(stored));
+    return true;
   } catch {
     // The in-memory lock still protects the current screen when storage fails.
+    return false;
   }
+}
+
+export async function claimCustomerReservationRequestLineLock(
+  storage: RetryLockStorage,
+  reservationId: string,
+  action: CustomerReservationRequestAction,
+  reservationRevision: string,
+  attemptId = createCustomerReservationRequestAttemptId(),
+  now = Date.now(),
+  settle: () => Promise<void> = () =>
+    new Promise((resolve) => globalThis.setTimeout(resolve, 0))
+) {
+  const existing = readCustomerReservationRequestLineLock(
+    storage,
+    reservationId,
+    action,
+    reservationRevision,
+    now
+  );
+  if (existing) return { acquired: false, lock: existing };
+
+  const lock = getCustomerReservationRequestInProgressLock(
+    action,
+    now,
+    attemptId
+  );
+  const persisted = saveCustomerReservationRequestLineLock(
+    storage,
+    reservationId,
+    lock,
+    reservationRevision,
+    now
+  );
+
+  if (!persisted) {
+    return { acquired: true, lock };
+  }
+
+  await settle();
+  const current = readCustomerReservationRequestLineLock(
+    storage,
+    reservationId,
+    action,
+    reservationRevision,
+    Date.now()
+  );
+  const acquired =
+    current?.kind === "wait" &&
+    Boolean(lock.attemptId) &&
+    current.attemptId === lock.attemptId;
+
+  return { acquired, lock: current ?? lock };
 }
 
 export function readCustomerReservationRequestRetry(

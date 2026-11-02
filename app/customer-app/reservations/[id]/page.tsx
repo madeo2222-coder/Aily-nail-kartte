@@ -5,9 +5,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { getReservationStatusLabel } from "@/lib/reservation-status";
 import {
+  claimCustomerReservationRequestLineLock,
   clearCustomerReservationRequestLineLock,
   getCustomerReservationRequestLineLock,
-  getCustomerReservationRequestInProgressLock,
   readCustomerReservationRequestRetry,
   readCustomerReservationRequestLineLock,
   saveCustomerReservationRequestRetry,
@@ -513,6 +513,18 @@ export default function CustomerReservationDetailPage() {
           return;
         }
 
+        const claim = await claimCustomerReservationRequestLineLock(
+          window.localStorage,
+          reservationId,
+          requestAction,
+          requestRetry.expectedRequestRevision
+        );
+        setRequestLineLocks((current) => ({
+          ...current,
+          [requestAction]: claim.lock,
+        }));
+        if (!claim.acquired) return;
+
         saveCustomerReservationRequestRetry(
           window.localStorage,
           reservationId,
@@ -522,19 +534,6 @@ export default function CustomerReservationDetailPage() {
         setRequestLineRetries((current) => ({
           ...current,
           [requestAction]: requestRetry,
-        }));
-
-        const inProgressLock =
-          getCustomerReservationRequestInProgressLock(requestAction);
-        saveCustomerReservationRequestLineLock(
-          window.localStorage,
-          reservationId,
-          inProgressLock,
-          requestRetry.expectedRequestRevision
-        );
-        setRequestLineLocks((current) => ({
-          ...current,
-          [requestAction]: inProgressLock,
         }));
       }
 

@@ -8,6 +8,17 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
+// Keep the fixed 2026-11-01 reservation fixture inside the 30-day window.
+const FIXED_NOW = new Date("2026-10-05T00:00:00+09:00").getTime();
+class FixedDate extends Date {
+  constructor(...args) {
+    super(...(args.length ? args : [FIXED_NOW]));
+  }
+
+  static now() {
+    return FIXED_NOW;
+  }
+}
 const pageSource = readFileSync(
   new URL("../app/customer-app/reserve/page.tsx", import.meta.url),
   "utf8",
@@ -186,7 +197,7 @@ async function mount({
   vm.runInNewContext(compiled, {
     exports,
     AbortController,
-    Date,
+    Date: FixedDate,
     Intl,
     Map,
     Number,

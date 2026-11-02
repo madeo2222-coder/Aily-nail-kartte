@@ -1151,6 +1151,92 @@ test("customer LINE requests keep a five-minute shared pre-send lock", () => {
   );
 });
 
+test("customer LINE request claim proceeds only for the tab that still owns the lock", async () => {
+  const {
+    claimCustomerReservationRequestLineLock,
+    saveCustomerReservationRequestLineLock,
+  } = loadRetryLockModule();
+  const storage = createMemoryStorage();
+  const now = Date.now();
+  let releaseClaim;
+  const firstAttemptId = "11111111-1111-4111-8111-111111111111";
+  const secondAttemptId = "22222222-2222-4222-8222-222222222222";
+
+  const firstClaim = claimCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    "request_change",
+    "revision-1",
+    firstAttemptId,
+    now,
+    () =>
+      new Promise((resolve) => {
+        releaseClaim = resolve;
+      })
+  );
+
+  saveCustomerReservationRequestLineLock(
+    storage,
+    "reservation-1",
+    {
+      action: "request_change",
+      kind: "wait",
+      message: "別タブが送信処理を開始しました",
+      retryAt: now + 300_000,
+      attemptId: secondAttemptId,
+    },
+    "revision-1",
+    now
+  );
+  releaseClaim();
+
+  const result = await firstClaim;
+  assert.equal(result.acquired, false);
+  assert.equal(result.lock.kind, "wait");
+  assert.equal(result.lock.attemptId, secondAttemptId);
+});
+
+test("customer LINE request claim allows one persisted owner and degrades safely without storage", async () => {
+  const { claimCustomerReservationRequestLineLock } = loadRetryLockModule();
+  const now = Date.now();
+  const attemptId = "33333333-3333-4333-8333-333333333333";
+  const acquired = await claimCustomerReservationRequestLineLock(
+    createMemoryStorage(),
+    "reservation-1",
+    "request_cancel",
+    "revision-1",
+    attemptId,
+    now,
+    async () => {}
+  );
+
+  assert.equal(acquired.acquired, true);
+  assert.equal(acquired.lock.attemptId, attemptId);
+
+  const unavailableStorage = {
+    getItem() {
+      throw new Error("storage unavailable");
+    },
+    setItem() {
+      throw new Error("storage unavailable");
+    },
+    removeItem() {
+      throw new Error("storage unavailable");
+    },
+  };
+  const fallback = await claimCustomerReservationRequestLineLock(
+    unavailableStorage,
+    "reservation-2",
+    "request_change",
+    "revision-2",
+    attemptId,
+    now,
+    async () => {}
+  );
+  assert.equal(fallback.acquired, true);
+  assert.equal(fallback.lock.kind, "wait");
+});
+
 test("known customer LINE results clear the pre-send lock for safe retry", () => {
   const {
     clearCustomerReservationRequestLineLock,
@@ -1269,6 +1355,12 @@ test("customer request retry is discarded after the reservation revision changes
 });
 
 test("customer page retries only the persisted LINE request after response loss", () => {
+  assert.match(pageSource, /claimCustomerReservationRequestLineLock\(/);
+  assert.match(pageSource, /if \(!claim\.acquired\) return/);
+  assert.ok(
+    pageSource.indexOf("if (!claim.acquired) return") <
+      pageSource.indexOf("saveCustomerReservationRequestRetry(", pageSource.indexOf("const claim ="))
+  );
   assert.match(pageSource, /saveCustomerReservationRequestRetry\(/);
   assert.match(pageSource, /readCustomerReservationRequestRetry\(/);
   assert.match(pageSource, /shouldKeepCustomerReservationRequestRetry\(json\)/);
@@ -1325,12 +1417,12 @@ test("customer reservation page restores separate change and cancel send locks",
   );
   assert.match(pageSource, /saveCustomerReservationRequestLineLock\(/);
   assert.match(pageSource, /reservation\.requestRevision/);
-  assert.match(pageSource, /getCustomerReservationRequestInProgressLock\(requestAction\)/);
+  assert.match(pageSource, /claimCustomerReservationRequestLineLock\(/);
   assert.match(pageSource, /clearCustomerReservationRequestLineLock\(/);
   assert.match(pageSource, /requestLineLocks\.request_change\.kind === "sent"/);
   assert.match(
     pageSource,
-    /readCustomerReservationRequestLineLock\([\s\S]{0,2000}getCustomerReservationRequestInProgressLock\(requestAction\)[\s\S]{0,1000}fetch\(/
+    /readCustomerReservationRequestLineLock\([\s\S]{0,2200}claimCustomerReservationRequestLineLock\([\s\S]{0,600}if \(!claim\.acquired\) return;[\s\S]{0,1000}fetch\(/
   );
   assert.match(
     pageSource,
