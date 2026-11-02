@@ -10,6 +10,12 @@ import {
   type InboundNailTipSubmission,
 } from "@/lib/inbound-nail-tip-submission";
 import {
+  clearPendingInboundReservationSubmission,
+  readPendingInboundReservationSubmission,
+  savePendingInboundReservationSubmission,
+  type InboundReservationSubmission,
+} from "@/lib/inbound-reservation-submission";
+import {
   inboundLanguageOptions,
   inboundTranslations,
   isInboundLanguage,
@@ -22,43 +28,76 @@ const uploadBucketName = "visit-photos";
 
 const reservationRecoveryCopy: Record<
   InboundLanguage,
-  { title: string; body: string }
+  {
+    title: string;
+    body: string;
+    retryTitle: string;
+    retryBody: string;
+    recheck: string;
+  }
 > = {
   en: {
     title: "We could not confirm the reservation result.",
     body: "Do not send the same request again. Please check your email and contact Aily Nail Studio if you do not receive a confirmation.",
+    retryTitle: "The reservation request was not saved.",
+    retryBody: "You can safely send the saved reservation request again with the button below.",
+    recheck: "Check the result again",
   },
   ja: {
     title: "来店予約の結果を確認できませんでした。",
     body: "同じ内容を再送せず、メールをご確認ください。確認メールが届かない場合はAily Nail Studioへお問い合わせください。",
+    retryTitle: "来店予約は保存されていませんでした。",
+    retryBody: "下のボタンから、保存済みの同じ内容を安全に再送できます。",
+    recheck: "結果をもう一度確認",
   },
   "zh-TW": {
     title: "無法確認預約結果。",
     body: "請勿重複送出相同預約。請查看電子郵件；若未收到確認信，請聯絡 Aily Nail Studio。",
+    retryTitle: "預約申請尚未儲存。",
+    retryBody: "您可以使用下方按鈕安全地重新送出已儲存的預約申請。",
+    recheck: "再次確認結果",
   },
   "zh-CN": {
     title: "无法确认预约结果。",
     body: "请勿重复提交相同预约。请查看电子邮件；若未收到确认邮件，请联系 Aily Nail Studio。",
+    retryTitle: "预约申请尚未保存。",
+    retryBody: "您可以使用下方按钮安全地重新提交已保存的预约申请。",
+    recheck: "再次确认结果",
   },
   ko: {
     title: "예약 요청 결과를 확인할 수 없습니다.",
     body: "같은 요청을 다시 보내지 마세요. 이메일을 확인하고 확인 메일이 오지 않으면 Aily Nail Studio로 문의해 주세요.",
+    retryTitle: "예약 요청이 저장되지 않았습니다.",
+    retryBody: "아래 버튼으로 저장된 동일한 예약 요청을 안전하게 다시 보낼 수 있습니다.",
+    recheck: "결과 다시 확인",
   },
   fr: {
     title: "Nous ne pouvons pas confirmer le résultat de la réservation.",
     body: "Ne renvoyez pas la même demande. Vérifiez votre e-mail et contactez Aily Nail Studio si vous ne recevez pas de confirmation.",
+    retryTitle: "La demande de réservation n’a pas été enregistrée.",
+    retryBody: "Vous pouvez renvoyer en toute sécurité la demande enregistrée avec le bouton ci-dessous.",
+    recheck: "Vérifier à nouveau",
   },
   es: {
     title: "No pudimos confirmar el resultado de la reserva.",
     body: "No vuelvas a enviar la misma solicitud. Revisa tu correo y contacta con Aily Nail Studio si no recibes la confirmación.",
+    retryTitle: "La solicitud de reserva no se guardó.",
+    retryBody: "Puedes volver a enviar de forma segura la solicitud guardada con el botón de abajo.",
+    recheck: "Comprobar de nuevo",
   },
   th: {
     title: "ไม่สามารถยืนยันผลการจองได้",
     body: "กรุณาอย่าส่งคำขอเดิมซ้ำ ตรวจสอบอีเมล และติดต่อ Aily Nail Studio หากไม่ได้รับอีเมลยืนยัน",
+    retryTitle: "คำขอจองยังไม่ได้รับการบันทึก",
+    retryBody: "คุณสามารถส่งคำขอจองเดิมที่บันทึกไว้ซ้ำได้อย่างปลอดภัยด้วยปุ่มด้านล่าง",
+    recheck: "ตรวจสอบผลอีกครั้ง",
   },
   ar: {
     title: "تعذر تأكيد نتيجة الحجز.",
     body: "يرجى عدم إرسال الطلب نفسه مرة أخرى. تحققي من بريدك الإلكتروني وتواصلي مع Aily Nail Studio إذا لم تصلك رسالة تأكيد.",
+    retryTitle: "لم يتم حفظ طلب الحجز.",
+    retryBody: "يمكنك إعادة إرسال طلب الحجز المحفوظ بأمان باستخدام الزر أدناه.",
+    recheck: "تحقق من النتيجة مرة أخرى",
   },
 };
 
@@ -293,6 +332,11 @@ export default function InboundReservePage() {
   const [sending, setSending] = useState(false);
   const [reservationResultUnknown, setReservationResultUnknown] =
     useState(false);
+  const [reservationRecoveryChecking, setReservationRecoveryChecking] =
+    useState(false);
+  const [reservationRetryReady, setReservationRetryReady] = useState(false);
+  const [reservationRecoveredSaved, setReservationRecoveredSaved] =
+    useState(false);
   const reservationSubmissionInFlight = useRef(false);
   const [nailTipResultUnknown, setNailTipResultUnknown] = useState(false);
   const [nailTipRecoveryChecking, setNailTipRecoveryChecking] =
@@ -349,6 +393,54 @@ export default function InboundReservePage() {
 
     loadGoogleUser();
   }, []);
+
+  const reconcilePendingReservationSubmission = useCallback(async () => {
+    const pending = readPendingInboundReservationSubmission(
+      window.sessionStorage
+    );
+    if (!pending) {
+      setReservationResultUnknown(false);
+      setReservationRetryReady(false);
+      return;
+    }
+
+    setReservationRecoveryChecking(true);
+    setReservationResultUnknown(true);
+    setReservationRetryReady(false);
+    setReservationRecoveredSaved(false);
+
+    try {
+      const response = await fetch("/api/inbound-reservations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pending),
+      });
+      const json = (await response.json()) as {
+        ok?: boolean;
+        status?: "saved" | "not_found" | "unknown";
+      };
+
+      if (!response.ok || !json.ok || json.status === "unknown") return;
+      if (json.status === "saved") {
+        clearPendingInboundReservationSubmission(window.sessionStorage);
+        setReservationResultUnknown(false);
+        setReservationRecoveredSaved(true);
+        return;
+      }
+      if (json.status === "not_found") {
+        setReservationResultUnknown(false);
+        setReservationRetryReady(true);
+      }
+    } catch (error) {
+      console.error("Reservation reconciliation failed:", error);
+    } finally {
+      setReservationRecoveryChecking(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reconcilePendingReservationSubmission();
+  }, [reconcilePendingReservationSubmission]);
 
   const reconcilePendingNailTipSubmission = useCallback(async () => {
     const pending = readPendingInboundNailTipSubmission(window.sessionStorage);
@@ -465,39 +557,50 @@ export default function InboundReservePage() {
     if (reservationSubmissionInFlight.current || reservationResultUnknown) {
       return;
     }
-    if (!selectedDate) return showMessage(copy.messages.dateRequired);
-    if (!selectedTime) return showMessage(copy.messages.timeRequired);
-    if (!customerName.trim()) return showMessage(copy.messages.nameRequired);
-    if (!customerEmail.trim()) return showMessage(copy.messages.emailRequired);
+    const pending = readPendingInboundReservationSubmission(
+      window.sessionStorage
+    );
+    if (pending && !reservationRetryReady) {
+      setReservationResultUnknown(true);
+      return;
+    }
+    if (!pending) {
+      if (!selectedDate) return showMessage(copy.messages.dateRequired);
+      if (!selectedTime) return showMessage(copy.messages.timeRequired);
+      if (!customerName.trim()) return showMessage(copy.messages.nameRequired);
+      if (!customerEmail.trim())
+        return showMessage(copy.messages.emailRequired);
+    }
 
     reservationSubmissionInFlight.current = true;
     setSending(true);
 
     try {
-      const memo = [
-        "Inbound reservation",
-        `Language: ${language}`,
-        `Guests: ${guestCount}`,
-        `Customer name: ${customerName.trim()}`,
-        `Customer email: ${customerEmail.trim()}`,
-        `Menu: ${selectedMenu.label}`,
-        `Price per person: ${formatYen(selectedMenu.price)}`,
-        `Total price estimate: ${formatYen(totalPrice)}`,
-        `Duration estimate: ${durationMinutes} minutes`,
-        "",
-        "Cancellation policy:",
-        "Please arrive on time. Late arrival may shorten the service time.",
-        "No-show or same-day cancellation may be charged a cancellation fee.",
-        "",
-        note.trim() ? `Note: ${note.trim()}` : "",
-      ]
-        .filter(Boolean)
-        .join("\n");
+      let submission: InboundReservationSubmission;
+      if (pending) {
+        submission = pending;
+      } else {
+        const memo = [
+          "Inbound reservation",
+          `Language: ${language}`,
+          `Guests: ${guestCount}`,
+          `Customer name: ${customerName.trim()}`,
+          `Customer email: ${customerEmail.trim()}`,
+          `Menu: ${selectedMenu.label}`,
+          `Price per person: ${formatYen(selectedMenu.price)}`,
+          `Total price estimate: ${formatYen(totalPrice)}`,
+          `Duration estimate: ${durationMinutes} minutes`,
+          "",
+          "Cancellation policy:",
+          "Please arrive on time. Late arrival may shorten the service time.",
+          "No-show or same-day cancellation may be charged a cancellation fee.",
+          "",
+          note.trim() ? `Note: ${note.trim()}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n");
 
-      const response = await fetch("/api/inbound-reservations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        submission = {
           menu: `[Inbound] ${selectedMenu.label} / ${guestCount} guests`,
           date: selectedDate,
           time: selectedTime,
@@ -507,7 +610,23 @@ export default function InboundReservePage() {
           guestCount,
           customerName: customerName.trim(),
           customerEmail: customerEmail.trim(),
-        }),
+        };
+        try {
+          savePendingInboundReservationSubmission(
+            window.sessionStorage,
+            submission
+          );
+        } catch (storageError) {
+          console.error("Reservation recovery storage failed:", storageError);
+          showMessage(copy.messages.reservationFailed);
+          return;
+        }
+      }
+
+      const response = await fetch("/api/inbound-reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(submission),
       });
 
       let json: { ok?: boolean; error?: string };
@@ -521,15 +640,23 @@ export default function InboundReservePage() {
           return;
         }
 
+        clearPendingInboundReservationSubmission(window.sessionStorage);
+        setReservationRetryReady(false);
         showMessage(copy.messages.reservationFailed);
         return;
       }
 
       if (!response.ok || !json.ok) {
+        clearPendingInboundReservationSubmission(window.sessionStorage);
+        setReservationRetryReady(false);
         showMessage(json.error || copy.messages.reservationFailed);
         return;
       }
 
+      clearPendingInboundReservationSubmission(window.sessionStorage);
+      setReservationResultUnknown(false);
+      setReservationRetryReady(false);
+      setReservationRecoveredSaved(false);
       showMessage(copy.messages.reservationSuccess);
       setSelectedTime("");
       setNote("");
@@ -1323,24 +1450,48 @@ export default function InboundReservePage() {
               {copy.cancellation}
             </div>
 
-            {reservationResultUnknown ? (
+            {reservationRecoveredSaved ? (
+              <div className="mt-4 rounded-2xl border border-emerald-300 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900">
+                {copy.messages.reservationSuccess}
+              </div>
+            ) : null}
+
+            {reservationResultUnknown || reservationRetryReady ? (
               <div
                 role="alert"
                 className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm leading-6 text-amber-900"
               >
                 <div className="font-black">
-                  {reservationRecoveryCopy[language].title}
+                  {reservationRetryReady
+                    ? reservationRecoveryCopy[language].retryTitle
+                    : reservationRecoveryCopy[language].title}
                 </div>
                 <p className="mt-2">
-                  {reservationRecoveryCopy[language].body}
+                  {reservationRetryReady
+                    ? reservationRecoveryCopy[language].retryBody
+                    : reservationRecoveryCopy[language].body}
                 </p>
+                {reservationResultUnknown ? (
+                  <button
+                    type="button"
+                    onClick={reconcilePendingReservationSubmission}
+                    disabled={reservationRecoveryChecking}
+                    className="mt-3 rounded-xl border border-amber-500 px-3 py-2 text-xs font-bold disabled:opacity-60"
+                  >
+                    {reservationRecoveryCopy[language].recheck}
+                  </button>
+                ) : null}
               </div>
             ) : null}
 
             <button
               type="button"
               onClick={handleSalonSubmit}
-              disabled={sending || reservationResultUnknown}
+              disabled={
+                sending ||
+                reservationResultUnknown ||
+                reservationRecoveryChecking
+              }
               className="mt-4 w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
             >
               {sending ? copy.sending : copy.sendReservation}

@@ -22,6 +22,22 @@ type ExistingReservationRow = ReservationRow & {
   menu: string | null;
 };
 
+type PreparedReservationSubmission = {
+  menu: string;
+  date: string;
+  time: string;
+  memo: string;
+  salonId: string;
+  customerName: string;
+  customerEmail: string;
+  durationMinutes: number;
+  guestCount: number;
+  startIso: string;
+  endIso: string;
+  submissionDigest: string;
+  reservationIds: string[];
+};
+
 function normalizeDurationMinutes(value: unknown) {
   const minutes = Number(value);
   if (!Number.isFinite(minutes)) return 90;
@@ -90,6 +106,96 @@ function matchesExistingSubmission(params: {
       row.end_at === params.endIso
     );
   });
+}
+
+function prepareReservationSubmission(body: Record<string, unknown>):
+  | { ok: true; value: PreparedReservationSubmission }
+  | { ok: false; error: string } {
+  const menu = String(body.menu || "").trim();
+  const date = String(body.date || "").trim();
+  const time = String(body.time || "").trim();
+  const memo = String(body.memo || "").trim();
+  const salonId = String(body.salonId || "").trim();
+  const customerName = String(body.customerName || "").trim();
+  const customerEmail = String(body.customerEmail || "").trim();
+  const durationMinutes = normalizeDurationMinutes(body.durationMinutes);
+  const guestCount = normalizeGuestCount(body.guestCount);
+
+  if (!menu) return { ok: false, error: "Menu is required." };
+  if (!date) return { ok: false, error: "Date is required." };
+  if (!time) return { ok: false, error: "Time is required." };
+  if (!salonId) return { ok: false, error: "Salon is required." };
+  if (!customerName) return { ok: false, error: "Name is required." };
+  if (!customerEmail) return { ok: false, error: "Email is required." };
+
+  const startAt = new Date(`${date}T${time}:00+09:00`);
+  if (Number.isNaN(startAt.getTime())) {
+    return { ok: false, error: "Invalid reservation date." };
+  }
+
+  const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
+  const startIso = startAt.toISOString();
+  const endIso = endAt.toISOString();
+  const submissionDigest = buildSubmissionDigest({
+    salonId,
+    customerEmail,
+    menu,
+    guestCount,
+    startIso,
+    endIso,
+  });
+  const reservationIds = Array.from(
+    { length: guestCount },
+    (_, index) =>
+      buildStableUuid(
+        `inbound-reservation/${submissionDigest}/guest/${index + 1}`
+      )
+  );
+
+  return {
+    ok: true,
+    value: {
+      menu,
+      date,
+      time,
+      memo,
+      salonId,
+      customerName,
+      customerEmail,
+      durationMinutes,
+      guestCount,
+      startIso,
+      endIso,
+      submissionDigest,
+      reservationIds,
+    },
+  };
+}
+
+async function readExistingSubmission(
+  submission: PreparedReservationSubmission
+) {
+  const { data, error } = await supabase
+    .from("reservations")
+    .select("id, salon_id, status, staff_id, start_at, end_at, menu")
+    .in("id", submission.reservationIds);
+  if (error) return { state: "error" as const, error };
+
+  const rows = (data || []) as ExistingReservationRow[];
+  if (rows.length === 0) return { state: "missing" as const };
+  if (
+    !matchesExistingSubmission({
+      rows,
+      reservationIds: submission.reservationIds,
+      salonId: submission.salonId,
+      menu: submission.menu,
+      startIso: submission.startIso,
+      endIso: submission.endIso,
+    })
+  ) {
+    return { state: "conflict" as const };
+  }
+  return { state: "match" as const };
 }
 
 function formatDateTimeForMail(value: string) {
@@ -271,71 +377,55 @@ async function sendInboundReservationLine(params: {
   }
 }
 
-export async function POST(request: Request) {
+export async function PUT(request: Request) {
   try {
-    const body = await request.json();
-
-    const menu = String(body.menu || "").trim();
-    const date = String(body.date || "").trim();
-    const time = String(body.time || "").trim();
-    const memo = String(body.memo || "").trim();
-    const salonId = String(body.salonId || "").trim();
-    const customerName = String(body.customerName || "").trim();
-    const customerEmail = String(body.customerEmail || "").trim();
-    const durationMinutes = normalizeDurationMinutes(body.durationMinutes);
-    const guestCount = normalizeGuestCount(body.guestCount);
-
-    if (!menu) return NextResponse.json({ ok: false, error: "Menu is required." }, { status: 400 });
-    if (!date) return NextResponse.json({ ok: false, error: "Date is required." }, { status: 400 });
-    if (!time) return NextResponse.json({ ok: false, error: "Time is required." }, { status: 400 });
-    if (!salonId) return NextResponse.json({ ok: false, error: "Salon is required." }, { status: 400 });
-    if (!customerName) return NextResponse.json({ ok: false, error: "Name is required." }, { status: 400 });
-    if (!customerEmail) return NextResponse.json({ ok: false, error: "Email is required." }, { status: 400 });
-
-    const startAt = new Date(`${date}T${time}:00+09:00`);
-    if (Number.isNaN(startAt.getTime())) {
-      return NextResponse.json({ ok: false, error: "Invalid reservation date." }, { status: 400 });
+    const body = (await request.json()) as Record<string, unknown>;
+    const prepared = prepareReservationSubmission(body);
+    if (!prepared.ok) {
+      return NextResponse.json(
+        { ok: false, error: prepared.error },
+        { status: 400 }
+      );
     }
 
-    const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
-    const startIso = startAt.toISOString();
-    const endIso = endAt.toISOString();
-    const submissionDigest = buildSubmissionDigest({
-      salonId,
-      customerEmail,
+    const existing = await readExistingSubmission(prepared.value);
+    if (existing.state === "match") {
+      return NextResponse.json({ ok: true, status: "saved" });
+    }
+    if (existing.state === "missing") {
+      return NextResponse.json({ ok: true, status: "not_found" });
+    }
+    return NextResponse.json({ ok: true, status: "unknown" });
+  } catch {
+    return NextResponse.json({ ok: true, status: "unknown" });
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as Record<string, unknown>;
+    const prepared = prepareReservationSubmission(body);
+    if (!prepared.ok) {
+      return NextResponse.json(
+        { ok: false, error: prepared.error },
+        { status: 400 }
+      );
+    }
+    const {
       menu,
+      memo,
+      salonId,
+      customerName,
+      customerEmail,
+      durationMinutes,
       guestCount,
       startIso,
       endIso,
-    });
-    const reservationIds = Array.from(
-      { length: guestCount },
-      (_, index) => buildStableUuid(`inbound-reservation/${submissionDigest}/guest/${index + 1}`)
-    );
+      submissionDigest,
+      reservationIds,
+    } = prepared.value;
 
-    const readExistingSubmission = async () => {
-      const { data, error } = await supabase
-        .from("reservations")
-        .select("id, salon_id, status, staff_id, start_at, end_at, menu")
-        .in("id", reservationIds);
-      if (error) return { state: "error" as const, error };
-
-      const rows = (data || []) as ExistingReservationRow[];
-      if (rows.length === 0) return { state: "missing" as const };
-      if (!matchesExistingSubmission({
-        rows,
-        reservationIds,
-        salonId,
-        menu,
-        startIso,
-        endIso,
-      })) {
-        return { state: "conflict" as const };
-      }
-      return { state: "match" as const };
-    };
-
-    const existingSubmission = await readExistingSubmission();
+    const existingSubmission = await readExistingSubmission(prepared.value);
     if (existingSubmission.state === "error") {
       return NextResponse.json(
         { ok: false, error: existingSubmission.error.message },
@@ -433,7 +523,7 @@ export async function POST(request: Request) {
       .select("id");
 
     if (insertError) {
-      const reconciliation = await readExistingSubmission();
+      const reconciliation = await readExistingSubmission(prepared.value);
       if (reconciliation.state === "match") {
         return NextResponse.json({
           ok: true,

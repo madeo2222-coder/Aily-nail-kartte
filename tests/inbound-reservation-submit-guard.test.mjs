@@ -29,6 +29,18 @@ const submissionHelpers = (() => {
   vm.runInNewContext(source, { exports, JSON, Object, RegExp });
   return exports;
 })();
+const reservationSubmissionHelpers = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/inbound-reservation-submission.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  vm.runInNewContext(source, { exports, JSON, Number, Object });
+  return exports;
+})();
 
 const translations = (() => {
   const exports = {};
@@ -107,6 +119,9 @@ function mount({
 
   async function fetch(url, options = {}) {
     requests.push({ url, options });
+    if (url === "/api/inbound-reservations" && options.method === "PUT") {
+      return response({ body: { ok: true, status: recoveryStatus } });
+    }
     if (String(url).startsWith("/api/inbound-nail-tip-requests?")) {
       return response({ body: { ok: true, status: recoveryStatus } });
     }
@@ -180,6 +195,9 @@ function mount({
       }
       if (name === "@/lib/inbound-nail-tip-submission") {
         return submissionHelpers;
+      }
+      if (name === "@/lib/inbound-reservation-submission") {
+        return reservationSubmissionHelpers;
       }
       if (name === "./translations") return translations;
       if (name === "./InboundPortfolioGallery") {
@@ -304,10 +322,13 @@ test("inbound reservation guards before sending and exposes a persistent unknown
     /if \(reservationSubmissionInFlight\.current \|\| reservationResultUnknown\)/,
   );
   assert.ok(
-    pageSource.indexOf("reservationSubmissionInFlight.current = true") <
-      pageSource.indexOf('fetch("/api/inbound-reservations"'),
+    pageSource.indexOf("savePendingInboundReservationSubmission(") <
+      pageSource.indexOf('method: "POST"'),
   );
-  assert.match(pageSource, /disabled=\{sending \|\| reservationResultUnknown\}/);
+  assert.match(
+    pageSource,
+    /sending \|\|\s*reservationResultUnknown \|\|\s*reservationRecoveryChecking/,
+  );
 });
 
 for (const mode of ["reject", "unknown-json"]) {
@@ -335,6 +356,87 @@ test("inbound reservation keeps an authoritative API rejection retryable", async
 
   await page.submit();
   assert.equal(page.requests.length, 2);
+});
+
+test("inbound reservation persists the exact request before an unknown result", async () => {
+  const page = mount({ mode: "reject" });
+  page.prepareReservation();
+  await page.submit();
+
+  const pending =
+    reservationSubmissionHelpers.readPendingInboundReservationSubmission(
+      page.storage,
+    );
+  assert.equal(pending.customerEmail, "guest@example.com");
+  assert.equal(pending.date, "2026-11-15");
+  assert.equal(pending.time, "10:00");
+  assert.equal(page.requests[0].options.body, JSON.stringify(pending));
+});
+
+test("inbound reservation does not send when recovery storage is unavailable", async () => {
+  const storage = {
+    getItem() { return null; },
+    setItem() { throw new Error("storage unavailable"); },
+    removeItem() { throw new Error("storage unavailable"); },
+  };
+  const page = mount({ storage });
+  page.prepareReservation();
+  await page.submit();
+
+  assert.equal(page.requests.length, 0);
+  assert.match(page.html(), /Reservation failed/);
+  assert.doesNotMatch(page.html(), /could not confirm the reservation/i);
+});
+
+test("inbound reservation reload clears a saved request without resending", async () => {
+  const storage = createStorage();
+  const first = mount({ mode: "reject", storage });
+  first.prepareReservation();
+  await first.submit();
+
+  const reload = mount({ recoveryStatus: "saved", storage });
+  reload.tree();
+  await reload.runEffects();
+
+  assert.equal(reload.requests.length, 1);
+  assert.equal(reload.requests[0].url, "/api/inbound-reservations");
+  assert.equal(reload.requests[0].options.method, "PUT");
+  assert.equal(
+    reservationSubmissionHelpers.readPendingInboundReservationSubmission(
+      storage,
+    ),
+    null,
+  );
+  reload.prepareReservation();
+  assert.match(reload.html(), /reservation request sent/i);
+});
+
+test("inbound reservation reload retries only after not-found with the same request", async () => {
+  const storage = createStorage();
+  const first = mount({ mode: "reject", storage });
+  first.prepareReservation();
+  await first.submit();
+  const original =
+    reservationSubmissionHelpers.readPendingInboundReservationSubmission(
+      storage,
+    );
+
+  const reload = mount({ recoveryStatus: "not_found", storage });
+  reload.tree();
+  await reload.runEffects();
+  reload.prepareReservation();
+  assert.match(reload.html(), /reservation request was not saved/i);
+
+  await reload.submit();
+  assert.equal(reload.requests.length, 2);
+  assert.equal(reload.requests[1].options.method, "POST");
+  assert.equal(reload.requests[1].options.body, JSON.stringify(original));
+  assert.equal(
+    reservationSubmissionHelpers.readPendingInboundReservationSubmission(
+      storage,
+    ),
+    null,
+  );
 });
 
 test("inbound nail-tip request guards before uploading or sending", () => {

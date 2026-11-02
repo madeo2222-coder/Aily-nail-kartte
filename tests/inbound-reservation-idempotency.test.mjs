@@ -174,7 +174,12 @@ function loadRoute({
     return { body: await response.json(), status: response.status };
   }
 
-  return { externalCalls, inserts, post, queries };
+  async function put(body = requestBody) {
+    const response = await exports.PUT({ async json() { return body; } });
+    return { body: await response.json(), status: response.status };
+  }
+
+  return { externalCalls, inserts, post, put, queries };
 }
 
 test("uses stable reservation IDs and notification keys for the same inbound request", async () => {
@@ -296,4 +301,41 @@ test("does not notify when a failed insert cannot be reconciled", async () => {
   assert.equal(response.body.ok, false);
   assert.equal(runtime.externalCalls.length, 0);
   assert.equal(runtime.queries.filter((query) => query.in).length, 2);
+});
+
+test("read-only reconciliation reports saved without availability, writes, or notifications", async () => {
+  const baseline = loadRoute();
+  await baseline.post();
+  const existingRows = baseline.inserts[0].map((row) => ({
+    id: row.id,
+    salon_id: row.salon_id,
+    status: row.status,
+    staff_id: row.staff_id,
+    start_at: row.start_at,
+    end_at: row.end_at,
+    menu: row.menu,
+  }));
+  const runtime = loadRoute({ existingRows });
+  const response = await runtime.put();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.status, "saved");
+  assert.equal(runtime.inserts.length, 0);
+  assert.equal(runtime.externalCalls.length, 0);
+  assert.equal(runtime.queries.some((query) => query.table === "staffs"), false);
+});
+
+test("read-only reconciliation distinguishes not-found from an unknown result", async () => {
+  const missing = loadRoute();
+  const missingResponse = await missing.put();
+  assert.equal(missingResponse.body.status, "not_found");
+
+  const failed = loadRoute({ existingError: { message: "read failed" } });
+  const failedResponse = await failed.put();
+  assert.equal(failedResponse.status, 200);
+  assert.equal(failedResponse.body.ok, true);
+  assert.equal(failedResponse.body.status, "unknown");
+  assert.equal(failed.inserts.length, 0);
+  assert.equal(failed.externalCalls.length, 0);
 });
