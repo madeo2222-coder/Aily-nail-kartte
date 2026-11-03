@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { buildExternalReservationMemo } from "@/lib/external-reservation-metadata";
 import {
   buildStaffReservationFingerprint,
+  claimStaffReservationSubmission,
   clearStaffReservationOperation,
   getPendingStaffReservationOperation,
   getOrCreateStaffReservationOperationId,
@@ -250,6 +251,7 @@ export default function ReservationNewPage() {
   const [submissionResultUnknown, setSubmissionResultUnknown] = useState(false);
   const masterRequestVersion = useRef(0);
   const submissionInFlight = useRef(false);
+  const submissionOwnerId = useRef<string | null>(null);
 
   const fetchMasterData = useCallback(async () => {
     const version = ++masterRequestVersion.current;
@@ -719,14 +721,29 @@ export default function ReservationNewPage() {
       status,
       memo: combinedMemo,
     };
-    const fingerprint = buildStaffReservationFingerprint(submission);
-    const operationId = getOrCreateStaffReservationOperationId(
-      window.localStorage,
-      fingerprint,
-      () => crypto.randomUUID(),
-    );
-
     try {
+      const fingerprint = buildStaffReservationFingerprint(submission);
+      const operationId = getOrCreateStaffReservationOperationId(
+        window.localStorage,
+        fingerprint,
+        () => crypto.randomUUID(),
+      );
+      const ownerId =
+        submissionOwnerId.current ||
+        (submissionOwnerId.current = crypto.randomUUID());
+      const submissionClaim = await claimStaffReservationSubmission(
+        window.localStorage,
+        operationId,
+        ownerId,
+      );
+      if (!submissionClaim.acquired) {
+        setSubmissionResultUnknown(true);
+        setErrorMessage(
+          "別の画面で同じ予約を登録中です。重複登録を避けるため、予約カレンダーで最新状態を確認してください。",
+        );
+        return;
+      }
+
       const response = await fetch("/api/reservations/staff-create", {
         method: "POST",
         headers: { "content-type": "application/json" },

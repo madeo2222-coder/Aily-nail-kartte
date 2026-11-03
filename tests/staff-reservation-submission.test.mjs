@@ -12,7 +12,7 @@ const source = ts.transpileModule(
   ),
   { compilerOptions: { module: ts.ModuleKind.CommonJS } },
 ).outputText;
-vm.runInNewContext(source, { exports, JSON, RegExp });
+vm.runInNewContext(source, { exports, Date, JSON, Math, Promise, RegExp });
 
 function makeStorage() {
   const values = new Map();
@@ -111,4 +111,105 @@ test("staff reservation cleanup removes only the matching completed operation", 
     exports.getOrCreateStaffReservationOperationId(storage, fingerprint, () => SECOND_ID),
     SECOND_ID,
   );
+});
+
+test("staff reservation submission claim allows only the tab that owns the active operation", async () => {
+  const storage = makeStorage();
+  const fingerprint = exports.buildStaffReservationFingerprint(submission);
+  exports.getOrCreateStaffReservationOperationId(
+    storage,
+    fingerprint,
+    () => FIRST_ID,
+  );
+
+  const firstOwner = "55555555-5555-4555-8555-555555555555";
+  const secondOwner = "66666666-6666-4666-8666-666666666666";
+  const now = Date.now();
+  const first = await exports.claimStaffReservationSubmission(
+    storage,
+    FIRST_ID,
+    firstOwner,
+    now,
+    async () => {},
+  );
+  const second = await exports.claimStaffReservationSubmission(
+    storage,
+    FIRST_ID,
+    secondOwner,
+    now + 1_000,
+    async () => {},
+  );
+
+  assert.equal(first.acquired, true);
+  assert.equal(first.claim.ownerId, firstOwner);
+  assert.equal(second.acquired, false);
+  assert.equal(second.claim.ownerId, firstOwner);
+});
+
+test("staff reservation submission claim can be recovered after its five-minute window", async () => {
+  const storage = makeStorage();
+  const fingerprint = exports.buildStaffReservationFingerprint(submission);
+  exports.getOrCreateStaffReservationOperationId(
+    storage,
+    fingerprint,
+    () => FIRST_ID,
+  );
+  const firstOwner = "55555555-5555-4555-8555-555555555555";
+  const secondOwner = "66666666-6666-4666-8666-666666666666";
+  const now = Date.now();
+  await exports.claimStaffReservationSubmission(
+    storage,
+    FIRST_ID,
+    firstOwner,
+    now,
+    async () => {},
+  );
+
+  const recovered = await exports.claimStaffReservationSubmission(
+    storage,
+    FIRST_ID,
+    secondOwner,
+    now + exports.STAFF_RESERVATION_SUBMISSION_CLAIM_TTL_MS,
+    async () => {},
+  );
+
+  assert.equal(recovered.acquired, true);
+  assert.equal(recovered.claim.ownerId, secondOwner);
+});
+
+test("staff reservation concurrent claims proceed only for the persisted winner", async () => {
+  const storage = makeStorage();
+  const fingerprint = exports.buildStaffReservationFingerprint(submission);
+  exports.getOrCreateStaffReservationOperationId(
+    storage,
+    fingerprint,
+    () => FIRST_ID,
+  );
+  const firstOwner = "55555555-5555-4555-8555-555555555555";
+  const secondOwner = "66666666-6666-4666-8666-666666666666";
+  const now = Date.now();
+  let settleFirst;
+  const first = exports.claimStaffReservationSubmission(
+    storage,
+    FIRST_ID,
+    firstOwner,
+    now,
+    () => new Promise((resolve) => {
+      settleFirst = resolve;
+    }),
+  );
+  storage.setItem(
+    "aily:staff-reservation-submission:v1",
+    JSON.stringify({
+      fingerprint,
+      operationId: FIRST_ID,
+      submissionOwnerId: secondOwner,
+      submissionStartedAt: now,
+    }),
+  );
+  settleFirst();
+
+  const firstResult = await first;
+  assert.equal(firstResult.acquired, false);
+  assert.equal(firstResult.claim.ownerId, secondOwner);
 });

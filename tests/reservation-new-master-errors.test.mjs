@@ -29,7 +29,7 @@ const staffReservationSubmission = (() => {
     ),
     { compilerOptions: { module: ts.ModuleKind.CommonJS } },
   ).outputText;
-  vm.runInNewContext(source, { exports, JSON, RegExp });
+  vm.runInNewContext(source, { exports, Date, JSON, Math, Promise, RegExp });
   return exports;
 })();
 const pageSource = readFileSync(
@@ -71,6 +71,10 @@ async function mount({
   postMode = "success",
   pendingOperationStatus,
   initialStorageValue,
+  operationIds = [
+    "33333333-3333-4333-8333-333333333333",
+    "44444444-4444-4444-8444-444444444444",
+  ],
 } = {}) {
   const states = [];
   let cursor = 0;
@@ -181,7 +185,7 @@ async function mount({
     Promise,
     crypto: {
       randomUUID() {
-        return "33333333-3333-4333-8333-333333333333";
+        return operationIds.shift() || "77777777-7777-4777-8777-777777777777";
       },
     },
     window: { localStorage },
@@ -411,5 +415,45 @@ test("reservation creation allows retry after an authoritative API rejection", a
 
   await page.submit();
   assert.equal(page.requests.filter(request => request.options?.method === "POST").length, 2);
+  page.unmount();
+});
+
+test("reservation creation does not POST when another tab owns the same operation", async () => {
+  const fingerprint = staffReservationSubmission.buildStaffReservationFingerprint({
+    mode: "normal",
+    salonId: "s1",
+    customerId: "c1",
+    staffId: "st1",
+    menu: "ワンカラー",
+    startAt: "2026-11-01T01:00:00.000Z",
+    endAt: "2026-11-01T01:55:00.000Z",
+    status: "予約",
+    memo: [
+      "合計金額目安：¥4,500",
+      "所要時間目安：55分（55分）",
+      "時間内訳",
+      "・ワンカラー：55分",
+      "金額内訳",
+      "・ワンカラー：¥4,500",
+    ].join("\n"),
+  });
+  const page = await mount({
+    initialStorageValue: JSON.stringify({
+      fingerprint,
+      operationId: "33333333-3333-4333-8333-333333333333",
+      submissionOwnerId: "55555555-5555-4555-8555-555555555555",
+      submissionStartedAt: Date.now(),
+    }),
+    pendingOperationStatus: "not_found",
+  });
+
+  await page.submit();
+
+  assert.equal(
+    page.requests.filter((request) => request.options?.method === "POST").length,
+    0,
+  );
+  assert.match(page.html(), /別の画面で同じ予約を登録中です/);
+  assert.match(page.html(), /最新の予約を確認/);
   page.unmount();
 });
