@@ -30,10 +30,19 @@ const compiledApi = ts.transpileModule(api, {
 }).outputText;
 
 class MockResponse {
-  constructor(body, status = 200) {
+  constructor(body, status = 200, headers = {}) {
     this.body = body;
     this.status = status;
     this.ok = status >= 200 && status < 300;
+    this.headers = {
+      get(name) {
+        const target = name.toLowerCase();
+        const entry = Object.entries(headers).find(
+          ([key]) => key.toLowerCase() === target,
+        );
+        return entry?.[1] ?? null;
+      },
+    };
   }
 
   async text() {
@@ -41,7 +50,10 @@ class MockResponse {
   }
 }
 
-function loadReservationCreateRoute() {
+function loadReservationCreateRoute({
+  failFirstMail = true,
+  lineAcceptedRetry = false,
+} = {}) {
   const providerCalls = [];
   const rpcOutcomes = ["created", "already_created"];
   const exports = {};
@@ -66,6 +78,11 @@ function loadReservationCreateRoute() {
     Number,
     Promise,
     String,
+    AbortSignal: {
+      timeout(milliseconds) {
+        return { timeoutMilliseconds: milliseconds };
+      },
+    },
     console: { error() {}, log() {} },
     process: {
       env: {
@@ -79,8 +96,20 @@ function loadReservationCreateRoute() {
     async fetch(url, options) {
       providerCalls.push({ url, options });
       const attempt = Math.ceil(providerCalls.length / 2);
-      if (url === "https://api.resend.com/emails" && attempt === 1) {
+      if (
+        failFirstMail &&
+        url === "https://api.resend.com/emails" &&
+        attempt === 1
+      ) {
         return new MockResponse("temporary failure", 503);
+      }
+      if (
+        lineAcceptedRetry &&
+        url === "https://api.line.me/v2/bot/message/push"
+      ) {
+        return new MockResponse("already accepted", 409, {
+          "x-line-accepted-request-id": "line-request-1",
+        });
       }
       return new MockResponse({}, 200);
     },
@@ -193,6 +222,10 @@ test("customer booking notification retries reuse provider idempotency keys", ()
     api,
     /createHash\("sha256"\)[\s\S]{0,180}customer-reservation-request/,
   );
+  assert.match(
+    api,
+    /status === 409[\s\S]{0,120}x-line-accepted-request-id/,
+  );
   assert.match(api, /Promise\.allSettled\(\[/);
   assert.match(
     api,
@@ -203,6 +236,22 @@ test("customer booking notification retries reuse provider idempotency keys", ()
     /json\.reservationSaved && json\.notificationRetryable/,
   );
   assert.match(page, /店舗への通知を再試行/);
+});
+
+test("an accepted LINE retry converges and notification requests time out", async () => {
+  const route = loadReservationCreateRoute({
+    failFirstMail: false,
+    lineAcceptedRetry: true,
+  });
+
+  const response = await route.post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(route.providerCalls.length, 2);
+  for (const call of route.providerCalls) {
+    assert.equal(call.options.signal.timeoutMilliseconds, 10_000);
+  }
 });
 
 test("a known provider failure preserves the reservation and retries only its notices", async () => {

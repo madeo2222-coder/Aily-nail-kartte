@@ -17,6 +17,8 @@ type ReservationWriteRow = {
   reservation_id: string | null;
 };
 
+const RESERVATION_NOTICE_TIMEOUT_MS = 10_000;
+
 function isMissingIdempotentCreateRpc(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const candidate = error as Record<string, unknown>;
@@ -166,6 +168,7 @@ async function sendReservationNoticeMail({
       text,
       html,
     }),
+    signal: AbortSignal.timeout(RESERVATION_NOTICE_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -253,19 +256,27 @@ async function sendReservationNoticeLine({
       to: adminUserId,
       messages: [{ type: "text", text }],
     }),
+    signal: AbortSignal.timeout(RESERVATION_NOTICE_TIMEOUT_MS),
   });
 
   console.log("LINE API status:", response.status);
 
+  const acceptedRetry =
+    response.status === 409 &&
+    Boolean(response.headers.get("x-line-accepted-request-id")?.trim());
   const responseText = await response.text();
   console.log("LINE API response:", responseText || "no response body");
 
-  if (!response.ok) {
+  if (!response.ok && !acceptedRetry) {
     console.error("予約LINE通知送信エラー:", responseText);
     return false;
   }
 
-  console.log("予約LINE通知成功");
+  console.log(
+    acceptedRetry
+      ? "予約LINE通知は送信済みとして確認されました"
+      : "予約LINE通知成功"
+  );
   return true;
 }
 
