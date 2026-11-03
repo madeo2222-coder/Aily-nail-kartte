@@ -16,6 +16,18 @@ const compiled = ts.transpileModule(routeSource, {
     target: ts.ScriptTarget.ES2022,
   },
 }).outputText;
+const reservationStatus = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/reservation-status.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  vm.runInNewContext(source, { exports, Set, String });
+  return exports;
+})();
 
 const RESERVATION_ID = "57a77313-2caf-451f-bd12-9918ee27bfe0";
 const SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
@@ -232,6 +244,9 @@ function executeRoute({ authentication, rows = {} }) {
             return { from: makeQuery };
           },
         };
+      }
+      if (name === "@/lib/reservation-status") {
+        return reservationStatus;
       }
       return require(name);
     },
@@ -792,6 +807,65 @@ test("staff edit refuses a matching external-calendar block", async () => {
   );
 });
 
+for (const cancelledStatus of [
+  " cancel ",
+  "取 消",
+  "取 り 消 し",
+  " ＲＥＪＥＣＴＥＤ ",
+]) {
+  test(`staff edit ignores normalized cancelled overlap: ${cancelledStatus}`, async () => {
+    const runtime = executeRoute({
+      authentication: principal(),
+      rows: {
+        reservations: {
+          data: [
+            {
+              id: "cancelled-reservation",
+              staff_id: STAFF_ID,
+              status: cancelledStatus,
+            },
+          ],
+          error: null,
+        },
+      },
+    });
+    const response = await runtime.exports.PATCH(patchRequest(), context());
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      runtime.calls.some((call) => call.operation === "update"),
+      true,
+    );
+  });
+}
+
+test("staff edit still refuses an active reservation overlap", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservations: {
+        data: [
+          {
+            id: "active-reservation",
+            staff_id: STAFF_ID,
+            status: " ＣＯＮＦＩＲＭＥＤ ",
+          },
+        ],
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.PATCH(patchRequest(), context());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /予約またはブロック/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "update"),
+    false,
+  );
+});
+
 test("staff edit cannot bypass the confirmation workflow", async () => {
   const runtime = executeRoute({ authentication: principal() });
   const response = await runtime.exports.PATCH(
@@ -857,6 +931,9 @@ test("staff edit preserves supported status aliases and progress steps", async (
     { current: "来店予定", next: "来店" },
     { current: "来店", next: "完了" },
     { current: "completed", next: "完了" },
+    { current: " cancel ", next: "キャンセル" },
+    { current: "取 消", next: "キャンセル" },
+    { current: "取 り 消 し", next: "キャンセル" },
   ];
 
   for (const { current, next } of cases) {

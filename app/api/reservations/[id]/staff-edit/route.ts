@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +12,6 @@ const ALLOWED_STATUSES = new Set([
   "来店",
   "完了",
   "キャンセル",
-]);
-const CANCELLED_STATUSES = new Set([
-  "キャンセル",
-  "cancelled",
-  "canceled",
-  "rejected",
-  "declined",
 ]);
 const ACTIVE_RESERVATION_STATUSES = new Set(["予約", "confirmed"]);
 const UUID_PATTERN =
@@ -105,6 +99,8 @@ function isExternalSyncedReservation(reservation: {
 }
 
 function normalizeWorkflowStatus(status: string | null) {
+  if (isCancelledReservationStatus(status)) return "キャンセル";
+
   const normalized = String(status ?? "")
     .normalize("NFKC")
     .replace(/\s+/g, "")
@@ -120,8 +116,6 @@ function normalizeWorkflowStatus(status: string | null) {
   if (["confirmed", "予約確定"].includes(normalized)) return "confirmed";
   if (["来店予定", "来店", "完了待ち"].includes(normalized)) return "来店";
   if (["完了", "completed"].includes(normalized)) return "完了";
-  if (CANCELLED_STATUSES.has(normalized)) return "キャンセル";
-
   return "";
 }
 
