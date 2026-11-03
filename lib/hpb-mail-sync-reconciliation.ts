@@ -70,6 +70,48 @@ function hasSourceMarker(source: MailSyncSource, value: string) {
   );
 }
 
+function detectManualReservationSource(
+  candidate: Pick<ManualReservationCandidate, "menu" | "memo">
+): MailSyncSource | null {
+  const normalizedMenu = normalize(candidate.menu);
+
+  // The manual reservation form writes the provider into the menu/title or
+  // the first structured memo line. Do not treat a provider name anywhere in
+  // the customer's free-text memo as reservation metadata: a note such as
+  // "ミニモで見たデザイン" can belong to an HPB booking and must not block
+  // delayed-mail reconciliation for the same customer.
+  if (hasSourceMarker("hpb", normalizedMenu)) return "hpb";
+  if (hasSourceMarker("minimo", normalizedMenu)) return "minimo";
+
+  const firstMemoLine = String(candidate.memo || "")
+    .normalize("NFKC")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (!firstMemoLine) return null;
+
+  const structuredSource = firstMemoLine.match(
+    /^外部予約種別\s*:\s*(.+)$/i
+  )?.[1];
+  if (structuredSource) {
+    const normalizedSource = normalize(structuredSource);
+    if (hasSourceMarker("hpb", normalizedSource)) return "hpb";
+    if (hasSourceMarker("minimo", normalizedSource)) return "minimo";
+    return null;
+  }
+
+  // Preserve legacy manually entered notes that explicitly describe the
+  // provider booking or a phone intake, while ignoring ordinary design notes.
+  const normalizedFirstMemoLine = normalize(firstMemoLine);
+  if (/予約|電話|受付|外部/.test(normalizedFirstMemoLine)) {
+    if (hasSourceMarker("hpb", normalizedFirstMemoLine)) return "hpb";
+    if (hasSourceMarker("minimo", normalizedFirstMemoLine)) return "minimo";
+  }
+
+  return null;
+}
+
 function hasExternalReservationKey(value: string) {
   return value.includes("hpb予約番号") || value.includes("ミニモ予約id");
 }
@@ -223,7 +265,8 @@ export function findManualReservationCandidate({
     if (isCancelledReservationStatus(candidate.status)) return false;
     const text = normalize(`${candidate.menu || ""}\n${candidate.memo || ""}`);
     if (hasExternalReservationKey(text)) return false;
-    const matchesSource = hasSourceMarker(source, text);
+    const manualSource = detectManualReservationSource(candidate);
+    const matchesSource = manualSource === source;
 
     // A staff member may enter the reservation before the provider mail
     // arrives without choosing an assignee yet. Let the later HPB/minimo mail
@@ -276,8 +319,7 @@ export function findManualReservationCandidate({
       return true;
     }
 
-    const hasAnySourceMarker =
-      hasSourceMarker("hpb", text) || hasSourceMarker("minimo", text);
+    const hasAnySourceMarker = manualSource !== null;
 
     return (
       Boolean(customerId) &&
@@ -294,10 +336,7 @@ export function findManualReservationCandidate({
   const exactCustomerSourceMatches = customerId
     ? matches.filter((candidate) => {
         if (candidate.customer_id !== customerId) return false;
-        const text = normalize(
-          `${candidate.menu || ""}\n${candidate.memo || ""}`
-        );
-        return hasSourceMarker(source, text);
+        return detectManualReservationSource(candidate) === source;
       })
     : [];
   const preferredMatches =

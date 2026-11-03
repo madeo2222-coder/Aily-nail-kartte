@@ -492,6 +492,51 @@ test("customer fallback does not adopt a reservation marked as the other externa
   assert.equal(result, null);
 });
 
+test("customer free-text provider mentions do not block delayed manual reconciliation", () => {
+  for (const [source, memo] of [
+    ["hpb", "ミニモで見たデザインを希望"],
+    ["minimo", "ホットペッパーの写真と同じ色を希望"],
+  ]) {
+    const result = reconciliation.findManualReservationCandidate({
+      source,
+      staffId: "staff-1",
+      customerId: "customer-1",
+      candidates: [
+        {
+          id: `same-customer-${source}`,
+          customer_id: "customer-1",
+          staff_id: "staff-1",
+          menu: "ジェル付替 90分",
+          memo,
+          status: "予約確定",
+        },
+      ],
+    });
+
+    assert.equal(result?.id, `same-customer-${source}`);
+  }
+});
+
+test("structured manual source metadata still blocks the other provider", () => {
+  const result = reconciliation.findManualReservationCandidate({
+    source: "hpb",
+    staffId: "staff-1",
+    customerId: "customer-1",
+    candidates: [
+      {
+        id: "structured-minimo",
+        customer_id: "customer-1",
+        staff_id: "staff-1",
+        menu: "ジェル付替 90分",
+        memo: "外部予約種別：ミニモ\n電話受付で先に登録",
+        status: "予約確定",
+      },
+    ],
+  });
+
+  assert.equal(result, null);
+});
+
 test("resolved customer disambiguates source-marked bookings in the same time window", () => {
   const result = reconciliation.findManualReservationCandidate({
     source: "hpb",
