@@ -12,6 +12,13 @@ const CONFIRMED_RESERVATION_STATUSES = new Set([
   "予約確定",
 ]);
 
+const REQUESTED_RESERVATION_STATUSES = new Set([
+  "requested",
+  "予約申請中",
+  "予約受付",
+  "予約",
+]);
+
 const COMPLETED_RESERVATION_STATUSES = new Set([
   "completed",
   "完了",
@@ -76,6 +83,14 @@ export function isConfirmedReservationStatus(
   status: string | null | undefined
 ) {
   return CONFIRMED_RESERVATION_STATUSES.has(
+    normalizeReservationStatus(status)
+  );
+}
+
+export function isRequestedReservationStatus(
+  status: string | null | undefined
+) {
+  return REQUESTED_RESERVATION_STATUSES.has(
     normalizeReservationStatus(status)
   );
 }

@@ -7,6 +7,8 @@ import ReservationReferencePhoto from "../../ReservationReferencePhoto";
 import {
   getReservationStatusLabel,
   isCancelledReservationStatus,
+  isProgressedReservationStatus,
+  isRequestedReservationStatus,
 } from "@/lib/reservation-status";
 import {
   claimAlternativeLineInProgressLock,
@@ -872,6 +874,27 @@ export default function EditReservationPage() {
   async function handleConfirmReservation() {
     if (!reservationId || mutationRequestPendingRef.current) return;
 
+    if (isExternalBlock) {
+      setErrorMessage(
+        "外部予定は予約確定できません。予定の変更または削除を行ってください。"
+      );
+      return;
+    }
+
+    if (isExternalSynced) {
+      setErrorMessage(
+        "HPB・ミニモから同期された予約は、予約元で状態を確認してください。"
+      );
+      return;
+    }
+
+    if (!isRequestedReservationStatus(status)) {
+      setErrorMessage(
+        "現在の予約状態からは予約確定できません。最新情報を確認してください。"
+      );
+      return;
+    }
+
     const confirmed = window.confirm(
       "この予約を『予約確定』に変更し、LINE・メール通知を送信しますか？"
     );
@@ -1562,6 +1585,11 @@ export default function EditReservationPage() {
     ? `/customers/${customerId}`
     : "/reservations";
   const isAlreadyConfirmed = status === "confirmed";
+  const canConfirmCurrentReservation =
+    !isExternalBlock &&
+    !isExternalSynced &&
+    isRequestedReservationStatus(status);
+  const isProgressedReservation = isProgressedReservationStatus(status);
   const isMutating = saving || deleting || confirming || requestingAlternative;
   const mutationControlsDisabled = isMutating || mutationResultUnknown;
 
@@ -1683,9 +1711,7 @@ export default function EditReservationPage() {
                   </div>
                 </div>
 
-                {!isExternalSynced &&
-                !isAlreadyConfirmed &&
-                status !== "キャンセル" ? (
+                {canConfirmCurrentReservation ? (
                   <button
                     type="button"
                     onClick={handleConfirmReservation}
@@ -1753,6 +1779,14 @@ export default function EditReservationPage() {
                 ) : isExternalSynced ? (
                   <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
                     外部予約元で状態を確認してください
+                  </div>
+                ) : isExternalBlock ? (
+                  <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
+                    外部予定は予約確定の対象外です
+                  </div>
+                ) : isProgressedReservation ? (
+                  <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">
+                    {getStatusLabel(status)}の予約です
                   </div>
                 ) : (
                   <div className="rounded-2xl bg-white px-4 py-3 text-sm font-bold text-blue-700">

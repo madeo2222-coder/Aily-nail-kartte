@@ -72,6 +72,35 @@ test("confirmed reservation states share width and whitespace normalization", ()
   }
 });
 
+test("only requested reservation states are eligible for staff confirmation", () => {
+  for (const status of [
+    "requested",
+    "予約申請中",
+    "予約受付",
+    "予約",
+    " REQUESTED ",
+    "ＲＥＱＵＥＳＴＥＤ",
+    "予 約 申 請 中",
+  ]) {
+    assert.equal(exports.isRequestedReservationStatus(status), true, status);
+  }
+
+  for (const status of [
+    null,
+    "",
+    "confirmed",
+    "予約確定",
+    "来店",
+    "来店予定",
+    "完了待ち",
+    "完了",
+    "completed",
+    "キャンセル",
+  ]) {
+    assert.equal(exports.isRequestedReservationStatus(status), false, status);
+  }
+});
+
 test("completed reservation states share width and whitespace normalization", () => {
   for (const status of [
     "completed",

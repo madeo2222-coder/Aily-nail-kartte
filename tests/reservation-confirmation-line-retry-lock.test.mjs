@@ -646,6 +646,31 @@ test("both staff reservation screens apply the shared retry lock", () => {
   );
 });
 
+test("reservation edit exposes confirmation only for customer requests", () => {
+  const editPage = readFileSync(
+    new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(
+    editPage,
+    /const canConfirmCurrentReservation =\s*!isExternalBlock &&\s*!isExternalSynced &&\s*isRequestedReservationStatus\(status\)/
+  );
+  assert.match(
+    editPage,
+    /async function handleConfirmReservation\(\)[\s\S]{0,900}if \(isExternalBlock\)[\s\S]{0,300}if \(isExternalSynced\)[\s\S]{0,300}if \(!isRequestedReservationStatus\(status\)\)/
+  );
+  assert.match(
+    editPage,
+    /canConfirmCurrentReservation \? \([\s\S]{0,500}予約確定にする/
+  );
+  assert.match(editPage, /外部予定は予約確定の対象外です/);
+  assert.match(
+    editPage,
+    /isProgressedReservation \? \([\s\S]{0,300}\{getStatusLabel\(status\)\}の予約です/
+  );
+});
+
 test("staff edit screen blocks unsafe alternative-time LINE repeats across reloads", () => {
   const editPage = readFileSync(
     new URL("../app/reservations/edit/[id]/page.tsx", import.meta.url),
