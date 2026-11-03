@@ -14,10 +14,19 @@ type StoredSubmission = {
   operationId: string;
   notificationRetryableAt?: number;
   notificationRetryCustomerId?: string;
+  submissionOwnerId?: string;
+  submissionStartedAt?: number;
+};
+
+export type CustomerReservationSubmissionClaim = {
+  operationId: string;
+  ownerId: string;
+  expiresAt: number;
 };
 
 const STORAGE_KEY = "aily:customer-reservation-submission:v1";
 const NOTIFICATION_RETRY_TTL_MS = 24 * 60 * 60 * 1000;
+const SUBMISSION_CLAIM_TTL_MS = 5 * 60 * 1000;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -81,6 +90,8 @@ function readStoredSubmission(storage: StorageLike): StoredSubmission | null {
 
     const notificationRetryableAt = candidate.notificationRetryableAt;
     const notificationRetryCustomerId = candidate.notificationRetryCustomerId;
+    const submissionOwnerId = candidate.submissionOwnerId;
+    const submissionStartedAt = candidate.submissionStartedAt;
 
     return {
       fingerprint: candidate.fingerprint,
@@ -94,10 +105,38 @@ function readStoredSubmission(storage: StorageLike): StoredSubmission | null {
         typeof notificationRetryCustomerId === "string"
           ? notificationRetryCustomerId
           : undefined,
+      submissionOwnerId:
+        typeof submissionOwnerId === "string" &&
+        isCustomerReservationOperationId(submissionOwnerId)
+          ? submissionOwnerId
+          : undefined,
+      submissionStartedAt:
+        typeof submissionStartedAt === "number" &&
+        Number.isFinite(submissionStartedAt)
+          ? submissionStartedAt
+          : undefined,
     };
   } catch {
     return null;
   }
+}
+
+function withoutSubmissionClaim(
+  stored: StoredSubmission,
+): StoredSubmission {
+  return {
+    fingerprint: stored.fingerprint,
+    operationId: stored.operationId,
+    ...(stored.notificationRetryableAt === undefined
+      ? {}
+      : { notificationRetryableAt: stored.notificationRetryableAt }),
+    ...(stored.notificationRetryCustomerId === undefined
+      ? {}
+      : {
+          notificationRetryCustomerId:
+            stored.notificationRetryCustomerId,
+        }),
+  };
 }
 
 export function markCustomerReservationNotificationRetryable(
@@ -116,14 +155,145 @@ export function markCustomerReservationNotificationRetryable(
   }
 
   try {
+    const retryableSubmission = withoutSubmissionClaim(stored);
     storage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        ...stored,
+        ...retryableSubmission,
         notificationRetryableAt: now,
         notificationRetryCustomerId: customerId,
       }),
     );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getActiveSubmissionClaim(
+  stored: StoredSubmission | null,
+  now: number,
+): CustomerReservationSubmissionClaim | null {
+  if (
+    !stored?.submissionOwnerId ||
+    stored.submissionStartedAt === undefined ||
+    !Number.isFinite(now)
+  ) {
+    return null;
+  }
+
+  const age = now - stored.submissionStartedAt;
+  if (age < 0 || age >= SUBMISSION_CLAIM_TTL_MS) return null;
+
+  return {
+    operationId: stored.operationId,
+    ownerId: stored.submissionOwnerId,
+    expiresAt: stored.submissionStartedAt + SUBMISSION_CLAIM_TTL_MS,
+  };
+}
+
+export async function claimCustomerReservationSubmission(
+  storage: StorageLike,
+  operationId: string,
+  ownerId: string,
+  now = Date.now(),
+  settle: () => Promise<void> = () =>
+    new Promise((resolve) => {
+      if (typeof globalThis.setTimeout === "function") {
+        globalThis.setTimeout(resolve, 0);
+        return;
+      }
+      resolve();
+    }),
+): Promise<{
+  acquired: boolean;
+  claim: CustomerReservationSubmissionClaim | null;
+}> {
+  if (
+    !isCustomerReservationOperationId(operationId) ||
+    !isCustomerReservationOperationId(ownerId) ||
+    !Number.isFinite(now)
+  ) {
+    return { acquired: false, claim: null };
+  }
+
+  const stored = readStoredSubmission(storage);
+  if (!stored) {
+    // Keep booking available when browser storage is unavailable. The request
+    // still carries its idempotent operation ID and the current screen guard.
+    return {
+      acquired: true,
+      claim: {
+        operationId,
+        ownerId,
+        expiresAt: now + SUBMISSION_CLAIM_TTL_MS,
+      },
+    };
+  }
+  if (
+    stored.operationId !== operationId ||
+    stored.notificationRetryableAt !== undefined
+  ) {
+    return { acquired: false, claim: null };
+  }
+
+  const activeClaim = getActiveSubmissionClaim(stored, now);
+  if (activeClaim) {
+    return {
+      acquired: activeClaim.ownerId === ownerId,
+      claim: activeClaim,
+    };
+  }
+
+  const claim = {
+    operationId,
+    ownerId,
+    expiresAt: now + SUBMISSION_CLAIM_TTL_MS,
+  };
+
+  try {
+    storage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        ...stored,
+        submissionOwnerId: ownerId,
+        submissionStartedAt: now,
+      }),
+    );
+  } catch {
+    return { acquired: true, claim };
+  }
+
+  await settle();
+  const current = readStoredSubmission(storage);
+  const currentClaim = getActiveSubmissionClaim(
+    current,
+    Math.max(now, Date.now()),
+  );
+  return {
+    acquired:
+      current?.operationId === operationId &&
+      currentClaim?.ownerId === ownerId,
+    claim: currentClaim ?? claim,
+  };
+}
+
+export function releaseCustomerReservationSubmissionClaim(
+  storage: StorageLike,
+  operationId: string,
+  ownerId: string,
+) {
+  const stored = readStoredSubmission(storage);
+  if (
+    stored?.operationId !== operationId ||
+    stored.submissionOwnerId !== ownerId
+  ) {
+    return false;
+  }
+
+  const pendingSubmission = withoutSubmissionClaim(stored);
+  try {
+    storage.setItem(STORAGE_KEY, JSON.stringify(pendingSubmission));
     return true;
   } catch {
     return false;

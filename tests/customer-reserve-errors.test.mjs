@@ -56,6 +56,7 @@ async function mount({
   storedNotificationRetry = null,
   storedPendingReservation = null,
   reconciliationMode = "saved",
+  submissionClaimAcquired = true,
 } = {}) {
   const states = [];
   const effects = [];
@@ -209,6 +210,9 @@ async function mount({
   vm.runInNewContext(compiled, {
     exports,
     AbortController,
+    crypto: {
+      randomUUID: () => "33333333-3333-4333-8333-333333333333",
+    },
     Date: FixedDate,
     Intl,
     Map,
@@ -235,11 +239,16 @@ async function mount({
           buildCustomerReservationFingerprint: value => JSON.stringify(value),
           getOrCreateCustomerReservationOperationId: () =>
             "11111111-1111-4111-8111-111111111111",
+          claimCustomerReservationSubmission: async () => ({
+            acquired: submissionClaimAcquired,
+            claim: null,
+          }),
           getCustomerReservationNotificationRetry: () =>
             storedNotificationRetry,
           getPendingCustomerReservationSubmission: () =>
             storedPendingReservation,
           markCustomerReservationNotificationRetryable() {},
+          releaseCustomerReservationSubmissionClaim() {},
           clearCustomerReservationOperation() {},
         };
       }
@@ -595,4 +604,17 @@ test("customer reservation guards the request before React rerenders", () => {
     pageSource.indexOf("submissionInFlight.current = true") <
       pageSource.indexOf('fetch("/api/reservations"'),
   );
+});
+
+test("customer reservation does not POST when another tab owns the submission", async () => {
+  const page = await mount({ submissionClaimAcquired: false });
+  await page.selectMenuAndDate();
+  await page.submitReservation();
+
+  assert.equal(
+    page.requests.filter(request => request.url === "/api/reservations").length,
+    0,
+  );
+  assert.match(page.html(), /別の画面で同じ予約を送信中/);
+  assert.match(page.html(), /予約結果を再確認/);
 });

@@ -6,11 +6,13 @@ import { useSearchParams } from "next/navigation";
 import CustomerPhoto from "../CustomerPhoto";
 import {
   buildCustomerReservationFingerprint,
+  claimCustomerReservationSubmission,
   clearCustomerReservationOperation,
   getCustomerReservationNotificationRetry,
   getPendingCustomerReservationSubmission,
   getOrCreateCustomerReservationOperationId,
   markCustomerReservationNotificationRetryable,
+  releaseCustomerReservationSubmissionClaim,
   type CustomerReservationSubmission,
 } from "@/lib/customer-reservation-submission";
 
@@ -223,6 +225,7 @@ function ReservePageContent() {
   const [selectedTime, setSelectedTime] = useState("");
   const [note, setNote] = useState("");
   const submissionInFlight = useRef(false);
+  const submissionOwnerId = useRef<string | null>(null);
   const notificationRetryRequest = useRef<{
     submission: CustomerReservationSubmission;
     operationId: string;
@@ -718,6 +721,8 @@ function ReservePageContent() {
       ? notificationRetryRequest.current
       : null;
     const retryRequest = notificationRetry;
+    let claimedOperationId: string | null = null;
+    let preserveSubmissionClaim = false;
 
     const handleUnknownResult = () => {
       if (notificationRetry) {
@@ -729,6 +734,7 @@ function ReservePageContent() {
       }
 
       setReservationResultUnknown(true);
+      preserveSubmissionClaim = true;
       setReservationRecoveryStatus("unknown");
       showMessage(
         "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
@@ -814,6 +820,24 @@ function ReservePageContent() {
           () => crypto.randomUUID(),
         );
         notificationRetryRequest.current = { submission, operationId };
+
+        const ownerId =
+          submissionOwnerId.current ||
+          (submissionOwnerId.current = crypto.randomUUID());
+        const submissionClaim = await claimCustomerReservationSubmission(
+          window.localStorage,
+          operationId,
+          ownerId,
+        );
+        if (!submissionClaim.acquired) {
+          setReservationResultUnknown(true);
+          setReservationRecoveryStatus("unknown");
+          showMessage(
+            "別の画面で同じ予約を送信中です。重複送信を避けるため、予約結果を再確認してください"
+          );
+          return;
+        }
+        claimedOperationId = operationId;
       }
 
       const response = await fetch("/api/reservations", {
@@ -885,6 +909,13 @@ function ReservePageContent() {
       console.error(error);
       handleUnknownResult();
     } finally {
+      if (claimedOperationId && !preserveSubmissionClaim) {
+        releaseCustomerReservationSubmissionClaim(
+          window.localStorage,
+          claimedOperationId,
+          submissionOwnerId.current || "",
+        );
+      }
       submissionInFlight.current = false;
       setSending(false);
     }
