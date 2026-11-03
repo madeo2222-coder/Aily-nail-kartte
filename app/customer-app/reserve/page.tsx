@@ -8,6 +8,7 @@ import {
   buildCustomerReservationFingerprint,
   clearCustomerReservationOperation,
   getCustomerReservationNotificationRetry,
+  getPendingCustomerReservationSubmission,
   getOrCreateCustomerReservationOperationId,
   markCustomerReservationNotificationRetryable,
   type CustomerReservationSubmission,
@@ -183,6 +184,11 @@ function ReservePageContent() {
   const [sending, setSending] = useState(false);
   const [reservationResultUnknown, setReservationResultUnknown] =
     useState(false);
+  const [reservationRecoveryStatus, setReservationRecoveryStatus] = useState<
+    "idle" | "checking" | "unknown" | "saved"
+  >("idle");
+  const [reservationRecoveryAttempt, setReservationRecoveryAttempt] =
+    useState(0);
   const [reservationNotificationRetryable, setReservationNotificationRetryable] =
     useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -221,7 +227,6 @@ function ReservePageContent() {
     submission: CustomerReservationSubmission;
     operationId: string;
   } | null>(null);
-
   const todayText = useMemo(() => getTodayText(), []);
   const maxReservationDate = useMemo(() => addDaysText(todayText, 30), [todayText]);
 
@@ -498,6 +503,60 @@ function ReservePageContent() {
     setReservationNotificationRetryable(true);
   }, [isLoggedIn, customerId]);
 
+  useEffect(() => {
+    if (!isLoggedIn || !customerId) return;
+
+    const pending = getPendingCustomerReservationSubmission(
+      window.localStorage,
+    );
+    if (!pending) return;
+    const pendingRequest = pending;
+
+    const controller = new AbortController();
+    setReservationResultUnknown(true);
+    setReservationRecoveryStatus("checking");
+
+    async function reconcileReservation() {
+      const params = new URLSearchParams({
+        operationId: pendingRequest.operationId,
+        menu: pendingRequest.submission.menu,
+        date: pendingRequest.submission.date,
+        time: pendingRequest.submission.time,
+        staffId: pendingRequest.submission.staffId,
+        durationMinutes: String(pendingRequest.submission.durationMinutes),
+      });
+
+      try {
+        const response = await fetch(`/api/reservations?${params.toString()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = (await response.json().catch(() => null)) as {
+          ok?: boolean;
+          status?: "saved" | "unknown";
+        } | null;
+
+        if (!response.ok || !json?.ok || json.status !== "saved") {
+          setReservationRecoveryStatus("unknown");
+          return;
+        }
+
+        clearCustomerReservationOperation(
+          window.localStorage,
+          pendingRequest.operationId,
+        );
+        setReservationResultUnknown(false);
+        setReservationRecoveryStatus("saved");
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setReservationRecoveryStatus("unknown");
+      }
+    }
+
+    void reconcileReservation();
+    return () => controller.abort();
+  }, [isLoggedIn, customerId, reservationRecoveryAttempt]);
+
   const availableTimeOptions = useMemo(() => {
     return availabilitySlots.map((slot) => slot.time);
   }, [availabilitySlots]);
@@ -655,12 +714,13 @@ function ReservePageContent() {
   async function handleReserveSubmit() {
     if (submissionInFlight.current || reservationResultUnknown) return;
 
-    const retryRequest = reservationNotificationRetryable
+    const notificationRetry = reservationNotificationRetryable
       ? notificationRetryRequest.current
       : null;
+    const retryRequest = notificationRetry;
 
     const handleUnknownResult = () => {
-      if (retryRequest) {
+      if (notificationRetry) {
         setReservationNotificationRetryable(true);
         showMessage(
           "予約は保存済みです。店舗通知の結果を確認できなかったため、同じ通知を再試行できます"
@@ -669,6 +729,7 @@ function ReservePageContent() {
       }
 
       setReservationResultUnknown(true);
+      setReservationRecoveryStatus("unknown");
       showMessage(
         "予約結果を確認できませんでした。同じ内容を再送せず、マイページで予約状況を確認してください"
       );
@@ -783,6 +844,7 @@ function ReservePageContent() {
             customerId,
           );
           setReservationNotificationRetryable(true);
+          setReservationRecoveryStatus("idle");
           showMessage(
             json.error ||
               "予約は保存されましたが、店舗への通知に失敗しました。通知を再試行してください"
@@ -797,6 +859,7 @@ function ReservePageContent() {
 
         clearCustomerReservationOperation(window.localStorage, operationId);
         notificationRetryRequest.current = null;
+        setReservationRecoveryStatus("idle");
         showMessage(json.error || "予約保存に失敗しました");
         if (response.status === 409) {
           setSelectedTime("");
@@ -808,6 +871,7 @@ function ReservePageContent() {
 
       clearCustomerReservationOperation(window.localStorage, operationId);
       notificationRetryRequest.current = null;
+      setReservationRecoveryStatus("idle");
       setReservationNotificationRetryable(false);
       showMessage("予約希望を受け付けました");
       setNote("");
@@ -1356,11 +1420,40 @@ function ReservePageContent() {
               className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-bold leading-6 text-amber-900"
             >
               <p>
-                予約申請の結果を確認できませんでした。同じ内容を再送せず、マイページの予約一覧で最新状態を確認してください。
+                {reservationRecoveryStatus === "checking"
+                  ? "前回の予約申請が保存済みか確認しています。確認が終わるまで再送しないでください。"
+                  : "予約申請の結果を確認できませんでした。同じ内容を再送せず、マイページの予約一覧で最新状態を確認してください。"}
               </p>
+              <button
+                type="button"
+                onClick={() =>
+                  setReservationRecoveryAttempt((current) => current + 1)
+                }
+                disabled={reservationRecoveryStatus === "checking"}
+                className="mt-3 w-full rounded-xl border border-amber-300 bg-white px-4 py-3 text-center disabled:opacity-60"
+              >
+                {reservationRecoveryStatus === "checking"
+                  ? "予約結果を確認中..."
+                  : "予約結果を再確認"}
+              </button>
               <Link
                 href="/customer-app/mypage"
                 className="mt-3 block rounded-xl border border-amber-300 bg-white px-4 py-3 text-center"
+              >
+                マイページで予約を確認
+              </Link>
+            </div>
+          ) : null}
+
+          {reservationRecoveryStatus === "saved" ? (
+            <div
+              role="status"
+              className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-bold leading-6 text-emerald-900"
+            >
+              前回の予約申請が保存済みであることを確認しました。同じ予約は再送せず、マイページで確認できます。
+              <Link
+                href="/customer-app/mypage"
+                className="mt-3 block rounded-xl border border-emerald-300 bg-white px-4 py-3 text-center"
               >
                 マイページで予約を確認
               </Link>
@@ -1382,6 +1475,7 @@ function ReservePageContent() {
             disabled={
               sending ||
               reservationResultUnknown ||
+              reservationRecoveryStatus === "saved" ||
               (!reservationNotificationRetryable &&
                 (availabilityLoading ||
                   Boolean(availabilityError) ||
@@ -1393,7 +1487,11 @@ function ReservePageContent() {
             {sending
               ? "送信中..."
               : reservationResultUnknown
-              ? "マイページで予約を確認してください"
+              ? reservationRecoveryStatus === "checking"
+                ? "予約結果を確認中..."
+                : "マイページで予約を確認してください"
+              : reservationRecoveryStatus === "saved"
+              ? "予約申請を受け付けました"
               : reservationNotificationRetryable
               ? "店舗への通知を再試行"
               : "この内容で予約希望を送る"}

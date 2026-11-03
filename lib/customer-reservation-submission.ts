@@ -166,6 +166,21 @@ export function getCustomerReservationNotificationRetry(
   return { submission, operationId: stored.operationId };
 }
 
+export function getPendingCustomerReservationSubmission(
+  storage: StorageLike,
+): {
+  submission: CustomerReservationSubmission;
+  operationId: string;
+} | null {
+  const stored = readStoredSubmission(storage);
+  if (!stored || stored.notificationRetryableAt !== undefined) return null;
+
+  const submission = parseCustomerReservationFingerprint(stored.fingerprint);
+  if (!submission) return null;
+
+  return { submission, operationId: stored.operationId };
+}
+
 export function getOrCreateCustomerReservationOperationId(
   storage: StorageLike,
   fingerprint: string,

@@ -67,6 +67,14 @@ test("customer reservation operation ID survives a response-loss reload", () => 
     FIRST_ID,
   );
   assert.equal(created, 1);
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        exports.getPendingCustomerReservationSubmission(storage),
+      ),
+    ),
+    { submission, operationId: FIRST_ID },
+  );
 });
 
 test("customer reservation operation ID rotates when the payload changes", () => {
@@ -148,6 +156,10 @@ test("customer reservation restores a retryable notification for 24 hours", () =
       ),
     ),
     { submission, operationId: FIRST_ID },
+  );
+  assert.equal(
+    exports.getPendingCustomerReservationSubmission(storage),
+    null,
   );
 });
 

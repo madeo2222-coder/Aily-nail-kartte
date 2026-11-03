@@ -269,6 +269,113 @@ async function sendReservationNoticeLine({
   return true;
 }
 
+function isValidReconciliationTime(value: string) {
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function isValidReconciliationDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return (
+    Number.isFinite(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const customer = await requireCustomerLineSession(request);
+
+    if (!customer) {
+      return NextResponse.json(
+        { ok: false, error: "LINEログインが必要です" },
+        { status: 401 }
+      );
+    }
+
+    const operationId = String(
+      request.nextUrl.searchParams.get("operationId") || ""
+    ).trim();
+    const menu = String(request.nextUrl.searchParams.get("menu") || "").trim();
+    const date = String(request.nextUrl.searchParams.get("date") || "").trim();
+    const time = String(request.nextUrl.searchParams.get("time") || "").trim();
+    const staffId = String(
+      request.nextUrl.searchParams.get("staffId") || ""
+    ).trim();
+    const durationMinutes = normalizeCustomerBookingDuration(
+      request.nextUrl.searchParams.get("durationMinutes")
+    );
+
+    if (
+      !isCustomerReservationOperationId(operationId) ||
+      !menu ||
+      !isValidReconciliationDate(date) ||
+      !isValidReconciliationTime(time) ||
+      durationMinutes === null
+    ) {
+      return NextResponse.json(
+        { ok: false, error: "予約申請の確認情報が正しくありません" },
+        { status: 400 }
+      );
+    }
+
+    const supabase = getSupabaseAdmin();
+    const salonId = await resolveCustomerBookingSalonId(
+      supabase,
+      customer.salonId
+    );
+    if (!salonId) {
+      return NextResponse.json({ ok: true, status: "unknown" });
+    }
+
+    const startAt = new Date(`${date}T${time}:00+09:00`);
+    const endAt = new Date(startAt.getTime() + durationMinutes * 60 * 1000);
+    const startIso = startAt.toISOString();
+    const endIso = endAt.toISOString();
+
+    const operationResult = await supabase
+      .from("reservations")
+      .select("id")
+      .eq("id", operationId)
+      .eq("customer_id", customer.id)
+      .eq("salon_id", salonId)
+      .maybeSingle();
+
+    if (operationResult.error) {
+      return NextResponse.json({ ok: true, status: "unknown" });
+    }
+    if (operationResult.data?.id) {
+      return NextResponse.json({ ok: true, status: "saved" });
+    }
+
+    // Older Aily databases create a random reservation ID. During the manual
+    // migration window, match the exact signed-customer request without
+    // exposing reservation data. A miss stays unknown because it does not
+    // prove that a legacy reservation was not edited after it was saved.
+    let legacyQuery = supabase
+      .from("reservations")
+      .select("id")
+      .eq("customer_id", customer.id)
+      .eq("salon_id", salonId)
+      .eq("menu", menu)
+      .eq("start_at", startIso)
+      .eq("end_at", endIso);
+    if (staffId) legacyQuery = legacyQuery.eq("staff_id", staffId);
+
+    const legacyResult = await legacyQuery.limit(1).maybeSingle();
+    if (legacyResult.error) {
+      return NextResponse.json({ ok: true, status: "unknown" });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      status: legacyResult.data?.id ? "saved" : "unknown",
+    });
+  } catch {
+    return NextResponse.json({ ok: true, status: "unknown" });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const customer = await requireCustomerLineSession(request);

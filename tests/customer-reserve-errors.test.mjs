@@ -54,6 +54,8 @@ async function mount({
   availabilityMode = "success",
   reservationMode = "success",
   storedNotificationRetry = null,
+  storedPendingReservation = null,
+  reconciliationMode = "saved",
 } = {}) {
   const states = [];
   const effects = [];
@@ -108,6 +110,16 @@ async function mount({
           ok: true,
           staffs: [{ id: "staff-1", name: "テスト担当" }],
           slots: [{ time: "10:00", staffIds: ["staff-1"] }],
+        },
+      });
+    }
+
+    if (url.startsWith("/api/reservations?")) {
+      if (reconciliationMode === "reject") throw new Error("offline");
+      return response({
+        body: {
+          ok: true,
+          status: reconciliationMode === "saved" ? "saved" : "unknown",
         },
       });
     }
@@ -225,6 +237,8 @@ async function mount({
             "11111111-1111-4111-8111-111111111111",
           getCustomerReservationNotificationRetry: () =>
             storedNotificationRetry,
+          getPendingCustomerReservationSubmission: () =>
+            storedPendingReservation,
           markCustomerReservationNotificationRetryable() {},
           clearCustomerReservationOperation() {},
         };
@@ -283,6 +297,13 @@ async function mount({
       const currentEffects = [...effects];
       currentEffects[3]();
       await setImmediate();
+    },
+    async reconcilePendingReservation() {
+      tree();
+      const currentEffects = [...effects];
+      const cleanup = currentEffects[4]();
+      await setImmediate();
+      return cleanup;
     },
     async clickPrimarySubmit() {
       const submitButton = findNode(
@@ -419,6 +440,65 @@ test("customer reservation keeps the operation locked after a server-side unknow
   await page.submitReservation();
   assert.equal(page.requests.filter(request => request.url === "/api/reservations").length, 1);
 });
+
+test("customer reservation reload confirms a saved request without resending", async () => {
+  const pending = {
+    submission: {
+      menu: "ワンカラー",
+      date: "2026-11-01",
+      time: "10:00",
+      staffId: "staff-1",
+      durationMinutes: 90,
+      memo: "保存確認",
+    },
+    operationId: "11111111-1111-4111-8111-111111111111",
+  };
+  const page = await mount({ storedPendingReservation: pending });
+
+  await page.reconcilePendingReservation();
+
+  assert.match(page.html(), /前回の予約申請が保存済み/);
+  assert.match(page.html(), /予約申請を受け付けました/);
+  assert.equal(
+    page.requests.filter(request => request.url.startsWith("/api/reservations?"))
+      .length,
+    1,
+  );
+  assert.equal(
+    page.requests.filter(request => request.url === "/api/reservations").length,
+    0,
+  );
+});
+
+for (const reconciliationMode of ["unknown", "reject"]) {
+  test(`customer reservation reload stays locked after ${reconciliationMode} reconciliation`, async () => {
+    const pending = {
+      submission: {
+        menu: "ワンカラー",
+        date: "2026-11-01",
+        time: "10:00",
+        staffId: "staff-1",
+        durationMinutes: 90,
+        memo: "判定不能",
+      },
+      operationId: "11111111-1111-4111-8111-111111111111",
+    };
+    const page = await mount({
+      storedPendingReservation: pending,
+      reconciliationMode,
+    });
+
+    await page.reconcilePendingReservation();
+
+    assert.match(page.html(), /予約申請の結果を確認できませんでした/);
+    assert.match(page.html(), /予約結果を再確認/);
+    assert.match(page.html(), /マイページで予約を確認してください/);
+    assert.equal(
+      page.requests.filter(request => request.url === "/api/reservations").length,
+      0,
+    );
+  });
+}
 
 test("customer reservation retries a known notification failure with the saved operation", async () => {
   const page = await mount({
