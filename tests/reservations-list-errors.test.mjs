@@ -117,6 +117,7 @@ async function mount({
   confirmFailureMode = "stale",
   statusFailureMode = "success",
   emailResponses = [],
+  listData = null,
 } = {}) {
   currentTimeMs = Date.parse("2026-09-29T00:00:00Z");
   const states = [];
@@ -152,6 +153,8 @@ async function mount({
   };
 
   function listBody() {
+    if (listData) return listData;
+
     if (empty) {
       return { ok: true, reservations: [], customers: [], staffs: [] };
     }
@@ -759,6 +762,85 @@ test("reservation list renders complete successful data", async () => {
     page.html(),
     /reservation_status=confirmed/,
   );
+});
+
+test("reservation overlap uses staff IDs when different staff share a display name", async () => {
+  const page = await mount({
+    listData: {
+      ok: true,
+      reservations: [
+        {
+          id: "reservation-1",
+          customer_id: "customer-1",
+          staff_id: "staff-1",
+          staff_name: "黒木",
+          menu: "ワンカラー",
+          start_at: "2026-09-29T01:00:00.000Z",
+          end_at: "2026-09-29T02:30:00.000Z",
+          status: "confirmed",
+        },
+        {
+          id: "reservation-2",
+          customer_id: "customer-2",
+          staff_id: "staff-2",
+          staff_name: "黒木",
+          menu: "フレンチ",
+          start_at: "2026-09-29T01:30:00.000Z",
+          end_at: "2026-09-29T03:00:00.000Z",
+          status: "confirmed",
+        },
+      ],
+      customers: [
+        { id: "customer-1", name: "顧客A" },
+        { id: "customer-2", name: "顧客B" },
+      ],
+      staffs: [
+        { id: "staff-1", name: "黒木" },
+        { id: "staff-2", name: "黒木" },
+      ],
+    },
+  });
+
+  assert.match(page.html(), /重複は見つかっていません/);
+  assert.doesNotMatch(page.html(), /ダブルブッキングにご注意ください|重複注意/);
+});
+
+test("reservation overlap keeps the same staff identity across display-name changes", async () => {
+  const page = await mount({
+    listData: {
+      ok: true,
+      reservations: [
+        {
+          id: "reservation-1",
+          customer_id: "customer-1",
+          staff_id: "staff-1",
+          staff_name: "黒木",
+          menu: "ワンカラー",
+          start_at: "2026-09-29T01:00:00.000Z",
+          end_at: "2026-09-29T02:30:00.000Z",
+          status: "confirmed",
+        },
+        {
+          id: "reservation-2",
+          customer_id: "customer-2",
+          staff_id: "staff-1",
+          staff_name: "黒木（表示変更前）",
+          menu: "フレンチ",
+          start_at: "2026-09-29T01:30:00.000Z",
+          end_at: "2026-09-29T03:00:00.000Z",
+          status: "confirmed",
+        },
+      ],
+      customers: [
+        { id: "customer-1", name: "顧客A" },
+        { id: "customer-2", name: "顧客B" },
+      ],
+      staffs: [{ id: "staff-1", name: "黒木" }],
+    },
+  });
+
+  assert.match(page.html(), /ダブルブッキングにご注意ください/);
+  assert.equal((page.html().match(/重複注意/g) ?? []).length, 2);
 });
 
 test("reservation list hides Naily confirmation actions for customer-linked external syncs", async () => {

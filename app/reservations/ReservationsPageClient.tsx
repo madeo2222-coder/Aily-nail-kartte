@@ -424,8 +424,12 @@ function hasOverlap(a: NormalizedReservation, b: NormalizedReservation) {
   if (!a.reservationDate || !b.reservationDate) return false;
   if (!a.reservationTime || !b.reservationTime) return false;
   if (a.reservationDate !== b.reservationDate) return false;
-  if (a.staffName !== b.staffName) return false;
-  if (a.staffName === "未設定" || b.staffName === "未設定") return false;
+  if (a.staffId && b.staffId) {
+    if (a.staffId !== b.staffId) return false;
+  } else {
+    if (a.staffName !== b.staffName) return false;
+    if (a.staffName === "未設定" || b.staffName === "未設定") return false;
+  }
   if (
     isCancelledReservationStatus(a.status) ||
     isCancelledReservationStatus(b.status)
