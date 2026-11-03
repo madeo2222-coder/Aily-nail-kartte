@@ -12,6 +12,7 @@ import {
   getOrCreateStaffReservationOperationId,
   getOrCreateStaffReservationSubmissionOwnerId,
 } from "@/lib/staff-reservation-submission";
+import { requestStaffReservationCreationWithTimeout } from "@/lib/staff-reservation-create-request";
 
 type Salon = {
   id: string;
@@ -749,11 +750,10 @@ export default function ReservationNewPage() {
         return;
       }
 
-      const response = await fetch("/api/reservations/staff-create", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...submission, operationId }),
-      });
+      const response = await requestStaffReservationCreationWithTimeout(
+        { ...submission, operationId },
+        fetch
+      );
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
         error?: string;

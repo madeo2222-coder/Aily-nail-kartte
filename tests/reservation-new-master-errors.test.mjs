@@ -32,6 +32,23 @@ const staffReservationSubmission = (() => {
   vm.runInNewContext(source, { exports, Date, JSON, Math, Promise, RegExp });
   return exports;
 })();
+const staffReservationCreateRequest = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/staff-reservation-create-request.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  vm.runInNewContext(source, {
+    AbortController,
+    clearTimeout,
+    exports,
+    setTimeout,
+  });
+  return exports;
+})();
 const pageSource = readFileSync(
   new URL("../app/reservations/new/page.tsx", import.meta.url),
   "utf8",
@@ -43,14 +60,14 @@ const compiled = ts.transpileModule(
 
 test("staff reservation creation uses its authenticated API instead of browser database access", () => {
   assert.doesNotMatch(pageSource, /@\/lib\/supabase|supabase\.from/);
-  assert.match(pageSource, /fetch\("\/api\/reservations\/staff-create"/);
+  assert.match(pageSource, /requestStaffReservationCreationWithTimeout\(/);
   assert.match(
     pageSource,
     /if \(submissionInFlight\.current \|\| submissionResultUnknown\) return/,
   );
   assert.ok(
     pageSource.indexOf("submissionInFlight.current = true") <
-      pageSource.indexOf('method: "POST"'),
+      pageSource.lastIndexOf("requestStaffReservationCreationWithTimeout("),
   );
 });
 
@@ -219,6 +236,9 @@ async function mount({
       }
       if (name === "@/lib/staff-reservation-submission") {
         return staffReservationSubmission;
+      }
+      if (name === "@/lib/staff-reservation-create-request") {
+        return staffReservationCreateRequest;
       }
       throw new Error(`Unexpected import: ${name}`);
     },
