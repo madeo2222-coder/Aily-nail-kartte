@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   buildExternalBlockFingerprint,
+  claimExternalBlockSubmission,
   clearExternalBlockOperation,
   getPendingExternalBlockOperationId,
+  getOrCreateExternalBlockSubmissionOwnerId,
   getOrCreateExternalBlockOperationId,
 } from "@/lib/external-calendar-block-submission";
 
@@ -43,9 +45,12 @@ export default function ExternalCalendarBlocksPage() {
   const [staffsLoading, setStaffsLoading] = useState(true);
   const [staffsError, setStaffsError] = useState("");
   const [mutationResultUnknown, setMutationResultUnknown] = useState(false);
+  const [mutationResultUnknownMessage, setMutationResultUnknownMessage] =
+    useState("");
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const staffRequestVersionRef = useRef(0);
   const submissionInFlightRef = useRef(false);
+  const submissionOwnerIdRef = useRef<string | null>(null);
 
   const [source, setSource] = useState("HPB");
   const [staffId, setStaffId] = useState("");
@@ -98,11 +103,13 @@ export default function ExternalCalendarBlocksPage() {
               pendingOperationId,
             );
             setMutationResultUnknown(false);
+            setMutationResultUnknownMessage("");
             setRecoveryNotice(
               "前回の外部予定が保存済みであることを確認しました。予約カレンダーで確認できます。",
             );
           } else if (result.pendingOperationStatus === "not_found") {
             setMutationResultUnknown(false);
+            setMutationResultUnknownMessage("");
             setRecoveryNotice(
               "前回の外部予定は保存されていませんでした。同じ内容を入力すると安全に再登録できます。",
             );
@@ -181,6 +188,27 @@ export default function ExternalCalendarBlocksPage() {
     );
 
     try {
+      const ownerId =
+        submissionOwnerIdRef.current ||
+        (submissionOwnerIdRef.current =
+          getOrCreateExternalBlockSubmissionOwnerId(
+            window.sessionStorage,
+            () => crypto.randomUUID(),
+          ));
+      const submissionClaim = await claimExternalBlockSubmission(
+        window.localStorage,
+        operationId,
+        ownerId,
+      );
+      if (!submissionClaim.acquired) {
+        resultUnknown = true;
+        setMutationResultUnknownMessage(
+          "別の画面で同じ外部予定を登録中です。重複登録を避けるため、予約カレンダーで最新状態を確認してください。",
+        );
+        setMutationResultUnknown(true);
+        return;
+      }
+
       const res = await fetch("/api/external-calendar-blocks", {
         method: "POST",
         headers: {
@@ -196,6 +224,7 @@ export default function ExternalCalendarBlocksPage() {
 
       if (!json) {
         resultUnknown = true;
+        setMutationResultUnknownMessage("");
         setMutationResultUnknown(true);
         return;
       }
@@ -215,6 +244,7 @@ export default function ExternalCalendarBlocksPage() {
     } catch (error) {
       console.error(error);
       resultUnknown = true;
+      setMutationResultUnknownMessage("");
       setMutationResultUnknown(true);
     } finally {
       if (!resultUnknown) {
@@ -400,7 +430,10 @@ export default function ExternalCalendarBlocksPage() {
             role="alert"
             className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"
           >
-            <p className="font-bold">登録結果を確認できませんでした。</p>
+            <p className="font-bold">
+              {mutationResultUnknownMessage ||
+                "登録結果を確認できませんでした。"}
+            </p>
             <p className="mt-2">
               同じ予定を再登録すると重複する可能性があります。予約カレンダーで対象日時を確認してください。
             </p>

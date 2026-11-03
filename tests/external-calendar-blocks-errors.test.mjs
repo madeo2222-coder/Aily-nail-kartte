@@ -20,7 +20,7 @@ vm.runInNewContext(
     ),
     { compilerOptions: { module: ts.ModuleKind.CommonJS } },
   ).outputText,
-  { exports: submissionExports, JSON, RegExp },
+  { exports: submissionExports, JSON, RegExp, Date, Math, Promise },
 );
 const compiled = ts.transpileModule(
   readFileSync(
@@ -67,6 +67,7 @@ async function mount({
   empty = false,
   postMode = "success",
   storage = makeStorage(),
+  sessionStorage = makeStorage(),
   operationId = "55555555-5555-4555-8555-555555555555",
   pendingStatus = "not_found",
 } = {}) {
@@ -142,7 +143,7 @@ async function mount({
       return { ok: true, json: async () => ({ ok: true }) };
     },
     alert(message) { alerts.push(message); },
-    window: { localStorage: storage },
+    window: { localStorage: storage, sessionStorage },
     crypto: { randomUUID: () => operationId },
     require(name) {
       if (name === "react") return hooks;
@@ -294,9 +295,11 @@ test("external calendar blocks keeps an explicit API failure retryable", async (
 
 test("external calendar blocks reuses its operation ID after a response-loss reload", async () => {
   const storage = makeStorage();
+  const sessionStorage = makeStorage();
   const first = await mount({
     postMode: "network",
     storage,
+    sessionStorage,
     operationId: "55555555-5555-4555-8555-555555555555",
   });
   await first.save();
@@ -304,6 +307,7 @@ test("external calendar blocks reuses its operation ID after a response-loss rel
   const second = await mount({
     postMode: "success",
     storage,
+    sessionStorage,
     operationId: "66666666-6666-4666-8666-666666666666",
   });
   await second.save();
@@ -353,4 +357,41 @@ test("external calendar blocks allows the same operation to retry after a confir
 
   assert.equal(second.postBodies[0].operationId, first.postBodies[0].operationId);
   assert.equal(second.pendingOperationId, null);
+});
+
+test("external calendar blocks does not POST while another tab owns the same submission", async () => {
+  const storage = makeStorage();
+  const operationId = "55555555-5555-4555-8555-555555555555";
+  const ownerId = "66666666-6666-4666-8666-666666666666";
+  const fingerprint = submissionExports.buildExternalBlockFingerprint({
+    source: "HPB",
+    salonId: "salon-1",
+    staffId: "staff-1",
+    date: "2026-10-30",
+    startTime: "10:00",
+    endTime: "11:00",
+    title: "",
+    memo: "",
+  });
+  submissionExports.getOrCreateExternalBlockOperationId(
+    storage,
+    fingerprint,
+    () => operationId,
+  );
+  await submissionExports.claimExternalBlockSubmission(
+    storage,
+    operationId,
+    ownerId,
+    Date.now(),
+    async () => {},
+  );
+
+  const page = await mount({ storage, operationId, pendingStatus: "not_found" });
+  await page.save();
+
+  assert.equal(page.postCount, 0);
+  assert.match(page.html(), /別の画面で同じ外部予定を登録中です/);
+  assert.match(page.html(), /予約カレンダーで最新状態を確認してください/);
+  await page.retrySaveAfterUnknown();
+  assert.equal(page.postCount, 0);
 });
