@@ -25,11 +25,18 @@ export type ConfirmationEmailInProgressLock = {
   retryAt: number;
 };
 
+export type ConfirmationEmailRequestBody = {
+  reservationId: string;
+  attemptId: string;
+  expectedIdempotencyKey?: string;
+};
+
 const DEFAULT_RETRY_WINDOW_HOURS = 24;
 const STORAGE_KEY_PREFIX = "aily:confirmation-email-retry:v1:";
 const IN_PROGRESS_STORAGE_KEY_PREFIX =
   "aily:confirmation-email-in-progress:v1:";
 export const CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS = 5 * 60 * 1000;
+export const CONFIRMATION_EMAIL_REQUEST_TIMEOUT_MS = 15 * 1000;
 
 type RetryNoticeStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
@@ -49,6 +56,26 @@ type StoredConfirmationEmailInProgressLock = {
   attemptId: string;
   ownerId?: string;
 };
+
+export async function requestConfirmationEmailWithTimeout(
+  body: ConfirmationEmailRequestBody,
+  fetchApi: typeof fetch = globalThis.fetch,
+  timeoutMs = CONFIRMATION_EMAIL_REQUEST_TIMEOUT_MS
+) {
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetchApi("/api/send-reservation-confirmed-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+}
 
 const CONFIRMATION_EMAIL_ATTEMPT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

@@ -82,7 +82,13 @@ vm.runInNewContext(
       },
     }
   ).outputText,
-  { exports: confirmationEmailRetryExports, Date: FixedDate }
+  {
+    AbortController,
+    clearTimeout,
+    exports: confirmationEmailRetryExports,
+    Date: FixedDate,
+    setTimeout,
+  }
 );
 const compiled = ts.transpileModule(
   readFileSync(

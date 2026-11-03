@@ -39,6 +39,7 @@ import {
   readConfirmationEmailDisplayNotice,
   readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
+  requestConfirmationEmailWithTimeout,
   saveConfirmationEmailInProgressLock,
   saveConfirmationEmailRetryNotice,
   type ConfirmationEmailApiResult,
@@ -831,15 +832,14 @@ export default function EditReservationPage() {
       return { ...notice, message: ` メール通知：${notice.message}` };
     }
     try {
-      const response = await fetch("/api/send-reservation-confirmed-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await requestConfirmationEmailWithTimeout(
+        {
           reservationId: id,
           attemptId,
           ...(retryToken ? { expectedIdempotencyKey: retryToken } : {}),
-        }),
-      });
+        },
+        fetch
+      );
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationEmailApiResult | null;

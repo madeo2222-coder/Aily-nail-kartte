@@ -21,11 +21,12 @@ vm.runInNewContext(
       },
     }
   ).outputText,
-  { exports }
+  { AbortController, clearTimeout, exports, fetch, setTimeout }
 );
 
 const {
   CONFIRMATION_EMAIL_IN_PROGRESS_LOCK_TTL_MS,
+  CONFIRMATION_EMAIL_REQUEST_TIMEOUT_MS,
   claimConfirmationEmailInProgressLock,
   createConfirmationEmailAttemptId,
   getConfirmationEmailActionPrompt,
@@ -38,9 +39,37 @@ const {
   readConfirmationEmailDisplayNotice,
   readConfirmationEmailInProgressLock,
   readConfirmationEmailRetryNotice,
+  requestConfirmationEmailWithTimeout,
   saveConfirmationEmailInProgressLock,
   saveConfirmationEmailRetryNotice,
 } = exports;
+
+test("confirmation email request stops waiting and preserves a recoverable unknown result", async () => {
+  let requestSignal;
+  const neverResponds = (_url, options) => {
+    requestSignal = options.signal;
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => {
+        reject(new Error("request aborted"));
+      });
+    });
+  };
+
+  await assert.rejects(
+    requestConfirmationEmailWithTimeout(
+      {
+        reservationId: "reservation-1",
+        attemptId: "01234567-89ab-4cde-8fab-0123456789ab",
+      },
+      neverResponds,
+      5
+    ),
+    /request aborted/
+  );
+
+  assert.equal(requestSignal.aborted, true);
+  assert.equal(CONFIRMATION_EMAIL_REQUEST_TIMEOUT_MS, 15_000);
+});
 
 function createMemoryStorage() {
   const values = new Map();
@@ -408,7 +437,7 @@ test("clears a known confirmation email result lock but keeps an unknown result 
       claimIndex
     );
     const fetchIndex = sendFunction.indexOf(
-      'fetch("/api/send-reservation-confirmed-email"'
+      "requestConfirmationEmailWithTimeout("
     );
 
     assert.ok(claimIndex >= 0 && ownerIndex > claimIndex);
@@ -478,6 +507,7 @@ test("reservation screens restore and persist email retry recovery", () => {
 
   for (const source of [listSource, editSource]) {
     assert.match(source, /readConfirmationEmailRetryNotice\(/);
+    assert.match(source, /requestConfirmationEmailWithTimeout\(/);
     assert.match(source, /saveConfirmationEmailRetryNotice\(/);
     assert.match(source, /expectedIdempotencyKey: retryToken/);
     assert.match(source, /retryNotice(?:\?|)\.retryToken/);
