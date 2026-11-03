@@ -96,6 +96,27 @@ vm.runInNewContext(
     setTimeout,
   }
 );
+const reservationConfirmationRequestExports = {};
+vm.runInNewContext(
+  ts.transpileModule(
+    readFileSync(
+      new URL("../lib/reservation-confirmation-request.ts", import.meta.url),
+      "utf8"
+    ),
+    {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2022,
+      },
+    }
+  ).outputText,
+  {
+    AbortController,
+    clearTimeout,
+    exports: reservationConfirmationRequestExports,
+    setTimeout,
+  }
+);
 const compiled = ts.transpileModule(
   readFileSync(
     new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
@@ -347,6 +368,9 @@ async function mount({
       }
       if (name === "@/lib/reservation-confirmation-email-retry") {
         return confirmationEmailRetryExports;
+      }
+      if (name === "@/lib/reservation-confirmation-request") {
+        return reservationConfirmationRequestExports;
       }
       throw new Error(`Unexpected import: ${name}`);
     },

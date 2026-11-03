@@ -51,6 +51,7 @@ import {
   writeEditableReservationMemo,
 } from "@/lib/reservation-sync-memo";
 import { isExternalSyncedReservation } from "@/lib/external-reservation-metadata";
+import { requestReservationConfirmationWithTimeout } from "@/lib/reservation-confirmation-request";
 
 type Salon = {
   id: string;
@@ -910,27 +911,24 @@ export default function EditReservationPage() {
     setSuccessMessage("");
 
   try {
-    const confirmationResponse = await fetch(
+    const confirmationResponse = await requestReservationConfirmationWithTimeout(
       `/api/reservations/${reservationId}/confirm`,
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customerId: isExternalBlock ? null : customerId,
-          staffId,
-          menu: menu || null,
-          startAt: dateTime.startAt,
-          endAt: dateTime.endAt,
-          memo: buildMemoForSave(galleryReference, memo, syncedMemo) || null,
-          expectedCustomerId: initialCustomerId,
-          expectedStaffId: initialStaffId,
-          expectedMenu: initialMenu,
-          expectedStartAt: initialStartAt,
-          expectedEndAt: initialEndAt,
-          expectedStatus: initialStatus,
-          expectedMemo: initialMemo,
-        }),
-      }
+        customerId: isExternalBlock ? null : customerId,
+        staffId,
+        menu: menu || null,
+        startAt: dateTime.startAt,
+        endAt: dateTime.endAt,
+        memo: buildMemoForSave(galleryReference, memo, syncedMemo) || null,
+        expectedCustomerId: initialCustomerId,
+        expectedStaffId: initialStaffId,
+        expectedMenu: initialMenu,
+        expectedStartAt: initialStartAt,
+        expectedEndAt: initialEndAt,
+        expectedStatus: initialStatus,
+        expectedMemo: initialMemo,
+      },
+      fetch
     );
     const confirmation = (await confirmationResponse.json().catch(() => null)) as {
       ok?: boolean;
