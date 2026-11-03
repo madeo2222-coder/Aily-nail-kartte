@@ -63,7 +63,13 @@ vm.runInNewContext(
       },
     }
   ).outputText,
-  { exports: confirmationLineRetryExports, Set }
+  {
+    AbortController,
+    clearTimeout,
+    exports: confirmationLineRetryExports,
+    Set,
+    setTimeout,
+  }
 );
 const confirmationEmailRetryExports = {};
 vm.runInNewContext(

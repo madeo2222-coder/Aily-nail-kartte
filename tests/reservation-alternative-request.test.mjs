@@ -908,7 +908,7 @@ test("staff UI sends the displayed reservation snapshot with an alternative-time
   );
   const functionSource = pageSource.slice(functionStart, nextFunction);
 
-  assert.match(functionSource, /headers: \{ "Content-Type": "application\/json" \}/);
+  assert.match(functionSource, /requestReservationLineWithTimeout\(/);
   for (const [field, state] of [
     ["expectedCustomerId", "initialCustomerId"],
     ["expectedStaffId", "initialStaffId"],
@@ -949,7 +949,7 @@ test("staff UI blocks an alternative-time LINE request while reservation edits a
     "unsaved edits are checked before confirmation"
   );
   assert.ok(
-    guardIndex < functionSource.indexOf("await fetch("),
+    guardIndex < functionSource.indexOf("requestReservationLineWithTimeout("),
     "unsaved edits are checked before the LINE API call"
   );
   assert.match(
@@ -973,7 +973,7 @@ test("staff UI blocks confirmation notification retries while reservation edits 
   );
 
   for (const [functionName, sendMarker] of [
-    ["retryConfirmationLine", "await fetch("],
+    ["retryConfirmationLine", "requestReservationLineWithTimeout("],
     ["retryConfirmationEmail", "sendConfirmationEmailNotice("],
   ]) {
     const functionStart = pageSource.indexOf(`async function ${functionName}()`);
@@ -1197,7 +1197,7 @@ test("staff UI blocks retries when any reservation mutation result is unknown", 
   );
   assert.match(
     alternativeFunctionSource,
-    /claimAlternativeLineInProgressLock\([\s\S]{0,220}initialAlternativeRevision[\s\S]{0,220}if \(!claim\.acquired\) \{[\s\S]{0,220}return;[\s\S]{0,500}fetch\(/,
+    /claimAlternativeLineInProgressLock\([\s\S]{0,220}initialAlternativeRevision[\s\S]{0,220}if \(!claim\.acquired\) \{[\s\S]{0,220}return;[\s\S]{0,500}requestReservationLineWithTimeout\(/,
     "alternative request confirms cross-tab ownership before sending"
   );
   assert.match(

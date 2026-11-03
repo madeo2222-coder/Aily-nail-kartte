@@ -12,6 +12,7 @@ import {
   claimConfirmationLineInProgressLock,
   getConfirmationLineRetryLock,
   readConfirmationLineRetryLock,
+  requestReservationLineWithTimeout,
   saveConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
 import type {
@@ -943,15 +944,11 @@ export default function ReservationsPageClient() {
     if (!claim.acquired) return claim.lock.message;
 
     try {
-      const response = await fetch("/api/send-reservation-confirmed-line", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          reservationId: id,
-        }),
-      });
+      const response = await requestReservationLineWithTimeout(
+        "/api/send-reservation-confirmed-line",
+        { reservationId: id },
+        fetch
+      );
 
       const result = (await response.json().catch(
         () => null

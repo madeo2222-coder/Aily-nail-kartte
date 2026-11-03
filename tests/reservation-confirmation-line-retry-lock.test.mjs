@@ -19,7 +19,18 @@ function loadRetryLockModule() {
     },
   }).outputText;
   const exports = {};
-  vm.runInNewContext(compiled, { exports, require, Set, Date, JSON, Number });
+  vm.runInNewContext(compiled, {
+    AbortController,
+    clearTimeout,
+    exports,
+    fetch,
+    require,
+    Set,
+    Date,
+    JSON,
+    Number,
+    setTimeout,
+  });
   return exports;
 }
 
@@ -28,6 +39,7 @@ const {
   ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS,
   CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS,
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS,
+  RESERVATION_LINE_REQUEST_TIMEOUT_MS,
   claimAlternativeLineInProgressLock,
   claimConfirmationLineInProgressLock,
   createAlternativeLineReservationRevision,
@@ -37,9 +49,38 @@ const {
   getConfirmationLineRetryLock,
   readAlternativeLineRetryLock,
   readConfirmationLineRetryLock,
+  requestReservationLineWithTimeout,
   saveAlternativeLineRetryLock,
   saveConfirmationLineRetryLock,
 } = loadRetryLockModule();
+
+test("reservation LINE requests stop waiting before the browser stays stuck", async () => {
+  let requestSignal;
+  let requestBody;
+  const neverResponds = (_url, options) => {
+    requestSignal = options.signal;
+    requestBody = JSON.parse(options.body);
+    return new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => {
+        reject(new Error("request aborted"));
+      });
+    });
+  };
+
+  await assert.rejects(
+    requestReservationLineWithTimeout(
+      "/api/send-reservation-confirmed-line",
+      { reservationId: "reservation-1" },
+      neverResponds,
+      5
+    ),
+    /request aborted/
+  );
+
+  assert.equal(requestSignal.aborted, true);
+  assert.deepEqual(requestBody, { reservationId: "reservation-1" });
+  assert.equal(RESERVATION_LINE_REQUEST_TIMEOUT_MS, 15_000);
+});
 
 function createAlternativeSnapshot(overrides = {}) {
   return {
@@ -614,7 +655,7 @@ test("both staff reservation screens apply the shared retry lock", () => {
     const lockIndex = source.indexOf("claimConfirmationLineInProgressLock(");
     const ownerIndex = source.indexOf("if (!claim.acquired)", lockIndex);
     const fetchIndex = source.indexOf(
-      'fetch("/api/send-reservation-confirmed-line"',
+      'requestReservationLineWithTimeout(',
       lockIndex
     );
     assert.ok(lockIndex >= 0, "confirmation LINE lock is claimed");

@@ -55,6 +55,7 @@ type StoredAlternativeLineRetryLock = {
 
 export const CONFIRMATION_LINE_RETRY_LOCK_TTL_MS = 23 * 60 * 60 * 1000;
 export const CONFIRMATION_LINE_IN_PROGRESS_LOCK_TTL_MS = 5 * 60 * 1000;
+export const RESERVATION_LINE_REQUEST_TIMEOUT_MS = 15 * 1000;
 export const ALTERNATIVE_LINE_RETRY_LOCK_TTL_MS =
   CONFIRMATION_LINE_RETRY_LOCK_TTL_MS;
 export const ALTERNATIVE_LINE_IN_PROGRESS_LOCK_TTL_MS = 5 * 60 * 1000;
@@ -84,6 +85,27 @@ const HISTORY_CHECK_STATUSES = new Set([
 
 const CONFIRMATION_LINE_ATTEMPT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export async function requestReservationLineWithTimeout(
+  path: string,
+  body: unknown,
+  fetchApi: typeof fetch = globalThis.fetch,
+  timeoutMs = RESERVATION_LINE_REQUEST_TIMEOUT_MS
+) {
+  const controller = new AbortController();
+  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetchApi(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    globalThis.clearTimeout(timeoutId);
+  }
+}
 
 function normalizeConfirmationLineAttemptId(value: unknown) {
   return typeof value === "string" &&

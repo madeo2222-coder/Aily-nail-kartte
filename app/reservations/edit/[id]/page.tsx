@@ -18,6 +18,7 @@ import {
   getConfirmationLineRetryLock,
   readAlternativeLineRetryLock,
   readConfirmationLineRetryLock,
+  requestReservationLineWithTimeout,
   saveAlternativeLineRetryLock,
   saveConfirmationLineRetryLock,
 } from "@/lib/reservation-confirmation-line-retry";
@@ -781,11 +782,11 @@ export default function EditReservationPage() {
     if (!claim.acquired) return ` LINE通知：${claim.lock.message}`;
 
     try {
-      const response = await fetch("/api/send-reservation-confirmed-line", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservationId: id }),
-      });
+      const response = await requestReservationLineWithTimeout(
+        "/api/send-reservation-confirmed-line",
+        { reservationId: id },
+        fetch
+      );
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationLineApiResult | null;
@@ -1064,11 +1065,11 @@ export default function EditReservationPage() {
     }
 
     try {
-      const response = await fetch("/api/send-reservation-confirmed-line", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reservationId }),
-      });
+      const response = await requestReservationLineWithTimeout(
+        "/api/send-reservation-confirmed-line",
+        { reservationId },
+        fetch
+      );
       const result = (await response.json().catch(
         () => null
       )) as ConfirmationLineApiResult | null;
@@ -1231,21 +1232,18 @@ export default function EditReservationPage() {
         return;
       }
 
-      const response = await fetch(
+      const response = await requestReservationLineWithTimeout(
         `/api/reservations/${reservationId}/request-alternative`,
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            expectedCustomerId: initialCustomerId,
-            expectedStaffId: initialStaffId,
-            expectedMenu: initialMenu,
-            expectedStartAt: initialStartAt,
-            expectedEndAt: initialEndAt,
-            expectedStatus: initialStoredStatus,
-            expectedMemo: initialMemo,
-          }),
-        }
+          expectedCustomerId: initialCustomerId,
+          expectedStaffId: initialStaffId,
+          expectedMenu: initialMenu,
+          expectedStartAt: initialStartAt,
+          expectedEndAt: initialEndAt,
+          expectedStatus: initialStoredStatus,
+          expectedMemo: initialMemo,
+        },
+        fetch
       );
       const result = (await response.json().catch(
         () => null
