@@ -108,6 +108,17 @@ type NormalizedReservation = {
   createdAt: string | null;
 };
 
+type StaffFilterOption = {
+  value: string;
+  label: string;
+};
+
+const ALL_STAFF_FILTER = "all";
+
+function buildStaffFilterValue(item: NormalizedReservation) {
+  return item.staffId ? `id:${item.staffId}` : `name:${item.staffName}`;
+}
+
 function pickString(row: ReservationRow, keys: string[], fallback = ""): string {
   for (const key of keys) {
     const value = row[key];
@@ -514,7 +525,7 @@ export default function ReservationsPageClient() {
   const [confirmationEmailRetryNotices, setConfirmationEmailRetryNotices] =
     useState<Record<string, ConfirmationEmailNotice>>({});
   const [selectedDate, setSelectedDate] = useState("");
-  const [selectedStaff, setSelectedStaff] = useState("全員");
+  const [selectedStaff, setSelectedStaff] = useState(ALL_STAFF_FILTER);
   const [showPendingOnly, setShowPendingOnly] = useState(false);
 
   const customerMap = useMemo(() => {
@@ -796,21 +807,55 @@ export default function ReservationsPageClient() {
     });
   }, [selectedDate]);
 
-  const staffOptions = useMemo(() => {
-    const set = new Set<string>();
+  const staffOptions = useMemo<StaffFilterOption[]>(() => {
+    const identities = new Map<string, StaffFilterOption>();
+
     normalizedReservations.forEach((row) => {
-      if (row.staffName && row.staffName !== "未設定") {
-        set.add(row.staffName);
+      if (!row.staffName || row.staffName === "未設定") return;
+
+      const value = buildStaffFilterValue(row);
+      const label = row.staffId
+        ? staffMap[row.staffId] || row.staffName
+        : row.staffName;
+
+      if (!identities.has(value)) {
+        identities.set(value, { value, label });
       }
     });
-    return ["全員", ...Array.from(set)];
-  }, [normalizedReservations]);
+
+    const options = Array.from(identities.values()).sort(
+      (left, right) =>
+        left.label.localeCompare(right.label, "ja") ||
+        left.value.localeCompare(right.value)
+    );
+    const labelTotals = new Map<string, number>();
+    const labelIndexes = new Map<string, number>();
+
+    options.forEach((option) => {
+      labelTotals.set(option.label, (labelTotals.get(option.label) || 0) + 1);
+    });
+
+    return [
+      { value: ALL_STAFF_FILTER, label: "全員" },
+      ...options.map((option) => {
+        if ((labelTotals.get(option.label) || 0) === 1) return option;
+
+        const index = (labelIndexes.get(option.label) || 0) + 1;
+        labelIndexes.set(option.label, index);
+        return {
+          ...option,
+          label: `${option.label}（担当者${index}）`,
+        };
+      }),
+    ];
+  }, [normalizedReservations, staffMap]);
 
   const filteredReservations = useMemo(() => {
     return normalizedReservations.filter((row) => {
       const dateMatch = !selectedDate || row.reservationDate === selectedDate;
       const staffMatch =
-        selectedStaff === "全員" || row.staffName === selectedStaff;
+        selectedStaff === ALL_STAFF_FILTER ||
+        buildStaffFilterValue(row) === selectedStaff;
       return dateMatch && staffMatch;
     });
   }, [normalizedReservations, selectedDate, selectedStaff]);
@@ -1466,8 +1511,8 @@ export default function ReservationsPageClient() {
                 suppressHydrationWarning
               >
                 {staffOptions.map((staff) => (
-                  <option key={staff} value={staff}>
-                    {staff}
+                  <option key={staff.value} value={staff.value}>
+                    {staff.label}
                   </option>
                 ))}
               </select>

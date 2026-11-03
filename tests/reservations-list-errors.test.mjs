@@ -376,6 +376,11 @@ async function mount({
       assert.match(html(), /読み込み中/);
       await setImmediate();
     },
+    selectStaff(value) {
+      const select = findNode(tree(), node => node.type === "select");
+      assert.ok(select, "staff select exists");
+      select.props.onChange({ target: { value } });
+    },
     async markVisited() {
       const button = findNode(
         tree(),
@@ -803,6 +808,12 @@ test("reservation overlap uses staff IDs when different staff share a display na
 
   assert.match(page.html(), /重複は見つかっていません/);
   assert.doesNotMatch(page.html(), /ダブルブッキングにご注意ください|重複注意/);
+  assert.match(page.html(), /value="id:staff-1">黒木（担当者1）/);
+  assert.match(page.html(), /value="id:staff-2">黒木（担当者2）/);
+
+  page.selectStaff("id:staff-1");
+  assert.match(page.html(), /顧客A/);
+  assert.doesNotMatch(page.html(), /顧客B/);
 });
 
 test("reservation overlap keeps the same staff identity across display-name changes", async () => {
@@ -841,6 +852,11 @@ test("reservation overlap keeps the same staff identity across display-name chan
 
   assert.match(page.html(), /ダブルブッキングにご注意ください/);
   assert.equal((page.html().match(/重複注意/g) ?? []).length, 2);
+  assert.equal((page.html().match(/value="id:staff-1"/g) ?? []).length, 1);
+
+  page.selectStaff("id:staff-1");
+  assert.match(page.html(), /顧客A/);
+  assert.match(page.html(), /顧客B/);
 });
 
 test("reservation list hides Naily confirmation actions for customer-linked external syncs", async () => {
