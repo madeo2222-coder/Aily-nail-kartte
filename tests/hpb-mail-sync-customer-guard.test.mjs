@@ -2690,7 +2690,7 @@ test("delayed HPB mail reuses a same-customer manual booking whose note mentions
         staff_id: "staff-1",
         salon_id: "salon-1",
         menu: "ジェル付替 90分",
-        memo: "ミニモで見たデザインを希望",
+        memo: "予約時にミニモで見たデザインを希望",
         status: "confirmed",
         start_at: "2099-10-20T01:00:00.000Z",
         end_at: "2099-10-20T02:30:00.000Z",
@@ -2704,7 +2704,10 @@ test("delayed HPB mail reuses a same-customer manual booking whose note mentions
   assert.equal(result.result.reconciledManualEntry, true);
   assert.equal(runtime.writes.length, 1);
   assert.equal(runtime.writes[0].operation, "update");
-  assert.match(runtime.writes[0].payload.memo, /ミニモで見たデザインを希望/);
+  assert.match(
+    runtime.writes[0].payload.memo,
+    /予約時にミニモで見たデザインを希望/
+  );
 });
 
 test("delayed HPB mail reuses a same-customer manual booking whose custom menu mentions minimo", async () => {
@@ -2720,7 +2723,7 @@ test("delayed HPB mail reuses a same-customer manual booking whose custom menu m
         customer_id: "mail-customer",
         staff_id: "staff-1",
         salon_id: "salon-1",
-        menu: "ミニモで見たデザイン",
+        menu: "予約時にミニモで見たデザイン",
         memo: "持込デザインを確認",
         status: "confirmed",
         start_at: "2099-10-20T01:00:00.000Z",

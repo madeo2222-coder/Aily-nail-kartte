@@ -495,7 +495,9 @@ test("customer fallback does not adopt a reservation marked as the other externa
 test("customer free-text provider mentions do not block delayed manual reconciliation", () => {
   for (const [source, memo] of [
     ["hpb", "ミニモで見たデザインを希望"],
+    ["hpb", "予約時にミニモで見たデザインを希望"],
     ["minimo", "ホットペッパーの写真と同じ色を希望"],
+    ["minimo", "予約時にホットペッパーの写真を確認したい"],
   ]) {
     const result = reconciliation.findManualReservationCandidate({
       source,
@@ -520,7 +522,9 @@ test("customer free-text provider mentions do not block delayed manual reconcili
 test("custom menu provider mentions do not block delayed manual reconciliation", () => {
   for (const [source, menu] of [
     ["hpb", "ミニモで見たデザイン"],
+    ["hpb", "予約時にミニモで見たデザイン"],
     ["minimo", "ホットペッパー風ネイル"],
+    ["minimo", "予約時にホットペッパーで見たネイル"],
   ]) {
     const result = reconciliation.findManualReservationCandidate({
       source,
@@ -546,8 +550,11 @@ test("explicit provider booking menus still identify their source", () => {
   for (const [source, menu] of [
     ["hpb", "ホットペッパー予約"],
     ["hpb", "HPB"],
+    ["hpb", "外部予約：HPB"],
+    ["hpb", "HPBからの予約"],
     ["minimo", "minimo booking"],
     ["minimo", "ミニモ"],
+    ["minimo", "予約元：ミニモ"],
   ]) {
     const result = reconciliation.findManualReservationCandidate({
       source,

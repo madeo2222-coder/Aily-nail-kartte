@@ -81,10 +81,23 @@ function hasExplicitMenuSourceMarker(
       ? new Set(["minimo", "ミニモ"])
       : new Set(["hpb", "hotpepper", "ホットペッパー"]);
 
-  return (
-    exactSourceLabels.has(normalizedMenu) ||
-    /予約|booking|受付|外部/.test(normalizedMenu)
-  );
+  if (exactSourceLabels.has(normalizedMenu)) return true;
+
+  const sourcePattern =
+    source === "minimo"
+      ? "(?:minimo|ミニモ)"
+      : "(?:hpb|hotpepper|ホットペッパー)";
+  const bookingMarker =
+    "(?:外部予約|予約元|予約経路|booking|受付|予約|外部)";
+  const separator = "(?:[\\p{P}\\p{S}]*|から(?:の)?)";
+
+  // A provider name and the booking marker must form one label. Checking for
+  // both words anywhere in the title misclassifies normal menu text such as
+  // "予約時にミニモで見たデザイン" as a minimo reservation.
+  return new RegExp(
+    `(?:${sourcePattern})${separator}${bookingMarker}|${bookingMarker}[\\p{P}\\p{S}]*(?:${sourcePattern})`,
+    "u"
+  ).test(normalizedMenu);
 }
 
 function detectManualReservationSource(
@@ -121,9 +134,19 @@ function detectManualReservationSource(
   // Preserve legacy manually entered notes that explicitly describe the
   // provider booking or a phone intake, while ignoring ordinary design notes.
   const normalizedFirstMemoLine = normalize(firstMemoLine);
-  if (/予約|電話|受付|外部/.test(normalizedFirstMemoLine)) {
-    if (hasSourceMarker("hpb", normalizedFirstMemoLine)) return "hpb";
-    if (hasSourceMarker("minimo", normalizedFirstMemoLine)) return "minimo";
+  if (hasExplicitMenuSourceMarker("hpb", normalizedFirstMemoLine)) return "hpb";
+  if (hasExplicitMenuSourceMarker("minimo", normalizedFirstMemoLine)) {
+    return "minimo";
+  }
+
+  // Old phone-intake notes used prose instead of the structured source line.
+  // Keep only the known leading-label form so customer requests mentioning a
+  // provider and the word "予約" later in the sentence remain ordinary text.
+  if (/^(?:hpb|hotpepper|ホットペッパー)から(?:の)?電話/.test(normalizedFirstMemoLine)) {
+    return "hpb";
+  }
+  if (/^(?:minimo|ミニモ)から(?:の)?電話/.test(normalizedFirstMemoLine)) {
+    return "minimo";
   }
 
   return null;
