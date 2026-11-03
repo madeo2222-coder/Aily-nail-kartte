@@ -70,6 +70,23 @@ function hasSourceMarker(source: MailSyncSource, value: string) {
   );
 }
 
+function hasExplicitMenuSourceMarker(
+  source: MailSyncSource,
+  normalizedMenu: string
+) {
+  if (!hasSourceMarker(source, normalizedMenu)) return false;
+
+  const exactSourceLabels =
+    source === "minimo"
+      ? new Set(["minimo", "ミニモ"])
+      : new Set(["hpb", "hotpepper", "ホットペッパー"]);
+
+  return (
+    exactSourceLabels.has(normalizedMenu) ||
+    /予約|booking|受付|外部/.test(normalizedMenu)
+  );
+}
+
 function detectManualReservationSource(
   candidate: Pick<ManualReservationCandidate, "menu" | "memo">
 ): MailSyncSource | null {
@@ -80,8 +97,8 @@ function detectManualReservationSource(
   // the customer's free-text memo as reservation metadata: a note such as
   // "ミニモで見たデザイン" can belong to an HPB booking and must not block
   // delayed-mail reconciliation for the same customer.
-  if (hasSourceMarker("hpb", normalizedMenu)) return "hpb";
-  if (hasSourceMarker("minimo", normalizedMenu)) return "minimo";
+  if (hasExplicitMenuSourceMarker("hpb", normalizedMenu)) return "hpb";
+  if (hasExplicitMenuSourceMarker("minimo", normalizedMenu)) return "minimo";
 
   const firstMemoLine = String(candidate.memo || "")
     .normalize("NFKC")

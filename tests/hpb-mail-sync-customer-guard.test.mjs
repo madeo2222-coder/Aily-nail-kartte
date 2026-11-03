@@ -2707,6 +2707,38 @@ test("delayed HPB mail reuses a same-customer manual booking whose note mentions
   assert.match(runtime.writes[0].payload.memo, /ミニモで見たデザインを希望/);
 });
 
+test("delayed HPB mail reuses a same-customer manual booking whose custom menu mentions minimo", async () => {
+  const runtime = loadSync(null, {
+    externalLookupMissing: true,
+    deterministicReservationMissing: true,
+    customerRows: [
+      { id: "mail-customer", name: "テスト顧客", phone: "09000000000" },
+    ],
+    manualReservationRows: [
+      {
+        id: "same-customer-custom-menu",
+        customer_id: "mail-customer",
+        staff_id: "staff-1",
+        salon_id: "salon-1",
+        menu: "ミニモで見たデザイン",
+        memo: "持込デザインを確認",
+        status: "confirmed",
+        start_at: "2099-10-20T01:00:00.000Z",
+        end_at: "2099-10-20T02:30:00.000Z",
+      },
+    ],
+  });
+
+  const result = await runtime.sync(mail);
+
+  assert.equal(result.result.reservationId, "same-customer-custom-menu");
+  assert.equal(result.result.reconciledManualEntry, true);
+  assert.equal(runtime.writes.length, 1);
+  assert.equal(runtime.writes[0].operation, "update");
+  assert.equal(runtime.writes[0].payload.menu, "HPB予約");
+  assert.match(runtime.writes[0].payload.memo, /持込デザインを確認/);
+});
+
 test("delayed mail uses provider end time when the same customer has nearby manual bookings", async () => {
   const runtime = loadSync(null, {
     manualReservationRows: [

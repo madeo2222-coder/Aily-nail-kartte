@@ -517,6 +517,57 @@ test("customer free-text provider mentions do not block delayed manual reconcili
   }
 });
 
+test("custom menu provider mentions do not block delayed manual reconciliation", () => {
+  for (const [source, menu] of [
+    ["hpb", "ミニモで見たデザイン"],
+    ["minimo", "ホットペッパー風ネイル"],
+  ]) {
+    const result = reconciliation.findManualReservationCandidate({
+      source,
+      staffId: "staff-1",
+      customerId: "customer-1",
+      candidates: [
+        {
+          id: `same-customer-menu-${source}`,
+          customer_id: "customer-1",
+          staff_id: "staff-1",
+          menu,
+          memo: "持込デザインを確認",
+          status: "予約確定",
+        },
+      ],
+    });
+
+    assert.equal(result?.id, `same-customer-menu-${source}`);
+  }
+});
+
+test("explicit provider booking menus still identify their source", () => {
+  for (const [source, menu] of [
+    ["hpb", "ホットペッパー予約"],
+    ["hpb", "HPB"],
+    ["minimo", "minimo booking"],
+    ["minimo", "ミニモ"],
+  ]) {
+    const result = reconciliation.findManualReservationCandidate({
+      source,
+      staffId: "staff-1",
+      candidates: [
+        {
+          id: `explicit-${source}-${menu}`,
+          customer_id: "customer-1",
+          staff_id: "staff-1",
+          menu,
+          memo: null,
+          status: "予約確定",
+        },
+      ],
+    });
+
+    assert.equal(result?.id, `explicit-${source}-${menu}`);
+  }
+});
+
 test("structured manual source metadata still blocks the other provider", () => {
   const result = reconciliation.findManualReservationCandidate({
     source: "hpb",
