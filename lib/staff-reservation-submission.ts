@@ -26,6 +26,7 @@ export type StaffReservationSubmissionClaim = {
 };
 
 const STORAGE_KEY = "aily:staff-reservation-submission:v1";
+const OWNER_STORAGE_KEY = "aily:staff-reservation-submission-owner:v1";
 export const STAFF_RESERVATION_SUBMISSION_CLAIM_TTL_MS = 5 * 60 * 1000;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -218,6 +219,32 @@ export function getOrCreateStaffReservationOperationId(
     // The API can still use the operation ID for this request when storage is unavailable.
   }
   return operationId;
+}
+
+export function getOrCreateStaffReservationSubmissionOwnerId(
+  storage: Pick<Storage, "getItem" | "setItem">,
+  createOwnerId: () => string,
+) {
+  try {
+    const storedOwnerId = storage.getItem(OWNER_STORAGE_KEY);
+    if (storedOwnerId && isSubmissionOperationId(storedOwnerId)) {
+      return storedOwnerId;
+    }
+  } catch {
+    // A same-page owner remains available even when session storage is blocked.
+  }
+
+  const ownerId = createOwnerId();
+  if (!isSubmissionOperationId(ownerId)) {
+    throw new Error("予約登録画面IDを作成できませんでした");
+  }
+
+  try {
+    storage.setItem(OWNER_STORAGE_KEY, ownerId);
+  } catch {
+    // The current page can still use the generated owner ID.
+  }
+  return ownerId;
 }
 
 export function clearStaffReservationOperation(

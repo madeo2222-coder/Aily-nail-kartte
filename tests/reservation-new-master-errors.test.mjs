@@ -64,6 +64,21 @@ function findNode(node, predicate) {
   return null;
 }
 
+function makeStorage() {
+  const values = new Map();
+  return {
+    getItem(key) {
+      return values.has(key) ? values.get(key) : null;
+    },
+    setItem(key, value) {
+      values.set(key, String(value));
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
+
 async function mount({
   failure = false,
   rejection = false,
@@ -71,6 +86,7 @@ async function mount({
   postMode = "success",
   pendingOperationStatus,
   initialStorageValue,
+  sessionStorage,
   operationIds = [
     "33333333-3333-4333-8333-333333333333",
     "44444444-4444-4444-8444-444444444444",
@@ -101,6 +117,7 @@ async function mount({
       storageValues.delete(key);
     },
   };
+  const tabSessionStorage = sessionStorage || makeStorage();
 
   const hooks = {
     useState(initial) {
@@ -188,7 +205,7 @@ async function mount({
         return operationIds.shift() || "77777777-7777-4777-8777-777777777777";
       },
     },
-    window: { localStorage },
+    window: { localStorage, sessionStorage: tabSessionStorage },
     console: { error() {} },
     require(name) {
       if (name === "react") return hooks;
@@ -225,6 +242,7 @@ async function mount({
     requests,
     pushed,
     localStorage,
+    sessionStorage: tabSessionStorage,
     html,
     unmount() { for (const cleanup of cleanups) cleanup(); },
     async retry() {
@@ -400,6 +418,39 @@ test("reservation creation blocks resubmission when the reload check is uncertai
     reloaded.requests.filter((request) => request.options?.method === "POST").length,
     0,
   );
+  reloaded.unmount();
+});
+
+test("reservation creation can retry immediately in the same tab after a reload confirms no save", async () => {
+  const sessionStorage = makeStorage();
+  const first = await mount({ postMode: "rejection", sessionStorage });
+  await first.submit();
+  const stored = first.localStorage.getItem(
+    "aily:staff-reservation-submission:v1",
+  );
+  assert.ok(stored);
+  const pendingOperation = JSON.parse(stored);
+  assert.equal(
+    sessionStorage.getItem("aily:staff-reservation-submission-owner:v1"),
+    pendingOperation.submissionOwnerId,
+  );
+  first.unmount();
+
+  const reloaded = await mount({
+    initialStorageValue: stored,
+    pendingOperationStatus: "not_found",
+    sessionStorage,
+  });
+  assert.match(reloaded.html(), /前回の予約は保存済みと確認できませんでした/);
+  await reloaded.submit();
+
+  const posts = reloaded.requests.filter(
+    (request) => request.options?.method === "POST",
+  );
+  assert.equal(posts.length, 1);
+  assert.equal(JSON.parse(posts[0].options.body).operationId, pendingOperation.operationId);
+  assert.deepEqual(reloaded.pushed, ["/reservations/calendar"]);
+  assert.doesNotMatch(reloaded.html(), /別の画面で同じ予約を登録中です/);
   reloaded.unmount();
 });
 

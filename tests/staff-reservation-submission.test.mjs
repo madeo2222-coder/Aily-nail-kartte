@@ -63,6 +63,30 @@ test("staff reservation operation ID survives a response-loss reload for the sam
   assert.equal(created, 1);
 });
 
+test("staff reservation owner ID survives a reload only within the same tab session", () => {
+  const firstTab = makeStorage();
+  const secondTab = makeStorage();
+  let created = 0;
+  const create = () => {
+    created += 1;
+    return created === 1 ? FIRST_ID : SECOND_ID;
+  };
+
+  assert.equal(
+    exports.getOrCreateStaffReservationSubmissionOwnerId(firstTab, create),
+    FIRST_ID,
+  );
+  assert.equal(
+    exports.getOrCreateStaffReservationSubmissionOwnerId(firstTab, create),
+    FIRST_ID,
+  );
+  assert.equal(
+    exports.getOrCreateStaffReservationSubmissionOwnerId(secondTab, create),
+    SECOND_ID,
+  );
+  assert.equal(created, 2);
+});
+
 test("staff reservation exposes a valid pending operation for read-only reconciliation", () => {
   const storage = makeStorage();
   const fingerprint = exports.buildStaffReservationFingerprint(submission);

@@ -10,6 +10,7 @@ import {
   clearStaffReservationOperation,
   getPendingStaffReservationOperation,
   getOrCreateStaffReservationOperationId,
+  getOrCreateStaffReservationSubmissionOwnerId,
 } from "@/lib/staff-reservation-submission";
 
 type Salon = {
@@ -730,7 +731,11 @@ export default function ReservationNewPage() {
       );
       const ownerId =
         submissionOwnerId.current ||
-        (submissionOwnerId.current = crypto.randomUUID());
+        (submissionOwnerId.current =
+          getOrCreateStaffReservationSubmissionOwnerId(
+            window.sessionStorage,
+            () => crypto.randomUUID(),
+          ));
       const submissionClaim = await claimStaffReservationSubmission(
         window.localStorage,
         operationId,
