@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
+import { isCancelledReservationStatus } from "@/lib/reservation-status";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 import { isSubmissionOperationId } from "@/lib/staff-reservation-submission";
 
@@ -8,13 +9,6 @@ export const dynamic = "force-dynamic";
 
 const NORMAL_STATUSES = new Set(["予約", "来店", "完了", "キャンセル"]);
 const ACTIVE_RESERVATION_STATUSES = new Set(["予約", "confirmed", "予約確定"]);
-const CANCELLED_STATUSES = new Set([
-  "キャンセル",
-  "cancelled",
-  "canceled",
-  "rejected",
-  "declined",
-]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -382,7 +376,7 @@ export async function POST(request: NextRequest) {
     const reservationOverlap = (reservationsResult.data || []).some(
       (reservation) =>
         (reservation.staff_id === null || reservation.staff_id === staffId) &&
-        !CANCELLED_STATUSES.has(reservation.status || ""),
+        !isCancelledReservationStatus(reservation.status),
     );
     const blockOverlap = (blocksResult.data || []).some(
       (block) => block.staff_id === null || block.staff_id === staffId,

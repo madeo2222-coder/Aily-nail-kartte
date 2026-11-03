@@ -3,6 +3,8 @@ const CANCELLED_RESERVATION_STATUSES = new Set([
   "cancelled",
   "canceled",
   "cancel",
+  "rejected",
+  "declined",
   "取消",
   "取り消し",
 ]);

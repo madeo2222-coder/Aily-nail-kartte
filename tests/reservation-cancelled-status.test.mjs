@@ -31,10 +31,14 @@ test("every supported reservation cancellation status shares one normalized resu
     "cancelled",
     "canceled",
     "cancel",
+    "rejected",
+    "declined",
     "取消",
     "取り消し",
     " CANCELLED ",
     "ＣＡＮＣＥＬＬＥＤ",
+    " ＲＥＪＥＣＴＥＤ ",
+    "ＤＥＣＬＩＮＥＤ",
     "取 り 消 し",
   ]) {
     assert.equal(exports.isCancelledReservationStatus(status), true, status);

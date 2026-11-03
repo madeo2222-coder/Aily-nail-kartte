@@ -28,6 +28,18 @@ const staffReservationSubmission = (() => {
   vm.runInNewContext(source, { exports, JSON, RegExp });
   return exports;
 })();
+const reservationStatus = (() => {
+  const exports = {};
+  const source = ts.transpileModule(
+    readFileSync(
+      new URL("../lib/reservation-status.ts", import.meta.url),
+      "utf8",
+    ),
+    { compilerOptions: { module: ts.ModuleKind.CommonJS } },
+  ).outputText;
+  vm.runInNewContext(source, { exports, Set, String });
+  return exports;
+})();
 
 const SALON_ID = "e120ed90-fded-41b8-b3fe-f486e84f2418";
 const OTHER_SALON_ID = "954e4418-4606-4932-8f03-87dfbe962967";
@@ -186,6 +198,9 @@ function executeRoute({ authentication, rows = {} }) {
       }
       if (name === "@/lib/staff-reservation-submission") {
         return staffReservationSubmission;
+      }
+      if (name === "@/lib/reservation-status") {
+        return reservationStatus;
       }
       return require(name);
     },
@@ -565,6 +580,64 @@ test("staff reservation creation refuses a matching external-calendar block", as
     rows: {
       external_calendar_blocks: {
         data: [{ id: "block-1", staff_id: STAFF_ID }],
+        error: null,
+      },
+    },
+  });
+  const response = await runtime.exports.POST(postRequest());
+  const body = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.match(body.error, /予約またはブロック/);
+  assert.equal(
+    runtime.calls.some((call) => call.operation === "insert"),
+    false,
+  );
+});
+
+for (const cancelledStatus of [
+  " ＣＡＮＣＥＬＬＥＤ ",
+  "取 り 消 し",
+  " ＤＥＣＬＩＮＥＤ ",
+]) {
+  test(`staff reservation creation ignores normalized cancelled overlap: ${cancelledStatus}`, async () => {
+    const runtime = executeRoute({
+      authentication: principal(),
+      rows: {
+        reservations: {
+          data: [
+            {
+              id: "cancelled-reservation",
+              staff_id: STAFF_ID,
+              status: cancelledStatus,
+            },
+          ],
+          error: null,
+        },
+      },
+    });
+    const response = await runtime.exports.POST(postRequest());
+
+    assert.equal(response.status, 200);
+    assert.equal(
+      runtime.calls.some((call) => call.operation === "insert"),
+      true,
+    );
+  });
+}
+
+test("staff reservation creation still refuses an active reservation overlap", async () => {
+  const runtime = executeRoute({
+    authentication: principal(),
+    rows: {
+      reservations: {
+        data: [
+          {
+            id: "active-reservation",
+            staff_id: STAFF_ID,
+            status: " ＣＯＮＦＩＲＭＥＤ ",
+          },
+        ],
         error: null,
       },
     },
