@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateStaffApi } from "@/lib/server/staffApiAuthentication";
 import { isCancelledReservationStatus } from "@/lib/reservation-status";
@@ -45,6 +46,7 @@ const CANCELLATION_REASONS: Record<CancellationReason, string> = {
 };
 
 const LINE_REQUEST_TIMEOUT_MS = 10_000;
+const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 
 const CANCELLABLE_RESERVATION_STATUSES = new Set([
   "pending",
@@ -238,6 +240,60 @@ ${params.salonName}です。
 ご予約いただいた${dateText}からのご予約につきまして、誠に申し訳ございませんがキャンセルとさせていただきました。
 理由：${reasonLabel}
 ご不明な点がございましたら、店舗までお問い合わせください。`;
+}
+
+async function sendCancellationLine(params: {
+  channelAccessToken: string;
+  lineUserId: string;
+  messageText: string;
+}) {
+  const retryKey = randomUUID();
+  const body = JSON.stringify({
+    to: params.lineUserId,
+    messages: [{ type: "text", text: params.messageText }],
+  });
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(
+      () => abortController.abort(),
+      LINE_REQUEST_TIMEOUT_MS
+    );
+
+    try {
+      const response = await fetch(LINE_PUSH_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${params.channelAccessToken}`,
+          "X-Line-Retry-Key": retryKey,
+        },
+        body,
+        signal: abortController.signal,
+      });
+      const acceptedRetry =
+        response.status === 409 &&
+        Boolean(
+          response.headers
+            .get("x-line-accepted-request-id")
+            ?.trim()
+        );
+
+      if (response.ok || acceptedRetry) {
+        return "sent" as const;
+      }
+
+      return "failed" as const;
+    } catch {
+      if (attempt === 1) {
+        return "unknown" as const;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  return "unknown" as const;
 }
 
 export async function POST(
@@ -577,41 +633,13 @@ export async function POST(
       reasonText,
     });
 
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(
-      () => abortController.abort(),
-      LINE_REQUEST_TIMEOUT_MS
-    );
+    const lineResult = await sendCancellationLine({
+      channelAccessToken,
+      lineUserId: customer.line_user_id,
+      messageText,
+    });
 
-    try {
-      const lineResponse = await fetch(
-        "https://api.line.me/v2/bot/message/push",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${channelAccessToken}`,
-          },
-          body: JSON.stringify({
-            to: customer.line_user_id,
-            messages: [{ type: "text", text: messageText }],
-          }),
-          signal: abortController.signal,
-        }
-      );
-
-      if (!lineResponse.ok) {
-        return NextResponse.json({
-          ok: true,
-          cancelled: true,
-          line: {
-            status: "failed",
-            message:
-              "予約はキャンセルしましたが、LINE通知の送信に失敗しました。",
-          },
-        });
-      }
-    } catch {
+    if (lineResult === "unknown") {
       return NextResponse.json({
         ok: true,
         cancelled: true,
@@ -621,8 +649,18 @@ export async function POST(
             "予約はキャンセルしましたが、LINE通知の送信結果を確認できません。重複送信を避けるため再送せず、LINEの送信履歴を確認してください。",
         },
       });
-    } finally {
-      clearTimeout(timeoutId);
+    }
+
+    if (lineResult === "failed") {
+      return NextResponse.json({
+        ok: true,
+        cancelled: true,
+        line: {
+          status: "failed",
+          message:
+            "予約はキャンセルしましたが、LINE通知の送信に失敗しました。",
+        },
+      });
     }
 
     return NextResponse.json({

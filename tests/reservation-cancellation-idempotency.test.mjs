@@ -547,6 +547,7 @@ test("a reservation removed during cancellation is not reported as cancelled", a
 
 function loadCancellationLineRuntime(fetchImplementation) {
   let reservationQueryCount = 0;
+  const lineCalls = [];
 
   const chain = (maybeSingle) => ({
     select() {
@@ -610,7 +611,10 @@ function loadCancellationLineRuntime(fetchImplementation) {
     Set,
     String,
     clearTimeout,
-    fetch: fetchImplementation,
+    fetch(...args) {
+      lineCalls.push(args);
+      return fetchImplementation(...args);
+    },
     process: {
       env: {
         NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
@@ -669,7 +673,7 @@ function loadCancellationLineRuntime(fetchImplementation) {
     setTimeout,
   });
 
-  return async () => {
+  const post = async () => {
     const response = await exports.POST(
       {
         async json() {
@@ -680,13 +684,15 @@ function loadCancellationLineRuntime(fetchImplementation) {
     );
     return { body: await response.json(), status: response.status };
   };
+
+  return { lineCalls, post };
 }
 
-test("a lost LINE response is reported as unknown without inviting a resend", async () => {
-  const post = loadCancellationLineRuntime(async () => {
+test("a lost LINE response retries once with one LINE retry key", async () => {
+  const runtime = loadCancellationLineRuntime(async () => {
     throw new Error("response lost");
   });
-  const response = await post();
+  const response = await runtime.post();
 
   assert.equal(response.status, 200);
   assert.equal(response.body.ok, true);
@@ -695,17 +701,61 @@ test("a lost LINE response is reported as unknown without inviting a resend", as
   assert.match(response.body.line.message, /送信結果を確認できません/);
   assert.match(response.body.line.message, /再送せず/);
   assert.doesNotMatch(response.body.line.message, /送信に失敗/);
+  assert.equal(runtime.lineCalls.length, 2);
+  const retryKeys = runtime.lineCalls.map(
+    ([, options]) => options.headers["X-Line-Retry-Key"],
+  );
+  assert.match(
+    retryKeys[0],
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
+  assert.equal(retryKeys[1], retryKeys[0]);
+});
+
+test("a retry converges when LINE reports the first request was already accepted", async () => {
+  let attempt = 0;
+  const runtime = loadCancellationLineRuntime(async () => {
+    attempt += 1;
+    if (attempt === 1) throw new Error("response lost");
+    return {
+      ok: false,
+      status: 409,
+      headers: {
+        get(name) {
+          return name === "x-line-accepted-request-id"
+            ? "accepted-request-1"
+            : null;
+        },
+      },
+    };
+  });
+  const response = await runtime.post();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.ok, true);
+  assert.equal(response.body.cancelled, true);
+  assert.equal(response.body.line.status, "sent");
+  assert.equal(runtime.lineCalls.length, 2);
+  assert.equal(
+    runtime.lineCalls[1][1].headers["X-Line-Retry-Key"],
+    runtime.lineCalls[0][1].headers["X-Line-Retry-Key"],
+  );
 });
 
 test("an explicit LINE rejection remains a known notification failure", async () => {
-  const post = loadCancellationLineRuntime(async () => ({ ok: false }));
-  const response = await post();
+  const runtime = loadCancellationLineRuntime(async () => ({
+    ok: false,
+    status: 400,
+    headers: { get: () => null },
+  }));
+  const response = await runtime.post();
 
   assert.equal(response.status, 200);
   assert.equal(response.body.ok, true);
   assert.equal(response.body.cancelled, true);
   assert.equal(response.body.line.status, "failed");
   assert.match(response.body.line.message, /送信に失敗/);
+  assert.equal(runtime.lineCalls.length, 1);
 });
 
 test("staff UI separates cancellation success from LINE warnings", () => {
