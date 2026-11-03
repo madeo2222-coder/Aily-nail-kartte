@@ -52,6 +52,7 @@ import {
 } from "@/lib/reservation-sync-memo";
 import { isExternalSyncedReservation } from "@/lib/external-reservation-metadata";
 import { requestReservationConfirmationWithTimeout } from "@/lib/reservation-confirmation-request";
+import { requestReservationStaffMutationWithTimeout } from "@/lib/reservation-staff-mutation-request";
 
 type Salon = {
   id: string;
@@ -1440,29 +1441,27 @@ export default function EditReservationPage() {
     setSuccessMessage("");
 
     try {
-      const response = await fetch(
+      const response = await requestReservationStaffMutationWithTimeout(
         `/api/reservations/${reservationId}/staff-edit`,
+        "PATCH",
         {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            salonId,
-            customerId: isExternalBlock ? null : customerId,
-            staffId,
-            menu,
-            startAt: dateTime.startAt,
-            endAt: dateTime.endAt,
-            status,
-            memo: memoForSave || null,
-            expectedCustomerId: initialCustomerId,
-            expectedStaffId: initialStaffId,
-            expectedMenu: initialMenu,
-            expectedStatus: initialStatus,
-            expectedMemo: initialMemo,
-            expectedStartAt: initialStartAt,
-            expectedEndAt: initialEndAt,
-          }),
-        }
+          salonId,
+          customerId: isExternalBlock ? null : customerId,
+          staffId,
+          menu,
+          startAt: dateTime.startAt,
+          endAt: dateTime.endAt,
+          status,
+          memo: memoForSave || null,
+          expectedCustomerId: initialCustomerId,
+          expectedStaffId: initialStaffId,
+          expectedMenu: initialMenu,
+          expectedStatus: initialStatus,
+          expectedMemo: initialMemo,
+          expectedStartAt: initialStartAt,
+          expectedEndAt: initialEndAt,
+        },
+        fetch
       );
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
@@ -1521,21 +1520,19 @@ export default function EditReservationPage() {
     setSuccessMessage("");
 
     try {
-      const response = await fetch(
+      const response = await requestReservationStaffMutationWithTimeout(
         `/api/reservations/${reservationId}/staff-edit`,
+        "DELETE",
         {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            expectedCustomerId: initialCustomerId,
-            expectedStaffId: initialStaffId,
-            expectedMenu: initialMenu,
-            expectedStatus: initialStoredStatus,
-            expectedMemo: initialMemo,
-            expectedStartAt: initialStartAt,
-            expectedEndAt: initialEndAt,
-          }),
-        }
+          expectedCustomerId: initialCustomerId,
+          expectedStaffId: initialStaffId,
+          expectedMenu: initialMenu,
+          expectedStatus: initialStoredStatus,
+          expectedMemo: initialMemo,
+          expectedStartAt: initialStartAt,
+          expectedEndAt: initialEndAt,
+        },
+        fetch
       );
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;

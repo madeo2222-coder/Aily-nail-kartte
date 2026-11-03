@@ -1214,15 +1214,25 @@ test("reservation edit page uses the guarded API and synchronous request locks",
   assert.doesNotMatch(pageSource, /@\/lib\/supabase/);
   assert.doesNotMatch(pageSource, /\.from\("reservations"\)/);
   assert.match(pageSource, /\/api\/reservations\/\$\{reservationId\}\/staff-edit/);
-  assert.match(pageSource, /method:\s*"PATCH"/);
-  assert.match(pageSource, /method:\s*"DELETE"/);
   assert.match(
     pageSource,
-    /method:\s*"DELETE"[\s\S]*?expectedCustomerId:\s*initialCustomerId/,
+    /requestReservationStaffMutationWithTimeout\([\s\S]*?"PATCH"/,
   );
   assert.match(
     pageSource,
-    /method:\s*"DELETE"[\s\S]*?expectedStatus:\s*initialStoredStatus/,
+    /requestReservationStaffMutationWithTimeout\([\s\S]*?"DELETE"/,
+  );
+  assert.equal(
+    pageSource.match(/requestReservationStaffMutationWithTimeout\(/g)?.length,
+    2,
+  );
+  assert.match(
+    pageSource,
+    /requestReservationStaffMutationWithTimeout\([\s\S]*?"DELETE"[\s\S]*?expectedCustomerId:\s*initialCustomerId/,
+  );
+  assert.match(
+    pageSource,
+    /requestReservationStaffMutationWithTimeout\([\s\S]*?"DELETE"[\s\S]*?expectedStatus:\s*initialStoredStatus/,
   );
   assert.match(pageSource, /mutationRequestPendingRef\.current/);
   for (const expectedField of [
