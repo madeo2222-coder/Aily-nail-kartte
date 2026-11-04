@@ -87,3 +87,15 @@ test("reservation calendar bounds the external block delete wait", () => {
     /requestReservationStaffMutationWithTimeout\([\s\S]{0,120}"\/api\/external-calendar-blocks\/delete"[\s\S]{0,80}"POST"/,
   );
 });
+
+test("external block registration bounds the mutation wait", () => {
+  const source = readFileSync(
+    new URL("../app/external-calendar-blocks/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /requestReservationStaffMutationWithTimeout\([\s\S]{0,120}"\/api\/external-calendar-blocks"[\s\S]{0,80}"POST"/,
+  );
+});

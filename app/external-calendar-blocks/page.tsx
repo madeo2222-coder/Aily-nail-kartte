@@ -10,6 +10,9 @@ import {
   getOrCreateExternalBlockSubmissionOwnerId,
   getOrCreateExternalBlockOperationId,
 } from "@/lib/external-calendar-block-submission";
+import {
+  requestReservationStaffMutationWithTimeout,
+} from "@/lib/reservation-staff-mutation-request";
 
 type StaffRow = {
   id: string;
@@ -209,13 +212,12 @@ export default function ExternalCalendarBlocksPage() {
         return;
       }
 
-      const res = await fetch("/api/external-calendar-blocks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ ...submission, operationId }),
-      });
+      const res = await requestReservationStaffMutationWithTimeout(
+        "/api/external-calendar-blocks",
+        "POST",
+        { ...submission, operationId },
+        fetch,
+      );
 
       const json = (await res.json().catch(() => null)) as {
         ok?: boolean;
