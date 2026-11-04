@@ -322,6 +322,13 @@ async function mount({
           },
         };
       }
+      if (name === "@/lib/reservation-staff-read-request") {
+        return {
+          requestReservationStaffReadWithTimeout(path, fetchApi) {
+            return fetchApi(path, { cache: "no-store" });
+          },
+        };
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });

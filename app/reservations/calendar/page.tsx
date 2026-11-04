@@ -18,6 +18,7 @@ import { requestHpbSyncWithTimeout } from "@/lib/hpb-sync-request";
 import {
   requestReservationStaffMutationWithTimeout,
 } from "@/lib/reservation-staff-mutation-request";
+import { requestReservationStaffReadWithTimeout } from "@/lib/reservation-staff-read-request";
 
 type ReservationRow = {
   id: string;
@@ -557,9 +558,10 @@ export default function ReservationsCalendarPage() {
     setLoadError(null);
 
     try {
-      const response = await fetch("/api/reservations/calendar-data", {
-        cache: "no-store",
-      });
+      const response = await requestReservationStaffReadWithTimeout(
+        "/api/reservations/calendar-data",
+        fetch,
+      );
       const payload = (await response.json()) as CalendarDataResponse;
 
       if (!response.ok || payload.ok !== true) {
