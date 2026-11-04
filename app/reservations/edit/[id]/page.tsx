@@ -1334,10 +1334,10 @@ export default function EditReservationPage() {
     setCancellationLineWarning("");
 
     try {
-      const response = await fetch(`/api/reservations/${reservationId}/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await requestReservationStaffMutationWithTimeout(
+        `/api/reservations/${reservationId}/cancel`,
+        "POST",
+        {
           sendLine: sendCancellationLine,
           reason: cancellationReason,
           reasonText: cancellationReasonText,
@@ -1348,8 +1348,9 @@ export default function EditReservationPage() {
           expectedEndAt: initialEndAt,
           expectedStatus: initialStoredStatus,
           expectedMemo: initialMemo,
-        }),
-      });
+        },
+        fetch
+      );
       const result = (await response.json().catch(() => null)) as
         | CancellationResult
         | null;

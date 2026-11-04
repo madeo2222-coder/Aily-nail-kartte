@@ -26,7 +26,7 @@ const {
   requestReservationStaffMutationWithTimeout,
 } = exports;
 
-for (const method of ["PATCH", "DELETE"]) {
+for (const method of ["POST", "PATCH", "DELETE"]) {
   test(`staff reservation ${method} stops waiting and preserves an unknown result`, async () => {
     let requestPath;
     let requestOptions;

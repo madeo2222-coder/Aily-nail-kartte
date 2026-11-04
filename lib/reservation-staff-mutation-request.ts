@@ -2,7 +2,7 @@ export const RESERVATION_STAFF_MUTATION_REQUEST_TIMEOUT_MS = 15 * 1000;
 
 export async function requestReservationStaffMutationWithTimeout(
   path: string,
-  method: "PATCH" | "DELETE",
+  method: "POST" | "PATCH" | "DELETE",
   body: unknown,
   fetchApi: typeof fetch = globalThis.fetch,
   timeoutMs = RESERVATION_STAFF_MUTATION_REQUEST_TIMEOUT_MS

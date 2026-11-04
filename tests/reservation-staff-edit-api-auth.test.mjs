@@ -1224,7 +1224,7 @@ test("reservation edit page uses the guarded API and synchronous request locks",
   );
   assert.equal(
     pageSource.match(/requestReservationStaffMutationWithTimeout\(/g)?.length,
-    2,
+    3,
   );
   assert.match(
     pageSource,

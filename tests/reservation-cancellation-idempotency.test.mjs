@@ -761,6 +761,10 @@ test("an explicit LINE rejection remains a known notification failure", async ()
 test("staff UI separates cancellation success from LINE warnings", () => {
   assert.match(
     editPageSource,
+    /requestReservationStaffMutationWithTimeout\([\s\S]{0,180}\/cancel`[\s\S]{0,80}"POST"/,
+  );
+  assert.match(
+    editPageSource,
     /status\?: "sent" \| "skipped" \| "not_linked" \| "failed" \| "unknown"/,
   );
   assert.match(
