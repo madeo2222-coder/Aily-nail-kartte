@@ -63,3 +63,15 @@ for (const method of ["POST", "PATCH", "DELETE"]) {
 test("staff reservation mutation uses the shared 15 second wait bound", () => {
   assert.equal(RESERVATION_STAFF_MUTATION_REQUEST_TIMEOUT_MS, 15_000);
 });
+
+test("reservation list bounds the status mutation wait", () => {
+  const source = readFileSync(
+    new URL("../app/reservations/ReservationsPageClient.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /requestReservationStaffMutationWithTimeout\([\s\S]{0,180}\/status`[\s\S]{0,80}"POST"/,
+  );
+});

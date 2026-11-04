@@ -43,6 +43,7 @@ import {
   isExternalSyncedReservation,
 } from "@/lib/external-reservation-metadata";
 import { requestReservationConfirmationWithTimeout } from "@/lib/reservation-confirmation-request";
+import { requestReservationStaffMutationWithTimeout } from "@/lib/reservation-staff-mutation-request";
 
 type ReservationRow = {
   id: string;
@@ -1158,17 +1159,15 @@ export default function ReservationsPageClient() {
     setUpdatingId(reservation.id);
 
     try {
-      const response = await fetch(
+      const response = await requestReservationStaffMutationWithTimeout(
         `/api/reservations/${reservation.id}/status`,
+        "POST",
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status,
-            expectedCustomerId: reservation.customerId,
-            expectedStatus: reservation.rawStatus,
-          }),
-        }
+          status,
+          expectedCustomerId: reservation.customerId,
+          expectedStatus: reservation.rawStatus,
+        },
+        fetch,
       );
       const result = (await response.json()) as {
         ok?: boolean;

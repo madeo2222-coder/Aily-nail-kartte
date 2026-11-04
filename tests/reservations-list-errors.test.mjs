@@ -372,6 +372,22 @@ async function mount({
       if (name === "@/lib/reservation-confirmation-request") {
         return reservationConfirmationRequestExports;
       }
+      if (name === "@/lib/reservation-staff-mutation-request") {
+        return {
+          requestReservationStaffMutationWithTimeout(
+            path,
+            method,
+            body,
+            fetchApi,
+          ) {
+            return fetchApi(path, {
+              method,
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(body),
+            });
+          },
+        };
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });
