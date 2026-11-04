@@ -86,6 +86,13 @@ function mount({ storage = createStorage() } = {}) {
       if (name === "@/lib/hpb-manual-sync-unknown-lock") {
         return hpbManualSyncUnknownLockExports;
       }
+      if (name === "@/lib/hpb-sync-request") {
+        return {
+          requestHpbSyncWithTimeout(path, init, fetchApi) {
+            return fetchApi(path, init);
+          },
+        };
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });

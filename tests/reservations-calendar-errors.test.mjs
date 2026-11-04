@@ -299,6 +299,13 @@ async function mount({
       if (name === "@/lib/hpb-gmail-sync-unknown-lock") {
         return hpbGmailSyncUnknownLockExports;
       }
+      if (name === "@/lib/hpb-sync-request") {
+        return {
+          requestHpbSyncWithTimeout(path, init, fetchApi) {
+            return fetchApi(path, init);
+          },
+        };
+      }
       throw new Error(`Unexpected import: ${name}`);
     },
   });

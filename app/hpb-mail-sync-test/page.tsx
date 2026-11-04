@@ -14,6 +14,7 @@ import {
   hasHpbManualSyncUnknownLock,
   markHpbManualSyncResultUnknown,
 } from "@/lib/hpb-manual-sync-unknown-lock";
+import { requestHpbSyncWithTimeout } from "@/lib/hpb-sync-request";
 
 type SyncItem = {
   ok?: boolean;
@@ -152,11 +153,15 @@ export default function HpbMailSyncTestPage() {
     let canRetry = false;
 
     try {
-      const response = await fetch("/api/hpb-mail-sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: mailSubject, text: mailText }),
-      });
+      const response = await requestHpbSyncWithTimeout(
+        "/api/hpb-mail-sync",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ subject: mailSubject, text: mailText }),
+        },
+        fetch,
+      );
 
       const json = (await response.json()) as SyncResult;
       setResult(json);
@@ -220,9 +225,11 @@ export default function HpbMailSyncTestPage() {
     let canRetry = false;
 
     try {
-      const response = await fetch("/api/hpb-gmail-sync", {
-        method: "POST",
-      });
+      const response = await requestHpbSyncWithTimeout(
+        "/api/hpb-gmail-sync",
+        { method: "POST" },
+        fetch,
+      );
 
       const json = (await response.json()) as SyncResult;
       setResult(json);

@@ -14,6 +14,7 @@ import {
   readHpbGmailSyncUnknownLock,
   saveHpbGmailSyncUnknownLock,
 } from "@/lib/hpb-gmail-sync-unknown-lock";
+import { requestHpbSyncWithTimeout } from "@/lib/hpb-sync-request";
 
 type ReservationRow = {
   id: string;
@@ -606,9 +607,11 @@ export default function ReservationsCalendarPage() {
     try {
       setSyncingHpb(true);
 
-      const response = await fetch("/api/hpb-gmail-sync", {
-        method: "POST",
-      });
+      const response = await requestHpbSyncWithTimeout(
+        "/api/hpb-gmail-sync",
+        { method: "POST" },
+        fetch,
+      );
 
       const json = await response.json();
 
