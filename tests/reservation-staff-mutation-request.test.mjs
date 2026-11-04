@@ -75,3 +75,15 @@ test("reservation list bounds the status mutation wait", () => {
     /requestReservationStaffMutationWithTimeout\([\s\S]{0,180}\/status`[\s\S]{0,80}"POST"/,
   );
 });
+
+test("reservation calendar bounds the external block delete wait", () => {
+  const source = readFileSync(
+    new URL("../app/reservations/calendar/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /requestReservationStaffMutationWithTimeout\([\s\S]{0,120}"\/api\/external-calendar-blocks\/delete"[\s\S]{0,80}"POST"/,
+  );
+});

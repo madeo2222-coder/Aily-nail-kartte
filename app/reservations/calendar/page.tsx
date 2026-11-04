@@ -15,6 +15,9 @@ import {
   saveHpbGmailSyncUnknownLock,
 } from "@/lib/hpb-gmail-sync-unknown-lock";
 import { requestHpbSyncWithTimeout } from "@/lib/hpb-sync-request";
+import {
+  requestReservationStaffMutationWithTimeout,
+} from "@/lib/reservation-staff-mutation-request";
 
 type ReservationRow = {
   id: string;
@@ -684,11 +687,12 @@ export default function ReservationsCalendarPage() {
     });
 
     try {
-      const response = await fetch("/api/external-calendar-blocks/delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: blockId }),
-      });
+      const response = await requestReservationStaffMutationWithTimeout(
+        "/api/external-calendar-blocks/delete",
+        "POST",
+        { id: blockId },
+        fetch,
+      );
       const result = (await response.json().catch(() => null)) as {
         ok?: boolean;
         error?: string;
